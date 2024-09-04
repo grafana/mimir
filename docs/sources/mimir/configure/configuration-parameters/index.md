@@ -141,11 +141,6 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) If true, store metadata when ingesting metrics via OTLP. This
-  # makes metric descriptions and types available for metrics ingested via OTLP.
-  # CLI flag: -distributor.enable-otlp-metadata-storage
-  [enable_otel_metadata_translation: <boolean> | default = true]
-
   # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
   # trigger an ingester shutdown. This is a potentially dangerous operation and
   # should only be enabled consciously.
@@ -759,23 +754,24 @@ pool:
   [health_check_ingesters: <boolean> | default = true]
 
 retry_after_header:
-  # (experimental) Enabled controls inclusion of the Retry-After header in the
-  # response: true includes it for client retry guidance, false omits it.
+  # (advanced) Enables inclusion of the Retry-After header in the response: true
+  # includes it for client retry guidance, false omits it.
   # CLI flag: -distributor.retry-after-header.enabled
-  [enabled: <boolean> | default = false]
+  [enabled: <boolean> | default = true]
 
-  # (experimental) Base duration in seconds for calculating the Retry-After
-  # header in responses to 429/5xx errors.
-  # CLI flag: -distributor.retry-after-header.base-seconds
-  [base_seconds: <int> | default = 3]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.min-backoff
+  [min_backoff: <duration> | default = 6s]
 
-  # (experimental) Sets the upper limit on the number of Retry-Attempt
-  # considered for calculation. It caps the Retry-Attempt header without
-  # rejecting additional attempts, controlling exponential backoff calculations.
-  # For example, when the base-seconds is set to 3 and max-backoff-exponent to
-  # 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.
-  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
-  [max_backoff_exponent: <int> | default = 5]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.max-backoff
+  [max_backoff: <duration> | default = 1m36s]
 
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
@@ -1200,7 +1196,7 @@ partition_ring:
 
 # (advanced) After what time a series is considered to be inactive.
 # CLI flag: -ingester.active-series-metrics-idle-timeout
-[active_series_metrics_idle_timeout: <duration> | default = 10m]
+[active_series_metrics_idle_timeout: <duration> | default = 20m]
 
 # (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
@@ -1483,7 +1479,8 @@ store_gateway_client:
 [enable_query_engine_fallback: <boolean> | default = true]
 
 # The number of workers running in each querier process. This setting limits the
-# maximum number of concurrent queries in each querier.
+# maximum number of concurrent queries in each querier. The minimum value is
+# four; lower values are ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 20]
 
@@ -1514,6 +1511,32 @@ store_gateway_client:
 # be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.promql-experimental-functions-enabled
 [promql_experimental_functions_enabled: <boolean> | default = false]
+
+mimir_query_engine:
+  # (experimental) Enable support for aggregation operations in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
+  [enable_aggregation_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for binary operations in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-operations
+  [enable_binary_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for offset modifier in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
+  [enable_offset_modifier: <boolean> | default = true]
+
+  # (experimental) Enable support for ..._over_time functions in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
+  [enable_over_time_functions: <boolean> | default = true]
+
+  # (experimental) Enable support for scalars in Mimir's query engine. Only
+  # applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalars
+  [enable_scalars: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1600,11 +1623,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
+# (experimental) Non-operational: Enqueue query requests with additional queue
+# dimensions to split tenant request queues into subqueues. This enables
+# separate requests to proceed from a tenant's subqueues even when other
+# subqueues are blocked on slow query requests. Must be set on both
+# query-frontend and scheduler to take effect. (default false)
 # CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
@@ -1670,10 +1693,6 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
-# (experimental) True to enable limits enforcement for remote read requests.
-# CLI flag: -query-frontend.remote-read-limits-enabled
-[remote_read_limits_enabled: <boolean> | default = false]
-
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -1695,11 +1714,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
+# (experimental) Non-operational: Enqueue query requests with additional queue
+# dimensions to split tenant request queues into subqueues. This enables
+# separate requests to proceed from a tenant's subqueues even when other
+# subqueues are blocked on slow query requests. Must be set on both
+# query-frontend and scheduler to take effect. (default false)
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
@@ -1708,6 +1727,14 @@ The `query_scheduler` block configures the query-scheduler.
 # tree model.
 # CLI flag: -query-scheduler.use-multi-algorithm-query-queue
 [use_multi_algorithm_query_queue: <boolean> | default = false]
+
+# (experimental) When enabled, the query scheduler primarily prioritizes
+# dequeuing fairly from queue components and secondarily prioritizes dequeuing
+# fairly across tenants. When disabled, the query scheduler primarily
+# prioritizes tenant fairness. You must enable the
+# `query-scheduler.use-multi-algorithm-query-queue` setting to use this flag.
+# CLI flag: -query-scheduler.prioritize-query-components
+[prioritize_query_components: <boolean> | default = false]
 
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
@@ -1937,11 +1964,6 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 
-# (experimental) Drain all outstanding alert notifications when shutting down.
-# If false, any outstanding alert notifications are dropped when shutting down.
-# CLI flag: -ruler.drain-notification-queue-on-shutdown
-[drain_notification_queue_on_shutdown: <boolean> | default = false]
-
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
@@ -2091,7 +2113,13 @@ tenant_federation:
 # duration to allow a rule to be evaluated concurrency. By default, the rule
 # group runtime duration must exceed 50.0% of the evaluation interval.
 # CLI flag: -ruler.independent-rule-evaluation-concurrency-min-duration-percentage
-[threshold_independent_rule_evaluation_concurrency: <float> | default = 50]
+[independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
+
+# (experimental) Writes the results of rule evaluation to ingesters or ingest
+# storage when enabled. Use this option for testing purposes. To disable, set to
+# false.
+# CLI flag: -ruler.rule-evaluation-write-enabled
+[rule_evaluation_write_enabled: <boolean> | default = true]
 ```
 
 ### ruler_storage
@@ -2469,6 +2497,12 @@ alertmanager_client:
 # configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
+
+# (experimental) Enable logging when parsing label matchers. This flag is
+# intended to be used with -alertmanager.utf8-strict-mode-enabled to validate
+# UTF-8 strict mode is working as intended.
+# CLI flag: -alertmanager.log-parsing-label-matchers
+[log_parsing_label_matchers: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -3252,6 +3286,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
+# (experimental) Whether to ignore exemplars with out-of-order timestamps. If
+# enabled, exemplars with out-of-order timestamps are silently dropped,
+# otherwise they cause partial errors.
+# CLI flag: -ingester.ignore-ooo-exemplars
+[ignore_ooo_exemplars: <boolean> | default = false]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
@@ -3678,6 +3718,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
+
+# (experimental) Whether to enable translation of OTel start timestamps to
+# Prometheus zero samples in the OTLP endpoint.
+# CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
+[otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
@@ -4991,6 +5036,10 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # S3 access key ID
 # CLI flag: -<prefix>.s3.access-key-id
 [access_key_id: <string> | default = ""]
+
+# S3 session token
+# CLI flag: -<prefix>.s3.session-token
+[session_token: <string> | default = ""]
 
 # (advanced) If enabled, use http:// for the S3 endpoint instead of https://.
 # This could be useful in local dev/test environments while using an

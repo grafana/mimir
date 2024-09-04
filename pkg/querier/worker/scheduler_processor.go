@@ -19,11 +19,9 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -436,16 +434,7 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
-	opts, err := sp.grpcConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor,
-		middleware.UnaryClientInstrumentInterceptor(sp.frontendClientRequestDuration),
-	}, []grpc.StreamClientInterceptor{
-		otgrpc.OpenTracingStreamClientInterceptor(opentracing.GlobalTracer()),
-		middleware.StreamClientUserHeaderInterceptor,
-		middleware.StreamClientInstrumentInterceptor(sp.frontendClientRequestDuration),
-	})
-
+	opts, err := sp.grpcConfig.DialOption(grpcclient.Instrument(sp.frontendClientRequestDuration))
 	if err != nil {
 		return nil, err
 	}

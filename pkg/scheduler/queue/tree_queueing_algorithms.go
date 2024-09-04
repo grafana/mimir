@@ -22,7 +22,7 @@ type QueuingAlgorithm interface {
 	// The Tree uses the bool returned to determine when no dequeue-able value can be found at this child. If all
 	// children in the subtree have been checked, but no dequeue-able value is found, the Tree traverses to the next
 	// child in the given node's order. dequeueSelectNode does *not* update any Node fields.
-	dequeueSelectNode(node *Node) (*Node, bool)
+	dequeueSelectNode(node *Node) *Node
 
 	// dequeueUpdateState is called after we have finished dequeuing from a node. When a child is left empty after the
 	// dequeue operation, dequeueUpdateState should perform cleanup by deleting that child from the Node and update
@@ -32,10 +32,10 @@ type QueuingAlgorithm interface {
 }
 
 // roundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
-// the same depth in a MultiQueuingAlgorithmTreeQueue do not share any state. When children are added to these nodes, they are placed at
-// the "end" of the order from the perspective of the node's current queuePosition (e.g., if queuePosition is 3,
-// a new child will be placed at index 2). Children are dequeued from using a simple round-robin ordering;
-// queuePosition is incremented on every dequeue.
+// the same depth in a MultiQueuingAlgorithmTreeQueue do not share any state. When children are added to these nodes,
+// they are placed at the "end" of the order from the perspective of the node's current queuePosition (e.g., if
+// queuePosition is 3, a new child will be placed at index 2). Children are dequeued from using a simple round-robin
+// ordering; queuePosition is incremented on every dequeue.
 type roundRobinState struct {
 }
 
@@ -58,17 +58,16 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 
 // dequeueSelectNode returns the node at the node's queuePosition. queuePosition represents the position of
 // the next node to dequeue from, and is incremented in dequeueUpdateState.
-func (rrs *roundRobinState) dequeueSelectNode(node *Node) (*Node, bool) {
-	checkedAllNodes := node.childrenChecked == len(node.queueOrder)+1 // must check local queue as well
+func (rrs *roundRobinState) dequeueSelectNode(node *Node) *Node {
 	if node.queuePosition == localQueueIndex {
-		return node, checkedAllNodes
+		return node
 	}
 
 	currentNodeName := node.queueOrder[node.queuePosition]
 	if node, ok := node.queueMap[currentNodeName]; ok {
-		return node, checkedAllNodes
+		return node
 	}
-	return nil, checkedAllNodes
+	return nil
 }
 
 // dequeueUpdateState does the following:

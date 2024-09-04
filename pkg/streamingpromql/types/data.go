@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/value.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package types
 
 import (
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -20,9 +24,47 @@ type InstantVectorSeriesData struct {
 	// Histograms contains histogram samples for this series.
 	// Samples must be sorted in timestamp order, earliest timestamps first.
 	// Samples must not have duplicate timestamps.
-	// HPoint contains a pointer to a histogram, so it is generally not safe to
-	// modify directly as the histogram may be used for other HPoint values, such as when lookback has occurred.
+	// HPoint contains a pointer to a histogram, and consecutive HPoints may contain a reference
+	// to the same FloatHistogram.
+	// It is therefore important to check for references to the same FloatHistogram in
+	// subsequent points before mutating it.
 	Histograms []promql.HPoint
+}
+
+type InstantVectorSeriesDataIterator struct {
+	data   InstantVectorSeriesData
+	fIndex int
+	hIndex int
+}
+
+func (i *InstantVectorSeriesDataIterator) Reset(data InstantVectorSeriesData) {
+	i.fIndex = 0
+	i.hIndex = 0
+	i.data = data
+}
+
+// Next returns either a float or histogram iterating through both sets of points.
+// It returns the next point with the lowest timestamp.
+// If h is not nil, the value is a histogram, otherwise it is a float.
+// If no more values exist ok is false.
+func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogram.FloatHistogram, ok bool) {
+	if i.fIndex >= len(i.data.Floats) && i.hIndex >= len(i.data.Histograms) {
+		return 0, 0, nil, false
+	}
+
+	exhaustedFloats := i.fIndex >= len(i.data.Floats)
+	exhaustedHistograms := i.hIndex >= len(i.data.Histograms)
+	if !exhaustedFloats && (exhaustedHistograms || i.data.Floats[i.fIndex].T < i.data.Histograms[i.hIndex].T) {
+		// Return the next float
+		point := i.data.Floats[i.fIndex]
+		i.fIndex++
+		return point.T, point.F, nil, true
+	}
+
+	// Return the next histogram
+	point := i.data.Histograms[i.hIndex]
+	i.hIndex++
+	return point.T, 0, point.H, true
 }
 
 // RangeVectorStepData contains the timestamps associated with a single time step produced by a
@@ -55,4 +97,44 @@ type RangeVectorStepData struct {
 	// produced by the query.
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
+}
+
+type ScalarData struct {
+	// Samples contains floating point samples for this series.
+	// Samples must be sorted in timestamp order, earliest timestamps first.
+	// Samples must not have duplicate timestamps.
+	Samples []promql.FPoint
+}
+
+func HasDuplicateSeries(metadata []SeriesMetadata) bool {
+	// Note that there's a risk here that we incorrectly flag two series as duplicates when in reality they're different
+	// due to hash collisions.
+	// However, the hashes are 64-bit integers, so the likelihood of collisions is very small, and this is the same method
+	// that Prometheus' engine uses, so we'll at least be consistent with that.
+
+	switch len(metadata) {
+	case 0, 1:
+		return false
+	case 2:
+		if metadata[0].Labels.Hash() == metadata[1].Labels.Hash() {
+			return true
+		}
+
+		return false
+
+	default:
+		seen := make(map[uint64]struct{}, len(metadata))
+
+		for _, m := range metadata {
+			hash := m.Labels.Hash()
+
+			if _, alreadySeen := seen[hash]; alreadySeen {
+				return true
+			}
+
+			seen[hash] = struct{}{}
+		}
+
+		return false
+	}
 }

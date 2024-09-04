@@ -28,6 +28,9 @@ std.manifestYamlDoc({
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
     enable_grafana_agent: false,
+    // If true, start a base prometheus that scrapes the Mimir component metrics and remote writes to distributor-1.
+    // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
+    // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
 
@@ -46,12 +49,12 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.nginx +
     self.minio +
-    (if $._config.enable_prometheus then self.prometheus else {}) +
+    (if $._config.enable_prometheus then self.prometheus + self.prompair1 + self.prompair2 else {}) +
     self.grafana +
     (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
-    (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
+    self.consul +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
@@ -62,12 +65,14 @@ std.manifestYamlDoc({
       name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
+      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
     }),
 
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
+      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
     }),
   },
 
@@ -250,8 +255,9 @@ std.manifestYamlDoc({
   // Other services used by Mimir.
   consul:: {
     consul: {
-      image: 'consul',
-      command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=info'],
+      image: 'consul:1.15',
+      command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=debug'],
+      hostname: 'consul',
       ports: ['8500:8500'],
     },
   },
@@ -332,6 +338,39 @@ std.manifestYamlDoc({
     },
   },
 
+  prompair1:: {
+    prompair1: {
+      image: 'prom/prometheus:v2.51.1',
+      hostname: 'prom-ha-pair-1',
+      command: [
+        '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9092:9090'],
+    },
+  },
+
+  prompair2:: {
+    prompair2: {
+      image: 'prom/prometheus:v2.51.1',
+      hostname: 'prom-ha-pair-2',
+      command: [
+        '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9093:9090'],
+    },
+  },
+
+
   grafana:: {
     grafana: {
       image: 'grafana/grafana:10.4.3',
@@ -340,7 +379,7 @@ std.manifestYamlDoc({
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
       ],
       volumes: [
-        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+        './config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
       ],
@@ -407,9 +446,6 @@ std.manifestYamlDoc({
       ports: ['9999:80'],
     },
   },
-
-  // docker-compose YAML output version.
-  version: '3.4',
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
 }, true)

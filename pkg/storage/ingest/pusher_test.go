@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -179,9 +180,7 @@ func TestPusherConsumer(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
-
 			receivedReqs := 0
 			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
 				defer func() { receivedReqs++ }()
@@ -211,10 +210,23 @@ func TestPusherConsumer(t *testing.T) {
 			var logLines []string
 			if logsStr := logs.String(); logsStr != "" {
 				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+				logLines = removeUnimportantLogFields(logLines)
 			}
 			assert.Equal(t, tc.expectedLogLines, logLines)
 		})
 	}
+}
+
+var unimportantLogFieldsPattern = regexp.MustCompile(`\scaller=\S+\.go:\d+\s`)
+
+func removeUnimportantLogFields(lines []string) []string {
+	// The 'caller' field is not important to these tests (we just care about the message and other information),
+	// and can change as we refactor code, making these tests brittle. So we remove it before making assertions about the log lines.
+	for i, line := range lines {
+		lines[i] = unimportantLogFieldsPattern.ReplaceAllString(line, " ")
+	}
+
+	return lines
 }
 
 func TestPusherConsumer_clientErrorSampling(t *testing.T) {

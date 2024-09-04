@@ -50,9 +50,6 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 
-	// TODO: Remove option in Mimir 2.14.
-	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"deprecated"`
-
 	// TODO: Remove option in Mimir 2.15.
 	GETRequestForIngesterShutdownEnabled bool `yaml:"get_request_for_ingester_shutdown_enabled" category:"deprecated"`
 
@@ -73,7 +70,6 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
-	f.BoolVar(&cfg.EnableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", true, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
 	f.BoolVar(&cfg.GETRequestForIngesterShutdownEnabled, "api.get-request-for-ingester-shutdown-enabled", false, "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
@@ -224,8 +220,9 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.DeleteUserGrafanaState), true, true, http.MethodDelete)
 
-			// This API is handled by the per-tenant Alertmanager, so it's handed by the distributor.
+			// These APIs are handled by the per-tenant Alertmanager, so they are handled by the distributor.
 			a.RegisterRoute("/api/v1/grafana/receivers", am, true, true, http.MethodGet)
+			a.RegisterRoute("/api/v1/grafana/receivers/test", am, true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/templates/test", am, true, true, http.MethodPost)
 		}
 	}
@@ -266,7 +263,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger), true, false, "POST")
-	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, a.cfg.EnableOtelMetadataStorage, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger, pushConfig.DirectOTLPTranslationEnabled), true, false, "POST")
+	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger, pushConfig.DirectOTLPTranslationEnabled), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
@@ -291,6 +288,7 @@ type Ingester interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)
+	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
 }
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
@@ -305,6 +303,7 @@ func (a *API) RegisterIngester(i Ingester) {
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/prepare-partition-downscale", http.HandlerFunc(i.PreparePartitionDownscaleHandler), false, true, "GET", "POST", "DELETE")
+	a.RegisterRoute("/ingester/prepare-instance-ring-downscale", http.HandlerFunc(i.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/unregister-on-shutdown", http.HandlerFunc(i.PrepareUnregisterHandler), false, false, "GET", "PUT", "DELETE")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "POST")
 	if a.cfg.GETRequestForIngesterShutdownEnabled {

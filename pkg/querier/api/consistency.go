@@ -44,15 +44,15 @@ const (
 	consistencyOffsetsContextKey contextKey = 2
 )
 
-// ContextWithReadConsistency returns a new context with the given consistency level.
-// The consistency level can be retrieved with ReadConsistencyFromContext.
-func ContextWithReadConsistency(parent context.Context, level string) context.Context {
+// ContextWithReadConsistencyLevel returns a new context with the given consistency level.
+// The consistency level can be retrieved with ReadConsistencyLevelFromContext.
+func ContextWithReadConsistencyLevel(parent context.Context, level string) context.Context {
 	return context.WithValue(parent, consistencyContextKey, level)
 }
 
-// ReadConsistencyFromContext returns the consistency level from the context if set via ContextWithReadConsistency.
+// ReadConsistencyLevelFromContext returns the consistency level from the context if set via ContextWithReadConsistencyLevel.
 // The second return value is true if the consistency level was found in the context and is valid.
-func ReadConsistencyFromContext(ctx context.Context) (string, bool) {
+func ReadConsistencyLevelFromContext(ctx context.Context) (string, bool) {
 	level, _ := ctx.Value(consistencyContextKey).(string)
 	return level, IsValidReadConsistency(level)
 }
@@ -75,12 +75,12 @@ func ReadConsistencyEncodedOffsetsFromContext(ctx context.Context) (EncodedOffse
 }
 
 // ConsistencyMiddleware takes the consistency level from the X-Read-Consistency header and sets it in the context.
-// It can be retrieved with ReadConsistencyFromContext.
+// It can be retrieved with ReadConsistencyLevelFromContext.
 func ConsistencyMiddleware() middleware.Interface {
 	return middleware.Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if level := r.Header.Get(ReadConsistencyHeader); IsValidReadConsistency(level) {
-				r = r.WithContext(ContextWithReadConsistency(r.Context(), level))
+				r = r.WithContext(ContextWithReadConsistencyLevel(r.Context(), level))
 			}
 
 			if offsets := r.Header.Get(ReadConsistencyOffsetsHeader); len(offsets) > 0 {
@@ -98,7 +98,7 @@ const (
 )
 
 func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	if value, ok := ReadConsistencyFromContext(ctx); ok {
+	if value, ok := ReadConsistencyLevelFromContext(ctx); ok {
 		ctx = metadata.AppendToOutgoingContext(ctx, consistencyLevelGrpcMdKey, value)
 	}
 	if value, ok := ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
@@ -110,7 +110,7 @@ func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, r
 func ReadConsistencyServerUnaryInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	levels := metadata.ValueFromIncomingContext(ctx, consistencyLevelGrpcMdKey)
 	if len(levels) > 0 && IsValidReadConsistency(levels[0]) {
-		ctx = ContextWithReadConsistency(ctx, levels[0])
+		ctx = ContextWithReadConsistencyLevel(ctx, levels[0])
 	}
 
 	offsets := metadata.ValueFromIncomingContext(ctx, consistencyOffsetsGrpcMdKey)
@@ -122,7 +122,7 @@ func ReadConsistencyServerUnaryInterceptor(ctx context.Context, req interface{},
 }
 
 func ReadConsistencyClientStreamInterceptor(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-	if value, ok := ReadConsistencyFromContext(ctx); ok {
+	if value, ok := ReadConsistencyLevelFromContext(ctx); ok {
 		ctx = metadata.AppendToOutgoingContext(ctx, consistencyLevelGrpcMdKey, value)
 	}
 	if value, ok := ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
@@ -136,7 +136,7 @@ func ReadConsistencyServerStreamInterceptor(srv interface{}, ss grpc.ServerStrea
 
 	levels := metadata.ValueFromIncomingContext(ss.Context(), consistencyLevelGrpcMdKey)
 	if len(levels) > 0 && IsValidReadConsistency(levels[0]) {
-		ctx = ContextWithReadConsistency(ctx, levels[0])
+		ctx = ContextWithReadConsistencyLevel(ctx, levels[0])
 	}
 
 	offsets := metadata.ValueFromIncomingContext(ctx, consistencyOffsetsGrpcMdKey)
@@ -208,8 +208,7 @@ func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
 }
 
 // EncodeOffsets serialise the input offsets into a string which is safe to be used as HTTP header value.
-// Empty partitions are skipped because partitions may be pre-allocated in Kafka, even if unused.
-// A partition is considered empty if its offset is -1.
+// Empty partitions (offset is -1) are NOT skipped.
 func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	const versionLen = 3
 
@@ -223,11 +222,6 @@ func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	// re-allocations because we under-counted digits.
 	size := versionLen
 	for partitionID, offset := range offsets {
-		// Skip empty partitions.
-		if offset == -1 {
-			continue
-		}
-
 		sizeSeparator := 0
 		if size > 0 {
 			sizeSeparator = 1
@@ -244,11 +238,6 @@ func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	buffer = append(buffer, []byte("v1=")...)
 
 	for partitionID, offset := range offsets {
-		// Skip empty partitions.
-		if offset == -1 {
-			continue
-		}
-
 		// Add the separator, unless it's the first entry.
 		if len(buffer) > versionLen {
 			buffer = append(buffer, ',')

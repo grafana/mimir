@@ -1,8 +1,11 @@
 package sdnotify
 
 import (
+	"fmt"
 	"net"
 	"os"
+
+	"golang.org/x/sys/unix"
 )
 
 // SdNotify sends a specified string to the systemd notification socket.
@@ -20,4 +23,16 @@ func SdNotify(state string) error {
 
 	_, err = conn.Write([]byte(state))
 	return err
+}
+
+// Reloading sends RELOADING=1\nMONOTONIC_USEC=<monotonic_time> to the
+// systemd notify socket.
+func Reloading() error {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		return fmt.Errorf("getting monotonic time: %w", err)
+	}
+	nsecs := ts.Sec*1e09 + ts.Nsec
+	return SdNotify(fmt.Sprintf("RELOADING=1\nMONOTONIC_USEC=%d",
+		nsecs/1000))
 }

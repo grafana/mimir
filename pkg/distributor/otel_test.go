@@ -78,7 +78,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 	require.NoError(b, err)
-	handler := OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger(), true)
+	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger(), true)
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, false)
@@ -218,25 +218,6 @@ func TestHandlerOTLPPush(t *testing.T) {
 		return nil
 	}
 
-	samplesVerifierFuncDisabledMetadataIngest := func(t *testing.T, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		require.NoError(t, err)
-
-		series := request.Timeseries
-		require.Len(t, series, 1)
-
-		samples := series[0].Samples
-		require.Equal(t, 1, len(samples))
-		assert.Equal(t, float64(1), samples[0].Value)
-		assert.Equal(t, "__name__", series[0].Labels[0].Name)
-		assert.Equal(t, "foo", series[0].Labels[0].Value)
-
-		metadata := request.Metadata
-		assert.Equal(t, []*mimirpb.MetricMetadata(nil), metadata)
-
-		return nil
-	}
-
 	tests := []struct {
 		name     string
 		series   []prompb.TimeSeries
@@ -246,41 +227,29 @@ func TestHandlerOTLPPush(t *testing.T) {
 		encoding    string
 		maxMsgSize  int
 
-		verifyFunc                func(*testing.T, *Request) error
-		responseCode              int
-		errMessage                string
-		enableOtelMetadataStorage bool
+		verifyFunc   func(*testing.T, *Request) error
+		responseCode int
+		errMessage   string
 
 		expectedLogs        []string
 		expectedRetryHeader bool
 	}{
 		{
-			name:                      "Write samples. No compression",
-			maxMsgSize:                100000,
-			verifyFunc:                samplesVerifierFunc,
-			series:                    sampleSeries,
-			metadata:                  sampleMetadata,
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: true,
+			name:         "Write samples. No compression",
+			maxMsgSize:   100000,
+			verifyFunc:   samplesVerifierFunc,
+			series:       sampleSeries,
+			metadata:     sampleMetadata,
+			responseCode: http.StatusOK,
 		},
 		{
-			name:                      "Write samples. Not enabled metadata ingest",
-			maxMsgSize:                100000,
-			verifyFunc:                samplesVerifierFuncDisabledMetadataIngest,
-			series:                    sampleSeries,
-			metadata:                  sampleMetadata,
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: false,
-		},
-		{
-			name:                      "Write samples. With compression",
-			compression:               true,
-			maxMsgSize:                100000,
-			verifyFunc:                samplesVerifierFunc,
-			series:                    sampleSeries,
-			metadata:                  sampleMetadata,
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: true,
+			name:         "Write samples. With compression",
+			compression:  true,
+			maxMsgSize:   100000,
+			verifyFunc:   samplesVerifierFunc,
+			series:       sampleSeries,
+			metadata:     sampleMetadata,
+			responseCode: http.StatusOK,
 		},
 		{
 			name:        "Write samples. No compression, request too big",
@@ -376,8 +345,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				pushReq.CleanUp()
 				return nil
 			},
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: true,
+			responseCode: http.StatusOK,
 		},
 	}
 	for _, tt := range tests {
@@ -400,8 +368,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			retryConfig := RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 5}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
+			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -474,7 +442,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -520,7 +488,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
@@ -546,7 +514,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, nil, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
@@ -574,7 +542,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, true, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger(), true)
+	handler := OTLPHandler(140, nil, nil, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)

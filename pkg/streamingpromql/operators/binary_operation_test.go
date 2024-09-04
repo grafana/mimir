@@ -3,25 +3,28 @@
 package operators
 
 import (
-	"context"
 	"slices"
 	"sort"
 	"strconv"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // Most of the functionality of the binary operation operator is tested through the test scripts in
 // pkg/streamingpromql/testdata.
 //
-// The merging behaviour has many edge cases, so it's easier to test it here.
+// The merging behaviour has many edge cases, so it's easier to test it directly from Go.
+//
+// Most of the edge cases are already covered by TestMergeSeries, so we focus on the logic
+// unique to BinaryOperation: converting conflicts to user-friendly error messages.
 func TestBinaryOperation_SeriesMerging(t *testing.T) {
 	testCases := map[string]struct {
 		input                []types.InstantVectorSeriesData
@@ -35,7 +38,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			input:          []types.InstantVectorSeriesData{},
 			expectedOutput: types.InstantVectorSeriesData{},
 		},
-		"single input series": {
+		"single float only input series": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -45,6 +48,10 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
+			sourceSeriesIndices: []int{0},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
@@ -53,7 +60,29 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"two input series with no overlap, series in time order": {
+		"single histogram only input series": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+				},
+			},
+		},
+		"two float only input series with no overlap, series in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -70,99 +99,10 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: types.InstantVectorSeriesData{
-				Floats: []promql.FPoint{
-					{T: 1, F: 10},
-					{T: 2, F: 20},
-					{T: 3, F: 30},
-					{T: 4, F: 40},
-					{T: 5, F: 50},
-					{T: 6, F: 60},
-				},
-			},
-		},
-		"two input series with no overlap, series not in time order": {
-			input: []types.InstantVectorSeriesData{
-				{
-					Floats: []promql.FPoint{
-						{T: 4, F: 40},
-						{T: 5, F: 50},
-						{T: 6, F: 60},
-					},
-				},
-				{
-					Floats: []promql.FPoint{
-						{T: 1, F: 10},
-						{T: 2, F: 20},
-						{T: 3, F: 30},
-					},
-				},
-			},
-			expectedOutput: types.InstantVectorSeriesData{
-				Floats: []promql.FPoint{
-					{T: 1, F: 10},
-					{T: 2, F: 20},
-					{T: 3, F: 30},
-					{T: 4, F: 40},
-					{T: 5, F: 50},
-					{T: 6, F: 60},
-				},
-			},
-		},
-		"three input series with no overlap": {
-			input: []types.InstantVectorSeriesData{
-				{
-					Floats: []promql.FPoint{
-						{T: 1, F: 10},
-						{T: 2, F: 20},
-						{T: 3, F: 30},
-					},
-				},
-				{
-					Floats: []promql.FPoint{
-						{T: 4, F: 40},
-						{T: 5, F: 50},
-						{T: 6, F: 60},
-					},
-				},
-				{
-					Floats: []promql.FPoint{
-						{T: 7, F: 70},
-						{T: 8, F: 80},
-						{T: 9, F: 90},
-					},
-				},
-			},
-			expectedOutput: types.InstantVectorSeriesData{
-				Floats: []promql.FPoint{
-					{T: 1, F: 10},
-					{T: 2, F: 20},
-					{T: 3, F: 30},
-					{T: 4, F: 40},
-					{T: 5, F: 50},
-					{T: 6, F: 60},
-					{T: 7, F: 70},
-					{T: 8, F: 80},
-					{T: 9, F: 90},
-				},
-			},
-		},
-		"two input series with overlap": {
-			input: []types.InstantVectorSeriesData{
-				{
-					Floats: []promql.FPoint{
-						{T: 1, F: 10},
-						{T: 3, F: 30},
-						{T: 5, F: 50},
-					},
-				},
-				{
-					Floats: []promql.FPoint{
-						{T: 2, F: 20},
-						{T: 4, F: 40},
-						{T: 6, F: 60},
-					},
-				},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
@@ -175,78 +115,79 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"three input series with overlap": {
+		"float only input series with conflict": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
-						{T: 1, F: 10},
-						{T: 4, F: 40},
+						{T: 2, F: 20},
 					},
 				},
 				{
 					Floats: []promql.FPoint{
 						{T: 2, F: 20},
-						{T: 5, F: 50},
-					},
-				},
-				{
-					Floats: []promql.FPoint{
 						{T: 3, F: 30},
-						{T: 6, F: 60},
-					},
-				},
-			},
-			expectedOutput: types.InstantVectorSeriesData{
-				Floats: []promql.FPoint{
-					{T: 1, F: 10},
-					{T: 2, F: 20},
-					{T: 3, F: 30},
-					{T: 4, F: 40},
-					{T: 5, F: 50},
-					{T: 6, F: 60},
-				},
-			},
-		},
-		"input series with conflict": {
-			input: []types.InstantVectorSeriesData{
-				{
-					Floats: []promql.FPoint{
-						{T: 1, F: 10},
-						{T: 2, F: 20},
 						{T: 5, F: 50},
 					},
 				},
-				{
-					Floats: []promql.FPoint{
-						{T: 6, F: 60},
-					},
-				},
-				{
-					Floats: []promql.FPoint{
-						{T: 2, F: 20},
-						{T: 4, F: 40},
-					},
-				},
 			},
-			sourceSeriesIndices: []int{6, 9, 4},
+			sourceSeriesIndices: []int{3, 2},
 			sourceSeriesMetadata: []types.SeriesMetadata{
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
-				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "e")},
-				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "f")},
-				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "g")},
-				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "h")},
-				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "i")},
-				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "j")},
 			},
-			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="g"} and {__name__="right_side", env="test", pod="j"}`,
+			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="d"} and {__name__="right_side", env="test", pod="c"}`,
+		},
+		"histogram only input series with conflict": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{3, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
+			},
+			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="d"} and {__name__="right_side", env="test", pod="c"}`,
+		},
+		"mixed float and histogram input series, series in conflict on different types": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 2, F: 20},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+			},
+			expectedError: `found both float and histogram samples for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z`,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			o := &BinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
@@ -254,7 +195,11 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					On:             true,
 					MatchingLabels: []string{"env"},
 				},
-				Pool: pooling.NewLimitingPool(0, nil),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			for _, s := range testCase.input {
+				// Count the memory for the given floats + histograms
+				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats))+types.HPointSize*uint64(len(s.Histograms))))
 			}
 
 			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
@@ -494,67 +439,4 @@ func TestBinaryOperation_Sorting(t *testing.T) {
 			})
 		})
 	}
-}
-
-func TestBinaryOperationSeriesBuffer(t *testing.T) {
-	series0Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 0}}}
-	series2Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 2}}}
-	series3Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 3}}}
-	series4Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 4}}}
-	series5Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 5}}}
-	series6Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 6}}}
-
-	inner := &testOperator{
-		series: []labels.Labels{
-			labels.FromStrings("series", "0"),
-			labels.FromStrings("series", "1"),
-			labels.FromStrings("series", "2"),
-			labels.FromStrings("series", "3"),
-			labels.FromStrings("series", "4"),
-			labels.FromStrings("series", "5"),
-			labels.FromStrings("series", "6"),
-		},
-		data: []types.InstantVectorSeriesData{
-			series0Data,
-			{Floats: []promql.FPoint{{T: 0, F: 1}}},
-			series2Data,
-			series3Data,
-			series4Data,
-			series5Data,
-			series6Data,
-		},
-	}
-
-	seriesUsed := []bool{true, false, true, true, true}
-	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, pooling.NewLimitingPool(0, nil))
-	ctx := context.Background()
-
-	// Read first series.
-	series, err := buffer.getSeries(ctx, []int{0})
-	require.NoError(t, err)
-	require.Equal(t, []types.InstantVectorSeriesData{series0Data}, series)
-	require.Empty(t, buffer.buffer) // Should not buffer series that was immediately returned.
-
-	// Read next desired series, skipping over series that won't be used.
-	series, err = buffer.getSeries(ctx, []int{2})
-	require.NoError(t, err)
-	require.Equal(t, []types.InstantVectorSeriesData{series2Data}, series)
-	require.Empty(t, buffer.buffer) // Should not buffer series at index 1 that won't be used.
-
-	// Read another desired series, skipping over a series that will be used later.
-	series, err = buffer.getSeries(ctx, []int{4})
-	require.NoError(t, err)
-	require.Equal(t, []types.InstantVectorSeriesData{series4Data}, series)
-	require.Len(t, buffer.buffer, 1) // Should only have buffered a single series (index 3).
-
-	// Read the series we just read past from the buffer.
-	series, err = buffer.getSeries(ctx, []int{3})
-	require.NoError(t, err)
-	require.Equal(t, []types.InstantVectorSeriesData{series3Data}, series)
-	require.Empty(t, buffer.buffer) // Series that has been returned should be removed from buffer once it's returned.
-
-	// Read multiple series.
-	series, err = buffer.getSeries(ctx, []int{5, 6})
-	require.NoError(t, err)
-	require.Equal(t, []types.InstantVectorSeriesData{series5Data, series6Data}, series)
 }

@@ -44,10 +44,10 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 			}, cacheConfig(backend, cacheService))
 
 			// Start the query-frontend.
-			queryFrontendAligned := e2emimir.NewQueryFrontend("query-frontend-aligned", mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "true"}), e2emimir.WithConfigFile(configFile))
+			queryFrontendAligned := e2emimir.NewQueryFrontend("query-frontend-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "true"}), e2emimir.WithConfigFile(configFile))
 			require.NoError(t, s.Start(queryFrontendAligned))
 
-			queryFrontendUnaligned := e2emimir.NewQueryFrontend("query-frontend-unaligned", mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "false"}), e2emimir.WithConfigFile(configFile))
+			queryFrontendUnaligned := e2emimir.NewQueryFrontend("query-frontend-unaligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "false"}), e2emimir.WithConfigFile(configFile))
 			require.NoError(t, s.Start(queryFrontendUnaligned))
 
 			querierAligned := e2emimir.NewQuerier("querier-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendAligned.NetworkGRPCEndpoint()}), e2emimir.WithConfigFile(configFile))

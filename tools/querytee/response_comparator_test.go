@@ -22,7 +22,7 @@ func TestCompareMatrix(t *testing.T) {
 		name     string
 		expected json.RawMessage
 		actual   json.RawMessage
-		err      error
+		err      string
 	}{
 		{
 			name:     "no metrics",
@@ -35,7 +35,7 @@ func TestCompareMatrix(t *testing.T) {
 							{"metric":{"foo":"bar"},"values":[[1,"1"]]}
 						]`),
 			actual: json.RawMessage(`[]`),
-			err:    errors.New("expected 1 metrics but got 0"),
+			err:    "expected 1 metrics but got 0",
 		},
 		{
 			name: "extra metric in actual response",
@@ -46,7 +46,7 @@ func TestCompareMatrix(t *testing.T) {
 							{"metric":{"foo":"bar"},"values":[[1,"1"]]},
 							{"metric":{"foo1":"bar1"},"values":[[1,"1"]]}
 						]`),
-			err: errors.New("expected 1 metrics but got 2"),
+			err: "expected 1 metrics but got 2",
 		},
 		{
 			name: "same number of metrics but with different labels",
@@ -56,7 +56,7 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo1":"bar1"},"values":[[1,"1"]]}
 						]`),
-			err: errors.New(`expected metric {foo="bar"} missing from actual response`),
+			err: `expected metric {foo="bar"} missing from actual response`,
 		},
 		{
 			name: "difference in number of float samples",
@@ -66,7 +66,15 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"]]}
 						]`),
-			err: errors.New(`expected 2 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)`),
+			err: `expected 2 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]`,
 		},
 		{
 			name: "difference in float sample timestamp",
@@ -76,8 +84,16 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[3,"2"]]}
 						]`),
-			// timestamps are parsed from seconds to ms which are then added to errors as is so adding 3 0s to expected error.
-			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3`),
+			err: `float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[3]`,
 		},
 		{
 			name: "difference in float sample value",
@@ -87,7 +103,16 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"3"]]}
 						]`),
-			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3`),
+			err: `float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]
+3 @[2]`,
 		},
 		{
 			name: "actual float samples match expected",
@@ -97,6 +122,27 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]}
 						]`),
+		},
+		{
+			name: "first series match but later series has difference in sample value",
+			expected: json.RawMessage(`[
+							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
+							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"2"]]}
+						]`),
+			actual: json.RawMessage(`[
+							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
+							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"3"]]}
+						]`),
+			err: `float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 but got 3
+Expected result for series:
+{oops="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{oops="bar"} =>
+1 @[1]
+3 @[2]`,
 		},
 		{
 			name: "single expected sample has histogram but actual sample has float value",
@@ -120,7 +166,14 @@ func TestCompareMatrix(t *testing.T) {
 								"values": [[1,"1"]]
 							}
 						]`),
-			err: errors.New(`expected 0 float sample(s) and 1 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)`),
+			err: `expected 0 float sample(s) and 1 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]`,
 		},
 		{
 			name: "single expected sample has float value but actual sample has histogram",
@@ -144,7 +197,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`expected 1 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)`),
+			err: `expected 1 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[2]`,
 		},
 		{
 			name: "difference in histogram sample timestamp",
@@ -176,7 +236,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[2]`,
 		},
 		{
 			name: "difference in histogram sample count",
@@ -208,7 +275,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 5.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample sum",
@@ -240,7 +314,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 5.000000, Buckets: [[0,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets length",
@@ -273,7 +354,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2 [2,4):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets boundaries",
@@ -305,7 +393,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [(0,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets lower boundary",
@@ -337,7 +432,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[1,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets upper boundary",
@@ -369,7 +471,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,3):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets count",
@@ -401,7 +510,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):3] @[1]`,
 		},
 		{
 			name: "single actual histogram value matches expected",
@@ -523,7 +639,16 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected sum 5 for timestamp 2 but got 6`),
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected sum 5 for timestamp 2 but got 6
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+Count: 4.000000, Sum: 5.000000, Buckets: [[0,2):4] @[2]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+Count: 4.000000, Sum: 6.000000, Buckets: [[0,2):4] @[2]`,
 		},
 		{
 			name: "actual result has different number of histogram samples to expected result",
@@ -562,17 +687,25 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`expected 0 float sample(s) and 2 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)`),
+			err: `expected 0 float sample(s) and 2 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+Count: 4.000000, Sum: 5.000000, Buckets: [[0,2):4] @[2]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := compareMatrix(tc.expected, tc.actual, SampleComparisonOptions{})
-			if tc.err == nil {
+			if tc.err == "" {
 				require.NoError(t, err)
 				return
 			}
 			require.Error(t, err)
-			require.Equal(t, tc.err.Error(), err.Error())
+			require.EqualError(t, err, tc.err)
 		})
 	}
 }
@@ -1328,6 +1461,64 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
+			name: "should not fail when there are different series in a vector, and all float samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"other-bar"},"value":[` + now + `,"11"]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there are different series in a vector, and all histogram samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"other-bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
 			name: "should fail when there are a different number of series in a vector, and some float samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
@@ -1538,6 +1729,64 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
+			name: "should not fail when there are different series in a matrix, and all float samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"other-bar"},"values":[[` + now + `,"11"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there are different number series in a matrix, and all histogram samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [[
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"other-bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
 			name: "should fail when there are a different number of series in a matrix, and some float samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
@@ -1619,6 +1868,242 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			skipRecentSamples: time.Hour,
 			err:               errors.New("expected 1 metrics but got 2"),
+		},
+		{
+			name: "should not fail when there is different number of samples in a series, but non-matching float samples are more recent than configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"],[` + now + `,"20"]]}]}
+						}`),
+
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there is different number of samples in a series, but non-matching histogram samples are more recent than configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											],
+											[
+												` + now + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail if both results have an empty set of warnings",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": []
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": []
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same warnings in the same order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same warnings in a different order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #2", "warning #1"]
+						}`),
+		},
+		{
+			name: "should fail if both results do not have the same warnings",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+			err: errors.New(`expected warning annotations ["warning #1"] but got ["warning #1", "warning #2"]`),
+		},
+		{
+			name: "should fail if both results have the same warnings but one is duplicated",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #1"]
+						}`),
+			err: errors.New(`expected warning annotations ["warning #1"] but got ["warning #1", "warning #1"]`),
+		},
+		{
+			name: "should fail with a correctly escaped message if warnings differ and contain double quotes",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["\"warning\" #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["\"warning\" #2"]
+						}`),
+			err: errors.New(`expected warning annotations ["\"warning\" #1"] but got ["\"warning\" #2"]`),
+		},
+		{
+			name: "should not fail if both results have an empty set of info annotations",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": []
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": []
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same info annotations in the same order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same info annotations in a different order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #2", "info #1"]
+						}`),
+		},
+		{
+			name: "should fail if both results do not have the same info annotations",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			err: errors.New(`expected info annotations ["info #1"] but got ["info #1", "info #2"]`),
+		},
+		{
+			name: "should fail if both results have the same info annotations but one is duplicated",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #1"]
+						}`),
+			err: errors.New(`expected info annotations ["info #1"] but got ["info #1", "info #1"]`),
+		},
+		{
+			name: "should fail with a correctly escaped message if info annotations differ and contain double quotes",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["\"info\" #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["\"info\" #2"]
+						}`),
+			err: errors.New(`expected info annotations ["\"info\" #1"] but got ["\"info\" #2"]`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1588,7 +1588,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					// and failed ingested exemplars is equal to the total number of processed ones.
 					stats.failedExemplarsCount++
 
-					if errors.Is(err, storage.ErrOutOfOrderExemplar) {
+					isOOOExemplar := errors.Is(err, storage.ErrOutOfOrderExemplar)
+					if isOOOExemplar {
 						outOfOrderExemplars++
 						// Only report out of order exemplars if all are out of order, otherwise this was a partial update
 						// to some existing set of exemplars.
@@ -1597,10 +1598,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						}
 					}
 
-					// Error adding exemplar
-					updateFirstPartial(nil, func() softError {
-						return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
-					})
+					// Error adding exemplar. Do not report to client if the error was out of order and we ignore such error.
+					if !isOOOExemplar || !i.limits.IgnoreOOOExemplars(userID) {
+						updateFirstPartial(nil, func() softError {
+							return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+						})
+					}
 				}
 			}
 		}
@@ -2749,8 +2752,6 @@ func (i *Ingester) closeAllTSDB() {
 
 	// Concurrently close all users TSDB
 	for userID, userDB := range i.tsdbs {
-		userID := userID
-
 		go func(db *userTSDB) {
 			defer wg.Done()
 
@@ -4094,7 +4095,7 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	var level string
-	if c, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if c, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		level = c
 	} else {
 		level = i.limits.IngestStorageReadConsistency(tenantID)

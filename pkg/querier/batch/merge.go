@@ -78,9 +78,10 @@ func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
 found:
 	for c.batches.len() > 0 {
 		batch := c.batches.curr()
-		if t >= batch.Timestamps[0] && t <= batch.Timestamps[batch.Length-1] {
+		// The first sample in the batch can be after the seek time.
+		if batch.Timestamps[batch.Length-1] >= t {
 			batch.Index = 0
-			for batch.Index < batch.Length && t > batch.Timestamps[batch.Index] {
+			for batch.Index < batch.Length && batch.Timestamps[batch.Index] < t {
 				batch.Index++
 			}
 			break found

@@ -29,18 +29,20 @@ import (
 	"go.uber.org/multierr"
 
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type Settings struct {
-	Namespace                 string
-	ExternalLabels            map[string]string
-	DisableTargetInfo         bool
-	ExportCreatedMetric       bool
-	AddMetricSuffixes         bool
-	SendMetadata              bool
-	PromoteResourceAttributes []string
+	Namespace                           string
+	ExternalLabels                      map[string]string
+	DisableTargetInfo                   bool
+	ExportCreatedMetric                 bool
+	AddMetricSuffixes                   bool
+	SendMetadata                        bool
+	PromoteResourceAttributes           []string
+	EnableCreatedTimestampZeroIngestion bool
 }
 
 // MimirConverter converts from OTel write format to Mimir remote write format.
@@ -58,7 +60,7 @@ func NewMimirConverter() *MimirConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Mimir remote write format.
-func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (errs error) {
+func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -133,13 +135,15 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addExponentialHistogramDataPoints(
+					ws, err := c.addExponentialHistogramDataPoints(
 						ctx,
 						dataPoints,
 						resource,
 						settings,
 						promName,
-					); err != nil {
+					)
+					annots.Merge(ws)
+					if err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -165,7 +169,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
-	return
+	return annots, errs
 }
 
 func isSameMetric(ts *mimirpb.TimeSeries, lbls []mimirpb.LabelAdapter) bool {

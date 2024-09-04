@@ -49,6 +49,7 @@ const (
 
 type OTLPHandlerLimits interface {
 	OTelMetricSuffixesEnabled(id string) bool
+	OTelCreatedTimestampZeroIngestionEnabled(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -56,7 +57,6 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	enableOtelMetadataStorage bool,
 	limits OTLPHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
@@ -91,7 +91,7 @@ func OTLPHandler(
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
-					return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 						actual: tooLargeErr.Actual,
 						limit:  tooLargeErr.Limit,
 					}.Error())
@@ -119,7 +119,7 @@ func OTLPHandler(
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
-						return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+						return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 							actual: -1,
 							limit:  maxRecvMsgSize,
 						}.Error())
@@ -138,7 +138,7 @@ func OTLPHandler(
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+			return httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 				actual: int(r.ContentLength),
 				limit:  maxRecvMsgSize,
 			}.Error())
@@ -163,18 +163,19 @@ func OTLPHandler(
 			return err
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
 		if directTranslation {
-			metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
 		} else {
-			metrics, err = otelMetricsToTimeseriesOld(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseriesOld(ctx, tenantID, addSuffixes, enableCTZeroIngestion, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
@@ -200,11 +201,7 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
-
-		if enableOtelMetadataStorage {
-			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
-			req.Metadata = metadata
-		}
+		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 
 		return nil
 	})
@@ -234,7 +231,7 @@ func otlpHandler(
 			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
 				rb.CleanUp()
@@ -260,9 +257,8 @@ func otlpHandler(
 				errorMsg string
 			)
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
-				// TODO: This code is needed for backwards compatibility,
-				// and can be removed once -ingester.return-only-grpc-errors
-				// is removed.
+				// This code is needed for a correct handling of errors returned by the supplier function.
+				// These errors are created by using the httpgrpc package.
 				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
 				grpcCode = st.Code()
 				errorMsg = st.Message()
@@ -407,10 +403,11 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
-	errs := converter.FromMetrics(ctx, md, otlp.Settings{
-		AddMetricSuffixes: addSuffixes,
+	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
+		AddMetricSuffixes:                   addSuffixes,
+		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 	})
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
@@ -433,10 +430,11 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes b
 }
 
 // Old, less efficient, version of otelMetricsToTimeseries.
-func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := prometheusremotewrite.NewPrometheusConverter()
-	errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
-		AddMetricSuffixes: addSuffixes,
+	annots, errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
+		AddMetricSuffixes:                   addSuffixes,
+		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 	})
 	promTS := converter.TimeSeries()
 	if errs != nil {
@@ -453,6 +451,10 @@ func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixe
 		}
 
 		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
+	}
+	ws, _ := annots.AsStrings("", 0, 0)
+	if len(ws) > 0 {
+		level.Warn(logger).Log("msg", "Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
 	mimirTS := mimirpb.PreallocTimeseriesSliceFromPool()

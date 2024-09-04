@@ -28,6 +28,7 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	promConfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	"github.com/prometheus/prometheus/storage/remote"
@@ -351,7 +352,7 @@ func parseRemoteReadSamples(resp *http.Response) (*prompb.QueryResult, error) {
 }
 
 func parseRemoteReadChunks(resp *http.Response) ([]prompb.ChunkedReadResponse, error) {
-	stream := remote.NewChunkedReader(resp.Body, remote.DefaultChunkedReadLimit, nil)
+	stream := remote.NewChunkedReader(resp.Body, promConfig.DefaultChunkedReadLimit, nil)
 
 	var results []prompb.ChunkedReadResponse
 	for {
@@ -1508,6 +1509,41 @@ func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingN
 	}
 
 	decoded := alertingNotify.TestTemplatesResults{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return &decoded, nil
+}
+
+func (c *Client) TestReceiversExperimental(ctx context.Context, trConf alertingNotify.TestReceiversConfigBodyParams) (*alertingNotify.TestReceiversResult, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers/test", nil)
+
+	data, err := json.Marshal(trConf)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling test receivers config: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("testing receivers failed with status %d and error %s", resp.StatusCode, string(body))
+	}
+
+	decoded := alertingNotify.TestReceiversResult{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}

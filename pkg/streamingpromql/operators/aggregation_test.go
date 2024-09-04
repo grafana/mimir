@@ -5,11 +5,13 @@ package operators
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -76,8 +78,10 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			aggregator := &Aggregation{
-				Inner:    &testOperator{series: testCase.inputSeries},
-				Grouping: testCase.grouping,
+				Inner:                   &testOperator{series: testCase.inputSeries},
+				Grouping:                testCase.grouping,
+				metricNames:             &MetricNames{},
+				aggregationGroupFactory: func() aggregations.AggregationGroup { return &aggregations.SumAggregationGroup{} },
 			}
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
@@ -231,7 +235,8 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			aggregator := NewAggregation(nil, time.Time{}, time.Time{}, time.Minute, testCase.grouping, testCase.without, nil)
+			aggregator, err := NewAggregation(nil, 0, 0, 1, testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
+			require.NoError(t, err)
 			bytesFunc, labelsFunc := aggregator.seriesToGroupFuncs()
 
 			actualLabels := labelsFunc(testCase.inputSeries)

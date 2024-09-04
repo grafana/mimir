@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -151,7 +152,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, mqeOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
@@ -163,7 +164,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		eng = promql.NewEngine(opts)
 	case mimirEngine:
 		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
-		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, logger)
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, logger)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -338,8 +339,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 		return storage.ErrSeriesSet(err)
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
-		maxQueryLength := mq.limits.MaxLabelsQueryLength(userID)
-		startMs = clampMinTime(spanLog, startMs, endMs, -maxQueryLength, "max label query length")
+		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
 	}
 
 	// The time range may have been manipulated during the validation,
@@ -382,6 +382,47 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	return mq.mergeSeriesSets(result)
 }
 
+func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
+	if maxLabelQueryLengthMs == 0 {
+		// It's unlimited.
+		return startMs
+	}
+	unsetStartTime := startMs == v1.MinTime.UnixMilli()
+	unsetEndTime := endMs == v1.MaxTime.UnixMilli()
+
+	switch {
+	case unsetStartTime && unsetEndTime:
+		// The user asked for "everything", but that's too expensive.
+		// We clamp the start, since the past likely has more data.
+		// Allow querying into the future because that will likely have much less data.
+		// Leaving end unchanged also allows to query the future for samples with timestamps in the future.
+		earliestAllowedStart := nowMs - maxLabelQueryLengthMs
+		logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+		startMs = earliestAllowedStart
+	case unsetStartTime:
+		// We can't provide all data since the beginning of time.
+		// But end was provided, so we use the end as the anchor.
+		earliestAllowedStart := endMs - maxLabelQueryLengthMs
+		logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+		startMs = earliestAllowedStart
+	case unsetEndTime:
+		// Start was provided, but not end.
+		// We clamp the start relative to now so that we don't query a lot of data.
+		if earliestAllowedStart := nowMs - maxLabelQueryLengthMs; earliestAllowedStart > startMs {
+			logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+			startMs = earliestAllowedStart
+		}
+	default:
+		// Both start and end were provided. We clamp the start.
+		// There's no strong reason to do this vs clamping end.
+		if earliestAllowedStart := endMs - maxLabelQueryLengthMs; earliestAllowedStart > startMs {
+			logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+			startMs = earliestAllowedStart
+		}
+	}
+	return startMs
+}
+
 // LabelValues implements storage.Querier.
 func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx, queriers, err := mq.getQueriers(ctx)
@@ -405,8 +446,6 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *stor
 	)
 
 	for _, querier := range queriers {
-		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
-		querier := querier
 		g.Go(func() error {
 			// NB: Values are sorted in Mimir already.
 			myValues, myWarnings, err := querier.LabelValues(ctx, name, hints, matchers...)
@@ -452,8 +491,6 @@ func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 	)
 
 	for _, querier := range queriers {
-		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
-		querier := querier
 		g.Go(func() error {
 			// NB: Names are sorted in Mimir already.
 			myNames, myWarnings, err := querier.LabelNames(ctx, hints, matchers...)
@@ -628,10 +665,25 @@ type tenantQueryLimitsProvider struct {
 }
 
 func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
-	tenantID, err := tenant.TenantID(ctx)
+	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	return p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID), nil
+	totalLimit := uint64(0)
+
+	for _, tenantID := range tenantIDs {
+		tenantLimit := p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
+
+		if tenantLimit == 0 {
+			// If any tenant is unlimited, then treat whole query as unlimited.
+			return 0, nil
+		}
+
+		// Given we'll enforce limits like the max chunks limit on a per-tenant basis (and therefore effectively allow the
+		// query to consume the sum of all tenants' limits), emulate equivalent behaviour with the memory consumption limit.
+		totalLimit += tenantLimit
+	}
+
+	return totalLimit, nil
 }

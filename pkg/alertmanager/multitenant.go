@@ -95,10 +95,16 @@ type MultitenantAlertmanagerConfig struct {
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
 
-	// Enable UTF-8 strict mode. This means Alertmanager uses the matchers/parse parser
-	// to parse configurations and API requests, instead of pkg/labels. Use this mode
-	// once you are confident that your configuration is forwards compatible.
+	// Enable UTF-8 strict mode. When enabled, Alertmanager uses the new UTF-8 parser
+	// when parsing label matchers in tenant configurations and HTTP requests, instead
+	// of the old regular expression parser, referred to as classic mode.
+	// Enable this mode once confident that all tenant configurations are forwards
+	// compatible.
 	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"experimental"`
+	// Enables logging when parsing label matchers. If UTF-8 strict mode is enabled,
+	// then the UTF-8 parser will be logged. If it is disabled, then the old regular
+	// expression parser will be logged.
+	LogParsingLabelMatchers bool `yaml:"log_parsing_label_matchers" category:"experimental"`
 }
 
 const (
@@ -130,6 +136,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 
 	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. To identify tenants with incompatible configurations, search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. To find tenant configurations that are valid but contain ambiguous matchers, search for log lines containing `Matchers input has disagreement`. Each log line includes the invalid input, a suggestion on how to fix the input (excluding ambiguous matchers, as these require manual correction), and the ID of the affected tenant. You must run Mimir with debug-level logging enabled. Otherwise, these lines aren't logged. For more information, refer to https://prometheus.io/docs/alerting/latest/configuration/#label-matchers. Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
+	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
 }
 
 // Validate config and returns error on failure
@@ -712,11 +719,11 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
-		return createUsableGrafanaConfig(cfgs.Grafana, &cfgs.Mimir)
+		return createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
 
 	case cfgs.Mimir.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
-		return createUsableGrafanaConfig(cfgs.Grafana, nil)
+		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config with the default globals", "user", cfgs.Grafana.User)
+		return createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 
 	// Both configurations.
 	// TODO: merge configurations.

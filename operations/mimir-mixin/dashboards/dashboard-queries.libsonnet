@@ -183,8 +183,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       overviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
       nonOverviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
 
-      local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
-                                   (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
       local ncQueryPerSecond(name) = utils.ncHistogramSumBy(utils.ncHistogramCountRate(p.requestsPerSecondMetric, '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"' %
                                                                                                                   (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }))),
       ncInstantQueriesPerSecond: ncQueryPerSecond('instantQuery'),
@@ -192,12 +190,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ncLabelNamesQueriesPerSecond: ncQueryPerSecond('labelNames'),
       ncLabelValuesQueriesPerSecond: ncQueryPerSecond('labelValues'),
       ncSeriesQueriesPerSecond: ncQueryPerSecond('series'),
-      remoteReadQueriesPerSecond: queryPerSecond('remoteRead'),
-      metadataQueriesPerSecond: queryPerSecond('metadata'),
-      exemplarsQueriesPerSecond: queryPerSecond('exemplars'),
-      activeSeriesQueriesPerSecond: queryPerSecond('activeSeries'),
-      labelNamesCardinalityQueriesPerSecond: queryPerSecond('labelNamesCardinality'),
-      labelValuesCardinalityQueriesPerSecond: queryPerSecond('labelValuesCardinality'),
 
       // Read failures rate as percentage of total requests.
       readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
@@ -305,7 +297,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
-          sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (
+            %(perIngesterQuery)s unless on (job)
+            cortex_partition_ring_partitions{%(ingester)s}
+          )
           / on (%(groupByCluster)s) group_left()
           max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
         )
@@ -326,6 +321,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         groupByLabels: groupByLabels,
         groupByCluster: $._config.group_by_cluster,
         distributor: variables.distributorMatcher,
+        ingester: variables.ingesterMatcher,
       },
     },
 

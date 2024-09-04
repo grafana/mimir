@@ -293,6 +293,130 @@ func TestClient_Query(t *testing.T) {
 	})
 }
 
+func TestClient_QueryHeaders(t *testing.T) {
+	var (
+		receivedRequests []*http.Request
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		receivedRequests = append(receivedRequests, request)
+
+		// Read requests must go through strong read consistency
+		require.Equal(t, api.ReadConsistencyStrong, request.Header.Get(api.ReadConsistencyHeader))
+
+		writer.WriteHeader(http.StatusOK)
+		_, err := writer.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := ClientConfig{}
+	flagext.DefaultValues(&cfg)
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+
+	c, err := NewClient(cfg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("default tenant header is used without auth", func(t *testing.T) {
+		receivedRequests = nil
+
+		_, err := c.Query(ctx, "up", time.Unix(0, 0))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, "anonymous", receivedRequests[0].Header.Get("X-Scope-OrgID"))
+		assert.Empty(t, receivedRequests[0].Header.Get("Authorization"))
+	})
+
+	t.Run("tenant header is not used when basic auth is used", func(t *testing.T) {
+		cfg = ClientConfig{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+		cfg.BasicAuthUser = "mimir-user"
+		cfg.BasicAuthPassword = "guest"
+
+		c, err := NewClient(cfg, log.NewNopLogger())
+		require.NoError(t, err)
+		ctx := context.Background()
+		receivedRequests = nil
+
+		_, err = c.Query(ctx, "up", time.Unix(0, 0))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Empty(t, receivedRequests[0].Header.Get("X-Scope-OrgID"))
+		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
+	})
+
+	t.Run("tenant header is not used when bearer token used", func(t *testing.T) {
+		cfg = ClientConfig{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+		cfg.BearerToken = "mimir-token"
+
+		c, err := NewClient(cfg, log.NewNopLogger())
+		require.NoError(t, err)
+		ctx := context.Background()
+		receivedRequests = nil
+
+		_, err = c.Query(ctx, "up", time.Unix(0, 0))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Empty(t, receivedRequests[0].Header.Get("X-Scope-OrgID"))
+		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
+	})
+
+	t.Run("tenant header can be used as well as basic auth", func(t *testing.T) {
+		cfg = ClientConfig{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+		cfg.BasicAuthUser = "mimir-user"
+		cfg.BasicAuthPassword = "guest"
+		cfg.TenantID = "tenant1"
+
+		c, err := NewClient(cfg, log.NewNopLogger())
+		require.NoError(t, err)
+		ctx := context.Background()
+		receivedRequests = nil
+
+		_, err = c.Query(ctx, "up", time.Unix(0, 0))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, "tenant1", receivedRequests[0].Header.Get("X-Scope-OrgID"))
+		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
+	})
+
+	t.Run("tenant header can be used as well as bearer token", func(t *testing.T) {
+		cfg = ClientConfig{}
+		flagext.DefaultValues(&cfg)
+		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+		cfg.BearerToken = "mimir-token"
+		cfg.TenantID = "tenant1"
+
+		c, err := NewClient(cfg, log.NewNopLogger())
+		require.NoError(t, err)
+		ctx := context.Background()
+		receivedRequests = nil
+
+		_, err = c.Query(ctx, "up", time.Unix(0, 0))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, "tenant1", receivedRequests[0].Header.Get("X-Scope-OrgID"))
+		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
+	})
+
+}
+
 // ClientMock mocks MimirClient.
 type ClientMock struct {
 	mock.Mock

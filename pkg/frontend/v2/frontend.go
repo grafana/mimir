@@ -78,7 +78,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.Addr, "query-frontend.instance-addr", "", "IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).")
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
-	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-frontend.additional-query-queue-dimensions-enabled", false, "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
+	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-frontend.additional-query-queue-dimensions-enabled", false, "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
@@ -378,7 +378,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
 		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
+		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(stream.Context(), err), context.Canceled) {
 			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
 		}
 	}(stream)

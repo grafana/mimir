@@ -25,10 +25,23 @@ func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int)
 			tenantID: tenantID,
 			req:      fmt.Sprintf("%v: object-%v", tenantID, i),
 		}
-		path, err := qb.makeQueuePath(req)
-		if err != nil {
-			return err
+		var path QueuePath
+		var err error
+		// TODO (casie): After deprecating legacy tree queue, clean this up
+		if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+			if qb.prioritizeQueryComponents {
+				path = QueuePath{unknownQueueDimension, string(tenantID)}
+			} else {
+				path = QueuePath{string(tenantID), unknownQueueDimension}
+			}
+
+		} else {
+			path, err = qb.makeQueuePath(req)
+			if err != nil {
+				return err
+			}
 		}
+
 		err = qb.tree.EnqueueBackByPath(path, req)
 		if err != nil {
 			return err
@@ -69,12 +82,12 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, 0)
+			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-2")
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
 			req, tenant, lastTenantIndexQuerierOne, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 			assert.Nil(t, req)
@@ -204,14 +217,12 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 }
 
 func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
-	// TODO (casie): When implementing prioritizeQueryComponents, add tests here, since we will be able to have
-	//  multiple nodes for a single tenant
 	treeTypes := buildTreeTestsStruct()
 
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			maxTenantQueueSize := 100
-			qb := newQueueBroker(maxTenantQueueSize, true, tt.useMultiAlgoTreeQueue, 0)
+			qb := newQueueBroker(maxTenantQueueSize, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
 			additionalQueueDimensions := map[int][]string{
 				0: nil,
 				1: {"ingester"},
@@ -241,18 +252,43 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			if tq, ok := qb.tree.(*TreeQueue); ok {
 				assert.Equal(t, maxTenantQueueSize, tq.getNode(queuePath).ItemCount())
 			} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				assert.Equal(t, maxTenantQueueSize, itq.GetNode(queuePath).ItemCount())
+				var itemCount int
+				// if prioritizeQueryComponents, we need to build paths for each queue dimension
+				// and sum all items
+				if qb.prioritizeQueryComponents {
+					for _, addlQueueDim := range additionalQueueDimensions {
+						var path QueuePath
+						path = append(append(path, addlQueueDim...), "tenant-1")
+						if addlQueueDim == nil {
+							path = qb.makeQueuePathForTests("tenant-1")
+						}
+						itemCount += itq.GetNode(path).ItemCount()
+					}
+					assert.Equal(t, maxTenantQueueSize, itemCount)
+
+				} else {
+					assert.Equal(t, maxTenantQueueSize, itq.GetNode(queuePath).ItemCount())
+				}
 			}
 
-			// assert equal distribution of queue items between tenant node and 3 subnodes
+			// assert equal distribution of queue items between 4 subnodes
 			for _, v := range additionalQueueDimensions {
-				queuePath := append(QueuePath{"tenant-1"}, v...)
+				var checkPath QueuePath
+				if v == nil {
+					v = []string{unknownQueueDimension}
+				}
+				if qb.prioritizeQueryComponents {
+					checkPath = append(append(checkPath, v...), "tenant-1")
+				} else {
+					checkPath = append(QueuePath{"tenant-1"}, v...)
+				}
+
 				// TODO (casie): After deprecating legacy tree queue, clean this up
 				var itemCount int
 				if tq, ok := qb.tree.(*TreeQueue); ok {
-					itemCount = tq.getNode(queuePath).LocalQueueLen()
+					itemCount = tq.getNode(checkPath).LocalQueueLen()
 				} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-					itemCount = itq.GetNode(queuePath).getLocalQueue().Len()
+					itemCount = itq.GetNode(checkPath).getLocalQueue().Len()
 				}
 				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), itemCount)
 			}
@@ -269,7 +305,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			}
 
 			// dequeue a request
-			qb.addQuerierConnection("querier-1")
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
 			dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 			assert.NoError(t, err)
 			assert.NotNil(t, dequeuedTenantReq)
@@ -290,12 +326,12 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, 0)
+			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-2")
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
 			// Add queues: [one two]
 			err := qb.tenantQuerierAssignments.createOrUpdateTenant("one", 0)
@@ -364,7 +400,7 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, 0)
+			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -375,10 +411,10 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 			// Add some queriers.
 			for ix := 0; ix < queriers; ix++ {
 				qid := QuerierID(fmt.Sprintf("querier-%d", ix))
-				qb.addQuerierConnection(qid)
+				qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), qid))
 
 				// No querier has any queues yet.
-				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, qid)
+				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, QuerierID(qid))
 				assert.Nil(t, req)
 				assert.Nil(t, tenant)
 				assert.NoError(t, err)
@@ -444,7 +480,7 @@ func TestQueuesConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for testName, testData := range tests {
 				t.Run(testName, func(t *testing.T) {
-					qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, testData.forgetDelay)
+					qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, testData.forgetDelay)
 					assert.NotNil(t, qb)
 					assert.NoError(t, isConsistent(qb))
 
@@ -452,9 +488,10 @@ func TestQueuesConsistency(t *testing.T) {
 
 					lastTenantIndexes := map[QuerierID]int{}
 
-					conns := map[QuerierID]int{}
+					// track active querier-worker connections to use worker IDs for removal
+					conns := map[QuerierID][]*QuerierWorkerConn{}
 
-					for i := 0; i < 10000; i++ {
+					for i := 0; i < 100; i++ {
 						switch r.Int() % 6 {
 						case 0:
 							err := qb.getOrAddTenantQueue(generateTenant(r), 3)
@@ -466,14 +503,18 @@ func TestQueuesConsistency(t *testing.T) {
 						case 2:
 							qb.removeTenantQueue(generateTenant(r))
 						case 3:
-							q := generateQuerier(r)
-							qb.addQuerierConnection(q)
-							conns[q]++
+							querierID := generateQuerier(r)
+							conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+							qb.addQuerierWorkerConn(conn)
+							conns[querierID] = append(conns[querierID], conn)
 						case 4:
-							q := generateQuerier(r)
-							if conns[q] > 0 {
-								qb.removeQuerierConnection(q, time.Now())
-								conns[q]--
+							querierID := generateQuerier(r)
+							if len(conns[querierID]) > 0 {
+								// does not matter which connection is removed; just choose the last one in the list
+								conn := conns[querierID][len(conns[querierID])-1]
+								qb.removeQuerierWorkerConn(conn, time.Now())
+								// slice removed connection off end of tracking list
+								conns[querierID] = conns[querierID][:len(conns[querierID])-1]
 							}
 						case 5:
 							q := generateQuerier(r)
@@ -500,15 +541,25 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
-			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, forgetDelay)
+			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
 			// 3 queriers open 2 connections each.
-			for i := 1; i <= 3; i++ {
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-			}
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn2)
+
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn1)
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn2)
+
+			querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn1)
+			querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn2)
 
 			// Add tenant queues.
 			for i := 0; i < numTenants; i++ {
@@ -526,8 +577,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			require.NotEmpty(t, querier1Tenants)
 
 			// Gracefully shutdown querier-1.
-			qb.removeQuerierConnection("querier-1", now.Add(20*time.Second))
-			qb.removeQuerierConnection("querier-1", now.Add(21*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(20*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(21*time.Second))
 			qb.notifyQuerierShutdown("querier-1")
 
 			// We expect querier-1 has been removed.
@@ -540,8 +591,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			}
 
 			// Querier-1 reconnects.
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			qb.addQuerierWorkerConn(querier1Conn2)
 
 			// We expect the initial querier-1 tenants have got back to querier-1.
 			for _, tenantID := range querier1Tenants {
@@ -551,8 +602,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			}
 
 			// Querier-1 abruptly terminates (no shutdown notification received).
-			qb.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-			qb.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 
 			// We expect querier-1 has NOT been removed.
 			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
@@ -603,15 +654,25 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
-			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, forgetDelay)
+			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
 			// 3 queriers open 2 connections each.
-			for i := 1; i <= 3; i++ {
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-			}
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn2)
+
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn1)
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn2)
+
+			querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn1)
+			querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn2)
 
 			// Add tenant queues.
 			for i := 0; i < numTenants; i++ {
@@ -629,8 +690,8 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			require.NotEmpty(t, querier1Tenants)
 
 			// Querier-1 abruptly terminates (no shutdown notification received).
-			qb.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-			qb.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 
 			// We expect querier-1 has NOT been removed.
 			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
@@ -647,8 +708,8 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			qb.forgetDisconnectedQueriers(now.Add(90 * time.Second))
 
 			// Querier-1 reconnects.
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			qb.addQuerierWorkerConn(querier1Conn2)
 
 			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
@@ -721,7 +782,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) e
 // removeTenantQueue is a test utility, not intended for use by consumers of queueBroker
 func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
-	queuePath := QueuePath{string(tenantID)}
+	queuePath := qb.makeQueuePathForTests(tenantID)
 
 	// TODO (casie): When deprecating legacy tree queue, clean this up
 	if tq, ok := qb.tree.(*TreeQueue); ok {
@@ -768,6 +829,9 @@ func (n *Node) deleteNode(pathFromNode QueuePath) bool {
 }
 
 func (qb *queueBroker) makeQueuePathForTests(tenantID TenantID) QueuePath {
+	if qb.prioritizeQueryComponents {
+		return QueuePath{unknownQueueDimension, string(tenantID)}
+	}
 	return QueuePath{string(tenantID)}
 }
 
@@ -777,6 +841,7 @@ func isConsistent(qb *queueBroker) error {
 	}
 
 	tenantCount := 0
+	existingTenants := make(map[TenantID]bool)
 
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
 		path := qb.makeQueuePathForTests(tenantID)
@@ -807,6 +872,7 @@ func isConsistent(qb *queueBroker) error {
 
 		if tenantID != "" {
 			tenantCount++
+			existingTenants[tenantID] = true
 		}
 
 		tenant := qb.tenantQuerierAssignments.tenantsByID[tenantID]
@@ -832,9 +898,24 @@ func isConsistent(qb *queueBroker) error {
 	var tenantQueueCount int
 	// TODO (casie): After deprecating legacy tree queue, clean this up
 	if tq, ok := qb.tree.(*TreeQueue); ok {
-		tenantQueueCount = tq.NodeCount() - 1
+		// tenants may have child nodes, only count the tenant queue
+		tenantQueueCount = len(tq.childQueueMap)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		tenantQueueCount = itq.rootNode.nodeCount() - 1
+		if !qb.prioritizeQueryComponents {
+			// tree structure is root -> tenants -> query components
+			tenantQueueCount = len(itq.rootNode.queueMap)
+		} else {
+			// tree structure is root -> query components -> tenants
+			// there may be multiple tenant queues, so we should only count each tenant once
+			distinctTenantsInTree := make(map[string]bool)
+			for _, componentNode := range itq.rootNode.queueMap {
+				for tenantID := range componentNode.queueMap {
+					distinctTenantsInTree[tenantID] = true
+				}
+			}
+			tenantQueueCount = len(distinctTenantsInTree)
+		}
+
 	}
 	if tenantQueueCount != tenantCount {
 		return fmt.Errorf("inconsistent number of tenants list and tenant queues")

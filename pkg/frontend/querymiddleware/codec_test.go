@@ -703,7 +703,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 			case formatProtobuf:
 				require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", encodedRequest.Header.Get("Accept"))
 			default:
-				t.Fatalf(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
+				t.Fatalf("unknown query result payload format: %v", queryResultPayloadFormat)
 			}
 		})
 	}
@@ -713,7 +713,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T)
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
-			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
+			ctx := api.ContextWithReadConsistencyLevel(context.Background(), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
@@ -725,13 +725,14 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllow
 	const notAllowedHeader = "X-Some-Name"
 
 	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
+	expectedOffsets := map[int32]int64{0: 1, 1: 2}
 
 	req, err := codec.EncodeMetricsQueryRequest(context.Background(), &PrometheusInstantQueryRequest{
 		headers: []*PrometheusHeader{
 			// Allowed.
 			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
 			{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"label"}},
-			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))}},
+			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(expectedOffsets))}},
 
 			// Not allowed.
 			{Name: notAllowedHeader, Values: []string{"some-value"}},
@@ -741,8 +742,16 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllow
 	require.NoError(t, err)
 	require.Equal(t, []string{"true"}, req.Header.Values(compat.ForceFallbackHeaderName))
 	require.Equal(t, []string{"label"}, req.Header.Values(chunkinfologger.ChunkInfoLoggingHeader))
-	require.Equal(t, []string{string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))}, req.Header.Values(api.ReadConsistencyOffsetsHeader))
 	require.Empty(t, req.Header.Values(notAllowedHeader))
+
+	// Ensure strong read consistency offsets are propagated.
+	require.Len(t, req.Header.Values(api.ReadConsistencyOffsetsHeader), 1)
+	actualOffsets := api.EncodedOffsets(req.Header.Values(api.ReadConsistencyOffsetsHeader)[0])
+	for partitionID, expectedOffset := range expectedOffsets {
+		actualOffset, ok := actualOffsets.Lookup(partitionID)
+		require.True(t, ok)
+		require.Equal(t, expectedOffset, actualOffset)
+	}
 }
 
 func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
@@ -1600,7 +1609,6 @@ func Test_DecodeOptions(t *testing.T) {
 			},
 		},
 	} {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			actual := &Options{}
@@ -1642,7 +1650,6 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 			headers: http.Header{cacheControlHeader: []string{noStoreValue}},
 		},
 	} {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -881,7 +881,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(readClient.Close)
 
-	offsetsReader := ingest.NewTopicOffsetsReader(readClient, topic, 100*time.Millisecond, nil, logger)
+	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
@@ -912,14 +912,10 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 
 	// Test it against all routes.
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, consistencyLevel := range []string{querierapi.ReadConsistencyEventual, querierapi.ReadConsistencyStrong} {
-				consistencyLevel := consistencyLevel
-
 				t.Run(fmt.Sprintf("consistency level: %s", consistencyLevel), func(t *testing.T) {
 					t.Parallel()
 
@@ -939,7 +935,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 					// Send an HTTP request through the roundtripper.
 					req := testData.makeRequest()
 					req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
-					req = req.WithContext(querierapi.ContextWithReadConsistency(req.Context(), consistencyLevel))
+					req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), consistencyLevel))
 
 					res, err := tripper.RoundTrip(req)
 					require.NoError(t, err)
@@ -977,9 +973,6 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 func makeTestConfig(overrides ...func(*Config)) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-
-	// Enable remote read limits by default, in order to exercise the code in tests.
-	cfg.RemoteReadLimitsEnabled = true
 
 	for _, override := range overrides {
 		override(&cfg)

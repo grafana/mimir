@@ -50,13 +50,19 @@ type Config struct {
 	// on how to enable direct path.
 	GRPCConnPoolSize int                `yaml:"grpc_conn_pool_size"`
 	HTTPConfig       exthttp.HTTPConfig `yaml:"http_config"`
+
+	// ChunkSizeBytes controls the maximum number of bytes of the object that the
+	// Writer will attempt to send to the server in a single request
+	// Used as storage.Writer.ChunkSize of https://pkg.go.dev/google.golang.org/cloud/storage#Writer
+	ChunkSizeBytes int `yaml:"chunk_size_bytes"`
 }
 
 // Bucket implements the store.Bucket and shipper.Bucket interfaces against GCS.
 type Bucket struct {
-	logger log.Logger
-	bkt    *storage.BucketHandle
-	name   string
+	logger    log.Logger
+	bkt       *storage.BucketHandle
+	name      string
+	chunkSize int
 
 	closer io.Closer
 }
@@ -160,10 +166,11 @@ func newBucket(ctx context.Context, logger log.Logger, gc Config, opts []option.
 		return nil, err
 	}
 	bkt := &Bucket{
-		logger: logger,
-		bkt:    gcsClient.Bucket(gc.Bucket),
-		closer: gcsClient,
-		name:   gc.Bucket,
+		logger:    logger,
+		bkt:       gcsClient.Bucket(gc.Bucket),
+		closer:    gcsClient,
+		name:      gc.Bucket,
+		chunkSize: gc.ChunkSizeBytes,
 	}
 	return bkt, nil
 }
@@ -259,6 +266,12 @@ func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
 // Upload writes the file specified in src to remote GCS location specified as target.
 func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	w := b.bkt.Object(name).NewWriter(ctx)
+
+	// if `chunkSize` is 0, we don't set any custom value for writer's ChunkSize.
+	// It uses whatever the default value https://pkg.go.dev/google.golang.org/cloud/storage#Writer
+	if b.chunkSize > 0 {
+		w.ChunkSize = b.chunkSize
+	}
 
 	if _, err := io.Copy(w, r); err != nil {
 		return err

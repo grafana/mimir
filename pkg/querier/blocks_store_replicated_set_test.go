@@ -58,7 +58,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
@@ -69,7 +69,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			exclude: map[ulid.ULID][]string{
@@ -81,7 +81,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			exclude: map[ulid.ULID][]string{
@@ -95,7 +95,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
@@ -106,10 +106,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block3, block4},
 			expectedClients: map[string][]ulid.ULID{
@@ -122,10 +122,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block3, block4},
 			exclude: map[ulid.ULID][]string{
@@ -137,10 +137,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block3, block4},
 			expectedClients: map[string][]ulid.ULID{
@@ -153,8 +153,8 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2, block3, block4},
 			expectedClients: map[string][]ulid.ULID{
@@ -166,10 +166,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block3, block4},
 			exclude: map[ulid.ULID][]string{
@@ -185,10 +185,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   0,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.JOINING, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.JOINING, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.JOINING, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.JOINING, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.JOINING, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.JOINING, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1},
 			expectedClients: map[string][]ulid.ULID{
@@ -199,7 +199,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   1,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
@@ -210,7 +210,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   1,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			exclude: map[ulid.ULID][]string{
@@ -222,7 +222,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   2,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
@@ -233,10 +233,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   1,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2, block4},
 			expectedClients: map[string][]ulid.ULID{
@@ -247,10 +247,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   2,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2, block4},
 			expectedClients: map[string][]ulid.ULID{
@@ -262,10 +262,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   4,
 			replicationFactor: 1,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2, block4},
 			expectedClients: map[string][]ulid.ULID{
@@ -278,10 +278,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   2,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			exclude: map[ulid.ULID][]string{
@@ -296,10 +296,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			tenantShardSize:   2,
 			replicationFactor: 2,
 			setup: func(d *ring.Desc) {
-				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt)
-				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt)
+				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			queryBlocks: []ulid.ULID{block1, block2},
 			exclude: map[ulid.ULID][]string{
@@ -311,8 +311,6 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -392,7 +390,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	require.NoError(t, ringStore.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
 		d := ring.NewDesc()
 		for n := 1; n <= numInstances; n++ {
-			d.AddIngester(fmt.Sprintf("instance-%d", n), fmt.Sprintf("127.0.0.%d", n), "", []uint32{uint32(n)}, ring.ACTIVE, registeredAt)
+			d.AddIngester(fmt.Sprintf("instance-%d", n), fmt.Sprintf("127.0.0.%d", n), "", []uint32{uint32(n)}, ring.ACTIVE, registeredAt, false, time.Time{})
 		}
 		return d, true, nil
 	}))

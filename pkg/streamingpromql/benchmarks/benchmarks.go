@@ -115,6 +115,18 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "rate(nh_X[1h])",
 		},
+		{
+			Expr: "avg_over_time(a_X[1m])",
+		},
+		{
+			Expr: "avg_over_time(nh_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(a_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(nh_X[1m])",
+		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
@@ -129,6 +141,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr:  "a_X - b_X",
 			Steps: 10000,
+		},
+		{
+			Expr: "nh_X + nh_X",
+		},
+		{
+			Expr: "nh_X / a_X",
 		},
 		// Test the case where one side of a binary operation has many more series than the other.
 		{
@@ -174,6 +192,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "sum without (le)(h_X)",
+		},
+		{
+			Expr: "sum(nh_X)",
 		},
 		{
 			Expr: "sum by (l)(h_X)",

@@ -35,6 +35,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
@@ -591,7 +592,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		req.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
@@ -673,7 +674,7 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		r.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
@@ -787,9 +788,13 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+	encodeDuration := time.Since(start)
+	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
 	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
+
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddEncodeTime(encodeDuration)
 
 	resp := http.Response{
 		Header: http.Header{

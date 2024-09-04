@@ -46,8 +46,8 @@ const (
 )
 
 var (
-	errCanceled              = httpgrpc.Errorf(StatusClientClosedRequest, context.Canceled.Error())
-	errDeadlineExceeded      = httpgrpc.Errorf(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
+	errCanceled              = httpgrpc.Error(StatusClientClosedRequest, context.Canceled.Error())
+	errDeadlineExceeded      = httpgrpc.Error(http.StatusGatewayTimeout, context.DeadlineExceeded.Error())
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 )
 
@@ -331,6 +331,7 @@ func (f *Handler) reportQueryStats(
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
+		"encode_time_seconds", stats.LoadEncodeTime().Seconds(),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -352,7 +353,7 @@ func (f *Handler) reportQueryStats(
 	}
 
 	// Log the read consistency only when explicitly defined.
-	if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
+	if consistency, ok := querierapi.ReadConsistencyLevelFromContext(r.Context()); ok {
 		logMessage = append(logMessage, "read_consistency", consistency)
 	}
 

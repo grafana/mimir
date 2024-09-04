@@ -88,7 +88,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(readClient.Close)
 
-			reader := ingest.NewTopicOffsetsReader(readClient, topic, 100*time.Millisecond, nil, logger)
+			reader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -99,7 +99,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
 
 			if testData.reqConsistency != "" {
-				req = req.WithContext(querierapi.ContextWithReadConsistency(req.Context(), testData.reqConsistency))
+				req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), testData.reqConsistency))
 			}
 
 			reg := prometheus.NewPedanticRegistry()
@@ -117,10 +117,6 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 					assert.True(t, ok)
 					assert.Equal(t, expectedOffset, actual)
 				}
-
-				// Partition 3 was never written, so there should be no offset for it.
-				_, ok := offsets.Lookup(3)
-				assert.False(t, ok)
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 			}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -195,18 +196,24 @@ func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, partit
 	return listRes.Topics[0].Partitions[0].Offset, nil
 }
 
-// FetchTopicLastProducedOffsets fetches and returns the last produced offsets for all topic partitions. The offset is
-// -1 if a partition has been created but no record has been produced yet.
+// FetchPartitionsLastProducedOffsets fetches and returns the last produced offsets for all input partitions. The offset is
+// -1 if a partition has been created but no record has been produced yet. The returned offsets for each partition
+// are guaranteed to be always updated (no stale or cached offsets returned).
 //
 // The Kafka client used under the hood may retry a failed request until the retry timeout is hit.
-func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Context) (_ map[int32]int64, returnErr error) {
+func (p *partitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.Context, partitionIDs []int32) (_ map[int32]int64, returnErr error) {
+	// Skip lookup and don't track any metric if no partition was requested.
+	if len(partitionIDs) == 0 {
+		return nil, nil
+	}
+
 	var (
 		startTime = time.Now()
 
 		// Init metrics for a partition even if they're not tracked (e.g. failures).
-		requestsTotal   = p.lastProducedOffsetRequestsTotal.WithLabelValues("all")
-		requestsLatency = p.lastProducedOffsetLatency.WithLabelValues("all")
-		failuresTotal   = p.lastProducedOffsetFailuresTotal.WithLabelValues("all")
+		requestsTotal   = p.lastProducedOffsetRequestsTotal.WithLabelValues("mixed")
+		requestsLatency = p.lastProducedOffsetLatency.WithLabelValues("mixed")
+		failuresTotal   = p.lastProducedOffsetFailuresTotal.WithLabelValues("mixed")
 	)
 
 	requestsTotal.Inc()
@@ -220,7 +227,7 @@ func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Contex
 		}
 	}()
 
-	res, err := p.admin.ListEndOffsets(ctx, p.topic)
+	res, err := p.fetchPartitionsEndOffsets(ctx, partitionIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -237,4 +244,95 @@ func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Contex
 	})
 
 	return offsets, nil
+}
+
+// fetchPartitionsEndOffsets returns the end offset of each partition in input. This function returns
+// error if fails to get the offset of any partition (no partial result is returned).
+func (p *partitionOffsetClient) fetchPartitionsEndOffsets(ctx context.Context, partitionIDs []int32) (kadm.ListedOffsets, error) {
+	list := kadm.ListedOffsets{
+		p.topic: make(map[int32]kadm.ListedOffset, len(partitionIDs)),
+	}
+
+	// Prepare the request to list offsets.
+	topicReq := kmsg.NewListOffsetsRequestTopic()
+	topicReq.Topic = p.topic
+	for _, partitionID := range partitionIDs {
+		partitionReq := kmsg.NewListOffsetsRequestTopicPartition()
+		partitionReq.Partition = partitionID
+		partitionReq.Timestamp = kafkaOffsetEnd
+
+		topicReq.Partitions = append(topicReq.Partitions, partitionReq)
+	}
+
+	req := kmsg.NewPtrListOffsetsRequest()
+	req.IsolationLevel = 0 // 0 means READ_UNCOMMITTED.
+	req.Topics = []kmsg.ListOffsetsRequestTopic{topicReq}
+
+	// Execute the request.
+	shards := p.client.RequestSharded(ctx, req)
+
+	for _, shard := range shards {
+		if shard.Err != nil {
+			return nil, shard.Err
+		}
+
+		res := shard.Resp.(*kmsg.ListOffsetsResponse)
+		if len(res.Topics) != 1 {
+			return nil, fmt.Errorf("unexpected number of topics in the response (expected: %d, got: %d)", 1, len(res.Topics))
+		}
+		if res.Topics[0].Topic != p.topic {
+			return nil, fmt.Errorf("unexpected topic in the response (expected: %s, got: %s)", p.topic, res.Topics[0].Topic)
+		}
+
+		for _, pt := range res.Topics[0].Partitions {
+			if err := kerr.ErrorForCode(pt.ErrorCode); err != nil {
+				return nil, err
+			}
+
+			list[p.topic][pt.Partition] = kadm.ListedOffset{
+				Topic:       p.topic,
+				Partition:   pt.Partition,
+				Timestamp:   pt.Timestamp,
+				Offset:      pt.Offset,
+				LeaderEpoch: pt.LeaderEpoch,
+			}
+		}
+	}
+
+	return list, nil
+}
+
+// ListTopicPartitionIDs returns a list of all partition IDs in the topic.
+func (p *partitionOffsetClient) ListTopicPartitionIDs(ctx context.Context) ([]int32, error) {
+	topics, err := p.admin.ListTopics(ctx, p.topic)
+	if err != nil {
+		return nil, err
+	}
+	if err := topics.Error(); err != nil {
+		return nil, err
+	}
+
+	// We expect 1 topic in the response.
+	if len(topics) != 1 {
+		return nil, fmt.Errorf("unexpected number of topics in the response (expected: %d, got: %d)", 1, len(topics))
+	}
+
+	// Get the expected topic.
+	topic, ok := topics[p.topic]
+	if !ok {
+		return nil, fmt.Errorf("unexpected topic in the response (expected: %s)", p.topic)
+	}
+
+	// Extract the partition IDs from the response.
+	ids := make([]int32, 0, len(topic.Partitions))
+	for _, partition := range topic.Partitions {
+		// We don't check partition.Err because all we need is the partition ID;
+		// kadm.Client.ListEndOffsets() doesn't check it neither.
+		ids = append(ids, partition.Partition)
+	}
+
+	// It's not required to sort the partition IDs, but we do it to simplify tests and troubleshooting.
+	slices.Sort(ids)
+
+	return ids, nil
 }

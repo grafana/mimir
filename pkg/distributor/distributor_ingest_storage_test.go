@@ -98,7 +98,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf(fmt.Sprintf("%s %d", failedPushingToPartitionMessage, 1)),
+			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
@@ -125,8 +125,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -368,8 +366,6 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -848,14 +844,10 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -1150,14 +1142,10 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -1443,14 +1431,10 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 

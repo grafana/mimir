@@ -352,8 +352,6 @@ func runLimiterMaxFunctionTest(
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: testData.ringZonesCount, instancesInZoneCount: testData.ingestersInZoneCount}
@@ -431,8 +429,6 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			h := &partitionRingHolder{pr: buildPartitionRingFromPartitionStates(testData.partitionStates...)}
 
@@ -495,8 +491,6 @@ func TestLimiter_IsWithinMaxSeriesPerMetric(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -591,8 +585,6 @@ func TestLimiter_IsWithinMaxMetadataPerMetric(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -721,8 +713,6 @@ func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -848,8 +838,6 @@ func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -922,15 +910,13 @@ func (m *ringCountMock) InstancesCount() int {
 	return m.instancesCount
 }
 
-func (m *ringCountMock) InstancesWithTokensCount() int {
-	return m.instancesCount
-}
-
 func (m *ringCountMock) InstancesInZoneCount(_ string) int {
 	return m.instancesInZoneCount
 }
 
-func (m *ringCountMock) InstancesWithTokensInZoneCount(_ string) int {
+func (m *ringCountMock) WritableInstancesWithTokensCount() int { return m.instancesCount }
+
+func (m *ringCountMock) WritableInstancesWithTokensInZoneCount(_ string) int {
 	return m.instancesInZoneCount
 }
 

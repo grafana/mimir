@@ -87,17 +87,6 @@
         },
         {
           "kind": "field",
-          "name": "enable_otel_metadata_translation",
-          "required": false,
-          "desc": "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.enable-otlp-metadata-storage",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
           "name": "get_request_for_ingester_shutdown_enabled",
           "required": false,
           "desc": "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.",
@@ -779,34 +768,34 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
+              "desc": "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "distributor.retry-after-header.enabled",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
-              "name": "base_seconds",
+              "name": "min_backoff",
               "required": false,
-              "desc": "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.",
+              "desc": "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
               "fieldValue": null,
-              "fieldDefaultValue": 3,
-              "fieldFlag": "distributor.retry-after-header.base-seconds",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldDefaultValue": 6000000000,
+              "fieldFlag": "distributor.retry-after-header.min-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
-              "name": "max_backoff_exponent",
+              "name": "max_backoff",
               "required": false,
-              "desc": "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
+              "desc": "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
               "fieldValue": null,
-              "fieldDefaultValue": 5,
-              "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldDefaultValue": 96000000000,
+              "fieldFlag": "distributor.retry-after-header.max-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -1935,7 +1924,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-concurrent",
@@ -1993,6 +1982,71 @@
           "fieldFlag": "querier.promql-experimental-functions-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "mimir_query_engine",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enable_aggregation_operations",
+              "required": false,
+              "desc": "Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-aggregation-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_binary_operations",
+              "required": false,
+              "desc": "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-binary-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_offset_modifier",
+              "required": false,
+              "desc": "Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-offset-modifier",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_over_time_functions",
+              "required": false,
+              "desc": "Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-over-time-functions",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_scalars",
+              "required": false,
+              "desc": "Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-scalars",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -3235,7 +3289,7 @@
           "required": false,
           "desc": "After what time a series is considered to be inactive.",
           "fieldValue": null,
-          "fieldDefaultValue": 600000000000,
+          "fieldDefaultValue": 1200000000000,
           "fieldFlag": "ingester.active-series-metrics-idle-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -3917,6 +3971,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.max-global-exemplars-per-user",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ignore_ooo_exemplars",
+          "required": false,
+          "desc": "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.ignore-ooo-exemplars",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -4644,6 +4709,17 @@
           "fieldFlag": "distributor.otel-metric-suffixes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "otel_created_timestamp_zero_ingestion_enabled",
+          "required": false,
+          "desc": "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-created-timestamp-zero-ingestion-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -5682,7 +5758,7 @@
           "kind": "field",
           "name": "additional_query_queue_dimensions_enabled",
           "required": false,
-          "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
+          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.additional-query-queue-dimensions-enabled",
@@ -6326,17 +6402,6 @@
         },
         {
           "kind": "field",
-          "name": "remote_read_limits_enabled",
-          "required": false,
-          "desc": "True to enable limits enforcement for remote read requests.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.remote-read-limits-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
@@ -6670,6 +6735,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -11753,17 +11828,6 @@
         },
         {
           "kind": "field",
-          "name": "drain_notification_queue_on_shutdown",
-          "required": false,
-          "desc": "Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ruler.drain-notification-queue-on-shutdown",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "for_outage_tolerance",
           "required": false,
           "desc": "Max time to tolerate outage for restoring \"for\" state of alert.",
@@ -12581,13 +12645,24 @@
         },
         {
           "kind": "field",
-          "name": "threshold_independent_rule_evaluation_concurrency",
+          "name": "independent_rule_evaluation_concurrency_min_duration_percentage",
           "required": false,
           "desc": "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.",
           "fieldValue": null,
           "fieldDefaultValue": 50,
           "fieldFlag": "ruler.independent-rule-evaluation-concurrency-min-duration-percentage",
           "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "rule_evaluation_write_enabled",
+          "required": false,
+          "desc": "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.rule-evaluation-write-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
       ],
@@ -12664,6 +12739,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -14750,6 +14835,17 @@
           "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_parsing_label_matchers",
+          "required": false,
+          "desc": "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.log-parsing-label-matchers",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -14825,6 +14921,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -15953,7 +16059,7 @@
           "kind": "field",
           "name": "additional_query_queue_dimensions_enabled",
           "required": false,
-          "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
+          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
@@ -15968,6 +16074,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "prioritize_query_components",
+          "required": false,
+          "desc": "When enabled, the query scheduler primarily prioritizes dequeuing fairly from queue components and secondarily prioritizes dequeuing fairly across tenants. When disabled, the query scheduler primarily prioritizes tenant fairness. You must enable the `query-scheduler.use-multi-algorithm-query-queue` setting to use this flag.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.prioritize-query-components",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -17241,6 +17358,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.access-key-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "session_token",
+                  "required": false,
+                  "desc": "S3 session token",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.session-token",
                   "fieldType": "string"
                 },
                 {

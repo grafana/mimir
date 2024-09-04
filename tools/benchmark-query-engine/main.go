@@ -329,7 +329,7 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	outputLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
 	for _, l := range outputLines {
-		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg")
+		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg") || strings.HasPrefix(l, "cpu")
 		isBenchmarkLine := strings.HasPrefix(l, benchmarkName)
 		isPassLine := l == "PASS"
 

@@ -67,15 +67,12 @@ The following features are currently experimental:
   - `-ruler.max-independent-rule-evaluation-concurrency`
   - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
   - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
+  - `-ruler.rule-evaluation-write-enabled`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
-    - `distributor.service-overload-status-code-on-rate-limit-enabled`
-  - Set Retry-After header in recoverable error responses
-    - `-distributor.retry-after-header.enabled`
-    - `-distributor.retry-after-header.base-seconds`
-    - `-distributor.retry-after-header.max-backoff-exponent`
+    - `-distributor.service-overload-status-code-on-rate-limit-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
@@ -84,6 +81,8 @@ The following features are currently experimental:
     - `-distributor.max-request-pool-buffer-size`
   - Enable direct translation from OTLP write requests to Mimir equivalents
     - `-distributor.direct-otlp-translation-enabled`
+  - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
+    - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -148,7 +147,7 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`)
+  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
@@ -158,7 +157,6 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
-  - Remote read request limits (`-query-frontend.remote-read-limits-enabled`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

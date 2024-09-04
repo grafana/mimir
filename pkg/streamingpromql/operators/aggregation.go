@@ -11,42 +11,62 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Aggregation struct {
-	Inner    types.InstantVectorOperator
-	Start    int64 // Milliseconds since Unix epoch
-	End      int64 // Milliseconds since Unix epoch
-	Interval int64 // In milliseconds
-	Steps    int
-	Grouping []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
-	Without  bool
-	Pool     *pooling.LimitingPool
+	Inner                    types.InstantVectorOperator
+	Start                    int64 // Milliseconds since Unix epoch
+	End                      int64 // Milliseconds since Unix epoch
+	Interval                 int64 // In milliseconds
+	Steps                    int
+	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
+	Without                  bool
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+
+	aggregationGroupFactory aggregations.AggregationGroupFactory
+
+	Annotations *annotations.Annotations
+
+	metricNames        *MetricNames
+	currentSeriesIndex int
+
+	expressionPosition posrange.PositionRange
+	emitAnnotationFunc functions.EmitAnnotationFunc
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
+
+	haveEmittedMixedFloatsAndHistogramsWarning bool
 }
 
 func NewAggregation(
 	inner types.InstantVectorOperator,
-	start time.Time,
-	end time.Time,
-	interval time.Duration,
+	startT int64,
+	endT int64,
+	intervalMs int64,
 	grouping []string,
 	without bool,
-	pool *pooling.LimitingPool,
-) *Aggregation {
-	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
+	op parser.ItemType,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+) (*Aggregation, error) {
+	opGroupFactory := aggregations.AggregationGroupFactories[op]
+	if opGroupFactory == nil {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("aggregation operation with '%s'", op))
+	}
 
 	if without {
 		labelsToDrop := make([]string, 0, len(grouping)+1)
@@ -57,16 +77,24 @@ func NewAggregation(
 
 	slices.Sort(grouping)
 
-	return &Aggregation{
-		Inner:    inner,
-		Start:    s,
-		End:      e,
-		Interval: i,
-		Steps:    stepCount(s, e, i),
-		Grouping: grouping,
-		Without:  without,
-		Pool:     pool,
+	a := &Aggregation{
+		Inner:                    inner,
+		Start:                    startT,
+		End:                      endT,
+		Interval:                 intervalMs,
+		Steps:                    stepCount(startT, endT, intervalMs),
+		Grouping:                 grouping,
+		Without:                  without,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations,
+		metricNames:              &MetricNames{},
+		expressionPosition:       expressionPosition,
+		aggregationGroupFactory:  opGroupFactory,
 	}
+
+	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
+
+	return a, nil
 }
 
 type groupWithLabels struct {
@@ -82,11 +110,8 @@ type group struct {
 	// Used to sort groups in the order that they'll be completed in.
 	lastSeriesIndex int
 
-	// Sum, presence, and histograms for each step.
-	floatSums           []float64
-	floatPresent        []bool
-	histogramSums       []*histogram.FloatHistogram
-	histogramPointCount int
+	// The aggregation for this group of series.
+	aggregation aggregations.AggregationGroup
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}
@@ -95,6 +120,10 @@ var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
 
+func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
+	return a.expressionPosition
+}
+
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx)
@@ -102,12 +131,14 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer pooling.PutSeriesMetadataSlice(innerSeries)
+	defer types.PutSeriesMetadataSlice(innerSeries)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
 		return nil, nil
 	}
+
+	a.metricNames.CaptureMetricNames(innerSeries)
 
 	// Determine the groups we'll return.
 	// Note that we use a string here to uniquely identify the groups, while Prometheus' engine uses a hash without any handling of hash collisions.
@@ -123,6 +154,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
+			g.group.aggregation = a.aggregationGroupFactory()
 			g.group.remainingSeriesCount = 0
 
 			groups[string(groupLabelsString)] = g
@@ -134,7 +166,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
-	seriesMetadata := pooling.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
@@ -238,9 +270,17 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, err := a.constructSeriesData(thisGroup, a.Start, a.Interval)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
+	}
+
+	if hasMixedData && !a.haveEmittedMixedFloatsAndHistogramsWarning {
+		a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
+
+		// The warning description only varies based on the position of the expression this operator represents, so only emit it
+		// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
+		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
 	groupPool.Put(thisGroup)
@@ -260,148 +300,19 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		err = a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.Steps, a.Start, a.Interval)
-		if err != nil {
+		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
 			return err
 		}
+		thisSeriesGroup.remainingSeriesCount--
+
+		a.currentSeriesIndex++
 	}
 	return nil
 }
 
-func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interval int64) (types.InstantVectorSeriesData, error) {
-	floatPointCount := thisGroup.reconcileAndCountFloatPoints()
-	var floatPoints []promql.FPoint
-	var err error
-	if floatPointCount > 0 {
-		floatPoints, err = a.Pool.GetFPointSlice(floatPointCount)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		for i, havePoint := range thisGroup.floatPresent {
-			if havePoint {
-				t := start + int64(i)*interval
-				floatPoints = append(floatPoints, promql.FPoint{T: t, F: thisGroup.floatSums[i]})
-			}
-		}
-	}
-
-	var histogramPoints []promql.HPoint
-	if thisGroup.histogramPointCount > 0 {
-		histogramPoints, err = a.Pool.GetHPointSlice(thisGroup.histogramPointCount)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		for i, h := range thisGroup.histogramSums {
-			if h != nil {
-				t := start + int64(i)*interval
-				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: thisGroup.histogramSums[i]})
-			}
-		}
-	}
-
-	a.Pool.PutFloatSlice(thisGroup.floatSums)
-	a.Pool.PutBoolSlice(thisGroup.floatPresent)
-	a.Pool.PutHistogramPointerSlice(thisGroup.histogramSums)
-	thisGroup.floatSums = nil
-	thisGroup.floatPresent = nil
-	thisGroup.histogramSums = nil
-	thisGroup.histogramPointCount = 0
-
-	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, nil
-}
-
-// reconcileAndCountFloatPoints will return the number of points with a float present.
-// It also takes the opportunity whilst looping through the floats to check if there
-// is a conflicting Histogram present. If both are present, an empty vector should
-// be returned. So this method removes the float+histogram where they conflict.
-func (g *group) reconcileAndCountFloatPoints() int {
-	// It would be possible to calculate the number of points when constructing
-	// the series groups. However, it requires checking each point at each input
-	// series which is more costly than looping again here and just checking each
-	// point of the already grouped series.
-	// See: https://github.com/grafana/mimir/pull/8442
-	// We also take two different approaches here: One with extra checks if we
-	// have both Floats and Histograms present, and one without these checks
-	// so we don't have to do it at every point.
-	floatPointCount := 0
-	if len(g.floatPresent) > 0 && len(g.histogramSums) > 0 {
-		for idx, present := range g.floatPresent {
-			if present {
-				if g.histogramSums[idx] != nil {
-					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
-					g.floatPresent[idx] = false
-					g.histogramSums[idx] = nil
-					g.histogramPointCount--
-				} else {
-					floatPointCount++
-				}
-			}
-		}
-	} else {
-		for _, p := range g.floatPresent {
-			if p {
-				floatPointCount++
-			}
-		}
-	}
-	return floatPointCount
-}
-
-func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData, seriesGroup *group, steps int, start int64, interval int64) error {
-	var err error
-	if len(s.Floats) > 0 && seriesGroup.floatSums == nil {
-		// First series with float values for this group, populate it.
-		seriesGroup.floatSums, err = a.Pool.GetFloatSlice(steps)
-		if err != nil {
-			return err
-		}
-
-		seriesGroup.floatPresent, err = a.Pool.GetBoolSlice(steps)
-		if err != nil {
-			return err
-		}
-		seriesGroup.floatSums = seriesGroup.floatSums[:steps]
-		seriesGroup.floatPresent = seriesGroup.floatPresent[:steps]
-	}
-
-	if len(s.Histograms) > 0 && seriesGroup.histogramSums == nil {
-		// First series with histogram values for this group, populate it.
-		seriesGroup.histogramSums, err = a.Pool.GetHistogramPointerSlice(steps)
-		if err != nil {
-			return err
-		}
-		seriesGroup.histogramSums = seriesGroup.histogramSums[:steps]
-	}
-
-	for _, p := range s.Floats {
-		idx := (p.T - start) / interval
-		seriesGroup.floatSums[idx] += p.F
-		seriesGroup.floatPresent[idx] = true
-	}
-
-	for _, p := range s.Histograms {
-		idx := (p.T - start) / interval
-		if seriesGroup.histogramSums[idx] == nil {
-			// We copy here because we modify the histogram through Add later on.
-			// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
-			seriesGroup.histogramSums[idx] = p.H.Copy()
-			// We already have to do the check if the histogram exists at this idx,
-			// so we can count the histogram points present at this point instead
-			// of needing to loop again later like we do for floats.
-			seriesGroup.histogramPointCount++
-		} else {
-			seriesGroup.histogramSums[idx], err = seriesGroup.histogramSums[idx].Add(p.H)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	a.Pool.PutInstantVectorSeriesData(s)
-	seriesGroup.remainingSeriesCount--
-	return nil
+func (a *Aggregation) emitAnnotation(generator functions.AnnotationGenerator) {
+	metricName := a.metricNames.GetMetricNameForSeries(a.currentSeriesIndex)
+	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
 func (a *Aggregation) Close() {

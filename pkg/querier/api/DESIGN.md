@@ -1,3 +1,35 @@
+## Strong read consistency workflow
+
+Strong read consistency is enabled setting the `X-Read-Consistency: strong` HTTP header. When a query request has strong
+read consistency enabled, there are two main Mimir components enforcing it:
+
+- Query-frontend
+- Ingester
+
+The query-frontend responsibility is to fetch from Kafka the last produced offsets for each in-use partition
+(either `ACTIVE` or `INACTIVE`). The last produced offsets are [serialised](#strong-read-consistency-offsets-serialization-format)
+and propagated to downstream Mimir components either via `X-Read-Consistency-Offsets` HTTP header or context.
+
+The query-frontend fetches the last produced offsets of each in-use partition on a fixed interval (constant load
+pattern). When a new query with strong read consistency is received by the query-frontend, the query-frontend
+waits for the result of the **next** last produced offsets periodic request that will be issued. This is done to
+guarantee that the fetched offsets are at a point in time which is after when the query was received by the query-frontend.
+
+The offsets are propagated down to ingesters via context. When the ingester receives a read request with strong
+read consistency enabled, the ingester looks up from the context the offset for their partition and waits until
+that offset has been replayed before proceeding executing the request. The read request fails if the ingester can't
+replay the desired offset with `-ingest-storage.kafka.wait-strong-read-consistency-timeout`; in this case the request
+may be retried by the querier on other ingester owning the same partition.
+
+Since the query-frontend fetches offsets only for in-use partitions (fetching for all existing partitions would be
+too expensive on the Kafka backend), there may be short-time race conditions during which the query-frontend sees
+a subset of the in-use partitions. For example, during a partitions scale up event, when the query hits the querier
+there may be more partitions than when it was processed by the query-frontend. To overcome these race conditions,
+the ingester also periodically fetchs the last produced offset for its partition. If the offset is missing from the
+context, the ingester will fallback to the last produced offset fetched by itself. The ingester uses the same fetching
+strategy of the query-frontend, which is waiting for the result of the next last produce offset periodic request that
+will be issued.
+
 ## Strong read consistency offsets serialization format
 
 We experimented with different formats to serialise the partition offsets. The comparison took in account:

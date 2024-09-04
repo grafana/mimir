@@ -719,7 +719,16 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 		return nil, err
 	}
 
-	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+	// The Kafka partitions may have been pre-provisioned. There are may be much more existing partitions in Kafka
+	// than the actual number we use. To improve performance, we only look up the actual partitions
+	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
+	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
+	// and the querier builds the replicaset of partitions to query.
+	getPartitionIDs := func(_ context.Context) ([]int32, error) {
+		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+	}
+
+	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
 	return t.QueryFrontendTopicOffsetsReader, nil
 }
 
@@ -728,7 +737,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, _, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -893,12 +902,12 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	}
 
 	var concurrencyController ruler.MultiTenantRuleConcurrencyController
-	concurrencyController = &ruler.NoopConcurrencyController{}
+	concurrencyController = &ruler.NoopMultiTenantConcurrencyController{}
 	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
 		concurrencyController = ruler.NewMultiTenantConcurrencyController(
 			util_log.Logger,
 			t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency,
-			t.Cfg.Ruler.IndependentRuleEvaluationConcurrencyMinDurationPercentange,
+			t.Cfg.Ruler.IndependentRuleEvaluationConcurrencyMinDurationPercentage,
 			t.Registerer,
 			t.Overrides,
 		)
@@ -924,7 +933,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, concurrencyController)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}
@@ -961,7 +970,12 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	}
 	features, err := featurecontrol.NewFlags(util_log.Logger, mode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
-	compat.InitFromFlags(util_log.Logger, features)
+
+	compatLogger := log.NewNopLogger()
+	if t.Cfg.Alertmanager.LogParsingLabelMatchers {
+		compatLogger = util_log.Logger
+	}
+	compat.InitFromFlags(compatLogger, features)
 
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
@@ -1134,36 +1148,37 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker, SanityCheck, UsageStats},
-		API:                      {Server},
-		MemberlistKV:             {API, Vault},
-		RuntimeConfig:            {API},
-		IngesterRing:             {API, RuntimeConfig, MemberlistKV, Vault},
-		IngesterPartitionRing:    {MemberlistKV, IngesterRing, API},
-		Overrides:                {RuntimeConfig},
-		OverridesExporter:        {Overrides, MemberlistKV, Vault},
-		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:       {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:          {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                  {Overrides, API},
-		Queryable:                {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
-		Querier:                  {TenantFederation, Vault},
-		StoreQueryable:           {Overrides, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
-		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
-		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},
-		RulerStorage:             {Overrides},
-		AlertManager:             {API, MemberlistKV, Overrides, Vault},
-		Compactor:                {API, MemberlistKV, Overrides, Vault},
-		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
-		TenantFederation:         {Queryable},
-		ContinuousTest:           {API},
-		Write:                    {Distributor, Ingester},
-		Read:                     {QueryFrontend, Querier},
-		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		Server:                          {ActivityTracker, SanityCheck, UsageStats},
+		API:                             {Server},
+		MemberlistKV:                    {API, Vault},
+		RuntimeConfig:                   {API},
+		IngesterRing:                    {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
+		Overrides:                       {RuntimeConfig},
+		OverridesExporter:               {Overrides, MemberlistKV, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
+		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
+		Flusher:                         {Overrides, API},
+		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
+		Querier:                         {TenantFederation, Vault},
+		StoreQueryable:                  {Overrides, MemberlistKV},
+		QueryFrontendTripperware:        {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
+		QueryFrontend:                   {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontendTopicOffsetsReader: {IngesterPartitionRing},
+		QueryScheduler:                  {API, Overrides, MemberlistKV, Vault},
+		Ruler:                           {DistributorService, StoreQueryable, RulerStorage, Vault},
+		RulerStorage:                    {Overrides},
+		AlertManager:                    {API, MemberlistKV, Overrides, Vault},
+		Compactor:                       {API, MemberlistKV, Overrides, Vault},
+		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
+		TenantFederation:                {Queryable},
+		ContinuousTest:                  {API},
+		Write:                           {Distributor, Ingester},
+		Read:                            {QueryFrontend, Querier},
+		Backend:                         {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		All:                             {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

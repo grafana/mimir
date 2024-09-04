@@ -25,15 +25,56 @@ type queueTenant struct {
 	orderIndex int
 }
 
-type querierConn struct {
-	// Number of active connections.
-	connections int
+type querierConns struct {
+	// active worker connections from this querier
+	workerConns       []*QuerierWorkerConn
+	activeWorkerConns int
 
 	// True if the querier notified it's gracefully shutting down.
 	shuttingDown bool
 
 	// When the last connection has been unregistered.
 	disconnectedAt time.Time
+}
+
+func (qc *querierConns) IsActive() bool {
+	return qc.activeWorkerConns > 0
+}
+
+func (qc *querierConns) AddWorkerConn(conn *QuerierWorkerConn) {
+	// first look for a previously de-registered connection placeholder in the list
+	for i, workerConn := range qc.workerConns {
+		if workerConn == nil {
+			// take the place and ID of the previously de-registered worker
+			conn.WorkerID = i
+			qc.workerConns[i] = conn
+			qc.activeWorkerConns++
+			return
+		}
+	}
+	// no de-registered placeholders to replace; we append the new worker ID
+	nextWorkerID := len(qc.workerConns)
+	conn.WorkerID = nextWorkerID
+	qc.workerConns = append(qc.workerConns, conn)
+	qc.activeWorkerConns++
+}
+
+func (qc *querierConns) RemoveWorkerConn(conn *QuerierWorkerConn) {
+	// Remove the worker ID from the querier's list of worker connections
+	for i, workerConn := range qc.workerConns {
+		if workerConn != nil && workerConn.WorkerID == conn.WorkerID {
+			if i == len(qc.workerConns)-1 {
+				// shrink list only if at end
+				qc.workerConns = qc.workerConns[:i]
+			} else {
+				// otherwise insert placeholder to avoid too many list append operations
+				qc.workerConns[i] = nil
+			}
+			conn.WorkerID = unregisteredWorkerID
+			qc.activeWorkerConns--
+			break
+		}
+	}
 }
 
 type querierIDSlice []QuerierID
@@ -71,7 +112,7 @@ type tenantQuerierAssignments struct {
 	//  - it is detected during request enqueueing that a tenant's queriers
 	//    were calculated from an outdated max-queriers-per-tenant value
 
-	queriersByID map[QuerierID]*querierConn
+	queriersByID map[QuerierID]*querierConns
 	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
 	querierIDsSorted querierIDSlice
 
@@ -94,6 +135,20 @@ type tenantQuerierAssignments struct {
 	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
 	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
 	currentQuerier   QuerierID
+}
+
+func newTenantQuerierAssignments(forgetDelay time.Duration) *tenantQuerierAssignments {
+	return &tenantQuerierAssignments{
+		queriersByID:       map[QuerierID]*querierConns{},
+		querierIDsSorted:   nil,
+		querierForgetDelay: forgetDelay,
+		tenantIDOrder:      nil,
+		tenantsByID:        map[TenantID]*queueTenant{},
+		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
+		tenantNodes:        map[string][]*Node{},
+		currentQuerier:     "",
+		tenantOrderIndex:   localQueueIndex,
+	}
 }
 
 // getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
@@ -193,21 +248,27 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, max
 	return nil
 }
 
-func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) (resharded bool) {
-	querier := tqa.queriersByID[querierID]
+func (tqa *tenantQuerierAssignments) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
+	if conn.IsRegistered() {
+		panic("received request to register a querier-worker which was already registered")
+	}
+
+	querier := tqa.queriersByID[conn.QuerierID]
 	if querier != nil {
-		querier.connections++
+		querier.AddWorkerConn(conn)
 
 		// Reset in case the querier re-connected while it was in the forget waiting period.
 		querier.shuttingDown = false
 		querier.disconnectedAt = time.Time{}
 
-		return
+		return false
 	}
 
 	// First connection from this querier.
-	tqa.queriersByID[querierID] = &querierConn{connections: 1}
-	tqa.querierIDsSorted = append(tqa.querierIDsSorted, querierID)
+	newQuerierConns := &querierConns{}
+	newQuerierConns.AddWorkerConn(conn)
+	tqa.queriersByID[conn.QuerierID] = newQuerierConns
+	tqa.querierIDsSorted = append(tqa.querierIDsSorted, conn.QuerierID)
 	sort.Sort(tqa.querierIDsSorted)
 
 	return tqa.recomputeTenantQueriers()
@@ -241,22 +302,25 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	}
 }
 
-func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool) {
-	querier := tqa.queriersByID[querierID]
-	if querier == nil || querier.connections <= 0 {
+func (tqa *tenantQuerierAssignments) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
+	querier := tqa.queriersByID[conn.QuerierID]
+	if querier == nil || !querier.IsActive() {
 		panic("unexpected number of connections for querier")
 	}
 
-	// Decrease the number of active connections.
-	querier.connections--
-	if querier.connections > 0 {
+	if !conn.IsRegistered() {
+		panic("received request to deregister a querier-worker which was not already registered")
+	}
+	querier.RemoveWorkerConn(conn)
+	if querier.IsActive() {
+		// Querier still has active connections; it will not be removed, so no reshard occurs.
 		return false
 	}
 
 	// No more active connections. We can remove the querier only if
 	// the querier has sent a shutdown signal or if no forget delay is enabled.
 	if querier.shuttingDown || tqa.querierForgetDelay == 0 {
-		return tqa.removeQuerier(querierID)
+		return tqa.removeQuerier(conn.QuerierID)
 	}
 
 	// No graceful shutdown has been notified yet, so we should track the current time
@@ -292,7 +356,7 @@ func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) 
 
 	// If there are no more connections, we should remove the querier - Shutdown signals ignore forgetDelay.
 	// forgetDelay is only for queriers which have deregistered all connections but have not sent a shutdown signal
-	if querier.connections == 0 {
+	if !querier.IsActive() {
 		tqa.removeQuerier(querierID)
 		return
 	}
@@ -314,7 +378,7 @@ func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) (
 	// Remove all queriers with no connections that have gone since at least the forget delay.
 	threshold := now.Add(-tqa.querierForgetDelay)
 	for querierID := range tqa.queriersByID {
-		if querier := tqa.queriersByID[querierID]; querier.connections == 0 && querier.disconnectedAt.Before(threshold) {
+		if querier := tqa.queriersByID[querierID]; querier.activeWorkerConns == 0 && querier.disconnectedAt.Before(threshold) {
 			// operation must be on left to avoid short-circuiting and skipping the operation
 			resharded = tqa.removeQuerier(querierID) || resharded
 		}
@@ -381,13 +445,11 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool) {
+func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) *Node {
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == "" {
-		return nil, true
+		return nil
 	}
-
-	checkedAllNodes := node.childrenChecked == len(node.queueMap)+1 // must check local queue as well
 
 	// advance queue position for dequeue
 	tqa.tenantOrderIndex++
@@ -397,7 +459,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 
 	// no children or local queue reached
 	if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
-		return node, checkedAllNodes
+		return node
 	}
 
 	checkIndex := tqa.tenantOrderIndex
@@ -420,23 +482,21 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 			continue
 		}
 
-		checkedAllNodes = node.childrenChecked == len(node.queueMap)+1
-
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
 			tqa.tenantOrderIndex = checkIndex
-			return node.queueMap[tenantName], checkedAllNodes
+			return node.queueMap[tenantName]
 		}
 		// otherwise, check if the querier is assigned to this tenant
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
 			if _, ok := tenantQuerierSet[tqa.currentQuerier]; ok {
 				tqa.tenantOrderIndex = checkIndex
-				return node.queueMap[tenantName], checkedAllNodes
+				return node.queueMap[tenantName]
 			}
 		}
 		checkIndex++
 	}
-	return nil, checkedAllNodes
+	return nil
 }
 
 // dequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:

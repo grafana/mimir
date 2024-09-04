@@ -91,14 +91,10 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
@@ -124,7 +120,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures.
 					for _, series := range fixtures {
@@ -407,8 +403,6 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 	)
 
 	for _, ingestStorageEnabled := range []bool{false, true} {
-		ingestStorageEnabled := ingestStorageEnabled
-
 		t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 			t.Parallel()
 
@@ -427,7 +421,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
-			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.
 			for seriesID := 0; seriesID < numSeries; seriesID++ {

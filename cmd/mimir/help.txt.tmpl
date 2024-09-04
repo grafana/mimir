@@ -31,6 +31,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
     	S3 secret access key
+  -alertmanager-storage.s3.session-token string
+    	S3 session token
   -alertmanager-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -alertmanager-storage.s3.sse.kms-key-id string
@@ -195,6 +197,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
     	S3 secret access key
+  -blocks-storage.s3.session-token string
+    	S3 session token
   -blocks-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -blocks-storage.s3.sse.kms-key-id string
@@ -267,6 +271,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
     	S3 secret access key
+  -common.storage.s3.session-token string
+    	S3 session token
   -common.storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -common.storage.s3.sse.kms-key-id string
@@ -516,7 +522,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.label-values-max-cardinality-label-names-per-request int
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
   -querier.max-concurrent int
-    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
+    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 20)
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
@@ -647,6 +653,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
     	S3 secret access key
+  -ruler-storage.s3.session-token string
+    	S3 session token
   -ruler-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -ruler-storage.s3.sse.kms-key-id string
@@ -792,11 +800,11 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.max-tenants int
     	The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -tests.basic-auth-password string
-    	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+    	The password to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.basic-auth-user string
-    	The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+    	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
-    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)
+    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
@@ -808,7 +816,7 @@ Usage of ./cmd/mimir/mimir:
   -tests.smoke-test
     	Run a smoke test, i.e. run all tests once and exit.
   -tests.tenant-id string
-    	The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags) (default "anonymous")
+    	The tenant ID to use to write and read metrics in tests. (default "anonymous")
   -tests.write-batch-size int
     	The maximum number of series to write in a single request. (default 1000)
   -tests.write-endpoint string

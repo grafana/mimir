@@ -146,7 +146,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			if testData.initialExists {
 				require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 					ringDesc := ring.GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(gatewayCfg.ShardingRing.InstanceID, gatewayCfg.ShardingRing.InstanceAddr, "", testData.initialTokens, testData.initialState, time.Now())
+					ringDesc.AddIngester(gatewayCfg.ShardingRing.InstanceID, gatewayCfg.ShardingRing.InstanceAddr, "", testData.initialTokens, testData.initialState, time.Now(), false, time.Time{})
 					return ringDesc, true, nil
 				}))
 			}
@@ -296,9 +296,6 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		// capture running variables, otherwise reused due to t.Parallel leading to corrupt test
-		testName := testName
-		testData := testData
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
@@ -439,9 +436,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Start all gateways concurrently.
 	for _, g := range initialGateways {
-		// Local variable scope (ensures the cleanup function is called on the right gateway).
-		g := g
-
 		require.NoError(t, g.StartAsync(ctx))
 		t.Cleanup(func() {
 			assert.NoError(t, services.StopAndAwaitTerminated(ctx, g))
@@ -476,9 +470,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Start all new gateways concurrently.
 	for _, g := range scaleUpGateways {
-		// Local variable scope (ensures the cleanup function is called on the right gateway).
-		g := g
-
 		require.NoError(t, g.StartAsync(ctx))
 		t.Cleanup(func() {
 			assert.NoError(t, services.StopAndAwaitTerminated(ctx, g))
@@ -602,17 +593,17 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 	}{
 		"should sync when an instance is added to the ring": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			expectedSync: true,
 		},
 		"should sync when an instance is removed from the ring": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				desc.RemoveIngester("instance-1")
@@ -621,8 +612,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should sync when an instance changes state": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -633,8 +624,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should sync when an healthy instance becomes unhealthy": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -645,9 +636,9 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should sync when an unhealthy instance becomes healthy": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				instance := desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				instance := desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
 				desc.Ingesters["instance-2"] = instance
 			},
@@ -660,8 +651,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should NOT sync when an instance updates the heartbeat": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -672,8 +663,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should NOT sync when an instance is auto-forgotten in the ring but was already unhealthy in the previous state": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 
 				// Set it already unhealthy.
 				instance := desc.Ingesters["instance-2"]
@@ -898,7 +889,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		// Re-register the instance to the ring.
 		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
-			ringDesc.AddIngester(instanceID, instanceAddr, "", ring.Tokens{1, 2, 3}, ring.ACTIVE, time.Now())
+			ringDesc.AddIngester(instanceID, instanceAddr, "", ring.Tokens{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
 			return ringDesc, true, nil
 		}))
 
@@ -961,7 +952,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
 
-			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now())
+			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now(), false, time.Time{})
 			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 			ringDesc.Ingesters[unhealthyInstanceID] = instance
 

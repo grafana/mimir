@@ -76,6 +76,15 @@
         '%dh' % (seconds / 3600)
       else
         '%dm%ds' % [seconds / 60, seconds % 60],
+
+    // Similar to std.prune() but only remove fields whose value is explicitly set to "null".
+    removeNulls(obj)::
+      if std.type(obj) == 'object' then {
+        [key]: $.util.removeNulls(obj[key])
+        for key in std.objectFields(obj)
+        if obj[key] != null
+      }
+      else obj,
   },
 
   // Utility to create an headless service used to discover replicas of a Mimir deployment.

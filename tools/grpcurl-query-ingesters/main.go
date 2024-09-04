@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -63,6 +65,10 @@ func parseFile(file string) ([]QueryStreamResponse, error) {
 }
 
 func dumpResponse(res QueryStreamResponse) {
+	slices.SortFunc(res.Chunkseries, func(a, b QueryStreamChunkseries) int {
+		return labels.Compare(a.LabelSet(), b.LabelSet())
+	})
+
 	for _, series := range res.Chunkseries {
 		fmt.Println(series.LabelSet().String())
 		var (
@@ -71,11 +77,15 @@ func dumpResponse(res QueryStreamResponse) {
 			ts int64
 		)
 
+		slices.SortFunc(series.Chunks, func(a, b Chunk) int {
+			return int(a.StartTimestamp() - b.StartTimestamp())
+		})
+
 		for _, chunk := range series.Chunks {
 			fmt.Printf(
 				"- Chunk: %s - %s\n",
-				chunk.StartTime().Format(time.TimeOnly),
-				chunk.EndTime().Format(time.TimeOnly))
+				chunk.StartTime().Format(time.RFC3339),
+				chunk.EndTime().Format(time.RFC3339))
 
 			chunkIterator := chunk.EncodedChunk().NewIterator(nil)
 			for {

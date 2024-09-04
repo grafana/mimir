@@ -11,6 +11,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -60,4 +62,48 @@ func TestMergeHarder(t *testing.T) {
 			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
 		})
 	}
+}
+
+// TestMergeIteratorSeek tests a bug while calling Seek() on mergeIterator.
+func TestMergeIteratorSeek(t *testing.T) {
+	// Samples for 3 chunks.
+	chunkSamples := [][]int64{
+		{10, 20, 30, 40},
+		{50, 60, 70, 80, 90, 100},
+		{110, 120},
+	}
+
+	var genericChunks []GenericChunk
+	for _, samples := range chunkSamples {
+		ch := chunkenc.NewXORChunk()
+		app, err := ch.Appender()
+		require.NoError(t, err)
+		for _, ts := range samples {
+			app.Append(ts, 1)
+		}
+
+		genericChunks = append(genericChunks, NewGenericChunk(samples[0], samples[len(samples)-1], func(reuse chunk.Iterator) chunk.Iterator {
+			chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+			require.NoError(t, err)
+			require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
+			return chk.NewIterator(reuse)
+		}))
+	}
+
+	c3It := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), genericChunks)
+
+	c3It.Seek(15)
+	// These Next() calls are necessary to reproduce the bug.
+	c3It.Next()
+	c3It.Next()
+	c3It.Next()
+	c3It.Seek(75)
+	// Without the bug fix, this Seek() call skips an additional sample than desired.
+	// Instead of stopping at 100, which is the last sample of chunk 2,
+	// it would go to 110, which is the first sample of chunk 3.
+	// This was happening because in the Seek() method we were discarding the current
+	// batch from mergeIterator if the batch's first sample was after the seek time.
+	c3It.Seek(95)
+
+	require.Equal(t, int64(100), c3It.AtT())
 }

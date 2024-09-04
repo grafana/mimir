@@ -980,10 +980,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	for testName, testData := range tests {
 		for _, maxConcurrency := range []int{1, numQueries} {
-			// Change scope to ensure tests work fine when run concurrently.
-			testData := testData
-			maxConcurrency := maxConcurrency
-
 			t.Run(fmt.Sprintf("%s (concurrency: %d)", testName, maxConcurrency), func(t *testing.T) {
 				t.Parallel()
 
@@ -1974,7 +1970,6 @@ func Test_evaluateAtModifier(t *testing.T) {
 		},
 		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: bad number or duration syntax: ""`)},
 	} {
-		tt := tt
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
 			expectedExpr, err := parser.ParseExpr(tt.expected)

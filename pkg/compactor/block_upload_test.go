@@ -1795,7 +1795,6 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			bkt := objstore.NewInMemBucket()
 			var injectedBkt objstore.Bucket = bkt
 			if tc.errorInjector != nil {

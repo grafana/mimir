@@ -8,6 +8,8 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -148,7 +150,9 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
-	shardedQueryable := newShardedQueryable(r, s.next)
+
+	annotationAccumulator := newAnnotationAccumulator()
+	shardedQueryable := newShardedQueryable(r, annotationAccumulator, s.next)
 
 	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
@@ -160,17 +164,25 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
+	// Note that the positions based on the original query may be wrong as the rewritten
+	// query which is actually used is different, but the user does not see the rewritten
+	// query, so we pass in an empty string as the query so the positions will be hidden.
 	warn, info := res.Warnings.AsStrings("", 0, 0)
+
+	// Add any annotations returned by the sharded queries, and remove any duplicates.
+	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
+	warn = append(warn, accumulatedWarnings...)
+	info = append(info, accumulatedInfos...)
+	warn = removeDuplicates(warn)
+	info = removeDuplicates(info)
+
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Headers: shardedQueryable.getResponseHeaders(),
-		// Note that the positions based on the original query may be wrong as the rewritten
-		// query which is actually used is different, but the user does not see the rewritten
-		// query, so we pass in an empty string as the query so the positions will be hidden.
+		Headers:  shardedQueryable.getResponseHeaders(),
 		Warnings: warn,
 		Infos:    info,
 	}, nil
@@ -253,10 +265,11 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	mapper, err := astmapper.NewSharding(ctx, totalShards, s.logger, stats)
+	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
+	mapper := astmapper.NewSharding(summer)
 
 	// The mapper can modify the input expression in-place, so we must re-parse the original query
 	// each time before passing it to the mapper.
@@ -475,4 +488,77 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 	}
 
 	return longest
+}
+
+// annotationAccumulator collects annotations returned by sharded queries.
+type annotationAccumulator struct {
+	warnings *sync.Map
+	infos    *sync.Map
+}
+
+func newAnnotationAccumulator() *annotationAccumulator {
+	return &annotationAccumulator{
+		warnings: &sync.Map{},
+		infos:    &sync.Map{},
+	}
+}
+
+// addWarning collects the warning annotation w.
+//
+// addWarning is safe to call from multiple goroutines.
+func (a *annotationAccumulator) addWarning(w string) {
+	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
+	a.warnings.LoadOrStore(w, struct{}{})
+}
+
+// addWarnings collects all of the warning annotations in warnings.
+//
+// addWarnings is safe to call from multiple goroutines.
+func (a *annotationAccumulator) addWarnings(warnings []string) {
+	for _, w := range warnings {
+		a.addWarning(w)
+	}
+}
+
+// addInfo collects the info annotation i.
+//
+// addInfo is safe to call from multiple goroutines.
+func (a *annotationAccumulator) addInfo(i string) {
+	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
+	a.infos.LoadOrStore(i, struct{}{})
+}
+
+// addInfos collects all of the info annotations in infos.
+//
+// addInfo is safe to call from multiple goroutines.
+func (a *annotationAccumulator) addInfos(infos []string) {
+	for _, i := range infos {
+		a.addInfo(i)
+	}
+}
+
+// getAll returns all annotations collected by this accumulator.
+//
+// getAll may return inconsistent or unexpected results if it is called concurrently with addInfo or addWarning.
+func (a *annotationAccumulator) getAll() (warnings, infos []string) {
+	return getAllKeys(a.warnings), getAllKeys(a.infos)
+}
+
+func getAllKeys(m *sync.Map) []string {
+	var keys []string
+
+	m.Range(func(k, _ interface{}) bool {
+		keys = append(keys, k.(string))
+		return true
+	})
+
+	return keys
+}
+
+// removeDuplicates removes duplicate entries from s.
+//
+// s may be modified and should not be used after removeDuplicates returns.
+func removeDuplicates(s []string) []string {
+	slices.Sort(s)
+	return slices.Compact(s)
 }

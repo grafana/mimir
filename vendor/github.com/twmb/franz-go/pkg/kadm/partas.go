@@ -108,7 +108,7 @@ func (cl *Client) AlterPartitionAssignments(ctx context.Context, req AlterPartit
 		return nil, err
 	}
 	if err = kerr.ErrorForCode(kresp.ErrorCode); err != nil {
-		return nil, err
+		return nil, &ErrAndMessage{err, unptrStr(kresp.ErrorMessage)}
 	}
 
 	a := make(AlterPartitionAssignmentsResponses)
@@ -187,7 +187,7 @@ func (cl *Client) ListPartitionReassignments(ctx context.Context, s TopicsSet) (
 		return nil, err
 	}
 	if err = kerr.ErrorForCode(kresp.ErrorCode); err != nil {
-		return nil, err
+		return nil, &ErrAndMessage{err, unptrStr(kresp.ErrorMessage)}
 	}
 
 	a := make(ListPartitionReassignmentsResponses)

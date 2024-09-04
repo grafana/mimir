@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -511,8 +510,6 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			limits := prepareDefaultLimits()
 			limits.RequestRate = testData.requestRate
@@ -618,8 +615,6 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			limits := prepareDefaultLimits()
 			limits.IngestionRate = testData.ingestionRate
@@ -790,8 +785,6 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			limits := prepareDefaultLimits()
 
@@ -1032,9 +1025,6 @@ func TestDistributor_PushQuery(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		// Change scope to ensure it work fine when test cases are executed concurrently.
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := prepConfig{
@@ -1997,7 +1987,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
 					return d, true, nil
 				},
 			)
@@ -2172,14 +2162,10 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
@@ -2204,7 +2190,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2315,14 +2301,10 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for scenarioName, scenarioData := range scenarios {
-				scenarioData := scenarioData
-
 				t.Run(scenarioName, func(t *testing.T) {
 					t.Parallel()
 
@@ -2353,7 +2335,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push test data.
 					for _, series := range pushedData {
@@ -2472,14 +2454,10 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for scenarioName, scenarioData := range scenarios {
-				scenarioData := scenarioData
-
 				t.Run(scenarioName, func(t *testing.T) {
 					t.Parallel()
 
@@ -2511,7 +2489,7 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push test data.
 					for _, series := range pushedData {
@@ -2887,14 +2865,10 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -3024,14 +2998,10 @@ func TestDistributor_LabelNames(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
@@ -3057,7 +3027,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -3106,14 +3076,10 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
@@ -3136,7 +3102,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push metadata
 					req := makeWriteRequest(0, 0, 10, false, true, "foo")
@@ -3201,20 +3167,16 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 		},
 	}
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
 					limits := validation.Limits{}
@@ -3281,20 +3243,16 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	}
 
 	for testName, testCase := range tests {
-		testCase := testCase
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
 					ds, _, _, _ := prepare(t, prepConfig{
@@ -3348,14 +3306,12 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 	t.Run("should group values of labels by label name and return only distinct label values", func(t *testing.T) {
 		for _, ingestStorageEnabled := range []bool{false, true} {
-			ingestStorageEnabled := ingestStorageEnabled
-
 			t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 				t.Parallel()
 
 				// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 				ctx := user.InjectOrgID(context.Background(), "label-names-values")
-				ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+				ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 				// Create distributor
 				ds, _, _, _ := prepare(t, prepConfig{
@@ -3870,14 +3826,10 @@ func TestDistributor_UserStats(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -3991,14 +3943,10 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -4304,14 +4252,10 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -6495,7 +6439,7 @@ func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
 		return nil
 	}
 
-	level, ok := api.ReadConsistencyFromContext(ctx)
+	level, ok := api.ReadConsistencyLevelFromContext(ctx)
 	if !ok || level != api.ReadConsistencyStrong {
 		return nil
 	}
@@ -7393,8 +7337,6 @@ func TestHandlePushError(t *testing.T) {
 	testErrorMsg := "this is a test error message"
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
-	httpGrpc4xxErr := httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg)
-	httpGrpc5xxErr := httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg)
 	test := map[string]struct {
 		pushError          error
 		expectedGRPCError  *status.Status
@@ -7407,14 +7349,6 @@ func TestHandlePushError(t *testing.T) {
 		"a context.DeadlineExceeded error gives context.DeadlineExceeded": {
 			pushError:          context.DeadlineExceeded,
 			expectedOtherError: context.DeadlineExceeded,
-		},
-		"a 4xx HTTP gRPC error gives the same 4xx HTTP gRPC error": {
-			pushError:          httpGrpc4xxErr,
-			expectedOtherError: httpGrpc4xxErr,
-		},
-		"a 5xx HTTP gRPC error gives the same 5xx HTTP gRPC error": {
-			pushError:          httpGrpc5xxErr,
-			expectedOtherError: httpGrpc5xxErr,
 		},
 		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),

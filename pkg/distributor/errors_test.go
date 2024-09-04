@@ -405,43 +405,12 @@ func TestWrapIngesterPushError(t *testing.T) {
 		ingesterID   = "ingester-25"
 		testErrorMsg = "this is a test error message"
 	)
-	outputErrorMsgPrefix := fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)
 
 	// Ensure that no error gets translated into no error.
 	t.Run("no error gives no error", func(t *testing.T) {
 		err := wrapIngesterPushError(nil, ingesterID)
 		require.NoError(t, err)
 	})
-
-	// Ensure that the errors created by httpgrpc get translated into
-	// other errors created by httpgrpc with the same code, and with
-	// a more explanatory message.
-	httpgrpcTests := map[string]struct {
-		ingesterPushError error
-		expectedStatus    int32
-		expectedMessage   string
-	}{
-		"a 4xx HTTP gRPC error gives a 4xx HTTP gRPC error": {
-			ingesterPushError: httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
-			expectedStatus:    http.StatusBadRequest,
-			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
-		},
-		"a 5xx HTTP gRPC error gives a 5xx HTTP gRPC error": {
-			ingesterPushError: httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
-			expectedStatus:    http.StatusServiceUnavailable,
-			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
-		},
-	}
-	for testName, testData := range httpgrpcTests {
-		t.Run(testName, func(t *testing.T) {
-			err := wrapIngesterPushError(testData.ingesterPushError, ingesterID)
-			res, ok := httpgrpc.HTTPResponseFromError(err)
-			require.True(t, ok)
-			require.NotNil(t, res)
-			require.Equal(t, testData.expectedStatus, res.GetCode())
-			require.Equal(t, testData.expectedMessage, string(res.Body))
-		})
-	}
 
 	// Ensure that the errors created by gogo/status package get translated
 	// into ingesterPushError messages.

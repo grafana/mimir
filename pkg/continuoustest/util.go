@@ -90,7 +90,6 @@ var (
 
 func init() {
 	for i, histProfile := range histogramProfiles {
-		histProfile := histProfile // shadowing it to ensure it's properly updated in the closure
 		histogramProfiles[i].generateValue = nil
 		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram)

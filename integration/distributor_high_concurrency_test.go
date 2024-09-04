@@ -92,8 +92,7 @@ func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bo
 	step := timeRange / samples
 
 	wg := sync.WaitGroup{}
-	for i := 0; i < writers; i++ {
-		i := i
+	for i := range writers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

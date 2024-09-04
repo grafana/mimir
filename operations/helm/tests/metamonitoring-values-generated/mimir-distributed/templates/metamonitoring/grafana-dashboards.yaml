@@ -3144,7 +3144,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -6176,7 +6176,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -6450,7 +6450,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -7288,7 +7288,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -11042,7 +11042,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -11214,19 +11214,19 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_frontend_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_frontend_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_query_frontend_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_frontend_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_query_frontend_queue_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_frontend_queue_duration_seconds_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -11293,19 +11293,19 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_retries_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_retries_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_frontend_retries_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_frontend_retries_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_query_frontend_retries_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) * 1 / sum(rate(cortex_query_frontend_retries_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_query_frontend_retries_sum{$read_path_matcher}[$__rate_interval])) * 1 / sum(rate(cortex_query_frontend_retries_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -11371,7 +11371,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (cortex_query_frontend_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"})",
+                            "expr": "sum by(pod) (cortex_query_frontend_queue_length{$read_path_matcher})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
@@ -11420,7 +11420,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(user) (cortex_query_frontend_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}) > 0",
+                            "expr": "sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0",
                             "format": "time_series",
                             "legendFormat": "{{user}}",
                             "legendLink": null
@@ -11481,19 +11481,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -11559,7 +11559,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(pod) (cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
+                            "expr": "sum by(pod) (cortex_query_scheduler_queue_length{$read_path_matcher})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
                             "legendLink": null
@@ -11608,7 +11608,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(user) (cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}) > 0",
+                            "expr": "sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0",
                             "format": "time_series",
                             "legendFormat": "{{user}}",
                             "legendLink": null
@@ -11669,7 +11669,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_frontend_split_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method=\"split_by_interval_and_results_cache\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "splitting rate",
                             "legendLink": null
@@ -11718,7 +11718,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after dskit cache refactor.\n    sum (\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
+                            "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{$read_path_matcher}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{$read_path_matcher}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after dskit cache refactor.\n    sum (\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_hits_total{name=\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_requests_total{name=~\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{request_type}}",
                             "legendLink": null
@@ -11768,7 +11768,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_frontend_query_result_cache_skipped_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (reason) /\nignoring (reason) group_left sum(rate(cortex_frontend_query_result_cache_attempted_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n",
+                            "expr": "sum(rate(cortex_frontend_query_result_cache_skipped_total{$read_path_matcher}[$__rate_interval])) by (reason) /\nignoring (reason) group_left sum(rate(cortex_frontend_query_result_cache_attempted_total{$read_path_matcher}[$__rate_interval]))\n",
                             "format": "time_series",
                             "legendFormat": "{{reason}}",
                             "legendLink": null
@@ -11830,7 +11830,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_frontend_query_sharding_rewrites_succeeded_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) /\nsum(rate(cortex_frontend_query_sharding_rewrites_attempted_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n",
+                            "expr": "sum(rate(cortex_frontend_query_sharding_rewrites_succeeded_total{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_frontend_query_sharding_rewrites_attempted_total{$read_path_matcher}[$__rate_interval]))\n",
                             "format": "time_series",
                             "legendFormat": "sharded queries ratio",
                             "legendLink": null
@@ -11880,19 +11880,19 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_frontend_sharded_queries_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_frontend_sharded_queries_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_frontend_sharded_queries_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_frontend_sharded_queries_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_frontend_sharded_queries_per_query_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) * 1 / sum(rate(cortex_frontend_sharded_queries_per_query_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_frontend_sharded_queries_per_query_sum{$read_path_matcher}[$__rate_interval])) * 1 / sum(rate(cortex_frontend_sharded_queries_per_query_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -12166,19 +12166,19 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_querier_storegateway_instances_hit_per_query_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) * 1 / sum(rate(cortex_querier_storegateway_instances_hit_per_query_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_querier_storegateway_instances_hit_per_query_sum{$read_path_matcher}[$__rate_interval])) * 1 / sum(rate(cortex_querier_storegateway_instances_hit_per_query_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -12245,19 +12245,19 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_querier_storegateway_refetches_per_query_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) * 1 / sum(rate(cortex_querier_storegateway_refetches_per_query_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_querier_storegateway_refetches_per_query_sum{$read_path_matcher}[$__rate_interval])) * 1 / sum(rate(cortex_querier_storegateway_refetches_per_query_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -12341,7 +12341,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Failure Rate",
                             "legendLink": null
@@ -12391,7 +12391,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
+                            "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "{{reason}}",
                             "legendLink": null
@@ -12451,19 +12451,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "max(cortex_bucket_index_loaded{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"})",
+                            "expr": "max(cortex_bucket_index_loaded{$read_path_matcher})",
                             "format": "time_series",
                             "legendFormat": "Max",
                             "legendLink": null
                          },
                          {
-                            "expr": "min(cortex_bucket_index_loaded{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"})",
+                            "expr": "min(cortex_bucket_index_loaded{$read_path_matcher})",
                             "format": "time_series",
                             "legendFormat": "Min",
                             "legendLink": null
                          },
                          {
-                            "expr": "avg(cortex_bucket_index_loaded{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"})",
+                            "expr": "avg(cortex_bucket_index_loaded{$read_path_matcher})",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "legendLink": null
@@ -12542,13 +12542,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_bucket_index_loads_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) - sum(rate(cortex_bucket_index_load_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_bucket_index_loads_total{$read_path_matcher}[$__rate_interval])) - sum(rate(cortex_bucket_index_load_failures_total{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "successful",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(rate(cortex_bucket_index_load_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_bucket_index_load_failures_total{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "failed",
                             "legendLink": null
@@ -12597,19 +12597,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_index_load_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_bucket_index_load_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "legendFormat": "99th Percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_index_load_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "histogram_quantile(0.50, sum(rate(cortex_bucket_index_load_duration_seconds_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1e3",
                             "format": "time_series",
                             "legendFormat": "50th Percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_bucket_index_load_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_index_load_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_bucket_index_load_duration_seconds_sum{$read_path_matcher}[$__rate_interval])) * 1e3 / sum(rate(cortex_bucket_index_load_duration_seconds_count{$read_path_matcher}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -13622,7 +13622,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -13662,6 +13662,39 @@ data:
                       }
                    ],
                    "query": "native : -1,classic : 1",
+                   "skipUrlSync": false,
+                   "type": "custom",
+                   "useTags": false
+                },
+                {
+                   "current": {
+                      "selected": true,
+                      "text": "All",
+                      "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
+                   },
+                   "hide": 0,
+                   "includeAll": false,
+                   "label": "Read path",
+                   "multi": false,
+                   "name": "read_path_matcher",
+                   "options": [
+                      {
+                         "selected": true,
+                         "text": "All",
+                         "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
+                      },
+                      {
+                         "selected": false,
+                         "text": "Main",
+                         "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\""
+                      },
+                      {
+                         "selected": false,
+                         "text": "Remote ruler",
+                         "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
+                      }
+                   ],
+                   "query": "All : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\",Main : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\",Remote ruler : cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\"",
                    "skipUrlSync": false,
                    "type": "custom",
                    "useTags": false
@@ -22518,7 +22551,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -26349,7 +26382,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -30552,7 +30585,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -30989,7 +31022,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -32677,7 +32710,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) ((\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "in-memory",
                             "legendLink": null
@@ -32689,19 +32722,19 @@ data:
                             "legendLink": null
                          },
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active",
                             "legendLink": null
                          },
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "owned",
                             "legendLink": null
                          },
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (\n    cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active ({{ name }})",
                             "legendLink": null
@@ -32916,7 +32949,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "series",
                             "legendLink": null
@@ -33033,13 +33066,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active",
                             "legendLink": null
                          },
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (\n    cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "active ({{ name }})",
                             "legendLink": null
@@ -33107,13 +33140,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "buckets",
                             "legendLink": null
                          },
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (\n    cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "buckets ({{ name }})",
                             "legendLink": null
@@ -33527,7 +33560,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 2,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -33547,7 +33580,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Distributor and ingester discarded samples rate\nThe rate of each sample's discarding reason.\n\n",
+                      "description": "### Distributor and ingester discarded samples rate\nThe rate of each sample's discarding reason.\nThis doesn't account for the replication factor.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -33582,7 +33615,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 3,
+                      "span": 2,
                       "targets": [
                          {
                             "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -33593,11 +33626,60 @@ data:
                          {
                             "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                             "format": "time_series",
-                            "legendFormat": "{{ reason }} (ingester)",
+                            "legendFormat": "{{ reason }} (ingester, replicated)",
                             "legendLink": null
                          }
                       ],
                       "title": "Distributor and ingester discarded samples rate",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Out-of-order samples appended\nThe rate of OOO samples that have been appended.\nThis doesn't account for the replication factor.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 17,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": false
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 2,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_ingester_tsdb_out_of_order_samples_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "rate",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Out-of-order samples appended",
                       "type": "timeseries"
                    }
                 ],
@@ -33638,7 +33720,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -33687,7 +33769,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -33736,7 +33818,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -33761,7 +33843,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\n\n",
+                      "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\nThis doesn't account for the replication factor.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -33785,7 +33867,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -33799,7 +33881,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]),\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]) unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]),\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "rate",
                             "legendLink": null
@@ -33846,7 +33928,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -33895,7 +33977,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -33975,7 +34057,7 @@ data:
                             }
                          ]
                       },
-                      "id": 23,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34030,7 +34112,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34078,7 +34160,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34126,7 +34208,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34208,7 +34290,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 27,
+                      "id": 28,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -34328,7 +34410,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 28,
+                      "id": 29,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -34438,7 +34520,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34502,7 +34584,7 @@ data:
                             }
                          ]
                       },
-                      "id": 30,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34562,7 +34644,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34647,7 +34729,7 @@ data:
                             }
                          ]
                       },
-                      "id": 32,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34701,7 +34783,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34767,7 +34849,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34815,7 +34897,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34875,7 +34957,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34923,7 +35005,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -34984,7 +35066,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35033,7 +35115,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -35119,7 +35201,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -35165,6 +35247,7 @@ data:
                    },
                    "hide": 0,
                    "includeAll": false,
+                   "label": "limit",
                    "multi": false,
                    "name": "limit",
                    "options": [
@@ -35194,7 +35277,10 @@ data:
                          "value": "1000"
                       }
                    ],
-                   "type": "custom"
+                   "query": "10 : 10,50 : 50,100 : 100,500 : 500,1000 : 1000",
+                   "skipUrlSync": false,
+                   "type": "custom",
+                   "useTags": false
                 }
              ]
           },
@@ -35403,7 +35489,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -35555,7 +35641,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)",
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -35650,7 +35736,7 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "(( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\nand\ntopk($limit,\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n  -\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n)\n",
+                            "expr": "(( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\nand\ntopk($limit,\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n  -\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) (\n    (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ user }}",
                             "legendLink": null
@@ -36191,7 +36277,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
+                            "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -36906,7 +36992,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",
@@ -36929,6 +37015,7 @@ data:
                    },
                    "hide": 0,
                    "includeAll": false,
+                   "label": "limit",
                    "multi": false,
                    "name": "limit",
                    "options": [
@@ -36948,7 +37035,10 @@ data:
                          "value": "100"
                       }
                    ],
-                   "type": "custom"
+                   "query": "10 : 10,50 : 50,100 : 100",
+                   "skipUrlSync": false,
+                   "type": "custom",
+                   "useTags": false
                 }
              ]
           },
@@ -39287,7 +39377,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "instant": true,
                             "refId": "A"
@@ -39363,7 +39453,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "instant": true,
                             "refId": "A"
@@ -42078,7 +42168,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "ingested exemplars",
                             "legendLink": null
@@ -42127,7 +42217,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                             "format": "time_series",
                             "legendFormat": "appended exemplars",
                             "legendLink": null
@@ -42307,7 +42397,7 @@ data:
                    },
                    "datasource": "$datasource",
                    "hide": 0,
-                   "includeAll": true,
+                   "includeAll": false,
                    "label": "namespace",
                    "multi": true,
                    "name": "namespace",

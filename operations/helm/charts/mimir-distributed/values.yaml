@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r300-e243636
+  tag: r306-d685f76
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -2814,7 +2814,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.25-alpine
+    tag: 1.27-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -3341,7 +3341,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.25-alpine
+      tag: 1.27-alpine
 
     # -- Basic auth configuration
     basicAuth:
@@ -3548,6 +3548,8 @@ metaMonitoring:
   dashboards:
     # -- If enabled, Grafana dashboards are deployed
     enabled: false
+    # -- Alternative namespace to create dashboards ConfigMaps in. They are created in the Helm release namespace by default.
+    namespace: null
     # -- Annotations to add to the Grafana dashboard ConfigMap
     annotations:
       k8s-sidecar-target-directory: /tmp/dashboards/Mimir Dashboards
@@ -3845,7 +3847,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r300-f8726ed0
+    tag: r306-ed2300d5
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4379,7 +4381,12 @@ continuous_test:
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
-
+  # -- The endpoints to use for writing to and reading metrics from your instance.
+  # Defaults to the gateway URL, but you may want to test from an external ingress which you can configure here.
+  ## -- Mimir Write Endpoint to use for writing metrics to your instance. Defaults to mimir.gatewayUrl if not set.
+  write:
+  # -- Mimir Read Endpoint to use for querying metrics from your instance. Defaults to mimir.gatewayUrl if not set. Path /prometheus is appended to value.
+  read:
   # -- Authentication settings of continuous test
   auth:
     # -- Type of authentication to use (tenantId, basicAuth, bearerToken)
@@ -4399,9 +4406,6 @@ continuous_test:
   maxQueryAge: "48h"
   # -- Interval between test runs
   runInterval: "5m"
-  # -- The endpoint to use for writing metrics to and querying from your instance.
-  # Defaults to the derived gateway URL, but you may want to test from an external ingress which you can configure here.
-  endpoint: '{{ include "mimir.gatewayUrl" . }}'
 
   # -- Pod affinity settings for the continuous test replicas
   affinity: {}
@@ -4465,4 +4469,13 @@ continuous_test:
 #     name: extra-cm-{{ .Release.Name }}
 #   data: |
 #     extra.yml: "does-my-install-need-extra-info: true"
+# alternatively, you can use strings, which lets you use the mimir defines:
+# extraObjects:
+# - |
+#   kind: ConfigMap
+#   apiVersion: v1
+#   metadata:
+#     name: extra-cm-{{ .Release.Name }}
+#   data: |
+#     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
