@@ -238,7 +238,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// Block 2 is marked for no-compaction.
 			err := block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, block.OutOfOrderChunksNoCompactReason, "details...", promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
-			require.True(t, err == nil || errors.As(err, new(*block.ErrMarkerExists)), "unexpected error: %s", err)
+			require.True(t, err == nil || errors.As(err, &block.ErrMarkerExists{}), "unexpected error: %s", err)
 			// Block 3 has marker with invalid version
 			require.NoError(t, bkt.Upload(ctx, block3.String()+"/no-compact-mark.json", strings.NewReader(`{"id":"`+block3.String()+`","version":100,"details":"details","no_compact_time":1637757932,"reason":"reason"}`)))
 			// Block 4 has marker with invalid JSON syntax

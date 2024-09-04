@@ -396,7 +396,7 @@ func TestMarkForNoCompact(t *testing.T) {
 			},
 			blocksMarked: 0,
 			expectedErr: func(id ulid.ULID) error {
-				return &ErrMarkerExists{
+				return ErrMarkerExists{
 					message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", path.Join(id.String(), NoCompactMarkFilename))}
 			},
 		},

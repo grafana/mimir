@@ -352,7 +352,7 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return errors.Wrapf(err, "check exists %s in bucket", m)
 	}
 	if noCompactMarkExists {
-		return &ErrMarkerExists{
+		return ErrMarkerExists{
 			message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", m)}
 	}
 
