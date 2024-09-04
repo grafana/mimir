@@ -2126,7 +2126,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			refreshed := false
 			refresher := refresherFunc(func() { refreshed = true })
 
-			offsetR := newCachingOffsetReader(func(ctx context.Context) (int64, error) {
+			offsetR := newCachingOffsetReader(func(_ context.Context) (int64, error) {
 				return testCase.lso, nil
 			}, time.Millisecond, logger)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), offsetR))
