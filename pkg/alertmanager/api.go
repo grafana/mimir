@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 
 	"github.com/go-kit/log"
@@ -246,6 +245,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 	}
 	defer os.RemoveAll(userTempDir)
 
+	templateFiles := make([]string, 0, len(cfg.Templates))
 	for _, tmpl := range cfg.Templates {
 		templateFilepath, err := safeTemplateFilepath(userTempDir, tmpl.Filename)
 		if err != nil {
@@ -257,11 +257,8 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 			level.Error(logger).Log("msg", "unable to store template file", "err", err, "user", cfg.User)
 			return fmt.Errorf("unable to store template file '%s'", tmpl.Filename)
 		}
-	}
 
-	templateFiles := make([]string, len(amCfg.Templates))
-	for i, t := range amCfg.Templates {
-		templateFiles[i] = filepath.Join(userTempDir, t)
+		templateFiles = append(templateFiles, templateFilepath)
 	}
 
 	_, err = template.FromGlobs(templateFiles, WithCustomFunctions(user))
