@@ -75,7 +75,7 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
 * [ENHANCEMENT] Expose a new `s3.session-token` configuration option to enable using temporary security credentials. #8952
 * [ENHANCEMENT] Add HA deduplication features to the `mimir-microservices-mode` development environment. #9012
-* [ENHANCEMENT] Make `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled` non-operational flags in preparation for removal. #8984
+* [ENHANCEMENT] Remove experimental `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled`. Mimir now always includes "query components" as a queue dimension. #8984 #9135
 * [ENHANCEMENT] Add a new ingester endpoint to prepare instances to downscale. #8956
 * [ENHANCEMENT] Query-scheduler: Add `query-scheduler.prioritize-query-components` which, when enabled, will primarily prioritize dequeuing fairly across queue components, and secondarily prioritize dequeuing fairly across tenants. When disabled, tenant fairness is primarily prioritized. `query-scheduler.use-multi-algorithm-query-queue` must be enabled in order to use this flag. #9016 #9071
 * [ENHANCEMENT] Update runtime configuration to read gzip-compressed files with `.gz` extension. #9074
