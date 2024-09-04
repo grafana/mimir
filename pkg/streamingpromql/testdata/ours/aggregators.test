@@ -92,9 +92,16 @@ load 1m
 eval instant at 0m sum(single_histogram)
 	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}}
 
+eval instant at 0m avg(single_histogram)
+	{} {{schema:0 sum:5.666666666666667 count:6 buckets:[1.6666666666666667 4 0.33333333333333337]}}
+
 eval instant at 0m sum by (label) (single_histogram)
 	{label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
 	{label="value2"} {{schema:1 count:14 sum:15 buckets:[4 6 4]}}
+
+eval instant at 0m avg by (label) (single_histogram)
+	{label="value"} {{count:4 sum:2 buckets:[1 2 1]}}
+	{label="value2"} {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}}
 
 # Test aggregation over a range with lookback behaviour.
 eval range from 0 to 3m step 1m sum(single_histogram)
@@ -102,6 +109,12 @@ eval range from 0 to 3m step 1m sum(single_histogram)
 
 eval range from 2m to 3m step 1m sum(single_histogram)
 	{} {{schema:0 sum:8 count:14 buckets:[4 7 3]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}}
+
+eval range from 0 to 3m step 1m avg(single_histogram)
+	{} {{schema:0 sum:5.666666666666667 count:6 buckets:[1.6666666666666667 4 0.33333333333333337]}} {{schema:0 sum:2 count:4 buckets:[1 2.333333333333333 0.6666666666666666]}} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}}
+
+eval range from 2m to 3m step 1m avg(single_histogram)
+	{} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}}
 
 clear
 
@@ -118,11 +131,19 @@ load 1m
 # eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
 #	{label="value"}  0 1 {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
 #	{label="value2"} 0 5 {{schema:1 count:14 sum:15 buckets:[4 6 4]}} {{schema:2 count:8 sum:4 buckets:[4 6 4]}} 10
+#
+# eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+#	{label="value"}  0 1   {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
+#	{label="value2"} 0 2.5 {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}} {{schema:2 count:4 sum:2 buckets:[1 2 1]}} 5
 
 # What both engines return
 eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
 	{label="value"}  0 1 1 1 2
 	{label="value2"} 0 5 5 5 10
+
+eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+	{label="value"}  0 1   1   1   2
+	{label="value2"} 0 2.5 2.5 2.5 5
 
 clear
 
@@ -136,6 +157,9 @@ load 1m
 eval range from 0 to 5m step 1m  sum(single_histogram)
 	{} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
 
+eval range from 0 to 5m step 1m  avg(single_histogram)
+	{} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
+
 clear
 
 # Test a mix of float and histogram values at the same point
@@ -146,6 +170,8 @@ load 1m
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
 eval_warn instant at 1m sum(single_histogram)
 
+eval_warn instant at 1m avg(single_histogram)
+
 clear
 
 # Test a mix of float and histogram values at the same point
@@ -155,6 +181,8 @@ load 1m
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
 eval_warn instant at 1m sum(single_histogram)
+
+eval_warn instant at 1m avg(single_histogram)
 
 clear
 
@@ -167,6 +195,8 @@ load 1m
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
 eval_warn instant at 1m sum(single_histogram)
+
+eval_warn instant at 1m avg(single_histogram)
 
 clear
 
