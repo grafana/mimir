@@ -50,6 +50,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
+* [BUGFIX] Helm: fix second relabeling in ServiceMonitor and PVC template in compactor to not show diff in ArgoCD. #9189
 
 ## 5.4.1
 
