@@ -96,10 +96,6 @@ type KafkaConfig struct {
 	ReplayShards                  int   `yaml:"replay_shards"`
 	BatchSize                     int   `yaml:"batch_size"`
 	RecordsPerFetch               int   `yaml:"records_per_fetch"`
-
-	// MinBytesMaxWaitDuration controls how long the broker will wait to fill MinBytes.
-	// It is used to inject a smaller value in tests, so they take less time.
-	MinBytesMaxWaitDuration time.Duration `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -107,7 +103,6 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	cfg.MinBytesMaxWaitDuration = 10 * time.Second
 	f.StringVar(&cfg.Address, prefix+".address", "", "The Kafka backend address.")
 	f.StringVar(&cfg.Topic, prefix+".topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")

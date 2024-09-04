@@ -193,7 +193,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	}
 
 	if r.kafkaCfg.ReplayConcurrency > 1 {
-		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, r.kafkaCfg.RecordsPerFetch, r.kafkaCfg.MinBytesMaxWaitDuration, &r.metrics)
+		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, r.kafkaCfg.RecordsPerFetch, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers")
 		}
@@ -829,8 +829,12 @@ type concurrentFetchers struct {
 	lastReturnedRecord int64
 }
 
+// defaultMinBytesWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
+// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
+var defaultMinBytesWaitTime = 10 * time.Second
+
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
-func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, minBytesWaitTime time.Duration, metrics *readerMetrics) (*concurrentFetchers, error) {
+func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, metrics *readerMetrics) (*concurrentFetchers, error) {
 	const noReturnedRecords = -1 // we still haven't returned the 0 offset.
 	f := &concurrentFetchers{
 		client:             client,
@@ -840,7 +844,7 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 		partitionID:        partition,
 		metrics:            metrics,
 		recordsPerFetch:    recordsPerFetch,
-		minBytesWaitTime:   minBytesWaitTime,
+		minBytesWaitTime:   defaultMinBytesWaitTime,
 		lastReturnedRecord: noReturnedRecords,
 		tracer:             kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
 		orderedFetches:     make(chan kgo.FetchPartition),

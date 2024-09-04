@@ -30,6 +30,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
+func init() {
+	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
+	defaultMinBytesWaitTime = time.Second
+}
+
 func TestKafkaStartOffset(t *testing.T) {
 	t.Run("should match Kafka client start offset", func(t *testing.T) {
 		expected := kgo.NewOffset().AtStart().EpochOffset().Offset
