@@ -36,6 +36,8 @@ processors:
 exporters:
   otlphttp:
     endpoint: http://mimir-1:8001/otlp
+  debug:
+    verbosity: detailed
 
 connectors:
   spanmetrics:
@@ -55,4 +57,4 @@ service:
     metrics:
       receivers: [otlp, prometheus, spanmetrics]
       processors: [batch]
-      exporters: [otlphttp]
+      exporters: [otlphttp,debug]
