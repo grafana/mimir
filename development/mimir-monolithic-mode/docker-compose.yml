@@ -139,3 +139,19 @@ services:
       - 4317:4317 # OTLP gRPC receiver
       - 4318:4318 # OTLP http receiver
       - 55679:55679 # zpages extension
+
+
+  otel-otlp-with-spanmetrics:
+    image: otel/opentelemetry-collector-contrib:0.107.0
+    profiles:
+      - otel-collector-otlp-push-config-with-spanmetrics
+    volumes:
+      - ./config/otel-collector-otlp-push-config-with-spanmetrics.yaml:/etc/otelcol-contrib/config.yaml
+    ports: # From https://opentelemetry.io/docs/collector/getting-started/
+      - 1888:1888 # pprof extension
+      - 8888:8888 # Prometheus metrics exposed by the collector
+      - 8889:8889 # Prometheus exporter metrics
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+      - 55679:55679 # zpages extension

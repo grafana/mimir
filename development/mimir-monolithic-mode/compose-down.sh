@@ -39,6 +39,7 @@ DEFAULT_PROFILES=(
     "--profile" "grafana-agent-flow"
     "--profile" "otel-collector-remote-write"
     "--profile" "otel-collector-otlp-push"
+    "--profile" "otel-collector-otlp-push-config-with-spanmetrics"
 )
 if [ ${#PROFILES[@]} -eq 0 ]; then
     PROFILES=("${DEFAULT_PROFILES[@]}")
