@@ -70,29 +70,34 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		if g.histogramSums[idx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
 			continue
-		} else if g.histogramSums[idx] != nil {
-			g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
-			if err != nil {
-				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
-				g.histogramSums[idx] = invalidCombinationOfHistograms
-				g.histogramPointCount--
+		}
 
-				if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
-					// Unknown error: we couldn't convert the error to an annotation. Give up.
-					return err
-				}
+		if g.histogramSums[idx] == nil {
+			if lastUncopiedHistogram == p.H {
+				// We've already used this histogram for a previous point due to lookback.
+				// Make a copy of it so we don't modify the other point.
+				g.histogramSums[idx] = p.H.Copy()
+				g.histogramPointCount++
+				continue
 			}
-		} else if lastUncopiedHistogram == p.H {
-			// We've already used this histogram for a previous point due to lookback.
-			// Make a copy of it so we don't modify the other point.
-			g.histogramSums[idx] = p.H.Copy()
-			g.histogramPointCount++
-		} else {
 			// This is the first time we have seen this histogram.
 			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
 			g.histogramSums[idx] = p.H
 			g.histogramPointCount++
 			lastUncopiedHistogram = p.H
+			continue
+		}
+
+		g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
+		if err != nil {
+			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
+			g.histogramSums[idx] = invalidCombinationOfHistograms
+			g.histogramPointCount--
+
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+				// Unknown error: we couldn't convert the error to an annotation. Give up.
+				return err
+			}
 		}
 	}
 
