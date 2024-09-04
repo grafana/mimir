@@ -157,11 +157,7 @@ func TestTSDBBuilder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
-			builder := NewTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
-				TSDB: mimir_tsdb.TSDBConfig{
-					Dir: t.TempDir(),
-				},
-			})
+			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides)
 
 			currEnd, lastEnd := tc.currEnd, tc.lastEnd
 			{ // Add float samples.
@@ -350,11 +346,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	builder := NewTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
-		TSDB: mimir_tsdb.TSDBConfig{
-			Dir: t.TempDir(),
-		},
-	})
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides)
 
 	// Has a timeseries with no samples.
 	var rec kgo.Record

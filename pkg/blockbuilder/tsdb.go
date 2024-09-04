@@ -33,14 +33,15 @@ import (
 )
 
 type TSDBBuilder struct {
-	logger log.Logger
+	dataDir string
+
+	logger           log.Logger
+	limits           *validation.Overrides
+	blocksStorageCfg mimir_tsdb.BlocksStorageConfig
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
 	tsdbs   map[tsdbTenant]*userTSDB
-
-	limits *validation.Overrides
-	config mimir_tsdb.BlocksStorageConfig
 }
 
 type tsdbTenant struct {
@@ -48,12 +49,13 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, limits *validation.Overrides, config mimir_tsdb.BlocksStorageConfig) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides) *TSDBBuilder {
 	return &TSDBBuilder{
-		tsdbs:  make(map[tsdbTenant]*userTSDB),
-		logger: logger,
-		limits: limits,
-		config: config,
+		dataDir:          dataDir,
+		logger:           logger,
+		limits:           limits,
+		blocksStorageCfg: blocksStorageCfg,
+		tsdbs:            make(map[tsdbTenant]*userTSDB),
 	}
 }
 
@@ -260,7 +262,7 @@ func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 }
 
 func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
-	udir := filepath.Join(b.config.TSDB.Dir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
+	udir := filepath.Join(b.dataDir, strconv.Itoa(int(tenant.partitionID)), tenant.tenantID)
 	// Remove any previous TSDB dir. We don't need it.
 	if err := os.RemoveAll(udir); err != nil {
 		return nil, err
@@ -281,16 +283,16 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		MinBlockDuration:            2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:            2 * time.Hour.Milliseconds(),
 		NoLockfile:                  true,
-		StripeSize:                  b.config.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:   b.config.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksWriteQueueSize:    b.config.TSDB.HeadChunksWriteQueueSize,
+		StripeSize:                  b.blocksStorageCfg.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:   b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:    b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
 		WALSegmentSize:              -1, // No WAL
 		SeriesLifecycleCallback:     udb,
 		BlocksToDelete:              udb.blocksToDelete,
 		IsolationDisabled:           true,
 		EnableOverlappingCompaction: false,                                                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:        b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:            int64(b.config.TSDB.OutOfOrderCapacityMax),
+		OutOfOrderCapMax:            int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
 		EnableNativeHistograms:      b.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:       nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
 	}, nil)
@@ -349,8 +351,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	numBlocks := atomic.NewInt64(0)
 
 	eg, ctx := errgroup.WithContext(ctx)
-	if b.config.TSDB.ShipConcurrency > 0 {
-		eg.SetLimit(b.config.TSDB.ShipConcurrency)
+	if b.blocksStorageCfg.TSDB.ShipConcurrency > 0 {
+		eg.SetLimit(b.blocksStorageCfg.TSDB.ShipConcurrency)
 	}
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() error {
@@ -414,11 +416,6 @@ type extendedAppender interface {
 type userTSDB struct {
 	*tsdb.DB
 	userID string
-}
-
-// BlocksUploader interface is used to have an easy way to mock it in tests.
-type BlocksUploader interface {
-	Sync(ctx context.Context) (uploaded int, err error)
 }
 
 func (u *userTSDB) compactEverything(ctx context.Context) error {
