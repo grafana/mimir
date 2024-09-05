@@ -139,8 +139,8 @@ const query_client = new Httpx({
 });
 
 const query_request_rates = {
-    instant_low_cardinality_queries: Math.ceil(READ_REQUEST_RATE * 0.99), // 99%
-    instant_high_cardinality_queries: Math.ceil(READ_REQUEST_RATE * 0.01), // 1%
+    instant_low_cardinality_queries: Math.ceil(READ_REQUEST_RATE * 1.00), // 99%
+    instant_high_cardinality_queries: Math.ceil(READ_REQUEST_RATE * 0.00), // 1%
 };
 
 /**
@@ -175,22 +175,22 @@ export const options = {
 
             // The number of VUs should be adjusted based on how much load we're pushing on the read path.
             // We estimated about 5 VU every query/sec.
-            preAllocatedVUs: query_request_rates.instant_low_cardinality_queries*5,
-            maxVus: query_request_rates.instant_low_cardinality_queries*5,
+            preAllocatedVUs: query_request_rates.instant_low_cardinality_queries,
+            maxVus: query_request_rates.instant_low_cardinality_queries,
         },
-        reads_instant_queries_high_cardinality: {
-            executor: 'constant-arrival-rate',
-            rate: query_request_rates.instant_high_cardinality_queries,
-            timeUnit: '1s',
-
-            duration: `${DURATION_MIN}m`,
-            exec: 'run_instant_query_high_cardinality',
-
-            // The number of VUs should be adjusted based on how much load we're pushing on the read path.
-            // We estimated about 10 VU every query/sec.
-            preAllocatedVUs: query_request_rates.instant_high_cardinality_queries*10,
-            maxVus: query_request_rates.instant_high_cardinality_queries*10,
-        },
+        // reads_instant_queries_high_cardinality: {
+        //     executor: 'constant-arrival-rate',
+        //     rate: query_request_rates.instant_high_cardinality_queries,
+        //     timeUnit: '1s',
+        //
+        //     duration: `${DURATION_MIN}m`,
+        //     exec: 'run_instant_query_high_cardinality',
+        //
+        //     // The number of VUs should be adjusted based on how much load we're pushing on the read path.
+        //     // We estimated about 10 VU every query/sec.
+        //     preAllocatedVUs: query_request_rates.instant_high_cardinality_queries,
+        //     maxVus: query_request_rates.instant_high_cardinality_queries,
+        // },
     },
 };
 
@@ -231,9 +231,9 @@ const QUERY_METRICS_SUBSET = 0.2; // 20%
 const QUERY_MIN_TIME_SECONDS = Date.parse("2022-03-30T13:00:00Z") / 1000
 
 const query_distribution = {
-    9: 'sum by(cardinality_1e2) (rate($metric[$rate_interval]))',
-    11: 'sum(rate($metric[$rate_interval]))',
-    80: 'sum by(cardinality_1e1) (rate($metric[$rate_interval]))',
+    9: 'sum by(cardinality_1e2) (rate($metric[$rate_interval] offset $offset))',
+    11: 'sum(rate($metric[$rate_interval] offset $offset))',
+    80: 'sum by(cardinality_1e1) (rate($metric[$rate_interval] offset $offset))',
 }
 
 /**
@@ -250,11 +250,19 @@ const instant_query_low_cardinality_distribution = {
         14: '10m',
         80: '5m',
     },
+    // offset: {
+    //     20: '8h',
+    //     30: '6h',
+    //     50: '1m',
+    // },
+    offset: {
+        100: '5m',
+    },
     query: query_distribution,
     cardinality: {
         // The cardinality must be a power of 10 (because of how "cardinality labels" are generated).
-        95: 1e1, // 10
-        5: 1e2, // 100
+        90: 1e1, // 10
+        10: 1e2, // 100
     },
 };
 
@@ -269,11 +277,19 @@ const instant_query_high_cardinality_distribution = {
         20: '5m',
         80: '1m',
     },
+    // offset: {
+    //     20: '8h',
+    //     30: '6h',
+    //     50: '1m',
+    // },
+    offset: {
+        100: '5m',
+    },
     query: query_distribution,
     cardinality: {
         // The cardinality must be a power of 10 (because of how "cardinality labels" are generated).
-        99.5: 1e3, // 1000
-        0.5: 1e7, // 100k
+        90: 1e3, // 1000
+        10: 1e7, // 100k
     },
 };
 
@@ -333,7 +349,7 @@ function get_random_entry_from_config(config) {
  * @param {string} rate_interval The rate interval as a string parseable by the Prometheus duration format.
  * @return {string} A Prometheus query expression.
  */
-function get_random_query_from_config(config, cardinality, rate_interval) {
+function get_random_query_from_config(config, cardinality, rate_interval, offset) {
     const cardinality_exp = Math.log10(cardinality)
 
     // Find the max group ID (0 based) based on the given query cardinality.
@@ -349,6 +365,7 @@ function get_random_query_from_config(config, cardinality, rate_interval) {
     let query = get_random_entry_from_config(config);
     query = query.replace(/\$metric/g, metric_selector);
     query = query.replace(/\$rate_interval/g, rate_interval);
+    query = query.replace(/\$offset/g, offset);
     return query;
 }
 
@@ -391,8 +408,7 @@ function get_read_authentication_headers() {
     let auth_headers = new Map();
 
     if (READ_USERNAME !== '' || READ_TOKEN !== '') {
-        auth_headers.set('Authorization', `Basic ${READ_TOKEN}`)
-        // auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${READ_USERNAME}:${READ_TOKEN}`)}`)
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${READ_USERNAME}:${READ_TOKEN}`)}`)
     }
 
     if (READ_TENANT_ID !== '') {
@@ -419,7 +435,6 @@ function get_write_authentication_headers() {
 
     return auth_headers;
 }
-
 /**
  * See run_instant_query().
  */
@@ -442,8 +457,9 @@ export function run_instant_query_high_cardinality() {
 export function run_instant_query(name, config) {
     const time = Math.ceil(Date.now() / 1000) - 60;
     const rate_interval = get_random_entry_from_config(config.rate_interval);
+    const offset = get_random_entry_from_config(config.offset);
     const cardinality = get_random_entry_from_config(config.cardinality);
-    const query = get_random_query_from_config(config.query, cardinality, rate_interval);
+    const query = get_random_query_from_config(config.query, cardinality, rate_interval, offset);
 
     console.debug(name, " - query: ", query)
     describe(name, () => {
