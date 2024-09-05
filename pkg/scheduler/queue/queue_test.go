@@ -1,7 +1,7 @@
-// // SPDX-License-Identifier: AGPL-3.0-only
-// // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/scheduler/queue/queue_test.go
-// // Provenance-includes-license: Apache-2.0
-// // Provenance-includes-copyright: The Cortex Authors.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/scheduler/queue/queue_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
 package queue
 
 import (
@@ -743,8 +743,8 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
 			// passing a QuerierWorkerDequeueRequest for a canceled querier connection
-			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, tt.prioritizeQueryComponents, queue.forgetDelay)
-			queueBroker.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
+			qb := newQueueBroker(queue.maxOutstandingPerTenant, tt.prioritizeQueryComponents, queue.forgetDelay)
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
 
 			tenantMaxQueriers := 0 // no sharding
 			queueDim := randAdditionalQueueDimension(true)
@@ -762,17 +762,15 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			if queueDim == nil {
 				queueDim = []string{unknownQueueDimension}
 			}
-			if queueBroker.prioritizeQueryComponents {
+			if qb.prioritizeQueryComponents {
 				multiAlgorithmTreeQueuePath = append(append(multiAlgorithmTreeQueuePath, queueDim...), "tenant-1")
 			} else {
 				multiAlgorithmTreeQueuePath = append([]string{"tenant-1"}, queueDim...)
 			}
 
-			if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				require.Nil(t, itq.GetNode(multiAlgorithmTreeQueuePath))
-				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
-			}
+			require.Nil(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath))
+			require.NoError(t, qb.enqueueRequestBack(&tr, tenantMaxQueriers))
+			require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 			ctx, cancel := context.WithCancel(context.Background())
 			call := &QuerierWorkerDequeueRequest{
@@ -790,9 +788,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			// indicating not to re-submit a request for QuerierWorkerDequeueRequest for the querier
 			require.True(t, queue.trySendNextRequestForQuerier(call))
 			// assert request was re-enqueued for tenant after failed send
-			if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
-			}
+			require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 		})
 	}

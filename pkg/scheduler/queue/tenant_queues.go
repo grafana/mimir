@@ -90,14 +90,12 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		itemCount := 0
-		for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
-			itemCount += tenantNode.ItemCount()
-		}
-		if itemCount+1 > qb.maxTenantQueueSize {
-			return ErrTooManyRequests
-		}
+	itemCount := 0
+	for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
+		itemCount += tenantNode.ItemCount()
+	}
+	if itemCount+1 > qb.maxTenantQueueSize {
+		return ErrTooManyRequests
 	}
 
 	err = qb.tree.EnqueueBackByPath(queuePath, request)
@@ -150,14 +148,12 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 
 	var queuePath QueuePath
 	var queueElement any
-	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		queuePath, queueElement = itq.Dequeue(
-			&DequeueArgs{
-				querierID:       dequeueReq.QuerierID,
-				workerID:        dequeueReq.WorkerID,
-				lastTenantIndex: dequeueReq.lastTenantIndex.last,
-			})
-	}
+	queuePath, queueElement = qb.tree.Dequeue(
+		&DequeueArgs{
+			querierID:       dequeueReq.QuerierID,
+			workerID:        dequeueReq.WorkerID,
+			lastTenantIndex: dequeueReq.lastTenantIndex.last,
+		})
 
 	if queueElement == nil {
 		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, nil
@@ -175,13 +171,12 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
 	}
 
-	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		queueNodeAfterDequeue := itq.GetNode(queuePath)
-		if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
-			// queue node was deleted due to being empty after dequeue
-			qb.tenantQuerierAssignments.removeTenant(tenantID)
-		}
+	queueNodeAfterDequeue := qb.tree.GetNode(queuePath)
+	if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
+		// queue node was deleted due to being empty after dequeue
+		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
+
 	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
 }
 

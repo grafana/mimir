@@ -258,24 +258,22 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			// assert item count of tenant node and its subnodes
 			queuePath := QueuePath{"tenant-1"}
 
-			if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				var itemCount int
-				// if prioritizeQueryComponents, we need to build paths for each queue dimension
-				// and sum all items
-				if qb.prioritizeQueryComponents {
-					for _, addlQueueDim := range additionalQueueDimensions {
-						var path QueuePath
-						path = append(append(path, addlQueueDim...), "tenant-1")
-						if addlQueueDim == nil {
-							path = qb.makeQueuePathForTests("tenant-1")
-						}
-						itemCount += itq.GetNode(path).ItemCount()
+			var itemCount int
+			// if prioritizeQueryComponents, we need to build paths for each queue dimension
+			// and sum all items
+			if qb.prioritizeQueryComponents {
+				for _, addlQueueDim := range additionalQueueDimensions {
+					var path QueuePath
+					path = append(append(path, addlQueueDim...), "tenant-1")
+					if addlQueueDim == nil {
+						path = qb.makeQueuePathForTests("tenant-1")
 					}
-					assert.Equal(t, maxTenantQueueSize, itemCount)
-
-				} else {
-					assert.Equal(t, maxTenantQueueSize, itq.GetNode(queuePath).ItemCount())
+					itemCount += qb.tree.GetNode(path).ItemCount()
 				}
+				assert.Equal(t, maxTenantQueueSize, itemCount)
+
+			} else {
+				assert.Equal(t, maxTenantQueueSize, qb.tree.GetNode(queuePath).ItemCount())
 			}
 
 			// assert equal distribution of queue items between 4 subnodes
@@ -290,11 +288,8 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 					checkPath = append(QueuePath{"tenant-1"}, v...)
 				}
 
-				var itemCount int
-				if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-					itemCount = itq.GetNode(checkPath).getLocalQueue().Len()
-				}
-				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), itemCount)
+				dimensionItemCount := qb.tree.GetNode(checkPath).getLocalQueue().Len()
+				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), dimensionItemCount)
 			}
 
 			// assert error received when hitting a tenant's enqueue limit,
@@ -851,15 +846,13 @@ func isConsistent(qb *queueBroker) error {
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
 		path := qb.makeQueuePathForTests(tenantID)
 
-		if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-			node := itq.rootNode.getNode(path)
-			if tenantID != "" && node == nil {
-				return fmt.Errorf("tenant %s doesn't have queue", tenantID)
-			}
+		node := qb.tree.GetNode(path)
+		if tenantID != "" && node == nil {
+			return fmt.Errorf("tenant %s doesn't have queue", tenantID)
+		}
 
-			if tenantID == "" && node != nil {
-				return fmt.Errorf("tenant %s shouldn't have queue", tenantID)
-			}
+		if tenantID == "" && node != nil {
+			return fmt.Errorf("tenant %s shouldn't have queue", tenantID)
 		}
 
 		if tenantID == "" {
