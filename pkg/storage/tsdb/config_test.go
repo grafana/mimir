@@ -137,8 +137,6 @@ func TestConfig_Validate(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			storageCfg := &BlocksStorageConfig{}
 			activeSeriesCfg := &activeseries.Config{}

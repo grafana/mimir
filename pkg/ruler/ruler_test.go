@@ -871,9 +871,6 @@ func TestSharding(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		// Change scope because we run these test cases parallelly.
-		tc := tc
-
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -1632,7 +1629,6 @@ func TestSendAlerts(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				if len(tc.in) == 0 {

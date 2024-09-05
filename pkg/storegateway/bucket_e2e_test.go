@@ -749,7 +749,6 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 	}
 
 	for testName, testData := range testCases {
-		testData := testData
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			bkt := objstore.NewInMemBucket()

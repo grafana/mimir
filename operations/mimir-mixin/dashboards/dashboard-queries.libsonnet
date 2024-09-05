@@ -297,7 +297,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
-          sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (
+            %(perIngesterQuery)s unless on (job)
+            cortex_partition_ring_partitions{%(ingester)s}
+          )
           / on (%(groupByCluster)s) group_left()
           max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
         )
@@ -318,6 +321,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         groupByLabels: groupByLabels,
         groupByCluster: $._config.group_by_cluster,
         distributor: variables.distributorMatcher,
+        ingester: variables.ingesterMatcher,
       },
     },
 

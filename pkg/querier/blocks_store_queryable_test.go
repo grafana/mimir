@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -2640,6 +2641,35 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			expectedMinT:         util.TimeToMillis(now.Add(-sevenDays)),
 			expectedMaxT:         util.TimeToMillis(now),
 		},
+
+		"should manipulate query on large time range over the limit": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(now.Add(-thirtyDays).Add(-100 * time.Hour)),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should manipulate the start of a query without start time": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(v1.MinTime),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should not manipulate query without end time, we allow querying arbitrarily into the future": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(now.Add(-time.Hour)),
+			queryMaxT:            util.TimeToMillis(v1.MaxTime),
+			expectedMinT:         util.TimeToMillis(now.Add(-time.Hour)),
+			expectedMaxT:         util.TimeToMillis(v1.MaxTime),
+		},
+		"should manipulate the start of a query without start or end time, we allow querying arbitrarily into the future, but not the past": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(v1.MinTime),
+			queryMaxT:            util.TimeToMillis(v1.MaxTime),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(v1.MaxTime),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -2661,17 +2691,28 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames(ctx, &storage.LabelHints{})
-			require.NoError(t, err)
-			require.Len(t, finder.Calls, 1)
-			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
-			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
+			assertCalledWithMinMaxTime := func() {
+				const delta = float64(5000)
+				require.Len(t, finder.Calls, 1)
+				gotStartMillis := finder.Calls[0].Arguments.Get(2).(int64)
+				assert.InDeltaf(t, testData.expectedMinT, gotStartMillis, delta, "expected start %s, got %s", util.TimeFromMillis(testData.expectedMinT).UTC(), util.TimeFromMillis(gotStartMillis).UTC())
+				gotEndMillis := finder.Calls[0].Arguments.Get(3).(int64)
+				assert.InDeltaf(t, testData.expectedMaxT, gotEndMillis, delta, "expected end %s, got %s", util.TimeFromMillis(testData.expectedMinT).UTC(), util.TimeFromMillis(gotEndMillis).UTC())
+				finder.Calls = finder.Calls[1:]
+			}
 
-			_, _, err = q.LabelValues(ctx, "foo", &storage.LabelHints{})
-			require.Len(t, finder.Calls, 2)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
-			assert.Equal(t, testData.expectedMaxT, finder.Calls[1].Arguments.Get(3))
+			// Assert on the time range of the actual executed query (5s delta).
+			t.Run("LabelNames", func(t *testing.T) {
+				_, _, err := q.LabelNames(ctx, &storage.LabelHints{})
+				require.NoError(t, err)
+				assertCalledWithMinMaxTime()
+			})
+
+			t.Run("LabelValues", func(t *testing.T) {
+				_, _, err := q.LabelValues(ctx, "foo", &storage.LabelHints{})
+				require.NoError(t, err)
+				assertCalledWithMinMaxTime()
+			})
 		})
 	}
 }
@@ -3293,7 +3334,7 @@ func TestShouldRetry(t *testing.T) {
 		"should retry on wrapped grpc.ErrClientConnClosing": {
 			// Ignore deprecation warning for now
 			// nolint:staticcheck
-			err:      globalerror.WrapGRPCErrorWithContextError(grpc.ErrClientConnClosing),
+			err:      globalerror.WrapGRPCErrorWithContextError(context.Background(), grpc.ErrClientConnClosing),
 			expected: true,
 		},
 		"should retry on generic error": {

@@ -123,8 +123,6 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 	genericChunks := make([]batch.GenericChunk, 0, len(chunks))
 
 	for _, c := range chunks {
-		c := c
-
 		genericChunk := batch.NewGenericChunk(c.MinTime, c.MaxTime, func(reuse chunk.Iterator) chunk.Iterator {
 			encoding, ok := c.GetChunkEncoding()
 			if !ok {

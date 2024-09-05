@@ -3975,6 +3975,17 @@
         },
         {
           "kind": "field",
+          "name": "ignore_ooo_exemplars",
+          "required": false,
+          "desc": "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.ignore-ooo-exemplars",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "native_histograms_ingestion_enabled",
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.",
@@ -4698,6 +4709,17 @@
           "fieldFlag": "distributor.otel-metric-suffixes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "otel_created_timestamp_zero_ingestion_enabled",
+          "required": false,
+          "desc": "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-created-timestamp-zero-ingestion-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -5731,17 +5753,6 @@
           "fieldFlag": "query-frontend.instance-port",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "additional_query_queue_dimensions_enabled",
-          "required": false,
-          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.additional-query-queue-dimensions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -14813,6 +14824,28 @@
           "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_parsing_label_matchers",
+          "required": false,
+          "desc": "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.log-parsing-label-matchers",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "utf8_migration_logging",
+          "required": false,
+          "desc": "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -16021,17 +16054,6 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "additional_query_queue_dimensions_enabled",
-          "required": false,
-          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

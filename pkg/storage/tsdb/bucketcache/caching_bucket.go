@@ -528,7 +528,6 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 	// Run parallel queries for each missing range. Fetched data is stored into 'hits' map, protected by hitsMutex.
 	g, gctx := errgroup.WithContext(ctx)
 	for _, m := range missing {
-		m := m
 		g.Go(func() error {
 			r, err := cb.Bucket.GetRange(gctx, name, m.start, m.end-m.start)
 			if err != nil {

@@ -352,9 +352,6 @@ func TestShuffleShardingStrategy(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testName := testName
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 

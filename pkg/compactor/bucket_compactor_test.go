@@ -299,7 +299,6 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData // Prevent loop variable being captured by func literal
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 

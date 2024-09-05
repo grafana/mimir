@@ -115,8 +115,6 @@ func TestBlockQuerierSeries(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			series := newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(testData.series.Labels), testData.series.Chunks)
 
@@ -298,9 +296,6 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 
 	// Test while calling .At() after varying numbers of samples have been consumed
 	for _, callAtEvery := range []uint32{1, 3, 100, 971, 1000} {
-		// Change scope of the variable to have tests working fine when running in parallel.
-		callAtEvery := callAtEvery
-
 		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 

@@ -296,9 +296,6 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		// capture running variables, otherwise reused due to t.Parallel leading to corrupt test
-		testName := testName
-		testData := testData
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
@@ -439,9 +436,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Start all gateways concurrently.
 	for _, g := range initialGateways {
-		// Local variable scope (ensures the cleanup function is called on the right gateway).
-		g := g
-
 		require.NoError(t, g.StartAsync(ctx))
 		t.Cleanup(func() {
 			assert.NoError(t, services.StopAndAwaitTerminated(ctx, g))
@@ -476,9 +470,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Start all new gateways concurrently.
 	for _, g := range scaleUpGateways {
-		// Local variable scope (ensures the cleanup function is called on the right gateway).
-		g := g
-
 		require.NoError(t, g.StartAsync(ctx))
 		t.Cleanup(func() {
 			assert.NoError(t, services.StopAndAwaitTerminated(ctx, g))

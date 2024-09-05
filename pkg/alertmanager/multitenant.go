@@ -95,10 +95,17 @@ type MultitenantAlertmanagerConfig struct {
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
 
-	// Enable UTF-8 strict mode. This means Alertmanager uses the matchers/parse parser
-	// to parse configurations and API requests, instead of pkg/labels. Use this mode
-	// once you are confident that your configuration is forwards compatible.
+	// Enable UTF-8 strict mode. When enabled, Alertmanager uses the new UTF-8 parser
+	// when parsing label matchers in tenant configurations and HTTP requests, instead
+	// of the old regular expression parser, referred to as classic mode.
+	// Enable this mode once confident that all tenant configurations are forwards
+	// compatible.
 	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"experimental"`
+	// Enables logging when parsing label matchers. If UTF-8 strict mode is enabled,
+	// then the UTF-8 parser will be logged. If it is disabled, then the old regular
+	// expression parser will be logged.
+	LogParsingLabelMatchers bool `yaml:"log_parsing_label_matchers" category:"experimental"`
+	UTF8MigrationLogging    bool `yaml:"utf8_migration_logging" category:"experimental"`
 }
 
 const (
@@ -130,6 +137,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 
 	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. To identify tenants with incompatible configurations, search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. To find tenant configurations that are valid but contain ambiguous matchers, search for log lines containing `Matchers input has disagreement`. Each log line includes the invalid input, a suggestion on how to fix the input (excluding ambiguous matchers, as these require manual correction), and the ID of the affected tenant. You must run Mimir with debug-level logging enabled. Otherwise, these lines aren't logged. For more information, refer to https://prometheus.io/docs/alerting/latest/configuration/#label-matchers. Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
+	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
+	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 }
 
 // Validate config and returns error on failure
@@ -806,12 +815,14 @@ type amConfig struct {
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
-	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
-	// The reason for this that the config.Load function uses the origin "config",
-	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
-	// configurations. This means metrics from API requests are confused with metrics from
-	// tenant configurations. To avoid this confusion, we use a different origin.
-	validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+	if am.cfg.UTF8MigrationLogging {
+		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
+		// The reason for this that the config.Load function uses the origin "config",
+		// which is correct, but Mimir uses config.Load to validate both API requests and tenant
+		// configurations. This means metrics from API requests are confused with metrics from
+		// tenant configurations. To avoid this confusion, we use a different origin.
+		validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+	}
 
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
 

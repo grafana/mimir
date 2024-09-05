@@ -645,7 +645,6 @@ func batchesToMessages(estimatedChunks uint64, batches ...storepb.StreamingChunk
 	messages[0] = storepb.NewStreamingChunksEstimate(estimatedChunks)
 
 	for i, b := range batches {
-		b := b
 		messages[i+1] = storepb.NewStreamingChunksResponse(&b)
 	}
 

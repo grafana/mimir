@@ -355,7 +355,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, _ *storage.LabelHin
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -400,7 +400,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, _ *st
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -753,10 +753,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
 			defer log.Span.Finish()
@@ -1017,10 +1013,6 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			req, err := createLabelNamesRequest(minT, maxT, blockIDs, matchers)
 			if err != nil {
@@ -1100,10 +1092,6 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, matchers...)
 			if err != nil {

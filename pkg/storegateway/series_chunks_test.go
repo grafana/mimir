@@ -314,8 +314,6 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 	t.Run("should iterate all sets if no error occurs", func(t *testing.T) {
 		for preloadSize := 1; preloadSize <= len(sets)+1; preloadSize++ {
-			preloadSize := preloadSize
-
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
 				t.Parallel()
 
@@ -342,8 +340,6 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 	t.Run("should stop iterating once an error is found", func(t *testing.T) {
 		for preloadSize := 1; preloadSize <= len(sets)+1; preloadSize++ {
-			preloadSize := preloadSize
-
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
 				t.Parallel()
 

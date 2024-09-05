@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -873,9 +874,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 		},
 	}
 
+	logger := log.NewNopLogger()
 	// Create the PromQL engine to execute the queries.
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             logger,
 		ActiveQueryTracker: nil,
 		MaxSamples:         1e6,
 		LookbackDelta:      engineLookbackDelta,
@@ -900,7 +902,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -928,7 +930,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -965,7 +967,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
-				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -993,7 +995,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
-				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1021,7 +1023,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 // Check that time range of /series is restricted by maxLabelsQueryLength.
 // LabelName and LabelValues are checked in TestBlocksStoreQuerier_MaxLabelsQueryRange(),
 // because the implementation of those makes it really hard to do in Querier.
-func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
+func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 	const (
 		thirtyDays = 30 * 24 * time.Hour
 	)
@@ -1042,6 +1044,34 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			expectedMetadataStartTime: now.Add(-thirtyDays),
 			expectedMetadataEndTime:   now,
 		},
+		"should not manipulate query short time range within the limit": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            now.Add(-time.Hour),
+			queryEndTime:              now,
+			expectedMetadataStartTime: now.Add(-time.Hour),
+			expectedMetadataEndTime:   now,
+		},
+		"should manipulate the start of a query without start time": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            v1.MinTime,
+			queryEndTime:              now,
+			expectedMetadataStartTime: now.Add(-thirtyDays),
+			expectedMetadataEndTime:   now,
+		},
+		"should not manipulate query without end time, we allow querying arbitrarily into the future": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            now.Add(-time.Hour),
+			queryEndTime:              v1.MaxTime,
+			expectedMetadataStartTime: now.Add(-time.Hour),
+			expectedMetadataEndTime:   v1.MaxTime,
+		},
+		"should manipulate the start of a query without start or end time, we allow querying arbitrarily into the future, but not the past": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            v1.MinTime,
+			queryEndTime:              v1.MaxTime,
+			expectedMetadataStartTime: now.Add(-thirtyDays),
+			expectedMetadataEndTime:   v1.MaxTime,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1050,10 +1080,13 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
+			cfg.MaxQueryIntoFuture = 0
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
 			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			limits.MaxPartialQueryLength = testData.maxLabelsQueryLength
+			limits.MaxTotalQueryLength = testData.maxLabelsQueryLength
 			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
@@ -1061,35 +1094,35 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			// block storage will not be hit; provide nil querier
 			var storeQueryable storage.Queryable
 
-			t.Run("series", func(t *testing.T) {
-				distributor := &mockDistributor{}
-				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
+			distributor := &mockDistributor{}
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
-				require.NoError(t, err)
+			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 
-				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
-				require.NoError(t, err)
+			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+			require.NoError(t, err)
 
-				hints := &storage.SelectHints{
-					Start: util.TimeToMillis(testData.queryStartTime),
-					End:   util.TimeToMillis(testData.queryEndTime),
-					Func:  "series",
-				}
-				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+			hints := &storage.SelectHints{
+				Start: util.TimeToMillis(testData.queryStartTime),
+				End:   util.TimeToMillis(testData.queryEndTime),
+				Func:  "series",
+			}
+			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
 
-				set := q.Select(ctx, false, hints, matcher)
-				require.False(t, set.Next()) // Expected to be empty.
-				require.NoError(t, set.Err())
+			set := q.Select(ctx, false, hints, matcher)
+			require.False(t, set.Next()) // Expected to be empty.
+			require.NoError(t, set.Err())
 
-				// Assert on the time range of the actual executed query (5s delta).
-				delta := float64(5000)
-				require.Len(t, distributor.Calls, 1)
-				assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
-			})
-
+			// Assert on the time range of the actual executed query (5s delta).
+			delta := float64(5000)
+			require.Len(t, distributor.Calls, 1)
+			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+			gotStartMillis := int64(distributor.Calls[0].Arguments.Get(1).(model.Time))
+			assert.InDeltaf(t, util.TimeToMillis(testData.expectedMetadataStartTime), gotStartMillis, delta, "expected start %s, got %s", testData.expectedMetadataStartTime.UTC(), util.TimeFromMillis(gotStartMillis).UTC())
+			gotEndMillis := int64(distributor.Calls[0].Arguments.Get(2).(model.Time))
+			assert.InDeltaf(t, util.TimeToMillis(testData.expectedMetadataEndTime), gotEndMillis, delta, "expected end %s, got %s", testData.expectedMetadataEndTime.UTC(), util.TimeFromMillis(gotEndMillis).UTC())
 		})
 	}
 }

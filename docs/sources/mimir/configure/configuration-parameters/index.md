@@ -1623,14 +1623,6 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Non-operational: Enqueue query requests with additional queue
-# dimensions to split tenant request queues into subqueues. This enables
-# separate requests to proceed from a tenant's subqueues even when other
-# subqueues are blocked on slow query requests. Must be set on both
-# query-frontend and scheduler to take effect. (default false)
-# CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
-[additional_query_queue_dimensions_enabled: <boolean> | default = false]
-
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -1713,14 +1705,6 @@ The `query_scheduler` block configures the query-scheduler.
 # 429.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-# (experimental) Non-operational: Enqueue query requests with additional queue
-# dimensions to split tenant request queues into subqueues. This enables
-# separate requests to proceed from a tenant's subqueues even when other
-# subqueues are blocked on slow query requests. Must be set on both
-# query-frontend and scheduler to take effect. (default false)
-# CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
-[additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
 # (experimental) Use an experimental version of the query queue which has the
 # same behavior as the existing queue, but integrates tenant selection into the
@@ -2497,6 +2481,17 @@ alertmanager_client:
 # configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
+
+# (experimental) Enable logging when parsing label matchers. This flag is
+# intended to be used with -alertmanager.utf8-strict-mode-enabled to validate
+# UTF-8 strict mode is working as intended.
+# CLI flag: -alertmanager.log-parsing-label-matchers
+[log_parsing_label_matchers: <boolean> | default = false]
+
+# (experimental) Enable logging of tenant configurations that are incompatible
+# with UTF-8 strict mode.
+# CLI flag: -alertmanager.utf8-migration-logging-enabled
+[utf8_migration_logging: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -3280,6 +3275,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
+# (experimental) Whether to ignore exemplars with out-of-order timestamps. If
+# enabled, exemplars with out-of-order timestamps are silently dropped,
+# otherwise they cause partial errors.
+# CLI flag: -ingester.ignore-ooo-exemplars
+[ignore_ooo_exemplars: <boolean> | default = false]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
@@ -3706,6 +3707,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
+
+# (experimental) Whether to enable translation of OTel start timestamps to
+# Prometheus zero samples in the OTLP endpoint.
+# CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
+[otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.

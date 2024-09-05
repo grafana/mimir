@@ -741,10 +741,6 @@ receivers:
 
 	for receiverName, testData := range tests {
 		for _, firewallEnabled := range []bool{true, false} {
-			receiverName := receiverName
-			testData := testData
-			firewallEnabled := firewallEnabled
-
 			t.Run(fmt.Sprintf("receiver=%s firewall enabled=%v", receiverName, firewallEnabled), func(t *testing.T) {
 				t.Parallel()
 
