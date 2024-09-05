@@ -668,7 +668,7 @@ func NewQuerierWorkerDequeueRequest(querierWorkerConn *QuerierWorkerConn, lastTe
 }
 
 // querierWorkerDequeueResponse is the response for a QuerierWorkerDequeueRequest,
-// to be written to the dequeue requests' receiver channel.
+// to be written to the dequeue request's receiver channel.
 // Errors are embedded in this response rather than written to a separate error channel
 // so that lastTenantIndex can still be returned back to the querier connection.
 type querierWorkerDequeueResponse struct {

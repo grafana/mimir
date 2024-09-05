@@ -67,17 +67,17 @@ func (t *MultiQueuingAlgorithmTreeQueue) IsEmpty() bool {
 	return t.rootNode.IsEmpty()
 }
 
-// Dequeue removes and returns an item from the front of the next appropriate Node in the
-// MultiQueuingAlgorithmTreeQueue, as well as the path to the Node which that item was dequeued from. If DequeueArgs
-// are passed, each QueuingAlgorithm's setup function is called with DequeueArgs to update its state. If DequeueArgs
-// is nil, the dequeue operation will proceed without setting up QueuingAlgorithm state.
+// Dequeue removes and returns an item from the front of the next appropriate Node in the MultiQueuingAlgorithmTreeQueue,
+// as well as the path to the Node which that item was dequeued from. If DequeueArgs are passed,
+// each QueuingAlgorithm's setup function is called with DequeueArgs to update its state. If DequeueArgs is nil,
+// the dequeue operation will proceed without setting up QueuingAlgorithm state.
 //
-// Either the root/self node or a child node is chosen according to the Node's QueuingAlgorithm. If
-// the root node is chosen, an item will be dequeued from the front of its localQueue. If a child
-// node is chosen, it is recursively dequeued from until a node selects its localQueue.
+// Either the root/self node or a child node is chosen according to the Node's QueuingAlgorithm.
+// If the root node is chosen, an item will be dequeued from the front of its localQueue. If a child node is chosen,
+// it is recursively dequeued from until a node selects its localQueue.
 //
-// Nodes that satisfy IsEmpty after a dequeue operation are deleted as the recursion returns up the stack. This
-// maintains structural guarantees relied upon to make IsEmpty() non-recursive.
+// Nodes that satisfy IsEmpty after a dequeue operation are deleted as the recursion returns up the stack.
+// This maintains structural guarantees relied upon to make IsEmpty() non-recursive.
 func (t *MultiQueuingAlgorithmTreeQueue) Dequeue(dequeueArgs *DequeueArgs) (QueuePath, any) {
 	if dequeueArgs != nil {
 		for _, qa := range t.algosByDepth {
