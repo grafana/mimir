@@ -925,6 +925,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 	}
 
 	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, staticHeaders); err != nil {
+		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
