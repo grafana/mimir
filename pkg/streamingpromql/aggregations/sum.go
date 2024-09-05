@@ -25,7 +25,22 @@ type SumAggregationGroup struct {
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	err := g.accumulateFloats(data, steps, start, interval, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+	err = g.accumulateHistograms(data, steps, start, interval, memoryConsumptionTracker, emitAnnotationFunc)
+	if err != nil {
+		return err
+	}
+
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
 	var err error
+
 	if len(data.Floats) > 0 && g.floatSums == nil {
 		// First series with float values for this group, populate it.
 		g.floatSums, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
@@ -47,6 +62,19 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		g.floatPresent = g.floatPresent[:steps]
 	}
 
+	for _, p := range data.Floats {
+		idx := (p.T - start) / interval
+		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
+		g.floatPresent[idx] = true
+	}
+
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	var err error
+	var lastUncopiedHistogram *histogram.FloatHistogram
+
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
 		// First series with histogram values for this group, populate it.
 		g.histogramSums, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
@@ -55,14 +83,6 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		}
 		g.histogramSums = g.histogramSums[:steps]
 	}
-
-	for _, p := range data.Floats {
-		idx := (p.T - start) / interval
-		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
-		g.floatPresent[idx] = true
-	}
-
-	var lastUncopiedHistogram *histogram.FloatHistogram
 
 	for _, p := range data.Histograms {
 		idx := (p.T - start) / interval
@@ -101,7 +121,6 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		}
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 

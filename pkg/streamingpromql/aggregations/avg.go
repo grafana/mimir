@@ -41,9 +41,23 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			return err
 		}
 		g.groupSeriesCounts = g.groupSeriesCounts[:steps]
-
 	}
 
+	err = g.accumulateFloats(data, steps, start, interval, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+	err = g.accumulateHistograms(data, steps, start, interval, memoryConsumptionTracker, emitAnnotationFunc)
+	if err != nil {
+		return err
+	}
+
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	return nil
+}
+
+func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+	var err error
 	if len(data.Floats) > 0 && g.floats == nil {
 		// First series with float values for this group, populate it.
 		g.floats, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
@@ -70,15 +84,6 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		g.floatCompensatingMeans = g.floatCompensatingMeans[:steps]
 		g.floatPresent = g.floatPresent[:steps]
 		g.incrementalMeans = g.incrementalMeans[:steps]
-	}
-
-	if len(data.Histograms) > 0 && g.histograms == nil {
-		// First series with histogram values for this group, populate it.
-		g.histograms, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-		g.histograms = g.histograms[:steps]
 	}
 
 	for _, p := range data.Floats {
@@ -137,6 +142,19 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			g.floatMeans[idx],
 			g.floatCompensatingMeans[idx],
 		)
+	}
+	return nil
+}
+
+func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	var err error
+	if len(data.Histograms) > 0 && g.histograms == nil {
+		// First series with histogram values for this group, populate it.
+		g.histograms, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.histograms = g.histograms[:steps]
 	}
 
 	var lastUncopiedHistogram *histogram.FloatHistogram
@@ -199,8 +217,6 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			continue
 		}
 	}
-
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 
