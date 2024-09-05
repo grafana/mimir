@@ -469,7 +469,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 		t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainUser = os.Getenv(ingest.KafkaSASLPlainUserEnvVar)
 	}
 	if t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainPass == "" {
-		t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainPass = os.Getenv(ingest.KafkaSASLPlainUserEnvVar)
+		t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainPass = os.Getenv(ingest.KafkaSASLPlainPassEnvVar)
 	}
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
