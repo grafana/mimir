@@ -197,8 +197,8 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		if i+1 < len(data.Histograms) && data.Histograms[i+1].H == p.H {
 			toAdd = p.H.Copy()
 		}
-		_, err = toAdd.Sub(g.histograms[idx])
 
+		_, err = toAdd.Sub(g.histograms[idx])
 		if err != nil {
 			// Unable to subtract histograms (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[idx] = invalidCombinationOfHistograms
@@ -210,10 +210,11 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			}
 			continue
 		}
+
 		toAdd.Div(g.groupSeriesCounts[idx])
 		_, err = g.histograms[idx].Add(toAdd)
 		if err != nil {
-			// Unable to subtract histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
+			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[idx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
