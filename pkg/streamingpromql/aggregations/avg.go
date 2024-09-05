@@ -80,15 +80,9 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 			return err
 		}
 
-		g.incrementalMeans, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-
 		g.floats = g.floats[:steps]
 		g.floatCompensatingMeans = g.floatCompensatingMeans[:steps]
 		g.floatPresent = g.floatPresent[:steps]
-		g.incrementalMeans = g.incrementalMeans[:steps]
 	}
 
 	for _, p := range data.Floats {
@@ -101,7 +95,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 			continue
 		}
 
-		if !g.incrementalMeans[idx] {
+		if g.incrementalMeans == nil || !g.incrementalMeans[idx] {
 			newV, newC := floats.KahanSumInc(p.F, g.floats[idx], g.floatCompensatingMeans[idx])
 			if !math.IsInf(newV, 0) {
 				// The sum doesn't overflow, so we propagate it to the
@@ -119,6 +113,14 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 					return err
 				}
 				g.floatMeans = g.floatMeans[:steps]
+			}
+			if g.incrementalMeans == nil {
+				// First time we are using an incremental mean. Track which series will be incremental.
+				g.incrementalMeans, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
+				if err != nil {
+					return err
+				}
+				g.incrementalMeans = g.incrementalMeans[:steps]
 			}
 			g.incrementalMeans[idx] = true
 			g.floatMeans[idx] = g.floats[idx] / (g.groupSeriesCounts[idx] - 1)
@@ -281,7 +283,7 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 			if havePoint {
 				t := start + int64(i)*interval
 				var f float64
-				if g.incrementalMeans[i] {
+				if g.incrementalMeans != nil && g.incrementalMeans[i] {
 					f = g.floatMeans[i] + g.floatCompensatingMeans[i]
 				} else {
 					f = (g.floats[i] + g.floatCompensatingMeans[i]) / g.groupSeriesCounts[i]
