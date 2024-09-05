@@ -53,9 +53,9 @@ func newQueueBroker(
 			}
 		} else {
 			algos = []QueuingAlgorithm{
-				NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
-				tqas,                                // query components; algorithm selects tenants
-				&roundRobinState{},                  // tenant queues; algorithm selects query from local queue
+				tqas,               // root; QueuingAlgorithm selects tenants
+				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+				&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 			}
 		}
 		tree, err = NewTree(algos...)
