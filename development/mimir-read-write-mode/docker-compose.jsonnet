@@ -6,10 +6,10 @@ std.manifestYamlDoc({
     self.backend +
     self.nginx +
     self.minio +
-    self.grafana +
-    self.grafana_agent +
+    //self.grafana +
+    //self.grafana_agent +
     self.memcached +
-    self.prometheus +
+    //self.prometheus +
     {},
 
   write:: {
