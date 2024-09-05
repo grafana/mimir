@@ -1711,12 +1711,6 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) Use an experimental version of the query queue which has the
-# same behavior as the existing queue, but integrates tenant selection into the
-# tree model.
-# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
-[use_multi_algorithm_query_queue: <boolean> | default = false]
-
 # (experimental) When enabled, the query scheduler primarily prioritizes
 # dequeuing fairly from queue components and secondarily prioritizes dequeuing
 # fairly across tenants. When disabled, the query scheduler primarily
