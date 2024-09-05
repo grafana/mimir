@@ -919,7 +919,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Limits:                            am.limits,
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
-	}, reg, tmplExternalURL)
+	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}

@@ -82,7 +82,7 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
 		PersisterConfig: PersisterConfig{Interval: time.Hour},
-	}, reg, &url.URL{Path: "/am"})
+	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -167,7 +167,7 @@ func TestDispatcherLoggerInsightKey(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg, &url.URL{Path: "/am"})
+	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -373,7 +373,7 @@ func TestSilenceLimits(t *testing.T) {
 		// We have set this to 1 hour, but we don't use it in this
 		// test as we override the broadcast function with SetBroadcast.
 		PersisterConfig: PersisterConfig{Interval: time.Hour},
-	}, r, &url.URL{Path: "/am"})
+	}, r)
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -510,7 +510,7 @@ func TestExperimentalReceiversAPI(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg, &url.URL{Path: "/am"})
+	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
 

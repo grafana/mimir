@@ -192,7 +192,7 @@ type Replicator interface {
 }
 
 // New creates a new Alertmanager.
-func New(cfg *Config, reg *prometheus.Registry, tmplExternalURL *url.URL) (*Alertmanager, error) {
+func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	if cfg.TenantDataDir == "" {
 		return nil, fmt.Errorf("directory for tenant-specific AlertManager is not configured")
 	}
@@ -210,8 +210,6 @@ func New(cfg *Config, reg *prometheus.Registry, tmplExternalURL *url.URL) (*Aler
 			Name: "alertmanager_notification_rate_limited_total",
 			Help: "Number of rate-limited notifications per integration.",
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
-
-		tmplExternalURL: tmplExternalURL,
 	}
 
 	am.registry = reg
