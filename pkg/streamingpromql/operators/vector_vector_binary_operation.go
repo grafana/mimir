@@ -27,8 +27,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
-type BinaryOperation struct {
+// VectorVectorBinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
+type VectorVectorBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
@@ -54,7 +54,7 @@ type BinaryOperation struct {
 	emitAnnotation     functions.EmitAnnotationFunc
 }
 
-var _ types.InstantVectorOperator = &BinaryOperation{}
+var _ types.InstantVectorOperator = &VectorVectorBinaryOperation{}
 
 type binaryOperationOutputSeries struct {
 	leftSeriesIndices  []int
@@ -75,7 +75,7 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewBinaryOperation(
+func NewVectorVectorBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
@@ -83,13 +83,13 @@ func NewBinaryOperation(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-) (*BinaryOperation, error) {
+) (*VectorVectorBinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
 	if opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
-	b := &BinaryOperation{
+	b := &VectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		leftIterator:             types.InstantVectorSeriesDataIterator{},
@@ -109,7 +109,7 @@ func NewBinaryOperation(
 	return b, nil
 }
 
-func (b *BinaryOperation) ExpressionPosition() posrange.PositionRange {
+func (b *VectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return b.expressionPosition
 }
 
@@ -128,7 +128,7 @@ func (b *BinaryOperation) ExpressionPosition() posrange.PositionRange {
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *VectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
@@ -152,7 +152,7 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMet
 // loadSeriesMetadata loads series metadata from both sides of this operation.
 // It returns false if one side returned no series and that means there is no way for this operation to return any series.
 // (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
+func (b *VectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
@@ -190,7 +190,7 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 // - a corresponding list of the source series for each output series
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
-func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
+func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
 	labelsFunc := b.groupLabelsFunc()
 	groupKeyFunc := b.groupKeyFunc()
 	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
@@ -289,7 +289,7 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 //
 // At present, sortSeries uses a very basic heuristic to guess the best way to sort the output series, but we could make
 // this more sophisticated in the future.
-func (b *BinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) {
+func (b *VectorVectorBinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) {
 	// For one-to-one matching, we assume that each output series takes one series from each side of the operator.
 	// If this is true, then the best order is the one in which we read from the highest cardinality side in order.
 	// If we do this, then in the worst case, we'll have to buffer the whole of the lower cardinality side.
@@ -362,7 +362,7 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 }
 
 // groupLabelsFunc returns a function that computes the labels of the output group this series belongs to.
-func (b *BinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
+func (b *VectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if b.VectorMatching.On {
@@ -382,7 +382,7 @@ func (b *BinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
 }
 
 // groupKeyFunc returns a function that computes the grouping key of the output group this series belongs to.
-func (b *BinaryOperation) groupKeyFunc() func(labels.Labels) []byte {
+func (b *VectorVectorBinaryOperation) groupKeyFunc() func(labels.Labels) []byte {
 	buf := make([]byte, 0, 1024)
 
 	if b.VectorMatching.On {
@@ -408,7 +408,7 @@ func (b *BinaryOperation) groupKeyFunc() func(labels.Labels) []byte {
 	}
 }
 
-func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (b *VectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
@@ -454,7 +454,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 // NOTE: mergeOneSide has the side effect of re-ordering both data and sourceSeriesIndices.
 //
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
-func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
+func (b *VectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
 	merged, conflict, err := MergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
 
 	if err != nil {
@@ -468,7 +468,7 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	return merged, nil
 }
 
-func (b *BinaryOperation) mergeConflictToError(conflict *MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
+func (b *VectorVectorBinaryOperation) mergeConflictToError(conflict *MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.firstConflictingSeriesIndex].Labels
 	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
@@ -495,7 +495,7 @@ func (b *BinaryOperation) mergeConflictToError(conflict *MergeConflict, sourceSe
 	)
 }
 
-func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
+func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
 	var fPoints []promql.FPoint
 	var hPoints []promql.HPoint
 
@@ -642,7 +642,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	}, nil
 }
 
-func (b *BinaryOperation) Close() {
+func (b *VectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
 

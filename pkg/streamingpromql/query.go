@@ -183,9 +183,51 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError("binary expressions")
 		}
 
-		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
-			return nil, compat.NewNotSupportedError("binary expression between scalar and instant vector")
+		// We only need to handle three combinations of types here:
+		// Scalar on left, vector on right
+		// Vector on left, scalar on right
+		// Vector on both sides
+		//
+		// We don't need to handle scalars on both sides here, as that would produce a scalar and so is handled in convertToScalarOperator.
+
+		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
+			var scalar types.ScalarOperator
+			var vector types.InstantVectorOperator
+			var err error
+
+			if e.LHS.Type() == parser.ValueTypeScalar {
+				scalar, err = q.convertToScalarOperator(e.LHS)
+				if err != nil {
+					return nil, err
+				}
+
+				vector, err = q.convertToInstantVectorOperator(e.RHS)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				scalar, err = q.convertToScalarOperator(e.RHS)
+				if err != nil {
+					return nil, err
+				}
+
+				vector, err = q.convertToInstantVectorOperator(e.LHS)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			scalarIsLeftSide := e.LHS.Type() == parser.ValueTypeScalar
+
+			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, q.startT, q.endT, q.intervalMs, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			if err != nil {
+				return nil, err
+			}
+
+			return operators.NewDeduplicateAndMerge(o, q.memoryConsumptionTracker), err
 		}
+
+		// Vectors on both sides.
 
 		if e.VectorMatching.Card != parser.CardOneToOne {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
@@ -201,7 +243,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)

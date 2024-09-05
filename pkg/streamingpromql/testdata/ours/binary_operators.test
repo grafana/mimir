@@ -294,3 +294,69 @@ load 1m
 
 eval_warn range from 0 to 3m step 1m left + right
   {}     {{schema:0 sum:4 count:5 buckets:[5]}}  _                                                                _                                                                {{schema:-53 sum:3 count:9 custom_values:[2 3] buckets:[6 4]}}
+
+clear
+
+# Test binary operations with scalars and instant vectors.
+load 6m
+  my_metric{histograms="only"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:3 buckets:[3]}}
+  my_metric{histograms="both"} 5 10 {{schema:0 sum:1 count:1 buckets:[1]}}
+  my_metric{job="foo"}        1  2  3    4   5
+  my_metric{job="bar"}       10 20 30    _  50
+  my_other_metric{job="bar"}  _  _  _  400 500
+
+# Scalar on right side
+eval range from 0m to 24m step 6m my_metric / 2
+  {histograms="only"} {{schema:0 sum:0.5 count:0.5 buckets:[0.5]}} {{schema:0 sum:1 count:1.5 buckets:[1.5]}}
+  {histograms="both"} 2.5 5 {{schema:0 sum:0.5 count:0.5 buckets:[0.5]}}
+  {job="foo"} 0.5 1 1.5 2 2.5
+  {job="bar"} 5 10 15 _ 25
+
+# Scalar on left side
+# Note that positive scalar / histogram == Inf.
+eval range from 0m to 24m step 6m 2 / my_metric
+  {histograms="only"} Inf Inf
+  {histograms="both"} 0.4 0.2 +Inf
+  {job="foo"} 2 1 0.6666666666666667 0.5 0.4
+  {job="bar"} 0.2 0.1 0.06666666666666667 _ 0.04
+
+# Test other arithmetic operations.
+eval range from 0m to 24m step 6m my_metric + 2
+  {histograms="only"} 2 2
+  {histograms="both"} 7 12 2
+  {job="foo"} 3 4 5 6 7
+  {job="bar"} 12 22 32 _ 52
+
+eval range from 0m to 24m step 6m my_metric - 2
+  {histograms="only"} -2 -2
+  {histograms="both"} 3 8 -2
+  {job="foo"} -1 0 1 2 3
+  {job="bar"} 8 18 28 _ 48
+
+eval range from 0m to 24m step 6m my_metric * 2
+  {histograms="only"} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:4 count:6 buckets:[6]}}
+  {histograms="both"} 10 20 {{schema:0 sum:2 count:2 buckets:[2]}}
+  {job="foo"} 2 4 6 8 10
+  {job="bar"} 20 40 60 _ 100
+
+eval range from 0m to 24m step 6m my_metric ^ 2
+  {histograms="only"} 0 0
+  {histograms="both"} 25 100 0
+  {job="foo"} 1 4 9 16 25
+  {job="bar"} 100 400 900 _ 2500
+
+eval range from 0m to 24m step 6m my_metric % 2
+  {histograms="only"} 0 0
+  {histograms="both"} 1 0 0
+  {job="foo"} 1 0 1 0 1
+  {job="bar"} 0 0 0 _ 0
+
+# Merging of input series, no conflicts
+eval range from 0m to 18m step 6m 2 * {job="bar"}
+  {job="bar"} 20 40 60 800
+
+# Merging of input series, have conflict (at T=24m)
+eval_fail range from 0m to 24m step 6m 2 * {job="bar"}
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+
