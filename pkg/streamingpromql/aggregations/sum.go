@@ -25,6 +25,12 @@ type SumAggregationGroup struct {
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
+		// Nothing to do
+		return nil
+	}
+
 	err := g.accumulateFloats(data, steps, start, interval, memoryConsumptionTracker)
 	if err != nil {
 		return err
@@ -34,7 +40,6 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		return err
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 

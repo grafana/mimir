@@ -33,6 +33,12 @@ type AvgAggregationGroup struct {
 }
 
 func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
+		// Nothing to do
+		return nil
+	}
+
 	var err error
 
 	if g.groupSeriesCounts == nil {
@@ -52,7 +58,6 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		return err
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 
