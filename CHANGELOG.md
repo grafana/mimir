@@ -106,6 +106,7 @@
 * [BUGFIX] Querier: Fix invalid query results when multiple chunks are being merged. #8992
 * [BUGFIX] Query-frontend: return annotations generated during evaluation of sharded queries. #9138
 * [BUGFIX] Querier: Support optional start and end times on `/prometheus/api/v1/labels`, `/prometheus/api/v1/label/<label>/values`, and `/prometheus/api/v1/series` when `max_query_into_future: 0`. #9129
+* [BUGFIX] Alertmanager: Fix config validation gap around unreferenced templates. #9207
 
 ### Mixin
 
