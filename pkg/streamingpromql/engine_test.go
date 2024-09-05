@@ -53,6 +53,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"rate(metric{}[5m:1m])":                        "PromQL expression type *parser.SubqueryExpr for range vectors",
 		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
 		"-sum(metric{})":                               "PromQL expression type *parser.UnaryExpr for instant vectors",
+		"count(metric{})":                              "aggregation operation with 'count'",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
