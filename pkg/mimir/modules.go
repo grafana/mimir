@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -465,13 +464,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	if t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainUser == "" {
-		t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainUser = os.Getenv(ingest.KafkaSASLPlainUserEnvVar)
-	}
-	if t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainPass == "" {
-		t.Cfg.Distributor.IngestStorageConfig.KafkaConfig.SASLPlainPass = os.Getenv(ingest.KafkaSASLPlainPassEnvVar)
-	}
-
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
@@ -664,13 +656,6 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
-
-	if t.Cfg.Ingester.IngestStorageConfig.KafkaConfig.SASLPlainUser == "" {
-		t.Cfg.Ingester.IngestStorageConfig.KafkaConfig.SASLPlainUser = os.Getenv(ingest.KafkaSASLPlainUserEnvVar)
-	}
-	if t.Cfg.Ingester.IngestStorageConfig.KafkaConfig.SASLPlainPass == "" {
-		t.Cfg.Ingester.IngestStorageConfig.KafkaConfig.SASLPlainPass = os.Getenv(ingest.KafkaSASLPlainPassEnvVar)
-	}
 
 	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {

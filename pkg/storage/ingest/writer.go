@@ -105,11 +105,26 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 	return w
 }
 
-func (w *Writer) starting(_ context.Context) error {
+func (w *Writer) starting(ctx context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
 		setDefaultNumberOfPartitionsForAutocreatedTopics(w.kafkaCfg, w.logger)
 	}
+
+	if err := w.testKafkaWriterClientConnection(ctx); err != nil {
+		return errors.Wrap(err, "failed test connection to the kafka cluster")
+	}
+
 	return nil
+}
+
+func (w *Writer) testKafkaWriterClientConnection(ctx context.Context) error {
+	writerClient, _, err := w.newKafkaWriterClientAndReg(-1)
+	if err != nil {
+		return err
+	}
+	defer writerClient.Close()
+
+	return writerClient.Ping(ctx)
 }
 
 func (w *Writer) stopping(_ error) error {
@@ -194,6 +209,17 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 		return writer, nil
 	}
 
+	newClient, clientReg, err := w.newKafkaWriterClientAndReg(clientID)
+	if err != nil {
+		return nil, err
+	}
+
+	newWriter := NewKafkaProducer(newClient, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg)
+	w.writers[clientID] = newWriter
+	return newWriter, nil
+}
+
+func (w *Writer) newKafkaWriterClientAndReg(clientID int) (*kgo.Client, prometheus.Registerer, error) {
 	// Add the client ID to metrics so that they don't clash when the Writer is configured
 	// to run with multiple Kafka clients.
 	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
@@ -202,14 +228,8 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
 	clientLogger := log.With(w.logger, "client_id", clientID)
 
-	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
-	if err != nil {
-		return nil, err
-	}
-
-	newWriter := NewKafkaProducer(newClient, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg)
-	w.writers[clientID] = newWriter
-	return newWriter, nil
+	client, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
+	return client, clientReg, err
 }
 
 // marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.
