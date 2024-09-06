@@ -410,7 +410,7 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes b
 	converter := otlp.NewMimirConverter()
 	errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes: addSuffixes,
-	})
+	}, logger)
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
@@ -436,7 +436,7 @@ func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixe
 	converter := prometheusremotewrite.NewPrometheusConverter()
 	errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
 		AddMetricSuffixes: addSuffixes,
-	})
+	}, logger)
 	promTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
