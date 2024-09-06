@@ -30,5 +30,4 @@ var defaultValidations = []Validation{
 	validations.LintReservedChars,
 	validations.LintCamelCase,
 	validations.LintUnitAbbreviations,
-	validations.LintDuplicateMetric,
 }
