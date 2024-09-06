@@ -240,7 +240,7 @@ type requestToEnqueue struct {
 func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
-	_ bool, //prioritizeQueryComponents
+	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
@@ -276,7 +276,7 @@ func NewRequestQueue(
 		waitingDequeueRequestsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, false, forgetDelay),
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, prioritizeQueryComponents, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
