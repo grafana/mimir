@@ -282,6 +282,7 @@ func NewQuerierHandler(
 		remoteWriteEnabled,
 		nil,
 		oltpEnabled,
+		true,
 	)
 
 	api.InstallCodec(protobufCodec{})
