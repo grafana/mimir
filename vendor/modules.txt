@@ -145,6 +145,9 @@ github.com/armon/go-metrics/prometheus
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
+# github.com/at-wat/mqtt-go v0.19.4
+## explicit; go 1.18
+github.com/at-wat/mqtt-go
 # github.com/aws/aws-sdk-go v1.55.5
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
@@ -577,7 +580,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20240812131556-611a23ff0f7f
+# github.com/grafana/alerting v0.0.0-20240829185616-8454ac21d7e5
 ## explicit; go 1.21
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -594,6 +597,7 @@ github.com/grafana/alerting/receivers/email
 github.com/grafana/alerting/receivers/googlechat
 github.com/grafana/alerting/receivers/kafka
 github.com/grafana/alerting/receivers/line
+github.com/grafana/alerting/receivers/mqtt
 github.com/grafana/alerting/receivers/oncall
 github.com/grafana/alerting/receivers/opsgenie
 github.com/grafana/alerting/receivers/pagerduty
@@ -1364,6 +1368,7 @@ golang.org/x/net/ipv6
 golang.org/x/net/netutil
 golang.org/x/net/publicsuffix
 golang.org/x/net/trace
+golang.org/x/net/websocket
 # golang.org/x/oauth2 v0.21.0
 ## explicit; go 1.18
 golang.org/x/oauth2

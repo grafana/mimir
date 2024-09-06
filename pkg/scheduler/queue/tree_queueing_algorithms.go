@@ -6,6 +6,10 @@ package queue
 // applied at the layer-level -- every Node at the same depth in a MultiQueuingAlgorithmTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
 type QueuingAlgorithm interface {
+	// setup is called by MultiQueuingAlgorithmTreeQueue once before beginning to dequeue. The tree calls setup on
+	// each QueuingAlgorithm in the tree, to update any algorithm state that requires outside information.
+	setup(dequeueReq *DequeueArgs)
+
 	// addChildNode updates a parent's queueMap and other child-tracking structures with a new child Node. QueuePaths
 	// passed to enqueue functions are allowed to contain node names for nodes which do not yet exist; in those cases,
 	// we create the missing nodes. Implementers are responsible for adding the newly-created node to whatever state(s)
@@ -37,6 +41,10 @@ type QueuingAlgorithm interface {
 // queuePosition is 3, a new child will be placed at index 2). Children are dequeued from using a simple round-robin
 // ordering; queuePosition is incremented on every dequeue.
 type roundRobinState struct {
+}
+
+// setup for roundRobinState doesn't need to do any state updates, because roundRobinState doesn't maintain any state.
+func (rrs *roundRobinState) setup(_ *DequeueArgs) {
 }
 
 // addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective

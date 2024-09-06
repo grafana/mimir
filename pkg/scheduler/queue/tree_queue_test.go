@@ -31,7 +31,7 @@ func TestDequeueBalancedTree(t *testing.T) {
 	dequeuedPathCache := make([]QueuePath, rotationsBeforeRepeat)
 
 	for !root.IsEmpty() {
-		_, v := root.Dequeue()
+		_, v := root.Dequeue(nil)
 		dequeuedPath := getChildPathFromQueueItem(v)
 
 		// require dequeued path has not repeated before the expected number of rotations
@@ -99,7 +99,7 @@ func TestDequeueUnbalancedTree(t *testing.T) {
 	root := makeUnbalancedTreeQueue(t)
 
 	// dequeue from root until exhausted
-	_, v := root.Dequeue()
+	_, v := root.Dequeue(nil)
 	require.Equal(t, "root:0:val0", v)
 
 	// root:0 and any subtrees are exhausted
@@ -109,25 +109,25 @@ func TestDequeueUnbalancedTree(t *testing.T) {
 	// root:0 was deleted
 	require.Nil(t, root.getNode(path))
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:1:val0", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:2:0:val0", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:1:0:val0", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:2:1:val0", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:1:val1", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:2:0:val1", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:1:0:val1", v)
 
 	// root:1 and any subtrees are exhausted
@@ -137,10 +137,10 @@ func TestDequeueUnbalancedTree(t *testing.T) {
 	// root:1 was deleted
 	require.Nil(t, root.getNode(path))
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:2:1:val1", v)
 
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	require.Equal(t, "root:2:1:val2", v)
 
 	// root:2 and any subtrees are exhausted
@@ -267,19 +267,19 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	require.Equal(t, []string{"0", "1", "2"}, root.childQueueOrder)
 
 	// dequeue first item
-	_, v := root.Dequeue()
+	_, v := root.Dequeue(nil)
 	dequeuedPath := getChildPathFromQueueItem(v)
 	require.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue second item; root:1 is now exhausted and deleted
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	dequeuedPath = getChildPathFromQueueItem(v)
 	require.Equal(t, QueuePath{"1"}, dequeuedPath)
 	require.Nil(t, root.getNode(QueuePath{"1"}))
 	require.Equal(t, []string{"0", "2"}, root.childQueueOrder)
 
 	// dequeue third item
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	dequeuedPath = getChildPathFromQueueItem(v)
 	require.Equal(t, QueuePath{"2"}, dequeuedPath)
 
@@ -293,18 +293,18 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 
 	// dequeue fourth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:0
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	dequeuedPath = getChildPathFromQueueItem(v)
 	require.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue fifth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:2
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	dequeuedPath = getChildPathFromQueueItem(v)
 	require.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// dequeue sixth item; verifying the order 0->2->1 is being followed
-	_, v = root.Dequeue()
+	_, v = root.Dequeue(nil)
 	dequeuedPath = getChildPathFromQueueItem(v)
 	require.Equal(t, QueuePath{"1"}, dequeuedPath)
 

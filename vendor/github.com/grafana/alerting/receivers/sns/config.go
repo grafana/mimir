@@ -45,7 +45,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}
 
 	if settings.TargetARN != "" {
-		_, err = arn.Parse(settings.TopicARN)
+		_, err = arn.Parse(settings.TargetARN)
 		if err != nil {
 			return Config{}, errors.New("invalid target ARN provided")
 		}
@@ -61,13 +61,10 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		settings.Message = templates.DefaultMessageEmbed
 	}
 
-	if settings.Sigv4.AccessKey != "" || settings.Sigv4.SecretKey != "" {
-		if settings.Sigv4.AccessKey == "" || settings.Sigv4.SecretKey == "" {
-			return Config{}, errors.New("must specify both access key and secret key")
-		}
-		settings.Sigv4.AccessKey = decryptFn("accessKey", settings.Sigv4.AccessKey)
-		settings.Sigv4.SecretKey = decryptFn("secretKey", settings.Sigv4.SecretKey)
+	settings.Sigv4.AccessKey = decryptFn("sigv4.access_key", settings.Sigv4.AccessKey)
+	settings.Sigv4.SecretKey = decryptFn("sigv4.secret_key", settings.Sigv4.SecretKey)
+	if settings.Sigv4.AccessKey == "" && settings.Sigv4.SecretKey != "" || settings.Sigv4.AccessKey != "" && settings.Sigv4.SecretKey == "" {
+		return Config{}, errors.New("must specify both access key and secret key")
 	}
-
 	return settings, nil
 }
