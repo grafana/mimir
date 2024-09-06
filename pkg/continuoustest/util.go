@@ -222,6 +222,9 @@ func generateFloatHistogram(value float64, numSeries int, gauge bool) *histogram
 	return h
 }
 
+// Just a large prime number to generate series IDs that hash more uniformly.
+const seriesFactor = 1393159
+
 func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
 	value := generateSineWaveValue(t)
@@ -234,7 +237,7 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 				Value: name,
 			}, {
 				Name:  "series_id",
-				Value: strconv.Itoa(i),
+				Value: fmt.Sprintf("%x", i*seriesFactor),
 			}},
 			Samples: []prompb.Sample{{
 				Value:     value,
@@ -256,7 +259,7 @@ func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histo
 				Value: name,
 			}, {
 				Name:  "series_id",
-				Value: strconv.Itoa(i),
+				Value: fmt.Sprintf("%x", i*seriesFactor),
 			}},
 			Histograms: []prompb.Histogram{histogramGenerator(t)},
 		})
