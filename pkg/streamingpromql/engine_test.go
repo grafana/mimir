@@ -46,11 +46,11 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"avg(metric{})":                         "aggregation operation with 'avg'",
-		"topk(5, metric{})":                     "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
-		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr for range vectors",
-		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
+		"topk(5, metric{})":                            "'topk' aggregation with parameter",
+		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
+		"rate(metric{}[5m:1m])":                        "PromQL expression type *parser.SubqueryExpr for range vectors",
+		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
+		"count(metric{})":                              "aggregation operation with 'count'",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {

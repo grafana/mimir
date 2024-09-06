@@ -25,7 +25,27 @@ type SumAggregationGroup struct {
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
+		// Nothing to do
+		return nil
+	}
+
+	err := g.accumulateFloats(data, steps, start, interval, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+	err = g.accumulateHistograms(data, steps, start, interval, memoryConsumptionTracker, emitAnnotationFunc)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
 	var err error
+
 	if len(data.Floats) > 0 && g.floatSums == nil {
 		// First series with float values for this group, populate it.
 		g.floatSums, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
@@ -47,6 +67,19 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		g.floatPresent = g.floatPresent[:steps]
 	}
 
+	for _, p := range data.Floats {
+		idx := (p.T - start) / interval
+		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
+		g.floatPresent[idx] = true
+	}
+
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	var err error
+	var lastUncopiedHistogram *histogram.FloatHistogram
+
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
 		// First series with histogram values for this group, populate it.
 		g.histogramSums, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
@@ -56,47 +89,43 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		g.histogramSums = g.histogramSums[:steps]
 	}
 
-	for _, p := range data.Floats {
-		idx := (p.T - start) / interval
-		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
-		g.floatPresent[idx] = true
-	}
-
-	var lastUncopiedHistogram *histogram.FloatHistogram
-
 	for _, p := range data.Histograms {
 		idx := (p.T - start) / interval
 
 		if g.histogramSums[idx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
 			continue
-		} else if g.histogramSums[idx] != nil {
-			g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
-			if err != nil {
-				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
-				g.histogramSums[idx] = invalidCombinationOfHistograms
-				g.histogramPointCount--
+		}
 
-				if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
-					// Unknown error: we couldn't convert the error to an annotation. Give up.
-					return err
-				}
+		if g.histogramSums[idx] == nil {
+			if lastUncopiedHistogram == p.H {
+				// We've already used this histogram for a previous point due to lookback.
+				// Make a copy of it so we don't modify the other point.
+				g.histogramSums[idx] = p.H.Copy()
+				g.histogramPointCount++
+				continue
 			}
-		} else if lastUncopiedHistogram == p.H {
-			// We've already used this histogram for a previous point due to lookback.
-			// Make a copy of it so we don't modify the other point.
-			g.histogramSums[idx] = p.H.Copy()
-			g.histogramPointCount++
-		} else {
 			// This is the first time we have seen this histogram.
 			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
 			g.histogramSums[idx] = p.H
 			g.histogramPointCount++
 			lastUncopiedHistogram = p.H
+			continue
+		}
+
+		g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
+		if err != nil {
+			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
+			g.histogramSums[idx] = invalidCombinationOfHistograms
+			g.histogramPointCount--
+
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+				// Unknown error: we couldn't convert the error to an annotation. Give up.
+				return err
+			}
 		}
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 

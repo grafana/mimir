@@ -211,6 +211,27 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum by (l)(nh_X)",
 		},
+		{
+			Expr: "avg(a_X)",
+		},
+		{
+			Expr: "avg without (l)(h_X)",
+		},
+		{
+			Expr: "avg without (le)(h_X)",
+		},
+		{
+			Expr: "avg(nh_X)",
+		},
+		{
+			Expr: "avg by (l)(h_X)",
+		},
+		{
+			Expr: "avg by (le)(h_X)",
+		},
+		{
+			Expr: "avg by (l)(nh_X)",
+		},
 		//{
 		//	Expr: "count_values('value', h_X)",
 		//  Steps: 100,
