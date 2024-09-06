@@ -241,12 +241,18 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 }
 
 type partitionState struct {
-	Partition          int32
-	Lag                int64
-	Commit             kadm.Offset
+	// Partition is the partition the state belongs to.
+	Partition int32
+	// Lag is the upperbound number of records the cycle will need to consume.
+	Lag int64
+	// Commit is the current offset commit for the partition.
+	Commit kadm.Offset
+	// CommitRecTimestamp is the timestamp of the record whose offset was committed (and not the time of commit).
 	CommitRecTimestamp time.Time
-	OldestSeenOffset   int64
-	LastBlockEnd       time.Time
+	// OldestSeenOffset is the offset of the last record consumed in the commiter-cycle. It can be greater than Commit.Offset if previous cycle overconumed.
+	OldestSeenOffset int64
+	// LastBlockEnd is the timestamp of the block end in the commiter-cycle.
+	LastBlockEnd time.Time
 }
 
 func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackMillis int64) *partitionState {
