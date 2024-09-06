@@ -102,7 +102,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
 	// Producing some records
-	cycleEndStartup := cycleEndAtStartup(time.Now, cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
@@ -230,7 +230,7 @@ func TestBlockBuilder_WithMultiplyTenants(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
-	cycleEndStartup := cycleEndAtStartup(time.Now, cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
 
 	producedSamples := map[string][]mimirpb.Sample{}
@@ -286,7 +286,7 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
-	cycleEndStartup := cycleEndAtStartup(time.Now, cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	const tenantID = "1"
 	var expSamplesPhase1, expSamplesPhase2 []mimirpb.Sample
@@ -431,10 +431,8 @@ func TestCycleEndAtStartup(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("now=%s/%s+%s", tc.nowTimeStr, tc.interval, tc.buffer), func(t *testing.T) {
-			nowFunc := func() time.Time {
-				return mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
-			}
-			cycleEnd := cycleEndAtStartup(nowFunc, tc.interval, tc.buffer)
+			now := mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
+			cycleEnd := cycleEndAtStartup(now, tc.interval, tc.buffer)
 			tc.testFunc(t, cycleEnd)
 		})
 	}
@@ -501,10 +499,8 @@ func TestNextCycleEnd(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("now=%s/%s+%s", tc.nowTimeStr, tc.interval, tc.buffer), func(t *testing.T) {
-			nowFunc := func() time.Time {
-				return mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
-			}
-			cycleEnd, wait := nextCycleEnd(nowFunc, tc.interval, tc.buffer)
+			now := mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
+			cycleEnd, wait := nextCycleEnd(now, tc.interval, tc.buffer)
 			tc.testFunc(t, cycleEnd, wait)
 		})
 	}

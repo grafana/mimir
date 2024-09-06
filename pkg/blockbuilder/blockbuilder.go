@@ -115,7 +115,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
-	cycleEnd := cycleEndAtStartup(time.Now, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	cycleEnd := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	err := b.nextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -124,7 +124,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		return err
 	}
 
-	cycleEnd, waitDur := nextCycleEnd(time.Now, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	cycleEnd, waitDur := nextCycleEnd(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	for {
 		select {
 		case <-time.After(waitDur):
@@ -146,8 +146,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	}
 }
 
-func cycleEndAtStartup(now func() time.Time, interval, buffer time.Duration) time.Time {
-	t := now()
+func cycleEndAtStartup(t time.Time, interval, buffer time.Duration) time.Time {
 	cycleEnd := t.Truncate(interval).Add(buffer)
 	if cycleEnd.After(t) {
 		cycleEnd = cycleEnd.Add(-interval)
@@ -155,14 +154,13 @@ func cycleEndAtStartup(now func() time.Time, interval, buffer time.Duration) tim
 	return cycleEnd
 }
 
-func nextCycleEnd(now func() time.Time, interval, buffer time.Duration) (time.Time, time.Duration) {
-	t := now()
+func nextCycleEnd(t time.Time, interval, buffer time.Duration) (time.Time, time.Duration) {
 	cycleEnd := t.Truncate(interval).Add(interval + buffer)
 	waitTime := cycleEnd.Sub(t)
 	for waitTime > interval {
 		// Example - with interval=1h and buffer=15m:
-		// - at now=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
-		// - at now=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
+		// - at t=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
+		// - at t=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
 		cycleEnd = cycleEnd.Add(-interval)
 		waitTime -= interval
 	}
@@ -295,9 +293,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 	// We are lagging behind. We need to consume the partition in sections.
 	// We iterate through all the ConsumeInterval intervals, starting from the first one after the last commit until the cycleEnd.
 	cycleEndStartAt, _ := nextCycleEnd(
-		func() time.Time {
-			return state.CommitRecTimestamp
-		},
+		state.CommitRecTimestamp,
 		b.cfg.ConsumeInterval,
 		b.cfg.ConsumeIntervalBuffer,
 	)
