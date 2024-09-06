@@ -197,7 +197,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	getPartitionStart := func(ctx context.Context) (int64, error) {
 		return offsetsClient.FetchPartitionStartOffset(ctx, r.partitionID)
 	}
-	startOffsetReader := newCachingOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
+	startOffsetReader := newGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
 
 	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
@@ -845,7 +845,7 @@ type concurrentFetchers struct {
 
 	orderedFetches     chan kgo.FetchPartition
 	lastReturnedRecord int64
-	startOffsets       *cachingOffsetReader[int64]
+	startOffsets       *genericOffsetReader[int64]
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -860,7 +860,7 @@ func newConcurrentFetchers(
 	recordsPerFetch int,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
-	startOffsetsReader *cachingOffsetReader[int64],
+	startOffsetsReader *genericOffsetReader[int64],
 	metrics *readerMetrics,
 ) (*concurrentFetchers, error) {
 
@@ -1119,7 +1119,7 @@ type metadataRefresher interface {
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(err error, fw fetchWant, shortBackoff, longBackoff waiter, partitionStartOffset *cachingOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
+func handleKafkaFetchErr(err error, fw fetchWant, shortBackoff, longBackoff waiter, partitionStartOffset *genericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
 	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
 	// So we force a metadata refresh here to be sure.
 	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).

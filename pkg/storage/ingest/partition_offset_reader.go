@@ -33,6 +33,9 @@ type genericOffsetReader[O any] struct {
 	// request that will be issued (not the current in-flight one, if any).
 	nextResultPromiseMx sync.RWMutex
 	nextResultPromise   *resultPromise[O]
+
+	// lastResultPromise is the last returned offset.
+	lastResultPromise *atomic.Pointer[resultPromise[O]]
 }
 
 func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *genericOffsetReader[O] {
@@ -40,9 +43,11 @@ func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context)
 		logger:                  logger,
 		fetchLastProducedOffset: fetchLastProducedOffset,
 		nextResultPromise:       newResultPromise[O](),
+		lastResultPromise:       atomic.NewPointer(newResultPromise[O]()),
 	}
 
-	p.Service = services.NewTimerService(pollInterval, nil, p.onPollInterval, p.stopping)
+	// Run the poll interval once at startup so we can cache the offset.
+	p.Service = services.NewTimerService(pollInterval, p.onPollInterval, p.onPollInterval, p.stopping)
 
 	return p
 }
@@ -87,6 +92,7 @@ func (r *genericOffsetReader[O]) getAndNotifyLastProducedOffset(ctx context.Cont
 
 	// Notify whoever was waiting for it.
 	promise.notify(offset, err)
+	r.lastResultPromise.Store(promise)
 }
 
 // WaitNextFetchLastProducedOffset returns the result of the *next* "last produced offset" request
@@ -101,6 +107,12 @@ func (r *genericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Con
 	r.nextResultPromiseMx.RUnlock()
 
 	return promise.wait(ctx)
+}
+
+// CachedOffset returns the last result of fetching the offset. This is likely outdated, but it's useful to get a directionally correct value quickly.
+func (r *genericOffsetReader[O]) CachedOffset() (O, error) {
+	c := r.lastResultPromise.Load()
+	return c.resultValue, c.resultErr
 }
 
 // partitionOffsetReader is responsible to read the offsets of a single partition.
@@ -168,59 +180,4 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, pollInterval time.D
 // The offset is -1 if a partition has been created but no record has been produced yet.
 func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
 	return p.client.FetchTopicLastProducedOffsets(ctx)
-}
-
-// cachingOffsetReader is like genericOffsetReader, but it caches the last returned offset so it can be read even if outdated.
-type cachingOffsetReader[O any] struct {
-	services.Service
-	genericReader *genericOffsetReader[O]
-
-	fetchOffset  func(context.Context) (O, error)
-	cachedOffset *atomic.Pointer[cachedOffset[O]]
-}
-
-type cachedOffset[O any] struct {
-	offset O
-	err    error
-}
-
-func (r cachingOffsetReader[O]) CachedOffset() (O, error) {
-	c := r.cachedOffset.Load()
-	return c.offset, c.err
-}
-
-func (r cachingOffsetReader[O]) start(ctx context.Context) error {
-	offset, err := r.fetchOffset(ctx)
-	r.cachedOffset.Store(&cachedOffset[O]{offset: offset, err: err})
-	return services.StartAndAwaitRunning(ctx, r.genericReader)
-}
-
-func (r cachingOffsetReader[O]) stop(_ error) error {
-	return services.StopAndAwaitTerminated(context.Background(), r.genericReader)
-}
-
-func (r cachingOffsetReader[O]) run(ctx context.Context) error {
-	for ctx.Err() == nil {
-		offset, err := r.genericReader.WaitNextFetchLastProducedOffset(ctx)
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		r.cachedOffset.Store(&cachedOffset[O]{offset: offset, err: err})
-	}
-	return nil
-}
-
-func newCachingOffsetReader[O any](fetchOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *cachingOffsetReader[O] {
-	genericReader := newGenericOffsetReader[O](fetchOffset, pollInterval, logger)
-
-	var zero cachedOffset[O]
-	p := &cachingOffsetReader[O]{
-		genericReader: genericReader,
-		fetchOffset:   fetchOffset,
-		cachedOffset:  atomic.NewPointer(&zero),
-	}
-
-	p.Service = services.NewBasicService(p.start, p.run, p.stop)
-
-	return p
 }
