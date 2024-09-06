@@ -258,7 +258,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		// recently marked for deletion, until the "ignore delay / 2". This means the consistency checker
 		// exclude such blocks about 50% of the time before querier and store-gateway stops querying them.
 		storageCfg.BucketStore.IgnoreDeletionMarksDelay/2,
-		logger,
 		reg,
 	)
 
@@ -548,7 +547,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		touchedStores   = map[string]struct{}{}
 	)
 
-	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks)
+	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks, spanLog)
 	defer func() {
 		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
 		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
