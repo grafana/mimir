@@ -83,15 +83,15 @@ const (
 
 // commitRecTs: timestamp of the record which was committed (and not the commit time).
 // lastRecOffset: offset of the last record processed (which will be >= commit record offset).
-// blockEnd: timestamp of the block end in this cycle.
-func marshallCommitMeta(commitRecTs, lastRecOffset, blockEnd int64) string {
-	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecOffset, blockEnd)
+// blockEndTs: timestamp of the block end in this cycle.
+func marshallCommitMeta(commitRecTs, lastRecOffset, blockEndTs int64) string {
+	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecOffset, blockEndTs)
 }
 
 // commitRecTs: timestamp of the record which was committed (and not the commit time).
 // lastRecOffset: offset of the last record processed (which will be >= commit record offset).
-// blockEnd: timestamp of the block end in this cycle.
-func unmarshallCommitMeta(s string) (commitRecTs, lastRecOffset, blockEnd int64, err error) {
+// blockEndTs: timestamp of the block end in this cycle.
+func unmarshallCommitMeta(s string) (commitRecTs, lastRecOffset, blockEndTs int64, err error) {
 	if s == "" {
 		return
 	}
@@ -107,6 +107,6 @@ func unmarshallCommitMeta(s string) (commitRecTs, lastRecOffset, blockEnd int64,
 	if version != kafkaCommitMetaV1 {
 		return 0, 0, 0, fmt.Errorf("unsupported commit meta version %d", version)
 	}
-	_, err = fmt.Sscanf(metaStr, "%d,%d,%d", &commitRecTs, &lastRecOffset, &blockEnd)
+	_, err = fmt.Sscanf(metaStr, "%d,%d,%d", &commitRecTs, &lastRecOffset, &blockEndTs)
 	return
 }
