@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
@@ -347,7 +348,7 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, state *partiti
 	}(time.Now(), *state)
 
 	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits)
-	defer builder.Close()
+	defer runutil.CloseWithErrCapture(&retErr, builder, "closing tsdb builder")
 
 	level.Info(b.logger).Log("msg", "start consuming", "partition", state.Partition, "offset", state.Commit.At, "lag", state.Lag, "cycle_end", cycleEnd)
 
