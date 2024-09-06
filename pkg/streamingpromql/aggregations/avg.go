@@ -115,7 +115,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 				g.floatMeans = g.floatMeans[:steps]
 			}
 			if g.incrementalMeans == nil {
-				// First time we are using an incremental mean. Track which series will be incremental.
+				// First time we are using an incremental mean. Track which samples will be incremental.
 				g.incrementalMeans, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
 				if err != nil {
 					return err
