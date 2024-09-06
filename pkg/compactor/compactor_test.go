@@ -967,7 +967,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 		"cortex_compactor_block_cleanup_started_total", "cortex_compactor_block_cleanup_completed_total", "cortex_compactor_block_cleanup_failed_total",
 		"cortex_bucket_blocks_count", "cortex_bucket_blocks_marked_for_deletion_count", "cortex_bucket_index_last_successful_update_timestamp_seconds",
 	}
-	testutil.AssertGatherAndCompare(t, registry, `
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# TYPE cortex_compactor_runs_started_total counter
 		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
 		cortex_compactor_runs_started_total 1
@@ -1006,7 +1006,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 		# TYPE cortex_compactor_block_cleanup_failed_total counter
 		# HELP cortex_compactor_block_cleanup_failed_total Total number of blocks cleanup runs failed.
 		cortex_compactor_block_cleanup_failed_total 0
-	`, testedMetrics...)
+	`), testedMetrics...))
 }
 
 func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunning(t *testing.T) {
