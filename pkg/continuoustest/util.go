@@ -222,8 +222,8 @@ func generateFloatHistogram(value float64, numSeries int, gauge bool) *histogram
 	return h
 }
 
-// Just a large prime number to generate series IDs that hash more uniformly.
-const seriesFactor = 1393159
+// A prime factor to generate series IDs that hash more uniformly.
+const seriesFactor = 2689
 
 func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
