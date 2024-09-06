@@ -126,8 +126,8 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			c := NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod, log.NewNopLogger(), reg)
-			tracker := c.NewTracker(testData.knownBlocks, testData.knownDeletionMarks)
+			c := NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod, reg)
+			tracker := c.NewTracker(testData.knownBlocks, testData.knownDeletionMarks, log.NewNopLogger())
 			var missingBlocks []ulid.ULID
 			for _, queriedBlocksAttempt := range testData.queriedBlocks {
 				missingBlocks = tracker.Check(queriedBlocksAttempt)
