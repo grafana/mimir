@@ -22,6 +22,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -68,14 +69,15 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string) error {
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger log.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
 		}
 
 		pt := dataPoints.At(x)
-		startTimestampNs := pt.StartTimestamp()
+		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
@@ -85,7 +87,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			model.MetricNameLabel,
 			name,
 		)
-		timestamp := convertTimeStamp(pt.Timestamp())
+
 		sample := &mimirpb.Sample{
 			TimestampMs: timestamp,
 		}
@@ -100,7 +102,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 		isMonotonic := metric.Sum().IsMonotonic()
 		if isMonotonic {
-			c.handleStartTime(convertTimeStamp(startTimestampNs), timestamp, sample.Value, lbls, settings)
+			c.handleStartTime(startTimestampMs, timestamp, lbls, settings)
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
@@ -113,7 +115,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 
 		// add created time series if needed
 		if settings.ExportCreatedMetric && isMonotonic {
-			if startTimestampNs == 0 {
+			if startTimestampMs == 0 {
 				return nil
 			}
 
@@ -125,8 +127,9 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 					break
 				}
 			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestampNs, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
+		c.trackStartTimestampForSeries(startTimestampMs, timestamp, lbls, logger)
 	}
 
 	return nil
