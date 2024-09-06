@@ -254,12 +254,15 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestampNs := pt.StartTimestamp()
+		startTimestampMs := convertTimeStamp(startTimestampNs)
 		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
 			// treat sum as a sample in an individual TimeSeries
+			sumlabels := createLabels(baseName+sumStr, baseLabels)
 			sum := &mimirpb.Sample{
 				Value:       pt.Sum(),
 				TimestampMs: timestamp,
@@ -268,7 +271,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 				sum.Value = math.Float64frombits(value.StaleNaN)
 			}
 
-			sumlabels := createLabels(baseName+sumStr, baseLabels)
+			c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings)
 			c.addSample(sum, sumlabels)
 
 		}
@@ -283,6 +286,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 		}
 
 		countlabels := createLabels(baseName+countStr, baseLabels)
+		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings)
 		c.addSample(count, countlabels)
 
 		// cumulative count for conversion to cumulative histogram
@@ -307,6 +311,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			labels := createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
+			c.handleStartTime(startTimestampMs, timestamp, labels, settings)
 			ts := c.addSample(bucket, labels)
 
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
@@ -321,6 +326,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			infBucket.Value = float64(pt.Count())
 		}
 		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
+		c.handleStartTime(startTimestampMs, timestamp, infLabels, settings)
 		ts := c.addSample(infBucket, infLabels)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
@@ -328,10 +334,9 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			return err
 		}
 
-		startTimestamp := pt.StartTimestamp()
-		if settings.ExportCreatedMetric && startTimestamp != 0 {
+		if settings.ExportCreatedMetric && startTimestampNs != 0 {
 			labels := createLabels(baseName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(labels, startTimestamp, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(labels, startTimestampMs, pt.Timestamp())
 		}
 	}
 
@@ -446,6 +451,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
 		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
@@ -458,6 +464,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 		}
 		// sum and count of the summary should append suffix to baseName
 		sumlabels := createLabels(baseName+sumStr, baseLabels)
+		c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings)
 		c.addSample(sum, sumlabels)
 
 		// treat count as a sample in an individual TimeSeries
@@ -469,6 +476,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
 		countlabels := createLabels(baseName+countStr, baseLabels)
+		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings)
 		c.addSample(count, countlabels)
 
 		// process each percentile/quantile
@@ -483,13 +491,13 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := createLabels(baseName, baseLabels, quantileStr, percentileStr)
+			c.handleStartTime(startTimestampMs, timestamp, qtlabels, settings)
 			c.addSample(quantile, qtlabels)
 		}
 
-		startTimestamp := pt.StartTimestamp()
-		if settings.ExportCreatedMetric && startTimestamp != 0 {
+		if settings.ExportCreatedMetric && startTimestampMs != 0 {
 			createdLabels := createLabels(baseName+createdSuffix, baseLabels)
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
 	}
 
@@ -552,17 +560,46 @@ func (c *MimirConverter) getOrCreateTimeSeries(lbls []mimirpb.LabelAdapter) (*mi
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *MimirConverter) addTimeSeriesIfNeeded(lbls []mimirpb.LabelAdapter, startTimestamp pcommon.Timestamp, timestamp pcommon.Timestamp) {
+func (c *MimirConverter) addTimeSeriesIfNeeded(lbls []mimirpb.LabelAdapter, startTimestamp int64, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
 		ts.Samples = []mimirpb.Sample{
 			{
-				// convert ns to ms
-				Value:       float64(convertTimeStamp(startTimestamp)),
+				Value:       float64(startTimestamp),
 				TimestampMs: convertTimeStamp(timestamp),
 			},
 		}
 	}
+}
+
+// validIntervalForStartTimestamps is hardcoded to 2 minutes in milliseconds. We can't know in advance whats the scrape
+// interval of a series.
+const validIntervalForStartTimestamps = 120_000
+
+// handleStartTime adds a zero sample at startTs only if startTs is within validIntervalForStartTimestamps of the sample timestamp.
+// The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
+// make use of its direct support fort Created Timestamps instead.
+// See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
+// resets for cumulative metrics.
+func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings) {
+	if !settings.EnableCreatedTimestampZeroIngestion {
+		return
+	}
+	// We want to ignore the write in three cases.
+	// - We've seen samples with the start timestamp set to epoch meaning it wasn't set by the sender so we skip those.
+	// - If StartTimestamp equals Timestamp ist means we don't know at which time the metric restarted according to the spec.
+	// - StartTimestamp can never be greater than the sample timestamp.
+	if startTs <= 0 || startTs == ts || startTs > ts {
+		return
+	}
+
+	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
+	if ts-startTs > validIntervalForStartTimestamps {
+		return
+	}
+
+	// See https://github.com/prometheus/prometheus/issues/14600 for context.
+	c.addSample(&mimirpb.Sample{TimestampMs: startTs}, labels)
 }
 
 // addResourceTargetInfo converts the resource to the target info metric.
@@ -609,10 +646,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
+	ts := convertTimeStamp(timestamp)
 	sample := &mimirpb.Sample{
-		Value: float64(1),
-		// convert ns to ms
-		TimestampMs: convertTimeStamp(timestamp),
+		Value:       float64(1),
+		TimestampMs: ts,
 	}
 	converter.addSample(sample, labels)
 }
