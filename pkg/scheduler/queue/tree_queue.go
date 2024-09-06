@@ -196,7 +196,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 		return nil
 	}
 
-	_, v := childQueue.Dequeue()
+	_, v := childQueue.Dequeue(nil)
 
 	if childQueue.IsEmpty() {
 		// child node will recursively clean up its own empty children during dequeue,
@@ -216,7 +216,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 //
 // Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
 // up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
-func (q *TreeQueue) Dequeue() (QueuePath, any) {
+func (q *TreeQueue) Dequeue(_ *DequeueArgs) (QueuePath, any) {
 	var childPath QueuePath
 	var v any
 	initialLen := len(q.childQueueOrder)
@@ -239,7 +239,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 			// pick the child node whose turn it is and recur
 			childQueueName := q.childQueueOrder[q.currentChildQueueIndex]
 			childQueue := q.childQueueMap[childQueueName]
-			childPath, v = childQueue.Dequeue()
+			childPath, v = childQueue.Dequeue(nil)
 
 			// perform cleanup if child node is empty after dequeuing recursively
 			if childQueue.IsEmpty() {

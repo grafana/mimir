@@ -154,8 +154,7 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) 
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(
-	lastTenantIndex int,
-	querierID QuerierID,
+	dequeueReq *QuerierWorkerDequeueRequest,
 ) (
 	*tenantRequest,
 	*queueTenant,
@@ -163,14 +162,14 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	error,
 ) {
 	// check if querier is registered and is not shutting down
-	if q := qb.tenantQuerierAssignments.queriersByID[querierID]; q == nil || q.shuttingDown {
+	if q := qb.tenantQuerierAssignments.queriersByID[dequeueReq.QuerierID]; q == nil || q.shuttingDown {
 		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
 	}
 
 	var queuePath QueuePath
 	var queueElement any
 	if tq, ok := qb.tree.(*TreeQueue); ok {
-		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
+		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(dequeueReq.lastTenantIndex.last, dequeueReq.QuerierID)
 		if tenant == nil || err != nil {
 			return nil, tenant, tenantIndex, err
 		}
@@ -180,8 +179,12 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		queuePath = QueuePath{string(tenant.tenantID)}
 		queueElement = tq.DequeueByPath(queuePath)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
-		queuePath, queueElement = itq.Dequeue()
+		queuePath, queueElement = itq.Dequeue(
+			&DequeueArgs{
+				querierID:       dequeueReq.QuerierID,
+				workerID:        dequeueReq.WorkerID,
+				lastTenantIndex: dequeueReq.lastTenantIndex.last,
+			})
 	}
 
 	if queueElement == nil {

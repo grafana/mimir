@@ -419,16 +419,8 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // a) a query request which was successfully dequeued for the querier, or
 // b) an ErrQuerierShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(dequeueReq *QuerierWorkerDequeueRequest) (done bool) {
-	// TODO: This is a temporary solution to set the current querier-worker for the QuerierWorkerQueuePriorityAlgo.
-	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		for _, algoState := range itq.algosByDepth {
-			if qwpAlgo, ok := algoState.(*QuerierWorkerQueuePriorityAlgo); ok {
-				qwpAlgo.SetCurrentQuerierWorker(dequeueReq.WorkerID)
-			}
-		}
-	}
 
-	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(dequeueReq.lastTenantIndex.last, dequeueReq.QuerierID)
+	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(dequeueReq)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate AwaitRequestForQuerier with an error now...
 		dequeueReq.sendError(err)
@@ -676,7 +668,7 @@ func NewQuerierWorkerDequeueRequest(querierWorkerConn *QuerierWorkerConn, lastTe
 }
 
 // querierWorkerDequeueResponse is the response for a QuerierWorkerDequeueRequest,
-// to be written to the dequeue requests 's receiver channel.
+// to be written to the dequeue request's receiver channel.
 // Errors are embedded in this response rather than written to a separate error channel
 // so that lastTenantIndex can still be returned back to the querier connection.
 type querierWorkerDequeueResponse struct {
