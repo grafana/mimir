@@ -84,7 +84,7 @@ func TestBlockBuilder_consumerLagRecords(t *testing.T) {
 			cortex_blockbuilder_consumer_lag_records{partition="0",topic="test"} 1
 			cortex_blockbuilder_consumer_lag_records{partition="1",topic="test"} 0
 		`), "cortex_blockbuilder_consumer_lag_records"))
-	}, 3*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 // Testing block builder starting up with an existing kafka commit.

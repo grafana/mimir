@@ -277,40 +277,25 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 }
 
 func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionState, cycleEnd time.Time) error {
-	lagging := cycleEnd.Sub(state.CommitRecTimestamp) > 3*b.cfg.ConsumeInterval/2
-	if !lagging {
-		// Either we did not find a commit offset or we are not lagging behind by
-		// more than 1.5 times the consume interval.
-		// When there is no kafka commit, we play safe and assume oldestSeenOffset and
-		// lastBlockEnd was 0 to not discard any samples unnecessarily.
-		err := b.consumePartitionCycle(ctx, state, cycleEnd)
-		if err != nil {
-			return fmt.Errorf("consume partition %d: %w", state.Commit.Partition, err)
-		}
-
-		return nil
+	sectionCycleEnd := cycleEnd
+	if sectionCycleEnd.Sub(state.CommitRecTimestamp) > 3*b.cfg.ConsumeInterval/2 {
+		// We are lagging behind by more thatn 1.5*interval or there is no commit. We need to consume the partition in sections.
+		// We iterate through all the ConsumeInterval intervals, starting from the first one after the last commit until the cycleEnd,
+		// i.e. [T, T+interval), [T+interval, T+2*interval), ... [T+S*interval, cycleEnd)
+		// where T is the CommitRecTimestamp, the timestamp of the record, whose offset we committed previously.
+		// When there is no kafka commit, we play safe and assume oldestSeenOffset and lastBlockEnd was 0 to not discard any samples unnecessarily.
+		sectionCycleEnd, _ = nextCycleEnd(
+			state.CommitRecTimestamp,
+			b.cfg.ConsumeInterval,
+			b.cfg.ConsumeIntervalBuffer,
+		)
+		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", state.Partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd, "cycle_end", cycleEnd)
 	}
-
-	// We are lagging behind. We need to consume the partition in sections.
-	// We iterate through all the ConsumeInterval intervals, starting from the first one after the last commit until the cycleEnd.
-	cycleEndStartAt, _ := nextCycleEnd(
-		state.CommitRecTimestamp,
-		b.cfg.ConsumeInterval,
-		b.cfg.ConsumeIntervalBuffer,
-	)
-	level.Info(b.logger).Log("msg", "partition is lagging behind", "partition", state.Partition, "lag", state.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd)
-	for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
-		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition in the next iteration.
-		err := b.consumePartitionCycle(ctx, state, ce)
-		if err != nil {
+	for !sectionCycleEnd.After(cycleEnd) {
+		if err := b.consumePartitionCycle(ctx, state, sectionCycleEnd); err != nil {
 			return fmt.Errorf("consume partition %d: %w", state.Partition, err)
 		}
-
-		// If adding the ConsumeInterval takes it beyond the cycleEnd, we set it to the cycleEnd to not
-		// exit the loop without consuming until cycleEnd.
-		if ce.Compare(cycleEnd) != 0 && ce.Add(b.cfg.ConsumeInterval).After(cycleEnd) {
-			ce = cycleEnd
-		}
+		sectionCycleEnd = sectionCycleEnd.Add(b.cfg.ConsumeInterval)
 	}
 
 	return nil
