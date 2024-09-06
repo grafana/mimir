@@ -34,6 +34,7 @@ func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
 }
 
 func (g *MinMaxAggregationGroup) maxAccumulatePoint(idx int64, f float64) {
+	// We return a NaN only if there are no other values to return
 	if !g.floatPresent[idx] || f > g.floatValues[idx] || math.IsNaN(g.floatValues[idx]) {
 		g.floatValues[idx] = f
 		g.floatPresent[idx] = true
@@ -41,6 +42,7 @@ func (g *MinMaxAggregationGroup) maxAccumulatePoint(idx int64, f float64) {
 }
 
 func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
+	// We return a NaN only if there are no other values to return
 	if !g.floatPresent[idx] || f < g.floatValues[idx] || math.IsNaN(g.floatValues[idx]) {
 		g.floatValues[idx] = f
 		g.floatPresent[idx] = true
