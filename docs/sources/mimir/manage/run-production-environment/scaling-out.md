@@ -80,7 +80,7 @@ You might experience the following challenges when you scale down ingesters:
 
 #### Scaling down ingesters
 
-Complete the following steps to scale down ingesters deployed in a single zone.
+Complete the following steps to scale down ingesters in any zone.
 
 1. Set each ingester to read-only mode:
 
