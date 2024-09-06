@@ -1325,6 +1325,10 @@ func (qt *testQueryTracker) Delete(insertIndex int) {
 	qt.queries[insertIndex].deleted = true
 }
 
+func (qt *testQueryTracker) Close() error {
+	return nil
+}
+
 type activeQueryTrackerQueryable struct {
 	tracker *testQueryTracker
 
@@ -1401,6 +1405,10 @@ func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, _ string) (int,
 
 func (t *timeoutTestingQueryTracker) Delete(_ int) {
 	panic("should not be called")
+}
+
+func (t *timeoutTestingQueryTracker) Close() error {
+	return nil
 }
 
 func TestAnnotations(t *testing.T) {
