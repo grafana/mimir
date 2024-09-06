@@ -435,7 +435,7 @@ func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixe
 	annots, errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
-	})
+	}, logger)
 	promTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
