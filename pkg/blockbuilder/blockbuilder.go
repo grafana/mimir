@@ -421,15 +421,6 @@ consumerLoop:
 		}
 	}
 
-	compactStart := time.Now()
-	var err error
-	numBlocks, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
-	if err != nil {
-		return err
-	}
-	compactionDur = time.Since(compactStart)
-	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(compactionDur.Seconds())
-
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
 		level.Info(b.logger).Log("msg", "no records were consumed", "partition", state.Partition)
@@ -446,6 +437,15 @@ consumerLoop:
 	if commitRec == nil {
 		commitRec = lastRec
 	}
+
+	compactStart := time.Now()
+	var err error
+	numBlocks, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
+	if err != nil {
+		return err
+	}
+	compactionDur = time.Since(compactStart)
+	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(compactionDur.Seconds())
 
 	commitRecOffset := commitRec.Offset + 1 // offset+1 means everything up to (including) the offset was processed
 
