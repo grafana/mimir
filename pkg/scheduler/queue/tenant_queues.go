@@ -13,7 +13,13 @@ import (
 type TenantID string
 
 const emptyTenantID = TenantID("")
-const unknownQueueDimension = "unknown"
+
+// cannot import constants from frontend/v2 due to import cycle
+// these are attached to the request's AdditionalQueueDimensions by the frontend.
+const ingesterQueueDimension = "ingester"
+const storeGatewayQueueDimension = "store-gateway"
+const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
+const unknownQueueDimension = "unknown" // utilized when AdditionalQueueDimensions is not assigned by the frontend
 
 type QuerierID string
 
@@ -44,16 +50,16 @@ func newQueueBroker(
 	var algos []QueuingAlgorithm
 	if prioritizeQueryComponents {
 		algos = []QueuingAlgorithm{
-			&roundRobinState{}, // root; QueuingAlgorithm selects query component
-			tqas,               // query components; QueuingAlgorithm selects tenants
-			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects from local queue
+			NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
+			tqas,                                // query components; algorithm selects tenants
+			&roundRobinState{},                  // tenant queues; algorithm selects query from local queue
 
 		}
 	} else {
 		algos = []QueuingAlgorithm{
-			tqas,               // root; QueuingAlgorithm selects tenants
-			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
+			tqas,               // root; algorithm selects tenants
+			&roundRobinState{}, // tenant queues; algorithm selects query component
+			&roundRobinState{}, // query components; algorithm selects query from local queue
 		}
 	}
 	tree, err = NewTree(algos...)
