@@ -412,8 +412,12 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+<<<<<<< HEAD
 		PromoteResourceAttributes:           promoteResourceAttributes,
 	}, utillog.SlogFromGoKit(logger))
+=======
+	}, logger)
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
@@ -434,6 +438,130 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 	return mimirTS, nil
 }
 
+<<<<<<< HEAD
+=======
+// Old, less efficient, version of otelMetricsToTimeseries.
+func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+	converter := prometheusremotewrite.NewPrometheusConverter()
+	annots, errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
+		AddMetricSuffixes:                   addSuffixes,
+		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+	}, logger)
+	promTS := converter.TimeSeries()
+	if errs != nil {
+		dropped := len(multierr.Errors(errs))
+		discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
+
+		parseErrs := errs.Error()
+		if len(parseErrs) > maxErrMsgLen {
+			parseErrs = parseErrs[:maxErrMsgLen]
+		}
+
+		if len(promTS) == 0 {
+			return nil, errors.New(parseErrs)
+		}
+
+		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
+	}
+	ws, _ := annots.AsStrings("", 0, 0)
+	if len(ws) > 0 {
+		level.Warn(logger).Log("msg", "Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
+	}
+
+	mimirTS := mimirpb.PreallocTimeseriesSliceFromPool()
+	for _, ts := range promTS {
+		mimirTS = append(mimirTS, promToMimirTimeseries(&ts))
+	}
+
+	return mimirTS, nil
+}
+
+func promToMimirTimeseries(promTs *prompb.TimeSeries) mimirpb.PreallocTimeseries {
+	labels := make([]mimirpb.LabelAdapter, 0, len(promTs.Labels))
+	for _, label := range promTs.Labels {
+		labels = append(labels, mimirpb.LabelAdapter{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+
+	samples := make([]mimirpb.Sample, 0, len(promTs.Samples))
+	for _, sample := range promTs.Samples {
+		samples = append(samples, mimirpb.Sample{
+			TimestampMs: sample.Timestamp,
+			Value:       sample.Value,
+		})
+	}
+
+	histograms := make([]mimirpb.Histogram, 0, len(promTs.Histograms))
+	for idx := range promTs.Histograms {
+		histograms = append(histograms, promToMimirHistogram(&promTs.Histograms[idx]))
+	}
+
+	exemplars := make([]mimirpb.Exemplar, 0, len(promTs.Exemplars))
+	for _, exemplar := range promTs.Exemplars {
+		labels := make([]mimirpb.LabelAdapter, 0, len(exemplar.Labels))
+		for _, label := range exemplar.Labels {
+			labels = append(labels, mimirpb.LabelAdapter{
+				Name:  label.Name,
+				Value: label.Value,
+			})
+		}
+
+		exemplars = append(exemplars, mimirpb.Exemplar{
+			Labels:      labels,
+			Value:       exemplar.Value,
+			TimestampMs: exemplar.Timestamp,
+		})
+	}
+
+	ts := mimirpb.TimeseriesFromPool()
+	ts.Labels = labels
+	ts.Samples = samples
+	ts.Histograms = histograms
+	ts.Exemplars = exemplars
+
+	return mimirpb.PreallocTimeseries{TimeSeries: ts}
+}
+
+func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
+	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
+	for _, span := range h.PositiveSpans {
+		pSpans = append(
+			pSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+	nSpans := make([]mimirpb.BucketSpan, 0, len(h.NegativeSpans))
+	for _, span := range h.NegativeSpans {
+		nSpans = append(
+			nSpans, mimirpb.BucketSpan{
+				Offset: span.Offset,
+				Length: span.Length,
+			},
+		)
+	}
+
+	return mimirpb.Histogram{
+		Count:          &mimirpb.Histogram_CountInt{CountInt: h.GetCountInt()},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()},
+		NegativeSpans:  nSpans,
+		NegativeDeltas: h.NegativeDeltas,
+		NegativeCounts: h.NegativeCounts,
+		PositiveSpans:  pSpans,
+		PositiveDeltas: h.PositiveDeltas,
+		PositiveCounts: h.PositiveCounts,
+		Timestamp:      h.Timestamp,
+		ResetHint:      mimirpb.Histogram_ResetHint(h.ResetHint),
+	}
+}
+
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 // TimeseriesToOTLPRequest is used in tests.
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()

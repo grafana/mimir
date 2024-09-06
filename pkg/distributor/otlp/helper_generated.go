@@ -612,7 +612,11 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 	}
 
 	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
+<<<<<<< HEAD
 	if ts-startTs > threshold {
+=======
+	if ts-startTs > validIntervalForStartTimestamps {
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 		return
 	}
 

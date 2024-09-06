@@ -42,6 +42,7 @@ exporters:
 connectors:
   spanmetrics:
     namespace: span_metrics
+    metrics_expiration: 1m
 
 extensions:
   health_check:

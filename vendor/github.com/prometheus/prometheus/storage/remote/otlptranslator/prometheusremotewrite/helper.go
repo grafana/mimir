@@ -610,7 +610,11 @@ func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb
 	}
 
 	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
+<<<<<<< HEAD
 	if ts-startTs > threshold {
+=======
+	if ts-startTs > validIntervalForStartTimestamps {
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 		return
 	}
 

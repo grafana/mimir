@@ -23,8 +23,13 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+<<<<<<< HEAD
 	"time"
+=======
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
@@ -52,6 +57,12 @@ type StartTsAndTs struct {
 	Ts      int64
 }
 
+type StartTsAndTs struct {
+	StartTs int64
+	Ts      int64
+	Labels  []prompb.Label
+}
+
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
 	unique    map[uint64]*prompb.TimeSeries
@@ -67,7 +78,11 @@ func NewPrometheusConverter() *PrometheusConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
+<<<<<<< HEAD
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
+=======
+func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger log.Logger) (annots annotations.Annotations, errs error) {
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -237,6 +252,7 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 	return ts
 }
 
+<<<<<<< HEAD
 type labelsStringer []prompb.Label
 
 func (ls labelsStringer) String() string {
@@ -250,4 +266,23 @@ func (ls labelsStringer) String() string {
 	}
 	seriesBuilder.WriteString("}")
 	return seriesBuilder.String()
+=======
+// TODO(jesus.vazquez) This method is for debugging only and its meant to be removed soon.
+// trackStartTimestampForSeries logs the start timestamp for a series if it has been seen before.
+func (c *PrometheusConverter) trackStartTimestampForSeries(startTs, ts int64, lbls []prompb.Label, logger log.Logger) {
+	h := timeSeriesSignature(lbls)
+	if _, ok := c.unique[h]; ok {
+		var seriesBuilder strings.Builder
+		seriesBuilder.WriteString("{")
+		for i, l := range lbls {
+			if i > 0 {
+				seriesBuilder.WriteString(",")
+			}
+			seriesBuilder.WriteString(fmt.Sprintf("%s=%s", l.Name, l.Value))
+
+		}
+		seriesBuilder.WriteString("}")
+		level.Debug(logger).Log("labels", seriesBuilder.String(), "start_ts", startTs, "ts", ts)
+	}
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 }

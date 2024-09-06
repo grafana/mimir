@@ -516,10 +516,16 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	converter := otlptranslator.NewPrometheusConverter()
 	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
+<<<<<<< HEAD
 		AddMetricSuffixes:                          true,
 		PromoteResourceAttributes:                  otlpCfg.PromoteResourceAttributes,
 		EnableCreatedTimestampZeroIngestion:        h.enableCTZeroIngestion,
 		ValidIntervalCreatedTimestampZeroIngestion: h.validIntervalCTZeroIngestion,
+=======
+		AddMetricSuffixes:                   true,
+		PromoteResourceAttributes:           otlpCfg.PromoteResourceAttributes,
+		EnableCreatedTimestampZeroIngestion: h.enableCTZeroIngestion,
+>>>>>>> bb0f63b4ad (more updates for the local demo)
 	}, h.logger)
 	if err != nil {
 		h.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
