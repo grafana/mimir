@@ -191,6 +191,27 @@ eval range from 0 to 2m step 1m min(histogram_only_series)
 
 clear
 
+# Test min/max with NaN
+load 1m
+	mixed_series{type="float", label="value"}   NaN
+	mixed_series{type="float", label="value2"}  -5
+	mixed_series{type="float", label="value3"}  10
+	mixed_series{type="histogram", label="value"}   {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+	mixed_series{type="histogram", label="value2"}  NaN
+  mixed_series{type="onlyNaN"} NaN
+
+eval instant at 1m min by (type) (mixed_series)
+	{type="float"} -5
+	{type="histogram"} 0
+  {type="onlyNaN"} NaN
+
+eval instant at 1m max by (type) (mixed_series)
+	{type="float"} 10
+	{type="histogram"} 0
+  {type="onlyNaN"} NaN
+
+clear
+
 # Test native histogram compaction
 load 1m
     single_histogram{label="value"}  {{schema:1 sum:5 count:5 buckets:[1 3 1 4 0 2]}}
