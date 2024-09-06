@@ -52,6 +52,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 
@@ -60,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -79,6 +81,9 @@ receivers:
 	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
 	simpleTemplateTwo = `{{ define "some.template.two" }}{{ end }}`
+	badConfig         = `
+route:
+  receiver: NOT_EXIST`
 )
 
 func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
@@ -266,6 +271,11 @@ templates:
 }
 
 func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
+	utiltest.VerifyNoLeak(t,
+		// This package's init() function statically starts a singleton goroutine that runs forever.
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+	)
+
 	ctx := context.Background()
 
 	// Run this test using a real storage client.
@@ -546,6 +556,57 @@ templates:
 	require.NoError(t, err)
 
 	require.True(t, dirExists(t, user3Dir))
+
+	t.Run("when bad config is loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      "user5",
+			RawConfig: badConfig,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		_, amExists := am.alertmanagers["user5"]
+		require.False(t, amExists)
+	})
+
+	t.Run("when bad templates are loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      "user6",
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{
+				{Filename: "bad.tmpl", Body: "{{ invalid template }}"},
+			},
+		}))
+
+		err := am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		_, amExists := am.alertmanagers["user6"]
+		require.False(t, amExists)
+	})
 }
 
 func TestMultitenantAlertmanager_FirewallShouldBlockHTTPBasedReceiversWhenEnabled(t *testing.T) {
