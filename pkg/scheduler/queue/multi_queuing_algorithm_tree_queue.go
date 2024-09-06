@@ -16,6 +16,7 @@ type Tree interface {
 	EnqueueFrontByPath(QueuePath, any) error
 	EnqueueBackByPath(QueuePath, any) error
 	Dequeue(dequeueArgs *DequeueArgs) (QueuePath, any)
+	GetNode(path QueuePath) *Node
 	ItemCount() int
 	IsEmpty() bool
 }

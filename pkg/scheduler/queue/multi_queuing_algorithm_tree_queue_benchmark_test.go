@@ -423,7 +423,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				queue, err := NewRequestQueue(
 					log.NewNopLogger(),
 					maxOutStandingPerTenant,
-					true,
 					prioritizeQueryComponents,
 					querierForgetDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
