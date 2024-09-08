@@ -291,7 +291,7 @@ type perMetricSeriesLimitReachedError struct {
 	series string
 }
 
-// newPerMetricSeriesLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric series limit has been reached.
+// newPerMetricSeriesLimitReachedError creates a new perMetricSeriesLimitReachedError indicating that a per-metric series limit has been reached.
 func newPerMetricSeriesLimitReachedError(limit int, labels []mimirpb.LabelAdapter) perMetricSeriesLimitReachedError {
 	return perMetricSeriesLimitReachedError{
 		limit:  limit,
