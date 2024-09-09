@@ -41,9 +41,7 @@ func TestQueryPruning(t *testing.T) {
 	}
 	queryable := storageSeriesQueryable(storageSeries)
 
-	const numShards = 8
 	const step = 20 * time.Second
-	const splitInterval = 15 * time.Second
 
 	engine := newEngine()
 	pruningware := newPruneMiddleware(
