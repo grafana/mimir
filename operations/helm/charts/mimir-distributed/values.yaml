@@ -2273,7 +2273,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.29-alpine
+    tag: 1.6.30-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
