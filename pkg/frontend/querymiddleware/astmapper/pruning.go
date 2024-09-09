@@ -13,9 +13,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func NewQueryPruner(ctx context.Context, logger log.Logger) (ASTMapper, error) {
+func NewQueryPruner(ctx context.Context, logger log.Logger) ASTMapper {
 	pruner := newQueryPruner(ctx, logger)
-	return NewASTExprMapper(pruner), nil
+	return NewASTExprMapper(pruner)
 }
 
 type queryPruner struct {
