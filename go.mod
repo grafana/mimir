@@ -7,7 +7,7 @@ go 1.22.0
 toolchain go1.22.5
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.3.2
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.0
 	github.com/alecthomas/units v0.0.0-20240626203959-61d1e3462e30
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
