@@ -65,6 +65,7 @@ func TestQueryPruning(t *testing.T) {
 		{`avg(rate(%s[1m])) < (-1 * -Inf)`, false},
 		{`avg(rate(%s[1m])) < (+1 * -Inf)`, true},
 		{`(-1 * -Inf) < avg(rate(%s[1m]))`, true},
+		{`((-1 * -Inf) < avg(rate(foo[1m]))) or avg(rate(%s[1m]))`, false},
 	}
 	for _, template := range templates {
 		t.Run(template.query, func(t *testing.T) {

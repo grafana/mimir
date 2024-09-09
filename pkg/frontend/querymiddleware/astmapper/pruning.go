@@ -49,6 +49,8 @@ func (pruner *queryPruner) pruneBinOp(expr *parser.BinaryExpr) (mapped parser.Ex
 		return pruner.handleMultiplyOp(expr), false, nil
 	case parser.GTR, parser.LSS:
 		return pruner.handleCompOp(expr), false, nil
+	case parser.LOR:
+		return pruner.handleOrOp(expr), false, nil
 	default:
 		return expr, false, nil
 	}
@@ -149,5 +151,31 @@ func (pruner *queryPruner) isInfinite(expr parser.Expr) (bool, bool) {
 		return false, false
 	default:
 		return false, false
+	}
+}
+
+func (pruner *queryPruner) handleOrOp(expr *parser.BinaryExpr) parser.Expr {
+	switch {
+	case pruner.isEmpty(expr.LHS):
+		return expr.RHS
+	case pruner.isEmpty(expr.RHS):
+		return expr.LHS
+	}
+	return expr
+}
+
+func (pruner *queryPruner) isEmpty(expr parser.Expr) bool {
+	mapped, _, err := pruner.MapExpr(expr)
+	if err == nil {
+		expr = mapped
+	}
+	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		return pruner.isEmpty(e.Expr)
+	default:
+		if e.String() == `vector(0) < -Inf` {
+			return true
+		}
+		return false
 	}
 }

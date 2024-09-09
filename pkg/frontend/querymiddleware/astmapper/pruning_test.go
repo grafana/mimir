@@ -113,6 +113,22 @@ func TestQueryPruner(t *testing.T) {
 			`(-1 * -Inf) < avg(rate(foo[1m]))`,
 			`vector(0) < -Inf`,
 		},
+		{
+			`vector(0) < -Inf or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`avg(rate(foo[1m])) or vector(0) < -Inf`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`avg(rate(foo[1m])) or (vector(0) < -Inf)`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) < avg(rate(foo[1m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
 	} {
 		tt := tt
 
