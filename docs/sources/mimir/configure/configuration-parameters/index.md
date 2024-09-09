@@ -1674,7 +1674,9 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
-# True to enable query pruning.
+# (experimental) True to enable pruning dead code (eg. expressions that cannot
+# produce any results) and simplifying expressions (eg. expressions that can be
+# evaluated immediately) in queries.
 # CLI flag: -query-frontend.prune-queries
 [prune_queries: <boolean> | default = false]
 

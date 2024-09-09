@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/astmapper/shard_summer_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 
 package astmapper
 
@@ -126,7 +123,63 @@ func TestQueryPruner(t *testing.T) {
 			`avg(rate(foo[1m]))`,
 		},
 		{
-			`((-1 * -Inf) < avg(rate(foo[1m]))) or avg(rate(foo[1m]))`,
+			`((-1 * -Inf) < avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) <= avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`((+Inf) <= avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) >= avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`((+Inf) >= avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) > avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`((+Inf) > avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * +Inf) > avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`((+1 * -Inf) > avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`(avg(rate(foo[2m])) < (+1 * -Inf)) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) == avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`((+Inf) == avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) != avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`((+Inf) != avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+		},
+		{
+			`((-1 * -Inf) < avg(rate(foo[2m]))) and avg(rate(foo[1m]))`,
+			`(vector(0) < -Inf)`,
+		},
+		{
+			`((-1 * -Inf) < avg(rate(foo[2m]))) unless avg(rate(foo[1m]))`,
+			`(vector(0) < -Inf)`,
+		},
+		{
+			`avg(rate(foo[1m])) unless ((-1 * -Inf) < avg(rate(foo[2m])))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`((2 * +Inf) < avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`(((-1 * -Inf) < avg(rate(foo[3m]))) unless avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`((((-1 * -Inf) < avg(rate(foo[4m]))) unless avg(rate(foo[3m]))) and avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
 			`avg(rate(foo[1m]))`,
 		},
 	} {

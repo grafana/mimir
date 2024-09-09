@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/step_align_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 
 package querymiddleware
 
@@ -63,7 +60,12 @@ func TestQueryPruning(t *testing.T) {
 		{`avg(rate(%s[1m])) < (-1 * -Inf)`, false},
 		{`avg(rate(%s[1m])) < (+1 * -Inf)`, true},
 		{`(-1 * -Inf) < avg(rate(%s[1m]))`, true},
-		{`((-1 * -Inf) < avg(rate(foo[1m]))) or avg(rate(%s[1m]))`, false},
+		{`((-1 * -Inf) < avg(rate(foo[2m]))) or avg(rate(%s[1m]))`, false},
+		{`((-1 * -Inf) < avg(rate(foo[2m]))) and avg(rate(%s[1m]))`, true},
+		{`((-1 * -Inf) < avg(rate(foo[2m]))) unless avg(rate(%s[1m]))`, true},
+		{`avg(rate(%s[1m])) unless ((-1 * -Inf) < avg(rate(foo[2m])))`, false},
+		{`(((-1 * -Inf) < avg(rate(foo[3m]))) unless avg(rate(foo[2m]))) or avg(rate(%s[1m]))`, true},
+		{`((((-1 * -Inf) < avg(rate(foo[4m]))) unless avg(rate(foo[3m]))) and avg(rate(foo[2m]))) or avg(rate(%s[1m]))`, true},
 	}
 	for _, template := range templates {
 		t.Run(template.query, func(t *testing.T) {
@@ -89,17 +91,17 @@ func TestQueryPruning(t *testing.T) {
 			}
 
 			// Run the query with pruning.
-			shardedRes, err := pruningware.Wrap(downstream).Do(injectedContext, req)
+			prunedRes, err := pruningware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
 
 			if !template.IsEmpty {
 				// Ensure the query produces some results.
-				require.NotEmpty(t, shardedRes.(*PrometheusResponse).Data.Result)
-				requireValidSamples(t, shardedRes.(*PrometheusResponse).Data.Result)
+				require.NotEmpty(t, prunedRes.(*PrometheusResponse).Data.Result)
+				requireValidSamples(t, prunedRes.(*PrometheusResponse).Data.Result)
 			}
 
 			// Ensure the results are approximately equal.
-			approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+			approximatelyEqualsSamples(t, expectedRes.(*PrometheusResponse), prunedRes.(*PrometheusResponse))
 		})
 	}
 }

@@ -6371,11 +6371,12 @@
           "kind": "field",
           "name": "prune_queries",
           "required": false,
-          "desc": "True to enable query pruning.",
+          "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.prune-queries",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

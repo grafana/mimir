@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/astmapper/shard_summer.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 
 package astmapper
 
 import (
 	"context"
 	"math"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -51,20 +49,28 @@ func (pruner *queryPruner) pruneBinOp(expr *parser.BinaryExpr) (mapped parser.Ex
 		return pruner.handleCompOp(expr), false, nil
 	case parser.LOR:
 		return pruner.handleOrOp(expr), false, nil
+	case parser.LAND:
+		return pruner.handleAndOp(expr), false, nil
+	case parser.LUNLESS:
+		return pruner.handleUnlessOp(expr), false, nil
 	default:
 		return expr, false, nil
 	}
 }
 
-func calcInf(sign bool, coeff string) (*parser.NumberLiteral, bool) {
+func calcInf(isPositive bool, num string) (*parser.NumberLiteral, bool) {
+	coeff, err := strconv.Atoi(num)
+	if err != nil || coeff == 0 {
+		return nil, false
+	}
 	switch {
-	case sign && (coeff == "1" || coeff == "+1"):
+	case isPositive && coeff > 0:
 		return &parser.NumberLiteral{Val: math.Inf(1)}, true
-	case sign && coeff == "-1":
+	case isPositive && coeff < 0:
 		return &parser.NumberLiteral{Val: math.Inf(-1)}, true
-	case !sign && (coeff == "1" || coeff == "+1"):
+	case !isPositive && coeff > 0:
 		return &parser.NumberLiteral{Val: math.Inf(-1)}, true
-	case !sign && coeff == "-1":
+	case !isPositive && coeff < 0:
 		return &parser.NumberLiteral{Val: math.Inf(1)}, true
 	default:
 		return nil, false
@@ -99,7 +105,7 @@ func (pruner *queryPruner) handleCompOp(expr *parser.BinaryExpr) parser.Expr {
 		refNeg = expr.LHS
 		refPos = expr.RHS
 	default:
-		panic("unhandled")
+		return expr
 	}
 
 	// foo < -Inf or -Inf > foo => vector(0) < -Inf
@@ -158,6 +164,26 @@ func (pruner *queryPruner) handleOrOp(expr *parser.BinaryExpr) parser.Expr {
 	switch {
 	case pruner.isEmpty(expr.LHS):
 		return expr.RHS
+	case pruner.isEmpty(expr.RHS):
+		return expr.LHS
+	}
+	return expr
+}
+
+func (pruner *queryPruner) handleAndOp(expr *parser.BinaryExpr) parser.Expr {
+	switch {
+	case pruner.isEmpty(expr.LHS):
+		return expr.LHS
+	case pruner.isEmpty(expr.RHS):
+		return expr.RHS
+	}
+	return expr
+}
+
+func (pruner *queryPruner) handleUnlessOp(expr *parser.BinaryExpr) parser.Expr {
+	switch {
+	case pruner.isEmpty(expr.LHS):
+		return expr.LHS
 	case pruner.isEmpty(expr.RHS):
 		return expr.LHS
 	}

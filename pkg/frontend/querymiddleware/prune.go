@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/step_align.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 
 package querymiddleware
 
@@ -36,14 +33,19 @@ func newPruneMiddleware(logger log.Logger) MetricsQueryMiddleware {
 func (p *pruneMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, p.logger)
 
-	prunedQuery, err := p.pruneQuery(ctx, r.GetQuery())
+	prunedQuery, success, err := p.pruneQuery(ctx, r.GetQuery())
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to prune the input query, falling back to the original query", "query", r.GetQuery(), "err", err)
 
 		return p.next.Do(ctx, r)
 	}
 
-	level.Debug(log).Log("msg", "query has been purged", "original", r.GetQuery(), "rewritten", prunedQuery)
+	if !success {
+		level.Debug(log).Log("msg", "query pruning had no effect", "query", r.GetQuery())
+		return p.next.Do(ctx, r)
+	}
+
+	level.Debug(log).Log("msg", "query has been rewritten by pruning", "original", r.GetQuery(), "rewritten", prunedQuery)
 
 	updatedReq, err := r.WithQuery(prunedQuery)
 	if err != nil {
@@ -53,20 +55,20 @@ func (p *pruneMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	return p.next.Do(ctx, updatedReq)
 }
 
-func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string, error) {
-	mapper := astmapper.NewQueryPruner(ctx, p.logger)
-
-	// The mapper can modify the input expression in-place, so we must re-parse the original query
-	// each time before passing it to the mapper.
+func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string, bool, error) {
+	// Parse the query.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return "", false, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
+	origQueryString := expr.String()
 
+	mapper := astmapper.NewQueryPruner(ctx, p.logger)
 	prunedQuery, err := mapper.Map(expr)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
+	prunedQueryString := prunedQuery.String()
 
-	return prunedQuery.String(), nil
+	return prunedQueryString, origQueryString != prunedQueryString, nil
 }
