@@ -210,14 +210,11 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 			# TYPE cortex_blockbuilder_consumer_lag_records gauge
 			cortex_blockbuilder_consumer_lag_records{partition="0",topic="test"} 0
 			cortex_blockbuilder_consumer_lag_records{partition="1",topic="test"} 0
-			# HELP cortex_blockbuilder_fetch_records_total Total number of records received by the consumer.
-			# TYPE cortex_blockbuilder_fetch_records_total counter
-			cortex_blockbuilder_fetch_records_total 0
-		`), "cortex_blockbuilder_consumer_lag_records", "cortex_blockbuilder_fetch_records_total"))
+		`), "cortex_blockbuilder_consumer_lag_records"))
 	}, 3*time.Second, 100*time.Millisecond, "expected skipping all records before lookback period")
 }
 
-func TestBlockBuilder_WithMultiplyTenants(t *testing.T) {
+func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancelCause(context.Background())

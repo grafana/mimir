@@ -268,7 +268,6 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 		// records because it is non-trivial to peek at the first record in a partition to determine
 		// the range of replay required. Without knowing the range, we might end up trying to consume
 		// a lot of records in a single partition consumption call and end up in an OOM loop.
-		// TODO(codesome): add a test for this.
 		commitRecTs = fallbackMillis
 	}
 
@@ -285,7 +284,7 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionState, cycleEnd time.Time) error {
 	sectionCycleEnd := cycleEnd
 	if sectionCycleEnd.Sub(state.CommitRecTimestamp) > 3*b.cfg.ConsumeInterval/2 {
-		// We are lagging behind by more thatn 1.5*interval or there is no commit. We need to consume the partition in sections.
+		// We are lagging behind by more than 1.5*interval or there is no commit. We need to consume the partition in sections.
 		// We iterate through all the ConsumeInterval intervals, starting from the first one after the last commit until the cycleEnd,
 		// i.e. [T, T+interval), [T+interval, T+2*interval), ... [T+S*interval, cycleEnd)
 		// where T is the CommitRecTimestamp, the timestamp of the record, whose offset we committed previously.
@@ -298,7 +297,9 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", state.Partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd, "cycle_end", cycleEnd)
 	}
 	for !sectionCycleEnd.After(cycleEnd) {
-		if err := b.consumePartitionCycle(ctx, state, sectionCycleEnd); err != nil {
+		partitionLogger := log.With(b.logger, "partition", state.Partition, "section_cycle_end", sectionCycleEnd)
+
+		if err := b.consumePartitionCycle(ctx, partitionLogger, state, sectionCycleEnd); err != nil {
 			return fmt.Errorf("consume partition %d: %w", state.Partition, err)
 		}
 		sectionCycleEnd = sectionCycleEnd.Add(b.cfg.ConsumeInterval)
@@ -310,7 +311,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // It modifies state, tracking the consumption progress. If the partition is lagging behind, the caller needs to take care
 // of calling consumePartition in sections.
-func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, state *partitionState, cycleEnd time.Time) (retErr error) {
+func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogger log.Logger, state *partitionState, cycleEnd time.Time) (retErr error) {
 	blockEnd := cycleEnd.Truncate(b.cfg.ConsumeInterval)
 
 	var (
@@ -326,27 +327,27 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, state *partiti
 		}
 
 		if retErr != nil {
-			level.Error(b.logger).Log("msg", "partition consumption failed", "partition", state.Partition, "dur", dur, "start_lag", startState.Lag, "end_lag", state.Lag, "err", retErr)
+			level.Error(partitionLogger).Log("msg", "partition consumption failed", "duration", dur, "start_lag", startState.Lag, "end_lag", state.Lag, "err", retErr)
 			return
 		}
 
 		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(dur.Seconds())
-		level.Info(b.logger).Log("msg", "done consuming", "partition", state.Partition, "dur", dur,
-			"start_lag", startState.Lag, "end_lag", state.Lag, "cycle_end", cycleEnd,
+		level.Info(partitionLogger).Log("msg", "done consuming", "duration", dur,
+			"start_lag", startState.Lag, "end_lag", state.Lag,
 			"last_block_end", startState.LastBlockEnd, "curr_block_end", blockEnd,
 			"last_oldest_seen_offset", startState.OldestSeenOffset, "curr_seen_offset", state.OldestSeenOffset,
-			"num_blocks", numBlocks, "compact_and_upload_dur", compactionDur)
+			"num_blocks", numBlocks, "compact_and_upload_duration", compactionDur)
 	}(time.Now(), *state)
 
 	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits)
 	defer runutil.CloseWithErrCapture(&retErr, builder, "closing tsdb builder")
 
-	level.Info(b.logger).Log("msg", "start consuming", "partition", state.Partition, "offset", state.Commit.At, "lag", state.Lag, "cycle_end", cycleEnd)
-
 	// TopicPartition to resume consuming on this iteration.
 	tp := map[string][]int32{b.cfg.Kafka.Topic: {state.Partition}}
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
+
+	level.Info(partitionLogger).Log("msg", "start consuming", "offset", state.Commit.At, "lag", state.Lag)
 
 	// We always rewind the partition's offset to the commit offset. This is so the cycle started exactly at the commit point,
 	// and not at what was (potentially over-) consumed previously.
@@ -364,20 +365,15 @@ consumerLoop:
 			return err
 		}
 		fetches := b.kafkaClient.PollFetches(ctx)
-		if fetches.IsClientClosed() {
-			level.Warn(b.logger).Log("msg", "client closed when fetching records")
-			return nil
-		}
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
-				level.Error(b.logger).Log("msg", "failed to fetch records", "partition", state.Partition, "err", err)
+				level.Error(partitionLogger).Log("msg", "failed to fetch records", "err", err)
 				b.metrics.fetchErrors.Inc()
 			}
 		})
 
 		numRecs := fetches.NumRecords()
 		remaining -= int64(numRecs)
-		b.metrics.fetchRecordsTotal.Add(float64(numRecs))
 
 		recIter := fetches.RecordIter()
 		for !recIter.Done() {
@@ -387,7 +383,7 @@ consumerLoop:
 				firstRec = rec
 			}
 
-			level.Debug(b.logger).Log("msg", "consumed record", "offset", rec.Offset, "rec_ts", rec.Timestamp, "last_block_end", state.LastBlockEnd, "block_end", blockEnd)
+			level.Debug(partitionLogger).Log("msg", "consumed record", "offset", rec.Offset, "rec_ts", rec.Timestamp, "last_block_end", state.LastBlockEnd, "block_end", blockEnd)
 
 			// Stop consuming after we reached the cycleEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
@@ -404,7 +400,8 @@ consumerLoop:
 			if !allSamplesProcessed {
 				if lastRec == nil {
 					// The first record was not fully processed, meaning the record before this is the commit point.
-					// We have to re-commit this one to update the oldestSeenOffset; this is so the next cycle handled partially processed record properly.
+					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
+					// with the new value of oldestSeenOffset. This is so the next cycle handled partially processed record properly.
 					commitRec = &kgo.Record{
 						Topic:       state.Commit.Topic,
 						Partition:   state.Commit.Partition,
@@ -423,13 +420,13 @@ consumerLoop:
 
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
-		level.Info(b.logger).Log("msg", "no records were consumed", "partition", state.Partition)
+		level.Info(partitionLogger).Log("msg", "no records were consumed")
 		return nil
 	}
 
 	// No records were processed for this cycle.
 	if lastRec == nil {
-		level.Info(b.logger).Log("msg", "nothing to commit due to first record fetched is from next cycle", "partition", state.Partition, "first_rec_offset", firstRec.Offset)
+		level.Info(partitionLogger).Log("msg", "nothing to commit due to first record fetched is from next cycle", "first_rec_offset", firstRec.Offset)
 		return nil
 	}
 
@@ -466,7 +463,7 @@ consumerLoop:
 		LeaderEpoch: commitRec.LeaderEpoch,
 		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), oldestSeenOffset, lastBlockEnd.UnixMilli()),
 	}
-	if err := b.commitOffset(ctx, b.cfg.Kafka.ConsumerGroup, commit); err != nil {
+	if err := b.commitOffset(ctx, partitionLogger, b.cfg.Kafka.ConsumerGroup, commit); err != nil {
 		return err
 	}
 
@@ -493,14 +490,14 @@ func (b *BlockBuilder) seekPartition(partition int32, offset int64) {
 	b.kafkaClient.SetOffsets(offsets)
 }
 
-func (b *BlockBuilder) commitOffset(ctx context.Context, group string, offset kadm.Offset) error {
+func (b *BlockBuilder) commitOffset(ctx context.Context, partitionLogger log.Logger, group string, offset kadm.Offset) error {
 	offsets := make(kadm.Offsets)
 	offsets.Add(offset)
 	if err := kadm.NewClient(b.kafkaClient).CommitAllOffsets(ctx, group, offsets); err != nil {
 		return fmt.Errorf("commit with partition %d, offset %d: %w", offset.Partition, offset.At, err)
 	}
 
-	level.Debug(b.logger).Log("msg", "successfully committed to Kafka", "partition", offset.Partition, "offset", offset.At)
+	level.Debug(partitionLogger).Log("msg", "successfully committed to Kafka", "offset", offset.At)
 
 	return nil
 }

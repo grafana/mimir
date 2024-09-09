@@ -85,7 +85,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	cfg.InstanceID = "block-builder-0"
 	cfg.PartitionAssignment = map[string][]int32{
-		"block-builder-0": {0, 1}, // instance 0 -> partition 0
+		"block-builder-0": {0, 1}, // instance 0 -> partitions 0 and 1
 	}
 	cfg.ConsumerGroup = testGroup
 	cfg.DataDir = t.TempDir()

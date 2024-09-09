@@ -11,7 +11,6 @@ type blockBuilderMetrics struct {
 	consumeCycleDuration     prometheus.Histogram
 	processPartitionDuration *prometheus.HistogramVec
 	compactAndUploadDuration *prometheus.HistogramVec
-	fetchRecordsTotal        prometheus.Counter
 	fetchErrors              prometheus.Counter
 	consumerLagRecords       *prometheus.GaugeVec
 }
@@ -38,10 +37,6 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"partition"})
 
-	m.fetchRecordsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_blockbuilder_fetch_records_total",
-		Help: "Total number of records received by the consumer.",
-	})
 	m.fetchErrors = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_fetch_errors_total",
 		Help: "Total number of errors while fetching by the consumer.",
