@@ -106,8 +106,7 @@ const (
 
 	DefaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
-	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
-	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
+	bucketIndexFlagPrefix = "blocks-storage.bucket-store.bucket-index."
 )
 
 // Validation errors
