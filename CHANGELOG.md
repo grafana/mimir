@@ -182,7 +182,7 @@
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
 * [ENHANCEMENT] Log successful test runs in addition to failed test runs. #8817
-* [ENHANCEMENT] Series emitted by continuous-test now distribute more uniformly across ingesters. #9218
+* [ENHANCEMENT] Series emitted by continuous-test now distribute more uniformly across ingesters. #9218 #9243
 * [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 
 ### Query-tee
