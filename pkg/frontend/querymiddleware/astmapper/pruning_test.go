@@ -15,8 +15,7 @@ import (
 )
 
 func TestQueryPruner(t *testing.T) {
-	stats := NewMapperStats()
-	mapper, err := NewQueryPruner(context.Background(), log.NewNopLogger(), stats)
+	mapper, err := NewQueryPruner(context.Background(), log.NewNopLogger())
 	require.NoError(t, err)
 
 	for _, tt := range []struct {

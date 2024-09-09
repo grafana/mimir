@@ -13,40 +13,21 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func NewQueryPruner(ctx context.Context, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
-	pruner := newQueryPruner(ctx, logger, stats)
+func NewQueryPruner(ctx context.Context, logger log.Logger) (ASTMapper, error) {
+	pruner := newQueryPruner(ctx, logger)
 	return NewASTExprMapper(pruner), nil
 }
 
 type queryPruner struct {
-	ctx context.Context
-
+	ctx    context.Context
 	logger log.Logger
-	stats  *MapperStats
-
-	canShardAllVectorSelectorsCache map[string]bool
 }
 
-func newQueryPruner(ctx context.Context, logger log.Logger, stats *MapperStats) *queryPruner {
+func newQueryPruner(ctx context.Context, logger log.Logger) *queryPruner {
 	return &queryPruner{
-		ctx: ctx,
-
+		ctx:    ctx,
 		logger: logger,
-		stats:  stats,
-
-		canShardAllVectorSelectorsCache: make(map[string]bool),
 	}
-}
-
-func (pruner *queryPruner) Clone() *queryPruner {
-	s := *pruner
-	s.stats = NewMapperStats()
-	return &s
-}
-
-func (pruner *queryPruner) Copy() *queryPruner {
-	s := *pruner
-	return &s
 }
 
 func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
@@ -55,21 +36,8 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 	}
 
 	switch e := expr.(type) {
-	case *parser.AggregateExpr:
-		return e, true, nil
-
-	case *parser.VectorSelector:
-		return e, true, nil
-
-	case *parser.Call:
-		return e, true, nil
-
 	case *parser.BinaryExpr:
 		return pruner.pruneBinOp(e)
-
-	case *parser.SubqueryExpr:
-		return e, true, nil
-
 	default:
 		return e, false, nil
 	}
@@ -78,7 +46,7 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 func (pruner *queryPruner) pruneBinOp(expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
 	switch expr.Op {
 	case parser.MUL:
-		return pruner.handleMultiplyOp(expr), true, nil
+		return pruner.handleMultiplyOp(expr), false, nil
 	case parser.GTR, parser.LSS:
 		return pruner.handleCompOp(expr), false, nil
 	default:
