@@ -24,8 +24,14 @@ keywords:
 menuTitle: Play with Mimir
 title: Play with Mimir
 weight: 10
----
+killercoda:
+  title: Play with Mimir
+  description: Learn about Grafana Mimir, which provides distributed, horizontally scalable, and highly available long term storage for Prometheus.
+  backend:
+    imageid: ubuntu
 
+---
+<!-- INTERACTIVE page intro.md START -->
 # Play with Mimir
 
 Grafana Mimir is a distributed, horizontally scalable, and highly available long term storage for [Prometheus](https://prometheus.io).
@@ -42,6 +48,18 @@ In this tutorial, you'll:
 - Git
 - [Docker](https://docs.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
 - Availability of both ports `9000` and `9009` on your host machine
+
+<!-- INTERACTIVE ignore START -->
+{{< admonition type="tip" >}}
+Alternatively, you can try out this example in our interactive learning environment: [Play with Mimir](https://killercoda.com/grafana-labs/course/mimir/play-with-mimir).
+
+It's a fully configured environment with all the dependencies already installed.
+
+![Interactive](/media/docs/mimir/mimir-ile.png)
+{{< /admonition >}}
+<!-- INTERACTIVE ignore END -->
+
+<!-- INTERACTIVE page intro.md END -->
 
 ## Download tutorial configuration
 
