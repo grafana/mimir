@@ -15,6 +15,10 @@ import (
 )
 
 func TestQueryPruner(t *testing.T) {
+	stats := NewMapperStats()
+	mapper, err := NewQueryPruner(context.Background(), log.NewNopLogger(), stats)
+	require.NoError(t, err)
+
 	for _, tt := range []struct {
 		in  string
 		out string
@@ -36,40 +40,85 @@ func TestQueryPruner(t *testing.T) {
 			`avg(rate(foo[1m]))`,
 		},
 		{
-			`avg(rate(foo[1m])) * 0`,
-			`0`,
+			`vector(0)`,
+			`vector(0)`,
 		},
 		{
-			`0 * avg(rate(foo[1m]))`,
-			`0`,
+			`up < -Inf`,
+			`vector(0) < -Inf`,
 		},
 		{
-			`0 * avg(1 + rate(foo[1m]))`,
-			`0`,
+			`-Inf > up`,
+			`vector(0) < -Inf`,
 		},
 		{
-			`avg(rate(foo[1m])) * 0 + 1`,
-			`0 + 1`,
+			`up > +Inf`,
+			`vector(0) > +Inf`,
 		},
 		{
-			`1 + avg(rate(foo[1m])) * 0`,
-			`1 + 0`,
+			`+Inf < up`,
+			`vector(0) > +Inf`,
 		},
 		{
-			`0 / avg(rate(foo[1m]))`,
-			`0`,
+			`up < +Inf`,
+			`up < +Inf`,
 		},
 		{
-			`avg(rate(foo[1m])) - avg(rate(foo[1m]))`,
-			`0`,
+			`+Inf > up`,
+			`+Inf > up`,
+		},
+		{
+			`up > -Inf`,
+			`up > -Inf`,
+		},
+		{
+			`-Inf < up`,
+			`-Inf < up`,
+		},
+		{
+			`avg(rate(foo[1m])) < (-Inf)`,
+			`vector(0) < (-Inf)`,
+		},
+		{
+			`Inf * -1`,
+			`-Inf`,
+		},
+		{
+			`+1 * -Inf`,
+			`-Inf`,
+		},
+		{
+			`1 * +Inf`,
+			`Inf`,
+		},
+		{
+			`-Inf * -1`,
+			`+Inf`,
+		},
+		{
+			`avg(rate(foo[1m])) < (-1 * +Inf)`,
+			`vector(0) < (-Inf)`,
+		},
+		{
+			`avg(rate(foo[1m])) < (+1 * +Inf)`,
+			`avg(rate(foo[1m])) < (+Inf)`,
+		},
+		{
+			`avg(rate(foo[1m])) < (-1 * -Inf)`,
+			`avg(rate(foo[1m])) < (+Inf)`,
+		},
+		{
+			`avg(rate(foo[1m])) < (+1 * -Inf)`,
+			`vector(0) < (-Inf)`,
+		},
+		{
+			`(-1 * -Inf) < avg(rate(foo[1m]))`,
+			`vector(0) > (+Inf)`,
 		},
 	} {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			stats := NewMapperStats()
-			mapper, err := NewQueryPruner(context.Background(), log.NewNopLogger(), stats)
-			require.NoError(t, err)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)

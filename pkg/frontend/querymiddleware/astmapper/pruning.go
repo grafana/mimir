@@ -7,6 +7,7 @@ package astmapper
 
 import (
 	"context"
+	"math"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -78,35 +79,107 @@ func (pruner *queryPruner) pruneBinOp(expr *parser.BinaryExpr) (mapped parser.Ex
 	switch expr.Op {
 	case parser.MUL:
 		return pruner.handleMultiplyOp(expr), true, nil
-	case parser.DIV:
-		return pruner.handleDivideOp(expr), true, nil
-	case parser.SUB:
-		return pruner.handleSubtractOp(expr), true, nil
+	case parser.GTR, parser.LSS:
+		return pruner.handleCompOp(expr), false, nil
 	default:
 		return expr, false, nil
 	}
 }
 
+func calcInf(sign bool, coeff string) (*parser.NumberLiteral, bool) {
+	switch {
+	case sign && (coeff == "1" || coeff == "+1"):
+		return &parser.NumberLiteral{Val: math.Inf(1)}, true
+	case sign && coeff == "-1":
+		return &parser.NumberLiteral{Val: math.Inf(-1)}, true
+	case !sign && (coeff == "1" || coeff == "+1"):
+		return &parser.NumberLiteral{Val: math.Inf(-1)}, true
+	case !sign && coeff == "-1":
+		return &parser.NumberLiteral{Val: math.Inf(1)}, true
+	default:
+		return nil, false
+	}
+}
+
 func (pruner *queryPruner) handleMultiplyOp(expr *parser.BinaryExpr) parser.Expr {
-	if expr.LHS.String() == "0" {
-		return expr.LHS
+	isInfR, signR := pruner.isInfinite(expr.RHS)
+	if isInfR {
+		newExpr, ok := calcInf(signR, expr.LHS.String())
+		if ok {
+			return newExpr
+		}
 	}
-	if expr.RHS.String() == "0" {
-		return expr.RHS
+	isInfL, signL := pruner.isInfinite(expr.LHS)
+	if isInfL {
+		newExpr, ok := calcInf(signL, expr.RHS.String())
+		if ok {
+			return newExpr
+		}
 	}
 	return expr
 }
 
-func (pruner *queryPruner) handleDivideOp(expr *parser.BinaryExpr) parser.Expr {
-	if expr.LHS.String() == "0" {
-		return expr.LHS
+func (pruner *queryPruner) handleCompOp(expr *parser.BinaryExpr) parser.Expr {
+	var refNeg, refPos parser.Expr
+	switch expr.Op {
+	case parser.LSS:
+		refNeg = expr.RHS
+		refPos = expr.LHS
+	case parser.GTR:
+		refNeg = expr.LHS
+		refPos = expr.RHS
+	default:
+		panic("unhandled")
 	}
+
+	// foo < -Inf or -Inf > foo => vector(0) < -Inf
+	isInf, sign := pruner.isInfinite(refNeg)
+	if isInf && !sign {
+		return &parser.BinaryExpr{
+			LHS: &parser.Call{
+				Func: parser.Functions["vector"],
+				Args: []parser.Expr{&parser.NumberLiteral{Val: 0}},
+			},
+			Op:         parser.LSS,
+			RHS:        refNeg,
+			ReturnBool: false,
+		}
+	}
+
+	// foo > +Inf or +Inf < foo => vector(0) > +Inf
+	isInf, sign = pruner.isInfinite(refPos)
+	if isInf && sign {
+		return &parser.BinaryExpr{
+			LHS: &parser.Call{
+				Func: parser.Functions["vector"],
+				Args: []parser.Expr{&parser.NumberLiteral{Val: 0}},
+			},
+			Op:         parser.GTR,
+			RHS:        refPos,
+			ReturnBool: false,
+		}
+	}
+
 	return expr
 }
 
-func (pruner *queryPruner) handleSubtractOp(expr *parser.BinaryExpr) parser.Expr {
-	if expr.LHS.String() == expr.RHS.String() {
-		return &parser.NumberLiteral{Val: 0}
+func (pruner *queryPruner) isInfinite(expr parser.Expr) (bool, bool) {
+	mapped, _, err := pruner.MapExpr(expr)
+	if err == nil {
+		expr = mapped
 	}
-	return expr
+	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		return pruner.isInfinite(e.Expr)
+	case *parser.NumberLiteral:
+		if math.IsInf(e.Val, 1) {
+			return true, true
+		}
+		if math.IsInf(e.Val, -1) {
+			return true, false
+		}
+		return false, false
+	default:
+		return false, false
+	}
 }
