@@ -109,12 +109,12 @@ func (pruner *queryPruner) handleCompOp(expr *parser.BinaryExpr) parser.Expr {
 				Args: []parser.Expr{&parser.NumberLiteral{Val: 0}},
 			},
 			Op:         parser.LSS,
-			RHS:        refNeg,
+			RHS:        &parser.NumberLiteral{Val: math.Inf(-1)},
 			ReturnBool: false,
 		}
 	}
 
-	// foo > +Inf or +Inf < foo => vector(0) > +Inf
+	// foo > +Inf or +Inf < foo => vector(0) > +Inf => vector(0) < -Inf
 	isInf, sign = pruner.isInfinite(refPos)
 	if isInf && sign {
 		return &parser.BinaryExpr{
@@ -122,8 +122,8 @@ func (pruner *queryPruner) handleCompOp(expr *parser.BinaryExpr) parser.Expr {
 				Func: parser.Functions["vector"],
 				Args: []parser.Expr{&parser.NumberLiteral{Val: 0}},
 			},
-			Op:         parser.GTR,
-			RHS:        refPos,
+			Op:         parser.LSS,
+			RHS:        &parser.NumberLiteral{Val: math.Inf(-1)},
 			ReturnBool: false,
 		}
 	}

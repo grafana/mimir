@@ -51,11 +51,11 @@ func TestQueryPruner(t *testing.T) {
 		},
 		{
 			`up > +Inf`,
-			`vector(0) > +Inf`,
+			`vector(0) < -Inf`,
 		},
 		{
 			`+Inf < up`,
-			`vector(0) > +Inf`,
+			`vector(0) < -Inf`,
 		},
 		{
 			`up < +Inf`,
@@ -75,7 +75,7 @@ func TestQueryPruner(t *testing.T) {
 		},
 		{
 			`avg(rate(foo[1m])) < (-Inf)`,
-			`vector(0) < (-Inf)`,
+			`vector(0) < -Inf`,
 		},
 		{
 			`Inf * -1`,
@@ -95,7 +95,7 @@ func TestQueryPruner(t *testing.T) {
 		},
 		{
 			`avg(rate(foo[1m])) < (-1 * +Inf)`,
-			`vector(0) < (-Inf)`,
+			`vector(0) < -Inf`,
 		},
 		{
 			`avg(rate(foo[1m])) < (+1 * +Inf)`,
@@ -107,11 +107,11 @@ func TestQueryPruner(t *testing.T) {
 		},
 		{
 			`avg(rate(foo[1m])) < (+1 * -Inf)`,
-			`vector(0) < (-Inf)`,
+			`vector(0) < -Inf`,
 		},
 		{
 			`(-1 * -Inf) < avg(rate(foo[1m]))`,
-			`vector(0) > (+Inf)`,
+			`vector(0) < -Inf`,
 		},
 	} {
 		tt := tt
