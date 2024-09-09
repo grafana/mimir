@@ -127,14 +127,6 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			}
 			hPoint, _ := histograms.NextPoint()
 			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
-			// The following works around an optimisation that can cause a problem when we re-use native histograms.
-			// The optimisation uses the same span slices between native histogram points if the spans are the same.
-			// This is fine when the buffer is filled for a first series. However when the buffer is reset for a new
-			// series, we retain the histograms in memory and then overwrite them with `AtFloatHistogram`.
-			// A problem can then occur when `AtFloatHistogram` tries to populate the spans, incorrectly keeping the
-			// same span between histograms where they should be different.
-			// This workaround can be reverted once https://github.com/prometheus/prometheus/pull/14771 is vendored.
-			applyWorkaroundForSharedSpanSlices(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
