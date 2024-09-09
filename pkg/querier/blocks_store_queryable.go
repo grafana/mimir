@@ -80,7 +80,7 @@ type BlocksFinder interface {
 
 	// GetBlocks returns known blocks for userID containing samples within the range minT
 	// and maxT (milliseconds, both included). Returned blocks are sorted by MaxTime descending.
-	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, map[ulid.ULID]*bucketindex.BlockDeletionMark, error)
+	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error)
 }
 
 // BlocksStoreClient is the interface that should be implemented by any client used
@@ -226,7 +226,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
 		},
 		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
 	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
@@ -254,10 +254,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
 		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
-		// To avoid any false positive in the consistency check, we do exclude blocks which have been
-		// recently marked for deletion, until the "ignore delay / 2". This means the consistency checker
-		// exclude such blocks about 50% of the time before querier and store-gateway stops querying them.
-		storageCfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay/2,
 		reg,
 	)
 
@@ -512,7 +508,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+	knownBlocks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
 		return err
 	}
@@ -547,7 +543,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		touchedStores   = map[string]struct{}{}
 	)
 
-	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks, spanLog)
+	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
 	defer func() {
 		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
 		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
