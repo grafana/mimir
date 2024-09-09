@@ -99,26 +99,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// if they are going to mutate it, so this is safe to do.
 				t, h = atT, lastHistogram
 			} else {
-				// v.memoizedIterator.AtFloatHistogram() does not allow us to supply an existing histogram and instead creates one
-				// and returns it.
-				// The problem is that histograms with the same schema returned from chunkenc.floatHistogramIterator share the same
-				// underlying Span slices.
-				// This causes a problem when a NH schema is modified (for example, during a Sum) then the other NHs with the same
-				// spans are also modified. As such, we need to create a new Span for each NH.
-				// We can guarantee new spans by providing a NH to chunkIterator.AtFloatHistogram(). This is because the
-				// chunkIterator copies the values into the NH.
-				// This doesn't have an overhead for us because memoizedIterator.AtFloatHistogram creates a NH when none is supplied.
-
-				// The original line:
-				//   t, h = v.memoizedIterator.AtFloatHistogram()
-				// may be restorable if Prometheus accepts creating new Span slices for each native histogram.
-				// This creates an overhead for Prometheus since they don't currently experience any problems sharing spans
-				// because they copy NHs before performing any operations.
-				// TODO(jhesketh): change this back if https://github.com/prometheus/prometheus/pull/14771 merges
-
-				t = v.memoizedIterator.AtT()
-				h = &histogram.FloatHistogram{}
-				v.chunkIterator.AtFloatHistogram(h)
+				t, h = v.memoizedIterator.AtFloatHistogram()
 				lastHistogramT = t
 				lastHistogram = h
 			}
