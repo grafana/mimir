@@ -250,7 +250,7 @@ func NewQuerierHandler(
 
 	const (
 		remoteWriteEnabled = false
-		oltpEnabled        = false
+		otlpEnabled        = false
 	)
 
 	api := v1.NewAPI(
@@ -281,7 +281,7 @@ func NewQuerierHandler(
 		nil,
 		remoteWriteEnabled,
 		nil,
-		oltpEnabled,
+		otlpEnabled,
 		true,
 	)
 
