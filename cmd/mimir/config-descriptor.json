@@ -6369,6 +6369,16 @@
         },
         {
           "kind": "field",
+          "name": "prune_queries",
+          "required": false,
+          "desc": "True to enable query pruning.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.prune-queries",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",

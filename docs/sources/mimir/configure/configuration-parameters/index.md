@@ -1674,6 +1674,10 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# True to enable query pruning.
+# CLI flag: -query-frontend.prune-queries
+[prune_queries: <boolean> | default = false]
+
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
