@@ -227,6 +227,7 @@
 * [ENHANCEMENT] `grpcurl-query-ingesters`: print full chunk timestamps, not just time component. #9180
 * [ENHANCEMENT] `tsdb-series`: Added `-json` option to generate JSON output for easier post-processing. #8844
 * [ENHANCEMENT] `tsdb-series`: Added `-min-time` and `-max-time` options to filter samples that are used for computing data-points per minute. #8844
+* [ENHANCEMENT] `mimir-rules-action`: Added new input to support matching target namespaces by regex.
 
 ## 2.13.0
 
