@@ -9294,6 +9294,17 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "ignore_deletion_mark_while_querying_delay",
+              "required": false,
+              "desc": "Duration after which blocks marked for deletion will still be queried. This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3000000000000,
+              "fieldFlag": "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "bucket_index",
               "required": false,
