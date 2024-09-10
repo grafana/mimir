@@ -39,7 +39,7 @@ if [ -z "${ACTION}" ]; then
   exit 1
 fi
 
-if [ -n "${NAMESPACES}" && -n "${NAMESPACES_REGEX}" ]; then
+if [ -n "${NAMESPACES}" ] && [ -n "${NAMESPACES_REGEX}" ]; then
   err "NAMESPACES and NAMESPACES_REGEX cannot both be set."
   exit 1
 fi
