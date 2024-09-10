@@ -1,10 +1,10 @@
 {
   _config+: {
-    install_replica_template_crd: $._config.ingest_storage_ingester_autoscaling_enabled,
+    replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
   },
 
   replica_template:: std.parseYaml(importstr 'replica-templates.yaml'),
-  replica_template_custom_resource: if !$._config.install_replica_template_crd then null else $.replica_template,
+  replica_template_custom_resource: if !$._config.replica_template_custom_resource_definition_enabled then null else $.replica_template,
 
   replicaTemplate(name, replicas=0, label_selector):: {
     apiVersion: 'rollout-operator.grafana.com/v1',
