@@ -32602,7 +32602,25 @@ data:
              }
           ],
           "annotations": {
-             "list": [ ]
+             "list": [
+                {
+                   "datasource": "$datasource",
+                   "enable": true,
+                   "expr": "sum by (user) (cortex_ingester_active_series_loading{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}) > 0",
+                   "filter": {
+                      "exclude": false,
+                      "ids": [
+                         2,
+                         7,
+                         8
+                      ]
+                   },
+                   "hide": true,
+                   "iconColor": "yellow",
+                   "name": "Active Series Reload",
+                   "titleFormat": "Active series reloading for user {{user}}"
+                }
+             ]
           },
           "editable": true,
           "gnetId": null,
