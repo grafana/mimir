@@ -10,7 +10,6 @@ import (
 type blockBuilderMetrics struct {
 	consumeCycleDuration     prometheus.Histogram
 	processPartitionDuration *prometheus.HistogramVec
-	compactAndUploadDuration *prometheus.HistogramVec
 	fetchErrors              prometheus.Counter
 	consumerLagRecords       *prometheus.GaugeVec
 }
@@ -31,12 +30,6 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"partition"})
 
-	m.compactAndUploadDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                        "cortex_blockbuilder_compact_and_upload_duration_seconds",
-		Help:                        "Time spent compacting and uploading one partition.",
-		NativeHistogramBucketFactor: 1.1,
-	}, []string{"partition"})
-
 	m.fetchErrors = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_fetch_errors_total",
 		Help: "Total number of errors while fetching by the consumer.",
@@ -46,6 +39,28 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Name: "cortex_blockbuilder_consumer_lag_records",
 		Help: "The per-topic-partition number of records, instance needs to work through each cycle.",
 	}, []string{"topic", "partition"})
+
+	return m
+}
+
+type tsdbBuilderMetrics struct {
+	compactAndUploadDuration *prometheus.HistogramVec
+	compactAndUploadFailed   *prometheus.CounterVec
+}
+
+func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
+	var m tsdbBuilderMetrics
+
+	m.compactAndUploadDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds",
+		Help:                        "Time spent compacting and uploading a tsdb of one partition.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"partition"})
+
+	m.compactAndUploadFailed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_tsdb_compact_and_upload_failed_total",
+		Help: "Total number of failures compacting and uploading a tsdb of one partition.",
+	}, []string{"partition"})
 
 	return m
 }

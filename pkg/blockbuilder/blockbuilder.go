@@ -41,7 +41,8 @@ type BlockBuilder struct {
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
 	fallbackOffsetMillis int64
 
-	metrics blockBuilderMetrics
+	blockBuilderMetrics blockBuilderMetrics
+	tsdbBuilderMetrics  tsdbBuilderMetrics
 }
 
 func New(
@@ -51,11 +52,12 @@ func New(
 	limits *validation.Overrides,
 ) (*BlockBuilder, error) {
 	b := &BlockBuilder{
-		cfg:      cfg,
-		logger:   logger,
-		register: reg,
-		limits:   limits,
-		metrics:  newBlockBuilderMetrics(reg),
+		cfg:                 cfg,
+		logger:              logger,
+		register:            reg,
+		limits:              limits,
+		blockBuilderMetrics: newBlockBuilderMetrics(reg),
+		tsdbBuilderMetrics:  newTSDBBBuilderMetrics(reg),
 	}
 
 	b.assignedPartitionIDs = b.cfg.PartitionAssignment[b.cfg.InstanceID]
@@ -173,7 +175,7 @@ func nextCycleEnd(t time.Time, interval, buffer time.Duration) (time.Time, time.
 // in this cycle. That is, Kafka records produced after the cycleEnd mark will be consumed in the next cycle.
 func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time) error {
 	defer func(t time.Time) {
-		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
+		b.blockBuilderMetrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
 	for _, partition := range b.assignedPartitionIDs {
@@ -193,7 +195,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			continue
 		}
 
-		b.metrics.consumerLagRecords.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
+		b.blockBuilderMetrics.consumerLagRecords.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
 
 		if lag.Lag <= 0 {
 			if err := lag.Err; err != nil {
@@ -281,7 +283,10 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 	}
 }
 
-func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionState, cycleEnd time.Time) error {
+func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionState, cycleEnd time.Time) (err error) {
+	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics)
+	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
+
 	sectionCycleEnd := cycleEnd
 	if sectionCycleEnd.Sub(state.CommitRecTimestamp) > 3*b.cfg.ConsumeInterval/2 {
 		// We are lagging behind by more than 1.5*interval or there is no commit. We need to consume the partition in sections.
@@ -299,7 +304,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 	for !sectionCycleEnd.After(cycleEnd) {
 		partitionLogger := log.With(b.logger, "partition", state.Partition, "section_cycle_end", sectionCycleEnd)
 
-		if err := b.consumePartitionCycle(ctx, partitionLogger, state, sectionCycleEnd); err != nil {
+		if err := b.consumePartitionCycle(ctx, partitionLogger, builder, state, sectionCycleEnd); err != nil {
 			return fmt.Errorf("consume partition %d: %w", state.Partition, err)
 		}
 		sectionCycleEnd = sectionCycleEnd.Add(b.cfg.ConsumeInterval)
@@ -311,13 +316,10 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // It modifies state, tracking the consumption progress. If the partition is lagging behind, the caller needs to take care
 // of calling consumePartition in sections.
-func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogger log.Logger, state *partitionState, cycleEnd time.Time) (retErr error) {
+func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogger log.Logger, builder *TSDBBuilder, state *partitionState, cycleEnd time.Time) (retErr error) {
 	blockEnd := cycleEnd.Truncate(b.cfg.ConsumeInterval)
 
-	var (
-		numBlocks     int
-		compactionDur time.Duration
-	)
+	var numBlocks int
 	defer func(t time.Time, startState partitionState) {
 		dur := time.Since(t)
 
@@ -331,16 +333,13 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogge
 			return
 		}
 
-		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(dur.Seconds())
+		b.blockBuilderMetrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(dur.Seconds())
 		level.Info(partitionLogger).Log("msg", "done consuming", "duration", dur,
 			"start_lag", startState.Lag, "end_lag", state.Lag,
 			"last_block_end", startState.LastBlockEnd, "curr_block_end", blockEnd,
 			"last_oldest_seen_offset", startState.OldestSeenOffset, "curr_seen_offset", state.OldestSeenOffset,
-			"num_blocks", numBlocks, "compact_and_upload_duration", compactionDur)
+			"num_blocks", numBlocks)
 	}(time.Now(), *state)
-
-	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits)
-	defer runutil.CloseWithErrCapture(&retErr, builder, "closing tsdb builder")
 
 	// TopicPartition to resume consuming on this iteration.
 	tp := map[string][]int32{b.cfg.Kafka.Topic: {state.Partition}}
@@ -368,7 +367,7 @@ consumerLoop:
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(partitionLogger).Log("msg", "failed to fetch records", "err", err)
-				b.metrics.fetchErrors.Inc()
+				b.blockBuilderMetrics.fetchErrors.Inc()
 			}
 		})
 
@@ -435,14 +434,11 @@ consumerLoop:
 		commitRec = lastRec
 	}
 
-	compactStart := time.Now()
 	var err error
 	numBlocks, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return err
 	}
-	compactionDur = time.Since(compactStart)
-	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(compactionDur.Seconds())
 
 	commitRecOffset := commitRec.Offset + 1 // offset+1 means everything up to (including) the offset was processed
 

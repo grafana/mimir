@@ -38,6 +38,7 @@ type TSDBBuilder struct {
 	logger           log.Logger
 	limits           *validation.Overrides
 	blocksStorageCfg mimir_tsdb.BlocksStorageConfig
+	metrics          tsdbBuilderMetrics
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -49,12 +50,13 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics) *TSDBBuilder {
 	return &TSDBBuilder{
 		dataDir:          dataDir,
 		logger:           logger,
 		limits:           limits,
 		blocksStorageCfg: blocksStorageCfg,
+		metrics:          metrics,
 		tsdbs:            make(map[tsdbTenant]*userTSDB),
 	}
 }
@@ -319,6 +321,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		doneDBs   = make(map[*userTSDB]bool)
 	)
 
+	compactStart := time.Now()
+
 	b.tsdbsMu.Lock()
 	defer func() {
 		b.tsdbsMu.Unlock()
@@ -337,9 +341,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 
 		err = merr.Err()
 
-		// Clear the map so that it can be released from the memory. Not setting to nil in case
-		// we want to reuse the TSDBBuilder.
-		b.tsdbs = make(map[tsdbTenant]*userTSDB)
+		// Clear the map so that it can be released from the memory. Not setting to nil in case we want to reuse the TSDBBuilder.
+		clear(b.tsdbs)
 	}()
 
 	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
@@ -355,8 +358,15 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		eg.SetLimit(b.blocksStorageCfg.TSDB.ShipConcurrency)
 	}
 	for tenant, db := range b.tsdbs {
-		eg.Go(func() error {
-			// TODO(codesome): add a metric for compaction and upload failures. An alert on this will be useful.
+		eg.Go(func() (err error) {
+			defer func(t time.Time) {
+				partitionStr := fmt.Sprintf("%d", tenant.partitionID)
+				if err != nil {
+					b.metrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
+				}
+				b.metrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
+			}(compactStart)
+
 			if err := db.compactEverything(ctx); err != nil {
 				return err
 			}
