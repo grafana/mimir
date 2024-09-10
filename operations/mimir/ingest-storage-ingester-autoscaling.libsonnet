@@ -178,22 +178,6 @@
       $.ingester_primary_zone_replica_template
     ),
 
-  //
-  // Grant extra privileges to rollout-operator.
-  //
-
-  local role = $.rbac.v1.role,
-  local policyRule = $.rbac.v1.policyRule,
-  rollout_operator_role: overrideSuperIfExists(
-    'rollout_operator_role',
-    if !$._config.ingest_storage_ingester_autoscaling_enabled then {} else
-      role.withRulesMixin([
-        policyRule.withApiGroups($.replica_template.spec.group) +
-        policyRule.withResources(['%s/scale' % $.replica_template.spec.names.plural, '%s/status' % $.replica_template.spec.names.plural]) +
-        policyRule.withVerbs(['get', 'patch']),
-      ])
-  ),
-
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
