@@ -45,6 +45,9 @@
 // Automatic cleanup of unused PVCs after scaling down
 (import 'pvc-auto-deletion.libsonnet') +
 
+// Support for ReplicaTemplate objects.
+(import 'replica-template.libsonnet') +
+
 // Experimental ingest storage.
 (import 'ingest-storage.libsonnet') +
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +
