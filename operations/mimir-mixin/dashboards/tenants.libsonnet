@@ -17,6 +17,10 @@ local filename = 'mimir-tenants.json';
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
 
+  // These are the IDs of the 'All series', 'Native histogram series', and 'Total number of buckets used by native histogram series' panels
+  // Not ideal, since these will change if the dashboard is rearranged
+  local reload_annotation_panel_ids = [2, 7, 8],
+
   [filename]:
     assert std.md5(filename) == '35fa247ce651ba189debf33d7ae41611' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Tenants') + { uid: std.md5(filename) })
@@ -823,5 +827,23 @@ local filename = 'mimir-tenants.json';
           |||
         )
       ),
-    ),
+    ) + {
+      annotations+: {
+        list+: [
+          {
+            name: 'Active Series Reload',
+            datasource: '$datasource',
+            expr: 'sum by (user) (cortex_ingester_active_series_loading{%s, user="$user"}) > 0' % [$.jobMatcher($._config.job_names.ingester)],
+            titleFormat: 'Active series reloading for user {{user}}',
+            enable: true,
+            hide: true,
+            iconColor: 'yellow',
+            filter: {
+              exclude: false,
+              ids: reload_annotation_panel_ids,
+            },
+          },
+        ],
+      },
+    },
 }
