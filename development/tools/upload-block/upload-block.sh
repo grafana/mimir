@@ -5,6 +5,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(realpath "$(dirname "${0}")")"
 TENANT="anonymous"
+AWS_ACCESS_KEY_ID=mimir
+AWS_SECRET_ACCESS_KEY=supersecret
+S3_ENDPOINT=localhost:9000
+S3_BUCKET_NAME="mimir-tsdb"
 
 function main() {
   if [ "$#" -ne 1 ]; then
@@ -27,25 +31,32 @@ function main() {
 
   echo "Block ULID is $BLOCK_ULID."
   echo "Uploading no-compact marker..."
-
-  cat <<EOF | aws_with_creds s3 cp - "s3://mimir-tsdb/$TENANT/markers/$BLOCK_ULID-no-compact.json"
-  {
-    "id": "$BLOCK_ULID",
-    "version": 1,
-    "no_compact_time": $(date -u +%s),
-    "reason": "manual",
-    "details": "block uploaded for debugging purposes"
-  }
-EOF
+  markblocks \
+    -tenant="$TENANT" \
+    -mark=no-compact \
+    -details="block uploaded for debugging purposes" \
+    -skip-existence-check=true \
+    "$BLOCK_ULID"
 
   echo "Uploading block contents..."
-  aws_with_creds s3 cp --recursive "$BLOCK_DIR" "s3://mimir-tsdb/$TENANT/$BLOCK_ULID"
+  aws_with_creds s3 cp --recursive "$BLOCK_DIR" "s3://$S3_BUCKET_NAME/$TENANT/$BLOCK_ULID"
 
   echo "Done."
 }
 
+function markblocks() {
+  go run "$SCRIPT_DIR/../../../tools/markblocks" \
+    -backend="s3" \
+    -s3.access-key-id="$AWS_ACCESS_KEY_ID" \
+    -s3.secret-access-key="$AWS_SECRET_ACCESS_KEY" \
+    -s3.endpoint="$S3_ENDPOINT" \
+    -s3.insecure=true \
+    -s3.bucket-name="$S3_BUCKET_NAME" \
+    "$@"
+}
+
 function aws_with_creds() {
-  AWS_ACCESS_KEY_ID=mimir AWS_SECRET_ACCESS_KEY=supersecret aws --endpoint-url http://localhost:9000 "$@"
+  AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY aws --endpoint-url "http://$S3_ENDPOINT" "$@"
 }
 
 main "$@"
