@@ -833,7 +833,7 @@ local filename = 'mimir-tenants.json';
           {
             name: 'Active Series Reload',
             datasource: '$datasource',
-            expr: 'sum by (user) (cortex_ingester_active_series_loading{cluster=~"$cluster", job=~"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))", user="$user"}) > 0',
+            expr: 'sum by (user) (cortex_ingester_active_series_loading{%s, user="$user"}) > 0' % [$.jobMatcher($._config.job_names.ingester)],
             titleFormat: 'Active series reloading for user {{user}}',
             enable: true,
             hide: true,
