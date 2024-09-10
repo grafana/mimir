@@ -100,6 +100,8 @@ type Distributor struct {
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
 
+	isServiceStarted *atomic.Bool
+
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
@@ -341,6 +343,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
+		isServiceStarted:      atomic.NewBool(false),
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
@@ -613,6 +616,8 @@ func (d *Distributor) starting(ctx context.Context) error {
 		}
 	}
 
+	d.isServiceStarted.Store(true)
+
 	return nil
 }
 
@@ -781,7 +786,8 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
-	middlewares = append(middlewares, d.limitsMiddleware) // should run first because it checks limits before other middlewares need to read the request body
+	middlewares = append(middlewares, d.checkStartedMiddleware) // This middleware doesn't read the request body.
+	middlewares = append(middlewares, d.limitsMiddleware)       // Should run early because it checks limits before other middlewares need to read the request body.
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
@@ -1287,6 +1293,23 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	}
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
+	}
+}
+
+// checkStartedMiddleware blocks until the underlying distributor service is started.
+func (d *Distributor) checkStartedMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
+
+		if d.isServiceStarted.Load() {
+			return next(ctx, pushReq)
+		}
+
+		if err := d.AwaitRunning(ctx); err != nil {
+			return err
+		}
+		return next(ctx, pushReq)
 	}
 }
 
