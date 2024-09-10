@@ -111,10 +111,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	for kafkaRecTime.Before(cycleEndStartup) {
-		samples := floatSample(kafkaRecTime.Add(-time.Minute).UnixMilli(), 0)
-		val := createWriteRequest(t, "", samples, nil)
-
-		produceRecords(ctx, t, kafkaClient, kafkaRecTime, "1", testTopic, 0, val)
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
 		producedSamples = append(producedSamples, samples...)
 
 		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
@@ -197,9 +194,7 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 	kafkaRecTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	for range 3 {
 		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
-		samples := floatSample(kafkaRecTime.Add(-time.Minute).UnixMilli(), 0)
-		val := createWriteRequest(t, "", samples, nil)
-		produceRecords(ctx, t, kafkaClient, kafkaRecTime, "1", testTopic, 0, val)
+		produceSamples(ctx, t, kafkaClient, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
 	}
 
 	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
@@ -246,16 +241,14 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
 
-	producedSamples := map[string][]mimirpb.Sample{}
+	producedPerTenantSamples := make(map[string][]mimirpb.Sample, 0)
 	tenants := []string{"1", "2", "3"}
 
 	// Producing some records for multiple tenants
 	for range 10 {
-		samples := floatSample(kafkaRecTime.UnixMilli(), 0)
 		for _, tenant := range tenants {
-			val := createWriteRequest(t, tenant, samples, nil)
-			produceRecords(ctx, t, kafkaClient, kafkaRecTime, tenant, testTopic, 0, val)
-			producedSamples[tenant] = append(producedSamples[tenant], samples...)
+			samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, tenant, kafkaRecTime)
+			producedPerTenantSamples[tenant] = append(producedPerTenantSamples[tenant], samples...)
 		}
 
 		kafkaRecTime = kafkaRecTime.Add(15 * time.Second)
@@ -287,7 +280,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 
 		compareQuery(t,
 			db,
-			producedSamples[tenant],
+			producedPerTenantSamples[tenant],
 			nil,
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
@@ -309,45 +302,41 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	const tenantID = "1"
+
 	var expSamplesPhase1, expSamplesPhase2 []mimirpb.Sample
-
-	produceSamples := func(kafkaTime time.Time, sampleTs ...time.Time) {
-		samples := floatSample(sampleTs[0].UnixMilli(), 1)
-		for _, ts := range sampleTs[1:] {
-			samples = append(samples, floatSample(ts.UnixMilli(), 1)...)
-		}
-		val := createWriteRequest(t, tenantID, samples, nil)
-		produceRecords(ctx, t, kafkaClient, kafkaTime, tenantID, testTopic, 0, val)
-	}
-
 	{
 		// Simple first record with all samples in the block.
 		kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-2 * cfg.ConsumeIntervalBuffer)
-		produceSamples(kafkaRecTime, kafkaRecTime)
-		expSamplesPhase1 = append(expSamplesPhase1, floatSample(kafkaRecTime.UnixMilli(), 1)...)
+
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, tenantID, kafkaRecTime)
+		require.Len(t, samples, 1)
+		expSamplesPhase1 = append(expSamplesPhase1, samples...)
 	}
 
 	var lastSeenRecTime time.Time
 	{
 		// Record in the buffer zone with a sample in the block and a sample outside the block.
 		// This is the last record in this cycle. So this will be the "last seen" record for the next cycle.
-		kafkaTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeIntervalBuffer / 2)
-		inBlockTs := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer)
-		lastSeenRecTime = kafkaTime
-		produceSamples(kafkaTime, inBlockTs, kafkaTime)
-		expSamplesPhase1 = append(expSamplesPhase1, floatSample(inBlockTs.UnixMilli(), 1)...)
-		expSamplesPhase2 = append(expSamplesPhase2, floatSample(kafkaTime.UnixMilli(), 1)...)
+		kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeIntervalBuffer / 2)
+		inBlockTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer)
+		lastSeenRecTime = kafkaRecTime
+
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, tenantID, inBlockTime, kafkaRecTime)
+		require.Len(t, samples, 2)
+		expSamplesPhase1 = append(expSamplesPhase1, samples[0])
+		expSamplesPhase2 = append(expSamplesPhase2, samples[1])
 	}
 
 	{
 		// Record outside this cycle but with sample valid for this block.
 		// This sample will be consumed in the next cycle because of the record timestamp.
-		// The block builder will treat this as the stopping point for the cycle since the record
-		// timestamp is outside the cycle.
-		kafkaTime := cycleEndStartup.Add(cfg.ConsumeInterval - time.Minute)
-		inBlockTs := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer + time.Minute)
-		produceSamples(kafkaTime, inBlockTs)
-		expSamplesPhase2 = append(expSamplesPhase2, floatSample(inBlockTs.UnixMilli(), 1)...)
+		// The block builder will treat this as the stopping point for the cycle since the record timestamp is outside the cycle.
+		kafkaRecTime := cycleEndStartup.Add(cfg.ConsumeInterval - time.Minute)
+		inBlockTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer + time.Minute)
+
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, tenantID, inBlockTime)
+		require.Len(t, samples, 1)
+		expSamplesPhase2 = append(expSamplesPhase2, samples[0])
 	}
 
 	{
@@ -358,10 +347,12 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 		// before the last seen timestamp of the cycle.
 		// If we were working with record timestamp, this sample will go missing. If we use offset of record
 		// instead, then this sample will not go missing.
-		kafkaTime := lastSeenRecTime.Add(-2 * time.Minute)
-		inBlockTs := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer + 2*time.Minute)
-		produceSamples(kafkaTime, inBlockTs)
-		expSamplesPhase2 = append(expSamplesPhase2, floatSample(inBlockTs.UnixMilli(), 1)...)
+		kafkaRecTime := lastSeenRecTime.Add(-2 * time.Minute)
+		inBlockTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer + 2*time.Minute)
+
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, tenantID, inBlockTime)
+		require.Len(t, samples, 1)
+		expSamplesPhase2 = append(expSamplesPhase2, samples[0])
 	}
 
 	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
@@ -393,6 +384,16 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 
 	runTest("phase 1", cycleEndStartup, expSamplesPhase1)
 	runTest("phase 2", cycleEndStartup.Add(cfg.ConsumeInterval), append(expSamplesPhase1, expSamplesPhase2...))
+}
+
+func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, ts time.Time, tenantID string, sampleTs ...time.Time) []mimirpb.Sample {
+	var samples []mimirpb.Sample
+	for _, ts := range sampleTs {
+		samples = append(samples, floatSample(ts.UnixMilli(), 1)...)
+	}
+	val := createWriteRequest(t, tenantID, samples, nil)
+	produceRecords(ctx, t, kafkaClient, ts, tenantID, testTopic, 0, val)
+	return samples
 }
 
 func TestCycleEndAtStartup(t *testing.T) {
