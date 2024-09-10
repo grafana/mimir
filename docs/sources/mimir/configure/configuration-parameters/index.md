@@ -4071,7 +4071,7 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-delay
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
-  # (advanced) Duration after which blocks marked for deletion will still be
+  # (experimental) Duration after which blocks marked for deletion will still be
   # queried. This ensures queriers still query blocks that are meant to be
   # deleted but do not have a replacement yet.
   # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay

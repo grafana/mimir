@@ -9302,7 +9302,7 @@
               "fieldDefaultValue": 3000000000000,
               "fieldFlag": "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay",
               "fieldType": "duration",
-              "fieldCategory": "advanced"
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",

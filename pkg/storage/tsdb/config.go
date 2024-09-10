@@ -409,7 +409,7 @@ type BucketStoreConfig struct {
 	ChunksCache                            ChunksCacheConfig   `yaml:"chunks_cache"`
 	MetadataCache                          MetadataCacheConfig `yaml:"metadata_cache"`
 	IgnoreDeletionMarksInStoreGatewayDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	IgnoreDeletionMarksWhileQueryingDelay  time.Duration       `yaml:"ignore_deletion_mark_while_querying_delay" category:"advanced"`
+	IgnoreDeletionMarksWhileQueryingDelay  time.Duration       `yaml:"ignore_deletion_mark_while_querying_delay" category:"experimental"`
 	BucketIndex                            BucketIndexConfig   `yaml:"bucket_index"`
 	IgnoreBlocksWithin                     time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
