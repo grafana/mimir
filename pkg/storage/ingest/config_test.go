@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -124,6 +125,24 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.MaxConsumerLagAtStartup = 1 * time.Second
 			},
 			expectedErr: ErrInvalidMaxConsumerLagAtStartup,
+		},
+		"should fail if fetch max bytes is set too high": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ConsumerFetchMaxBytes = (math.MaxInt32 * 2) + 1
+			},
+			expectedErr: ErrInvalidConsumerFetchMaxBytes,
+		},
+		"should fail if fetch max partition bytes is set too high": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.ConsumerFetchMaxPartitionBytes = math.MaxInt64
+			},
+			expectedErr: ErrInvalidConsumerFetchMaxPartitionBytes,
 		},
 	}
 
