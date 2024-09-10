@@ -18,6 +18,7 @@ This action is configured using environment variables defined in the workflow. T
 | `LABEL`                      | Label to include as part of the aggregations. This option is supported only by the `prepare` action.                                                                                                                                                                                               | `false`  | N/A     |
 | `LABEL_EXCLUDED_RULE_GROUPS` | Comma separated list of rule group names to exclude when including the configured label to aggregations. This option is supported only by the `prepare` action.                                                                                                                                    | `false`  | N/A     |
 | `NAMESPACES`                 | Comma-separated list of namespaces to use                                                                                                                                                                                                                                                          | `false`  | N/A     |
+| `NAMESPACES_REGEX`           | Regex matching namespaces to check during a sync or diff.                                                                                                                                                                                                                                          | `false`  | N/A     |
 
 ## Authentication
 

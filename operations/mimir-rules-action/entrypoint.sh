@@ -39,15 +39,20 @@ if [ -z "${ACTION}" ]; then
   exit 1
 fi
 
+if [ -n "${NAMESPACES}" && -n "${NAMESPACES_REGEX}" ]; then
+  err "NAMESPACES and NAMESPACES_REGEX cannot both be set."
+  exit 1
+fi
+
 case "${ACTION}" in
   "$SYNC_CMD")
     verifyTenantAndAddress
-    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} "$@")
+    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} ${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}} "$@")
     STATUS=$?
     ;;
   "$DIFF_CMD")
     verifyTenantAndAddress
-    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} --disable-color "$@")
+    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} ${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}} --disable-color "$@")
     STATUS=$?
     ;;
   "$LINT_CMD")
