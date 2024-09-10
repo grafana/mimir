@@ -19,14 +19,14 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 	opts = append(opts, commonKafkaClientOptions(cfg, metrics, logger)...)
 	opts = append(opts,
 		kgo.FetchMinBytes(1),
-		kgo.FetchMaxBytes(fetchMaxBytes),
+		kgo.FetchMaxBytes(int32(cfg.ConsumerFetchMaxBytes)),
 		kgo.FetchMaxWait(5*time.Second),
-		kgo.FetchMaxPartitionBytes(50_000_000),
+		kgo.FetchMaxPartitionBytes(int32(cfg.ConsumerFetchMaxPartitionBytes)),
 
 		// BrokerMaxReadBytes sets the maximum response size that can be read from
 		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
 		// franz-go recommendation is to set it 2x FetchMaxBytes.
-		kgo.BrokerMaxReadBytes(2*fetchMaxBytes),
+		kgo.BrokerMaxReadBytes(int32(2*cfg.ConsumerFetchMaxBytes)),
 	)
 	client, err := kgo.NewClient(opts...)
 	if err != nil {
