@@ -2,6 +2,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(realpath "$(dirname "${0}")")"
 TENANT="anonymous"
 
 function main() {
@@ -18,6 +19,10 @@ function main() {
   fi
 
   BLOCK_ULID="$(basename "$BLOCK_DIR")"
+  if ! go run "$SCRIPT_DIR/../../../tools/ulidtime" "$BLOCK_ULID" >/dev/null 2>&1; then
+    echo "'$BLOCK_ULID' is not a valid ULID." >/dev/stderr
+    exit 1
+  fi
 
   echo "Block ULID is $BLOCK_ULID."
   echo "Uploading no-compact marker..."
