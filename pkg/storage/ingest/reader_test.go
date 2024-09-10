@@ -1973,7 +1973,6 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 
 	tests := map[string]struct {
 		err error
-		hwm int64
 		lso int64
 		fw  fetchWant
 
@@ -1984,7 +1983,6 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 	}{
 		"no error": {
 			err: nil,
-			hwm: 10,
 			lso: 1,
 			fw: fetchWant{
 				startOffset: 1,
@@ -1997,7 +1995,6 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 		},
 		"offset out of range - fetching slightly before start": {
 			err: kerr.OffsetOutOfRange,
-			hwm: 10,
 			lso: 5,
 			fw: fetchWant{
 				startOffset: 4,
@@ -2010,7 +2007,6 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 		},
 		"offset out of range - fetching completely outside of available offsets": {
 			err: kerr.OffsetOutOfRange,
-			hwm: 10,
 			lso: 5,
 			fw: fetchWant{
 				startOffset: 1,
@@ -2021,23 +2017,8 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				endOffset:   3,
 			},
 		},
-		"offset out of range - fetching after end": {
-			err: kerr.OffsetOutOfRange,
-			hwm: 10,
-			lso: 5,
-			fw: fetchWant{
-				startOffset: 11,
-				endOffset:   15,
-			},
-			expectedFw: fetchWant{
-				startOffset: 11,
-				endOffset:   15,
-			},
-			expectedShortBackoff: true,
-		},
 		"recoverable error": {
 			err: kerr.KafkaStorageError,
-			hwm: -1, // unknown
 			lso: -1, // unknown
 			fw: fetchWant{
 				startOffset: 11,
@@ -2144,14 +2125,16 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			longBackOff := waiterFunc(func() { waitedLong = true })
 			refreshed := false
 			refresher := refresherFunc(func() { refreshed = true })
-			result := fetchResult{
-				FetchPartition: kgo.FetchPartition{
-					Err:            testCase.err,
-					HighWatermark:  testCase.hwm,
-					LogStartOffset: testCase.lso,
-				},
-			}
-			actualFw := handleKafkaFetchErr(result, testCase.fw, shortBackOff, longBackOff, refresher, logger)
+
+			offsetR := newGenericOffsetReader(func(_ context.Context) (int64, error) {
+				return testCase.lso, nil
+			}, time.Millisecond, logger)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), offsetR))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), offsetR))
+			})
+
+			actualFw := handleKafkaFetchErr(testCase.err, testCase.fw, shortBackOff, longBackOff, offsetR, refresher, logger)
 			assert.Equal(t, testCase.expectedFw, actualFw)
 			assert.Equal(t, testCase.expectedShortBackoff, waitedShort)
 			assert.Equal(t, testCase.expectedLongBackoff, waitedLong)
