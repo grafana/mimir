@@ -162,6 +162,7 @@
 * [ENHANCEMENT] Added the config option `ingest_storage_migration_classic_ingesters_no_scale_down_delay` to disable the downscale delay on classic ingesters when migrating to experimental ingest storage. #8775 #8873
 * [ENHANCEMENT] Configure experimental ingest storage on query-frontend too when enabled. #8843
 * [ENHANCEMENT] Allow to override Kafka client ID on a per-component basis. #9026
+* [ENHANCEMENT] Rollout-operator's access to ReplicaTemplate is now configured via config option `rollout_operator_replica_template_access_enabled`. #9252
 * [BUGFIX] Added missing node affinity matchers to write component. #8910
 
 ### Mimirtool
