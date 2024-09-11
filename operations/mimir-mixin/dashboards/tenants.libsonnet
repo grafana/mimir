@@ -605,10 +605,10 @@ local filename = 'mimir-tenants.json';
         { options+: { legend+: { showLegend: false } } },
       )
       .addPanel(
-        local title = 'Failed evaluations rate';
+        local title = 'Failed evaluations rate (top 50 rule groups)';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          'sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0'
+          'topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0)'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ rule_group }}',
         ) +

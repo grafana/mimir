@@ -34240,13 +34240,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0",
+                            "expr": "topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0)",
                             "format": "time_series",
                             "legendFormat": "{{ rule_group }}",
                             "legendLink": null
                          }
                       ],
-                      "title": "Failed evaluations rate",
+                      "title": "Failed evaluations rate (top 50 rule groups)",
                       "type": "timeseries"
                    }
                 ],
