@@ -35,7 +35,7 @@ func ExampleInitLogger() {
 		LogsBurstSize: 4,
 		Registry:      prometheus.NewPedanticRegistry(),
 	}
-	cfg.Log = log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, rateLimitedCfg)
+	cfg.Log, _ = log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, rateLimitedCfg)
 
 	for i := 0; i < 1000; i++ {
 		level.Info(log.Logger).Log("msg", "log.Logger", "test", i+1)

@@ -32,8 +32,9 @@ type RateLimitedLoggerCfg struct {
 	Registry      prometheus.Registerer
 }
 
-// InitLogger initialises the global gokit logger (util_log.Logger) and returns that logger.
-func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimitedCfg RateLimitedLoggerCfg) log.Logger {
+// InitLogger initialises the global gokit logger (util_log.Logger) and returns that logger
+// along with its Flush function.
+func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimitedCfg RateLimitedLoggerCfg) (log.Logger, func() error) {
 	writer := getWriter(buffered)
 	logger := dslog.NewGoKitWithWriter(logFormat, writer)
 
@@ -50,7 +51,7 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 
 	// Set global logger.
 	Logger = logger
-	return logger
+	return logger, Flush
 }
 
 // Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.

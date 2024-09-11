@@ -240,7 +240,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	cfg.Target = []string{Querier}
 	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
 
-	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+	cfg.Server.Log, _ = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)

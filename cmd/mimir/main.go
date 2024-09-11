@@ -172,7 +172,7 @@ func main() {
 	clampGOMAXPROCS()
 
 	reg := prometheus.DefaultRegisterer
-	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, true, util_log.RateLimitedLoggerCfg{
+	cfg.Server.Log, _ = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, true, util_log.RateLimitedLoggerCfg{
 		Enabled:       mainFlags.rateLimitedLogsEnabled,
 		LogsPerSecond: mainFlags.rateLimitedLogsPerSecond,
 		LogsBurstSize: mainFlags.rateLimitedLogsBurstSize,

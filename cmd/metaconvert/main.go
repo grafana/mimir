@@ -58,7 +58,7 @@ func main() {
 		exitWithMessage(err.Error())
 	}
 
-	logger := log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, log.RateLimitedLoggerCfg{})
+	logger, _ := log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, log.RateLimitedLoggerCfg{})
 
 	if cfg.Tenant == "" {
 		exitWithMessage("Use -tenant parameter to specify tenant, or -h to get list of available options.")
