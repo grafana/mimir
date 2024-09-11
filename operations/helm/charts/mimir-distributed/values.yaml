@@ -4381,9 +4381,11 @@ continuous_test:
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
-  ## -- Mimir Write Endpoint if not set, its will be set to mimir.gatewayUrl
+  # -- The endpoints to use for writing to and reading metrics from your instance.
+  # Defaults to the gateway URL, but you may want to test from an external ingress which you can configure here.
+  ## -- Mimir Write Endpoint to use for writing metrics to your instance. Defaults to mimir.gatewayUrl if not set.
   write:
-  # -- Mimir Read Endpoint if not set, its will be set to mimir.gatewayUrl at /prometheus
+  # -- Mimir Read Endpoint to use for querying metrics from your instance. Defaults to mimir.gatewayUrl if not set. Path /prometheus is appended to value.
   read:
   # -- Authentication settings of continuous test
   auth:
