@@ -141,6 +141,7 @@
 * [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [ENHANCEMENT] Dashboards: add 'Read path' selector to 'Mimir / Queries' dashboard. #8878
 * [ENHANCEMENT] Dashboards: add annotation indicating active series are being reloaded to 'Mimir / Tenants' dashboard. #9257
+* [ENHANCEMENT] Dashboards: limit results on the 'Failed evaluations rate' panel of the 'Mimir / Tenants' dashboard to 50 to avoid crashing the page when there are many failing groups. #9262
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 * [BUGFIX] Dashboards: avoid over-counting of ingesters metrics when migrating to experimental ingest storage. #9170
