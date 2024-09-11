@@ -4,6 +4,7 @@ package aggregations
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
@@ -32,3 +33,16 @@ var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
 //
 // Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
 var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
+
+// removeReferencesToRetainedHistogram searches backwards through s, starting at lastIndex, removing any
+// points that reference h, stopping once a different FloatHistogram is reached.
+func removeReferencesToRetainedHistogram(s []promql.HPoint, h *histogram.FloatHistogram, lastIndex int) {
+	for i := lastIndex; i >= 0; i-- {
+		if s[i].H != h {
+			// We've reached a different histogram. We're done.
+			return
+		}
+
+		s[i].H = nil
+	}
+}

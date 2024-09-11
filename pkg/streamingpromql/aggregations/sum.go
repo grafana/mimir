@@ -98,20 +98,27 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 
 		if g.histogramSums[outputIdx] == nil {
-			data.Histograms[inputIdx].H = nil // Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we'll retain a reference to the FloatHistogram instance below.
-
 			if lastUncopiedHistogram == p.H {
 				// We've already used this histogram for a previous point due to lookback.
 				// Make a copy of it so we don't modify the other point.
 				g.histogramSums[outputIdx] = p.H.Copy()
 				g.histogramPointCount++
+
+				// Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we're retaining a reference to it.
+				data.Histograms[inputIdx].H = nil
+
 				continue
 			}
+
 			// This is the first time we have seen this histogram.
 			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
 			g.histogramSums[outputIdx] = p.H
 			g.histogramPointCount++
 			lastUncopiedHistogram = p.H
+
+			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused, including if it was used at previous points.
+			removeReferencesToRetainedHistogram(data.Histograms, p.H, inputIdx)
+
 			continue
 		}
 
