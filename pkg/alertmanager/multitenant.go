@@ -728,10 +728,12 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
+		am.multitenantMetrics.grafanaConfigSize.WithLabelValues(cfgs.Grafana.User).Set(float64(len(cfgs.Grafana.RawConfig)))
 		return createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
 
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config with the default globals", "user", cfgs.Grafana.User)
+		am.multitenantMetrics.grafanaConfigSize.WithLabelValues(cfgs.Grafana.User).Set(float64(len(cfgs.Grafana.RawConfig)))
 		return createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 
 	// Both configurations.
