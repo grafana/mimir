@@ -37,8 +37,6 @@ message RulesRequest {
   repeated string rule_name = 2;
   repeated string rule_group = 3;
   repeated string file = 4;
-  uint64 max_groups = 5;
-  uint64 next_token = 6;
 }
 
 message RulesResponse {
