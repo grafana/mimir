@@ -23,7 +23,6 @@
     // Allow to fine-tune which components gets deployed. This is useful when following the procedure
     // to rollout ingesters autoscaling with no downtime.
     ingest_storage_ingester_autoscaling_ingester_annotations_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
-    ingest_storage_ingester_autoscaling_replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
   },
 
   // Validate the configuration.
@@ -32,28 +31,8 @@
   assert !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled || !$._config.ingester_automated_downscale_enabled : 'partitions ingester autoscaling and ingester automated downscale config are mutually exclusive in namespace %s' % $._config.namespace,
   assert !$._config.ingest_storage_ingester_autoscaling_enabled || $.rollout_operator_deployment != null : 'partitions ingester autoscaling requires rollout-operator in namespace %s' % $._config.namespace,
 
-  //
-  // ReplicaTemplate
-  //
-
-  replica_template:: std.parseYaml(importstr 'replica-templates.yaml'),
-  replica_template_custom_resource: if !$._config.ingest_storage_ingester_autoscaling_replica_template_custom_resource_definition_enabled then null else $.replica_template,
-
-  replicaTemplate(name):: {
-    apiVersion: 'rollout-operator.grafana.com/v1',
-    kind: 'ReplicaTemplate',
-    metadata: {
-      name: name,
-      namespace: $._config.namespace,
-    },
-    spec: {
-      replicas:: null,  // Hide replicas field.
-      labelSelector: 'name=unused',  // HPA requires that label selector exists and is valid, but it will not be used for target type of AverageValue.
-    },
-  },
-
   // Create resource that will be targetted by ScaledObject.
-  ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone),
+  ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector='name=unused'),
 
   //
   // Configure prepare-shutdown endpoint in all ingesters.
@@ -177,22 +156,6 @@
       $._config.ingest_storage_ingester_autoscaling_active_series_threshold,
       $.ingester_primary_zone_replica_template
     ),
-
-  //
-  // Grant extra privileges to rollout-operator.
-  //
-
-  local role = $.rbac.v1.role,
-  local policyRule = $.rbac.v1.policyRule,
-  rollout_operator_role: overrideSuperIfExists(
-    'rollout_operator_role',
-    if !$._config.ingest_storage_ingester_autoscaling_enabled then {} else
-      role.withRulesMixin([
-        policyRule.withApiGroups($.replica_template.spec.group) +
-        policyRule.withResources(['%s/scale' % $.replica_template.spec.names.plural, '%s/status' % $.replica_template.spec.names.plural]) +
-        policyRule.withVerbs(['get', 'patch']),
-      ])
-  ),
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else

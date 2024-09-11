@@ -81,6 +81,8 @@ The following features are currently experimental:
     - `-distributor.max-request-pool-buffer-size`
   - Enable direct translation from OTLP write requests to Mimir equivalents
     - `-distributor.direct-otlp-translation-enabled`
+  - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
+    - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -147,6 +149,7 @@ The following features are currently experimental:
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
+  - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)

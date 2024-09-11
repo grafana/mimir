@@ -39,15 +39,20 @@ if [ -z "${ACTION}" ]; then
   exit 1
 fi
 
+if [ -n "${NAMESPACES}" ] && [ -n "${NAMESPACES_REGEX}" ]; then
+  err "NAMESPACES and NAMESPACES_REGEX cannot both be set."
+  exit 1
+fi
+
 case "${ACTION}" in
   "$SYNC_CMD")
     verifyTenantAndAddress
-    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} "$@")
+    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} ${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}} "$@")
     STATUS=$?
     ;;
   "$DIFF_CMD")
     verifyTenantAndAddress
-    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} --disable-color "$@")
+    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} ${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}} --disable-color "$@")
     STATUS=$?
     ;;
   "$LINT_CMD")
@@ -73,10 +78,11 @@ case "${ACTION}" in
 esac
 
 SINGLE_LINE_OUTPUT=$(echo "${OUTPUT}" | awk 'BEGIN { RS="%0A" } { gsub(/%/, "%25"); gsub(/\r/, "%0D"); gsub(/\n/, "%0A") } { print }')
-echo "detailed=${SINGLE_LINE_OUTPUT}" >> $GITHUB_OUTPUT
+echo "detailed=${SINGLE_LINE_OUTPUT}" >> "${GITHUB_OUTPUT}"
 SUMMARY=$(echo "${OUTPUT}" | grep Summary)
-echo 'summary<<ENDOFSUMMARY' >> $GITHUB_OUTPUT
-echo "${SUMMARY}" >> $GITHUB_OUTPUT
-echo 'ENDOFSUMMARY' >> $GITHUB_OUTPUT
+# shellcheck disable=SC2129
+echo 'summary<<ENDOFSUMMARY' >> "${GITHUB_OUTPUT}"
+echo "${SUMMARY}" >> "${GITHUB_OUTPUT}"
+echo 'ENDOFSUMMARY' >> "${GITHUB_OUTPUT}"
 
 exit $STATUS

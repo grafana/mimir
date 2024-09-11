@@ -73,8 +73,7 @@ clear
 load 30s
   requests{job="1", __address__="bar"} 100
 
-# Unsupported by streaming engine.
-# eval range from 0 to 2m step 1m requests * 2
-#   {job="1", __address__="bar"} 200 200 200
+eval range from 0 to 2m step 1m requests * 2
+  {job="1", __address__="bar"} 200 200 200
 
 clear

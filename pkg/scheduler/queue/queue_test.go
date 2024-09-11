@@ -1,7 +1,7 @@
-// // SPDX-License-Identifier: AGPL-3.0-only
-// // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/scheduler/queue/queue_test.go
-// // Provenance-includes-license: Apache-2.0
-// // Provenance-includes-copyright: The Cortex Authors.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/scheduler/queue/queue_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
 package queue
 
 import (
@@ -51,13 +51,15 @@ var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
 	storeGatewayQueueDimension,
 	ingesterAndStoreGatewayQueueDimension,
+	unknownQueueDimension,
 }
 
-func randAdditionalQueueDimension(allowEmpty bool) []string {
+// randAdditionalQueueDimension is the basic implementation of additionalQueueDimensionFunc,
+// used to assign the expected query component queue dimensions to SchedulerRequests
+// before they are enqueued by the queue producer groups utilized in benchmark tests.
+// This version ignores the tenant ID, giving all tenants the same distribution of query components.
+func randAdditionalQueueDimension(_ string) []string {
 	maxIdx := len(secondQueueDimensionOptions)
-	if allowEmpty {
-		maxIdx++
-	}
 
 	idx := rand.Intn(maxIdx)
 	if idx == len(secondQueueDimensionOptions) {
@@ -114,7 +116,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									queue, err := NewRequestQueue(
 										log.NewNopLogger(),
 										maxOutstandingRequestsPerTenant,
-										t.useMultiAlgoTreeQueue,
 										t.prioritizeQueryComponents,
 										forgetQuerierDelay,
 										promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -132,7 +133,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									})
 
 									startProducersChan, producersErrGroup := makeQueueProducerGroup(
-										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, nil,
+										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, randAdditionalQueueDimension,
 									)
 
 									queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
@@ -361,7 +362,6 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -455,7 +455,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -502,7 +501,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			req := &SchedulerRequest{
 				Ctx:                       context.Background(),
 				Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-				AdditionalQueueDimensions: randAdditionalQueueDimension(true),
+				AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 			}
 			require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 1, nil))
 
@@ -536,7 +535,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -599,7 +597,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			req := &SchedulerRequest{
 				Ctx:                       context.Background(),
 				Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-				AdditionalQueueDimensions: randAdditionalQueueDimension(true),
+				AdditionalQueueDimensions: randAdditionalQueueDimension(""),
 			}
 			require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
 
@@ -633,7 +631,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -699,7 +696,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -738,7 +734,6 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -750,11 +745,11 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
 			// passing a QuerierWorkerDequeueRequest for a canceled querier connection
-			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, queue.forgetDelay)
-			queueBroker.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
+			qb := newQueueBroker(queue.maxOutstandingPerTenant, tt.prioritizeQueryComponents, queue.forgetDelay)
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
 
 			tenantMaxQueriers := 0 // no sharding
-			queueDim := randAdditionalQueueDimension(true)
+			queueDim := randAdditionalQueueDimension("")
 			req := &SchedulerRequest{
 				Ctx:                       context.Background(),
 				Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
@@ -769,23 +764,15 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			if queueDim == nil {
 				queueDim = []string{unknownQueueDimension}
 			}
-			if queueBroker.prioritizeQueryComponents {
+			if qb.prioritizeQueryComponents {
 				multiAlgorithmTreeQueuePath = append(append(multiAlgorithmTreeQueuePath, queueDim...), "tenant-1")
 			} else {
 				multiAlgorithmTreeQueuePath = append([]string{"tenant-1"}, queueDim...)
 			}
 
-			// TODO (casie): Clean this up when deprecating legacy tree queue
-			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
-				require.Nil(t, tq.getNode(QueuePath{"tenant-1"}))
-				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				require.Nil(t, itq.GetNode(multiAlgorithmTreeQueuePath))
-				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
-
-			}
+			require.Nil(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath))
+			require.NoError(t, qb.enqueueRequestBack(&tr, tenantMaxQueriers))
+			require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 			ctx, cancel := context.WithCancel(context.Background())
 			call := &QuerierWorkerDequeueRequest{
@@ -803,12 +790,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			// indicating not to re-submit a request for QuerierWorkerDequeueRequest for the querier
 			require.True(t, queue.trySendNextRequestForQuerier(call))
 			// assert request was re-enqueued for tenant after failed send
-			// TODO (casie): Clean this up when deprecating legacy tree queue
-			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
-				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
-			}
+			require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 		})
 	}

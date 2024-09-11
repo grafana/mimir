@@ -59,7 +59,6 @@ type QuerierWorkerQueuePriorityAlgo struct {
 	currentNodeOrderIndex int
 	nodeOrder             []string
 	nodeCounts            map[string]int
-	nodesChecked          int
 }
 
 func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
@@ -68,12 +67,12 @@ func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
 	}
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int) {
-	qa.currentQuerierWorker = workerID
+func (qa *QuerierWorkerQueuePriorityAlgo) setup(dequeueArgs *DequeueArgs) {
+	qa.currentQuerierWorker = dequeueArgs.workerID
 	if len(qa.nodeOrder) == 0 {
 		qa.currentNodeOrderIndex = 0
 	} else {
-		qa.currentNodeOrderIndex = workerID % len(qa.nodeOrder)
+		qa.currentNodeOrderIndex = qa.currentQuerierWorker % len(qa.nodeOrder)
 	}
 }
 
@@ -85,10 +84,6 @@ func (qa *QuerierWorkerQueuePriorityAlgo) wrapCurrentNodeOrderIndex(increment bo
 	if qa.currentNodeOrderIndex >= len(qa.nodeOrder) {
 		qa.currentNodeOrderIndex = 0
 	}
-}
-
-func (qa *QuerierWorkerQueuePriorityAlgo) checkedAllNodes() bool {
-	return qa.nodesChecked == len(qa.nodeOrder)
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
@@ -116,13 +111,12 @@ func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 	qa.nodeCounts[child.Name()]++
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) (*Node, bool) {
+func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) *Node {
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
-	if node, ok := node.queueMap[currentNodeName]; ok {
-		qa.nodesChecked++
-		return node, qa.checkedAllNodes()
+	if childNode, ok := node.queueMap[currentNodeName]; ok {
+		return childNode
 	}
-	return nil, qa.checkedAllNodes()
+	return nil
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
@@ -155,7 +149,4 @@ func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeue
 		// delete child node from its parent's queueMap
 		delete(node.queueMap, childName)
 	}
-
-	// reset state after successful dequeue
-	qa.nodesChecked = 0
 }

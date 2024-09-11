@@ -129,6 +129,7 @@ type Alertmanager struct {
 	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
+	tmplExternalURL *url.URL
 	emailCfgMtx     sync.RWMutex
 	emailCfg        alertingReceivers.EmailSenderConfig
 
@@ -209,7 +210,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Name: "alertmanager_notification_rate_limited_total",
 			Help: "Number of rate-limited notifications per integration.",
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
-
 	}
 
 	am.registry = reg
@@ -399,7 +399,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 	am.templatesMtx.RUnlock()
 
-	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
+	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.tmplExternalURL.String())
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing receivers: %s", err.Error()),
@@ -517,6 +517,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 
 	am.templatesMtx.Lock()
 	am.templates = tmpls
+	am.tmplExternalURL = tmplExternalURL
 	am.templatesMtx.Unlock()
 
 	pipeline := am.pipelineBuilder.New(

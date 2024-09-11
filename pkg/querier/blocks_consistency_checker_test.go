@@ -22,7 +22,6 @@ import (
 func TestBlocksConsistencyTracker_Check(t *testing.T) {
 	now := time.Now()
 	uploadGracePeriod := 10 * time.Minute
-	deletionGracePeriod := 5 * time.Minute
 
 	block1 := ulid.MustNew(uint64(util.TimeToMillis(now.Add(-uploadGracePeriod*2))), nil)
 	block2 := ulid.MustNew(uint64(util.TimeToMillis(now.Add(-uploadGracePeriod*3))), nil)
@@ -30,38 +29,33 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 
 	tests := map[string]struct {
 		knownBlocks           bucketindex.Blocks
-		knownDeletionMarks    map[ulid.ULID]*bucketindex.BlockDeletionMark
 		queriedBlocks         [][]ulid.ULID
 		expectedMissingBlocks []ulid.ULID
 	}{
 		"no known blocks": {
-			knownBlocks:        bucketindex.Blocks{},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{}},
+			knownBlocks:   bucketindex.Blocks{},
+			queriedBlocks: [][]ulid.ULID{{}},
 		},
 		"all known blocks have been queried from a single store-gateway": {
 			knownBlocks: bucketindex.Blocks{
 				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{block1, block2}},
+			queriedBlocks: [][]ulid.ULID{{block1, block2}},
 		},
 		"all known blocks have been queried from multiple store-gateway": {
 			knownBlocks: bucketindex.Blocks{
 				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{block1, block2}},
+			queriedBlocks: [][]ulid.ULID{{block1, block2}},
 		},
 		"store-gateway has queried more blocks than expected": {
 			knownBlocks: bucketindex.Blocks{
 				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{block1, block2, block3}},
+			queriedBlocks: [][]ulid.ULID{{block1, block2, block3}},
 		},
 		"store-gateway has queried less blocks than expected": {
 			knownBlocks: bucketindex.Blocks{
@@ -69,7 +63,6 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block3, UploadedAt: now.Add(-time.Hour).Unix()},
 			},
-			knownDeletionMarks:    map[ulid.ULID]*bucketindex.BlockDeletionMark{},
 			queriedBlocks:         [][]ulid.ULID{{block1, block3}},
 			expectedMissingBlocks: []ulid.ULID{block2},
 		},
@@ -79,30 +72,6 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block3, UploadedAt: now.Add(-uploadGracePeriod).Add(time.Minute).Unix()},
 			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{block1, block2}},
-		},
-		"store-gateway has queried less blocks than expected and the missing block has been recently marked for deletion": {
-			knownBlocks: bucketindex.Blocks{
-				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
-				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
-				{ID: block3, UploadedAt: now.Add(-time.Hour).Unix()},
-			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{
-				block3: {DeletionTime: now.Add(-deletionGracePeriod / 2).Unix()},
-			},
-			queriedBlocks:         [][]ulid.ULID{{block1, block2}},
-			expectedMissingBlocks: []ulid.ULID{block3},
-		},
-		"store-gateway has queried less blocks than expected and the missing block has been marked for deletion long time ago": {
-			knownBlocks: bucketindex.Blocks{
-				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
-				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
-				{ID: block3, UploadedAt: now.Add(-time.Hour).Unix()},
-			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{
-				block3: {DeletionTime: now.Add(-deletionGracePeriod * 2).Unix()},
-			},
 			queriedBlocks: [][]ulid.ULID{{block1, block2}},
 		},
 		"blocks are queried in multiple attempts": {
@@ -110,24 +79,22 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{block1}, {block2}},
+			queriedBlocks: [][]ulid.ULID{{block1}, {block2}},
 		},
 		"querying the same block again doesn't fail the consistency check": {
 			knownBlocks: bucketindex.Blocks{
 				{ID: block1, UploadedAt: now.Add(-time.Hour).Unix()},
 				{ID: block2, UploadedAt: now.Add(-time.Hour).Unix()},
 			},
-			knownDeletionMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
-			queriedBlocks:      [][]ulid.ULID{{block1}, {block1, block2}},
+			queriedBlocks: [][]ulid.ULID{{block1}, {block1, block2}},
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			c := NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod, log.NewNopLogger(), reg)
-			tracker := c.NewTracker(testData.knownBlocks, testData.knownDeletionMarks)
+			c := NewBlocksConsistency(uploadGracePeriod, reg)
+			tracker := c.NewTracker(testData.knownBlocks, log.NewNopLogger())
 			var missingBlocks []ulid.ULID
 			for _, queriedBlocksAttempt := range testData.queriedBlocks {
 				missingBlocks = tracker.Check(queriedBlocksAttempt)

@@ -12,46 +12,58 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 )
 
+type mockSeriesSet struct {
+	idx    int
+	series []storage.Series
+
+	warnings annotations.Annotations
+	err      error
+}
+
+func NewMockSeriesSet(series ...storage.Series) storage.SeriesSet {
+	return &mockSeriesSet{
+		idx:    -1,
+		series: series,
+	}
+}
+
+func (m *mockSeriesSet) Next() bool {
+	if m.err != nil {
+		return false
+	}
+	m.idx++
+	return m.idx < len(m.series)
+}
+
+func (m *mockSeriesSet) At() storage.Series { return m.series[m.idx] }
+
+func (m *mockSeriesSet) Err() error { return m.err }
+
+func (m *mockSeriesSet) Warnings() annotations.Annotations { return m.warnings }
+
 func TestTimeSeriesIterator(t *testing.T) {
 
 	for _, tc := range []struct {
 		name               string
-		timeSeries         []*prompb.TimeSeries
+		seriesSet          storage.SeriesSet
 		expectedLabels     []string
 		expectedTimestamps []int64
 		expectedValues     []float64
 	}{
 		{
-			name: "empty time series",
+			name:      "empty time series",
+			seriesSet: storage.EmptySeriesSet(),
 		},
 		{
-			name: "simple",
-			timeSeries: []*prompb.TimeSeries{
-				{
-					Labels: []prompb.Label{
-						{
-							Name:  "__name__",
-							Value: "up",
-						},
-					},
-					Samples: []prompb.Sample{
-						{
-							Value:     1.23,
-							Timestamp: 1000,
-						},
-						{
-							Value:     1.24,
-							Timestamp: 2000,
-						},
-					},
-				},
-			},
+			name:      "simple",
+			seriesSet: NewMockSeriesSet(storage.MockSeries([]int64{1000, 2000}, []float64{1.23, 1.24}, []string{"__name__", "up"})),
 			expectedLabels: []string{
 				`{__name__="up"}`,
 				`{__name__="up"}`,
@@ -67,44 +79,11 @@ func TestTimeSeriesIterator(t *testing.T) {
 		},
 		{
 			name: "edge-cases",
-			timeSeries: []*prompb.TimeSeries{
-				{
-					Labels: []prompb.Label{},
-					Samples: []prompb.Sample{
-						{
-							Value:     1.23,
-							Timestamp: 1000,
-						},
-						{
-							Value:     1.24,
-							Timestamp: 2000,
-						},
-					},
-				},
-				{
-					Labels: []prompb.Label{
-						{
-							Name:  "__name__",
-							Value: "upper",
-						},
-					},
-					Samples: []prompb.Sample{
-						{
-							Value:     2.34,
-							Timestamp: 1050,
-						},
-					},
-				},
-				{
-					Labels: []prompb.Label{
-						{
-							Name:  "__name__",
-							Value: "uppest",
-						},
-					},
-					Samples: []prompb.Sample{},
-				},
-			},
+			seriesSet: NewMockSeriesSet(
+				storage.MockSeries([]int64{1000, 2000}, []float64{1.23, 1.24}, []string{}),
+				storage.MockSeries([]int64{1050}, []float64{2.34}, []string{"__name__", "upper"}),
+				storage.MockSeries([]int64{}, []float64{}, []string{"__name__", "uppest"}),
+			),
 			expectedLabels: []string{
 				`{}`,
 				`{}`,
@@ -124,7 +103,7 @@ func TestTimeSeriesIterator(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 
-			iter := newTimeSeriesIterator(tc.timeSeries)
+			iter := newTimeSeriesIterator(tc.seriesSet)
 
 			var (
 				labels     []string
@@ -142,7 +121,7 @@ func TestTimeSeriesIterator(t *testing.T) {
 				}
 
 				labels = append(labels, iter.Labels().String())
-				ts, v := iter.Sample()
+				ts, v, _, _ := iter.Sample()
 				timestamps = append(timestamps, ts)
 				values = append(values, v)
 			}
@@ -161,33 +140,29 @@ func TestTimeSeriesIterator(t *testing.T) {
 // appends invalid.
 func TestEarlyCommit(t *testing.T) {
 	maxSamplesPerBlock := 1000
-	series := 100
-	samples := 140
+	seriesCount := 100
+	samplesCount := 140
 
 	start := int64(time.Date(2023, 8, 30, 11, 42, 17, 0, time.UTC).UnixNano())
 	inc := int64(time.Minute / time.Millisecond)
-	end := start + (inc * int64(samples))
-	ts := make([]*prompb.TimeSeries, series)
-	for i := 0; i < series; i++ {
-		s := &prompb.TimeSeries{
-			Labels: []prompb.Label{
-				{
-					Name:  "__name__",
-					Value: fmt.Sprintf("metric_%d", i),
-				},
-			},
-			Samples: make([]prompb.Sample, samples),
-		}
-		for j := 0; j < samples; j++ {
-			s.Samples[j] = prompb.Sample{
-				Value:     float64(j),
-				Timestamp: start + (inc * int64(j)),
-			}
-		}
-		ts[i] = s
+	end := start + (inc * int64(samplesCount))
+
+	samples := make([]float64, samplesCount)
+	for i := 0; i < samplesCount; i++ {
+		samples[i] = float64(i)
 	}
+	timestamps := make([]int64, samplesCount)
+	for i := 0; i < samplesCount; i++ {
+		timestamps[i] = start + (inc * int64(i))
+	}
+
+	series := make([]storage.Series, seriesCount)
+	for i := 0; i < seriesCount; i++ {
+		series[i] = storage.MockSeries(timestamps, samples, []string{"__name__", fmt.Sprintf("metric_%d", i)})
+	}
+
 	iterator := func() backfill.Iterator {
-		return newTimeSeriesIterator(ts)
+		return newTimeSeriesIterator(NewMockSeriesSet(series...))
 	}
 	err := backfill.CreateBlocks(iterator, start, end, maxSamplesPerBlock, t.TempDir(), true, io.Discard)
 	assert.NoError(t, err)

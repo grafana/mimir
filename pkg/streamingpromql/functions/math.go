@@ -4,6 +4,9 @@ package functions
 
 import (
 	"math"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 var Abs = FloatTransformationDropHistogramsFunc(math.Abs)
@@ -48,3 +51,14 @@ var Sgn = FloatTransformationDropHistogramsFunc(func(f float64) float64 {
 	// Otherwise, if the value is 0, we should return 0.
 	return f
 })
+
+var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	for i := range seriesData.Floats {
+		seriesData.Floats[i].F = -seriesData.Floats[i].F
+	}
+
+	// Prometheus' engine currently leaves histograms as-is for unary negation, so we do the same.
+	// See https://github.com/prometheus/prometheus/pull/14821 for more discussion of this.
+
+	return seriesData, nil
+}

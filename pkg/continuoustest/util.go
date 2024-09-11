@@ -23,6 +23,9 @@ const (
 
 	floatMetricName = "mimir_continuous_test_sine_wave_v2"
 	floatTypeLabel  = "float"
+
+	// A prime factor to generate extra values to make continuous-test series hash more uniformly.
+	hashFactor = 2689
 )
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
@@ -235,6 +238,9 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 			}, {
 				Name:  "series_id",
 				Value: strconv.Itoa(i),
+			}, {
+				Name:  "hash_extra",
+				Value: strconv.Itoa(i * hashFactor),
 			}},
 			Samples: []prompb.Sample{{
 				Value:     value,
@@ -257,6 +263,9 @@ func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histo
 			}, {
 				Name:  "series_id",
 				Value: strconv.Itoa(i),
+			}, {
+				Name:  "hash_extra",
+				Value: strconv.Itoa(i * hashFactor),
 			}},
 			Histograms: []prompb.Histogram{histogramGenerator(t)},
 		})

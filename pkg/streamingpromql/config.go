@@ -23,6 +23,7 @@ type FeatureToggles struct {
 	EnableOffsetModifier        bool `yaml:"enable_offset_modifier" category:"experimental"`
 	EnableOverTimeFunctions     bool `yaml:"enable_over_time_functions" category:"experimental"`
 	EnableScalars               bool `yaml:"enable_scalars" category:"experimental"`
+	EnableUnaryNegation         bool `yaml:"enable_unary_negation" category:"experimental"`
 }
 
 var overTimeFunctionNames = []string{
@@ -43,6 +44,7 @@ var EnableAllFeatures = FeatureToggles{
 	true,
 	true,
 	true,
+	true,
 }
 
 func (t *FeatureToggles) RegisterFlags(f *flag.FlagSet) {
@@ -51,4 +53,5 @@ func (t *FeatureToggles) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&t.EnableOffsetModifier, "querier.mimir-query-engine.enable-offset-modifier", true, "Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use.")
 	f.BoolVar(&t.EnableOverTimeFunctions, "querier.mimir-query-engine.enable-over-time-functions", true, "Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use.")
 	f.BoolVar(&t.EnableScalars, "querier.mimir-query-engine.enable-scalars", true, "Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.")
+	f.BoolVar(&t.EnableUnaryNegation, "querier.mimir-query-engine.enable-unary-negation", true, "Enable support for unary negation in Mimir's query engine. Only applies if the Mimir query engine is in use.")
 }

@@ -34,21 +34,26 @@ func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
 }
 
 func (g *MinMaxAggregationGroup) maxAccumulatePoint(idx int64, f float64) {
-	if !g.floatPresent[idx] || g.floatPresent[idx] && f > g.floatValues[idx] {
+	// We return a NaN only if there are no other values to return
+	if !g.floatPresent[idx] || f > g.floatValues[idx] || math.IsNaN(g.floatValues[idx]) {
 		g.floatValues[idx] = f
 		g.floatPresent[idx] = true
 	}
 }
 
 func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
-	if !g.floatPresent[idx] || g.floatPresent[idx] && f < g.floatValues[idx] {
+	// We return a NaN only if there are no other values to return
+	if !g.floatPresent[idx] || f < g.floatValues[idx] || math.IsNaN(g.floatValues[idx]) {
 		g.floatValues[idx] = f
 		g.floatPresent[idx] = true
 	}
 }
 
 func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
-	if len(data.Floats) > 0 && g.floatValues == nil {
+	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.floatValues == nil {
+		// Even if we only have histograms, we have to populate the float slices, as we'll treat histograms as if they have value 0.
+		// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711
+
 		var err error
 		// First series with float values for this group, populate it.
 		g.floatValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
@@ -65,15 +70,12 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	for _, p := range data.Floats {
-		if math.IsNaN(p.F) {
-			continue
-		}
 		idx := (p.T - start) / interval
 		g.accumulatePoint(idx, p.F)
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
-	// This is consistent with prometheus but may not be desired value: https://github.com/prometheus/prometheus/issues/14711
+	// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
 		idx := (p.T - start) / interval
 		g.accumulatePoint(idx, 0)

@@ -42,18 +42,15 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
 		"1 + 2":                      "binary expression between two scalars",
-		"1 + metric{}":               "binary expression between scalar and instant vector",
-		"metric{} + 1":               "binary expression between scalar and instant vector",
 		"metric{} < other_metric{}":  "binary expression with '<'",
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"avg(metric{})":                         "aggregation operation with 'avg'",
-		"topk(5, metric{})":                     "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
-		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr for range vectors",
-		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
-		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr for instant vectors",
+		"topk(5, metric{})":                            "'topk' aggregation with parameter",
+		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
+		"rate(metric{}[5m:1m])":                        "PromQL expression type *parser.SubqueryExpr for range vectors",
+		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
+		"count(metric{})":                              "aggregation operation with 'count'",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -119,6 +116,17 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 		requireRangeQueryIsUnsupported(t, featureToggles, "2", "scalar values")
 		requireInstantQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+	})
+
+	t.Run("unary negation", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableUnaryNegation = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
+		requireInstantQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
+		requireInstantQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
 	})
 }
 
@@ -1317,6 +1325,10 @@ func (qt *testQueryTracker) Delete(insertIndex int) {
 	qt.queries[insertIndex].deleted = true
 }
 
+func (qt *testQueryTracker) Close() error {
+	return nil
+}
+
 type activeQueryTrackerQueryable struct {
 	tracker *testQueryTracker
 
@@ -1393,6 +1405,10 @@ func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, _ string) (int,
 
 func (t *timeoutTestingQueryTracker) Delete(_ int) {
 	panic("should not be called")
+}
+
+func (t *timeoutTestingQueryTracker) Close() error {
+	return nil
 }
 
 func TestAnnotations(t *testing.T) {

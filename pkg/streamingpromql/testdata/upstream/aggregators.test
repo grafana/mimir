@@ -32,10 +32,9 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
   {group="production"} 300
 
 # Simple average.
-# Unsupported by streaming engine.
-# eval instant at 50m avg by (group) (http_requests{job="api-server"})
-#   {group="canary"} 350
-#   {group="production"} 150
+eval instant at 50m avg by (group) (http_requests{job="api-server"})
+  {group="canary"} 350
+  {group="production"} 150
 
 # Simple count.
 # Unsupported by streaming engine.
@@ -113,34 +112,29 @@ eval instant at 50m SUM(http_requests) BY (job, group)
 	{group="production", job="api-server"} 300
 	{group="production", job="app-server"} 1100
 
-# Unsupported by streaming engine.
-# eval instant at 50m AVG(http_requests) BY (job)
-# 	{job="api-server"} 250
-# 	{job="app-server"} 650
+eval instant at 50m AVG(http_requests) BY (job)
+	{job="api-server"} 250
+	{job="app-server"} 650
 
-# Unsupported by streaming engine.
-# eval instant at 50m MIN(http_requests) BY (job)
-# 	{job="api-server"} 100
-# 	{job="app-server"} 500
+eval instant at 50m MIN(http_requests) BY (job)
+	{job="api-server"} 100
+	{job="app-server"} 500
 
 eval instant at 50m MAX(http_requests) BY (job)
 	{job="api-server"} 400
 	{job="app-server"} 800
 
-# Unsupported by streaming engine.
-# eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 100
-# 	{group="production", instance="1", job="api-server"} 200
+eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 100
+	{group="production", instance="1", job="api-server"} 200
 
-# Unsupported by streaming engine.
-# eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 0
-# 	{group="production", instance="1", job="api-server"} 0
+eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 1
-# 	{group="production", instance="1", job="api-server"} 1
+eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
 
 # Unsupported by streaming engine.
 # eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
@@ -527,49 +521,38 @@ load 10s
 	data{test="bigzero",point="c"} 9.988465674311579e+307
 	data{test="bigzero",point="d"} 9.988465674311579e+307
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="ten"})
-# 	{} 10
+eval instant at 1m avg(data{test="ten"})
+	{} 10
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="inf"})
-# 	{} Inf
+eval instant at 1m avg(data{test="inf"})
+	{} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="inf2"})
-# 	{} Inf
+eval instant at 1m avg(data{test="inf2"})
+	{} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="inf3"})
-# 	{} NaN
+eval instant at 1m avg(data{test="inf3"})
+	{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="-inf"})
-# 	{} -Inf
+eval instant at 1m avg(data{test="-inf"})
+	{} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="-inf2"})
-# 	{} -Inf
+eval instant at 1m avg(data{test="-inf2"})
+	{} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="-inf3"})
-# 	{} NaN
+eval instant at 1m avg(data{test="-inf3"})
+	{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="nan"})
-# 	{} NaN
+eval instant at 1m avg(data{test="nan"})
+	{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="big"})
-# 	{} 9.988465674311579e+307
+eval instant at 1m avg(data{test="big"})
+	{} 9.988465674311579e+307
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="-big"})
-# 	{} -9.988465674311579e+307
+eval instant at 1m avg(data{test="-big"})
+	{} -9.988465674311579e+307
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="bigzero"})
-# 	{} 0
+eval instant at 1m avg(data{test="bigzero"})
+	{} 0
 
 # Test summing and averaging extreme values.
 clear
@@ -597,43 +580,38 @@ load 10s
 eval instant at 1m sum(data{test="ten"})
 	{} 10
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="ten"})
-# 	{} 2.5
+eval instant at 1m avg(data{test="ten"})
+	{} 2.5
 
 eval instant at 1m sum by (group) (data{test="pos_inf"})
 	{group="1"} Inf
 	{group="2"} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg by (group) (data{test="pos_inf"})
-# 	{group="1"} Inf
-# 	{group="2"} Inf
+eval instant at 1m avg by (group) (data{test="pos_inf"})
+	{group="1"} Inf
+	{group="2"} Inf
 
 eval instant at 1m sum by (group) (data{test="neg_inf"})
 	{group="1"} -Inf
 	{group="2"} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg by (group) (data{test="neg_inf"})
-# 	{group="1"} -Inf
-# 	{group="2"} -Inf
+eval instant at 1m avg by (group) (data{test="neg_inf"})
+	{group="1"} -Inf
+	{group="2"} -Inf
 
 eval instant at 1m sum(data{test="inf_inf"})
 	{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg(data{test="inf_inf"})
-# 	{} NaN
+eval instant at 1m avg(data{test="inf_inf"})
+	{} NaN
 
 eval instant at 1m sum by (group) (data{test="nan"})
 	{group="1"} NaN
 	{group="2"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg by (group) (data{test="nan"})
-# 	{group="1"} NaN
-# 	{group="2"} NaN
+eval instant at 1m avg by (group) (data{test="nan"})
+	{group="1"} NaN
+	{group="2"} NaN
 
 clear
 

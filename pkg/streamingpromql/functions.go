@@ -229,3 +229,14 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 
 	return operators.NewInstantVectorToScalar(inner, start, end, interval, memoryConsumptionTracker, expressionPosition), nil
 }
+
+func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) types.InstantVectorOperator {
+	f := functions.FunctionOverInstantVector{
+		SeriesDataFunc:           functions.UnaryNegation,
+		SeriesMetadataFunc:       functions.DropSeriesName,
+		NeedsSeriesDeduplication: true,
+	}
+
+	o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
+}

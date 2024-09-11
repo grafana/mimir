@@ -1247,3 +1247,7 @@ type otlpLimitsMock struct{}
 func (o otlpLimitsMock) OTelMetricSuffixesEnabled(_ string) bool {
 	return false
 }
+
+func (o otlpLimitsMock) OTelCreatedTimestampZeroIngestionEnabled(_ string) bool {
+	return false
+}
