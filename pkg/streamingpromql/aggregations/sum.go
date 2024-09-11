@@ -89,34 +89,36 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		g.histogramSums = g.histogramSums[:steps]
 	}
 
-	for _, p := range data.Histograms {
-		idx := (p.T - start) / interval
+	for inputIdx, p := range data.Histograms {
+		outputIdx := (p.T - start) / interval
 
-		if g.histogramSums[idx] == invalidCombinationOfHistograms {
+		if g.histogramSums[outputIdx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
 			continue
 		}
 
-		if g.histogramSums[idx] == nil {
+		if g.histogramSums[outputIdx] == nil {
+			data.Histograms[inputIdx].H = nil // Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we'll retain a reference to the FloatHistogram instance below.
+
 			if lastUncopiedHistogram == p.H {
 				// We've already used this histogram for a previous point due to lookback.
 				// Make a copy of it so we don't modify the other point.
-				g.histogramSums[idx] = p.H.Copy()
+				g.histogramSums[outputIdx] = p.H.Copy()
 				g.histogramPointCount++
 				continue
 			}
 			// This is the first time we have seen this histogram.
 			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
-			g.histogramSums[idx] = p.H
+			g.histogramSums[outputIdx] = p.H
 			g.histogramPointCount++
 			lastUncopiedHistogram = p.H
 			continue
 		}
 
-		g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
+		g.histogramSums[outputIdx], err = g.histogramSums[outputIdx].Add(p.H)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
-			g.histogramSums[idx] = invalidCombinationOfHistograms
+			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
 			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
