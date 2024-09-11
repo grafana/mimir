@@ -308,6 +308,7 @@ type MultitenantAlertmanager struct {
 	tenantsDiscovered prometheus.Gauge
 	syncTotal         *prometheus.CounterVec
 	syncFailures      *prometheus.CounterVec
+	configSize        *prometheus.GaugeVec
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -401,6 +402,10 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 			Name: "cortex_alertmanager_tenants_owned",
 			Help: "Current number of tenants owned by the Alertmanager instance.",
 		}),
+		configSize: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_alertmanager_config_size_bytes",
+			Help: "Size of the last received alertmanager configuration.",
+		}, []string{"user"}),
 	}
 
 	// Initialize the top-level metrics.

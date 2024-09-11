@@ -316,6 +316,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errReadingGrafanaConfig, err.Error())})
 		return
 	}
+	am.configSize.WithLabelValues(userID).Set(float64(len(payload)))
 
 	cfg := &UserGrafanaConfig{}
 	err = json.Unmarshal(payload, cfg)
