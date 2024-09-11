@@ -34,6 +34,12 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 	}
 
 	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		mapped, finished, err = pruner.MapExpr(e.Expr)
+		if err != nil {
+			return e, false, err
+		}
+		return &parser.ParenExpr{Expr: mapped, PosRange: e.PosRange}, finished, nil
 	case *parser.BinaryExpr:
 		return pruner.pruneBinOp(e)
 	default:

@@ -182,6 +182,14 @@ func TestQueryPruner(t *testing.T) {
 			`((((-1 * -Inf) < avg(rate(foo[4m]))) unless avg(rate(foo[3m]))) and avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
 			`avg(rate(foo[1m]))`,
 		},
+		{
+			`(((-1 * -Inf) < avg(rate(foo[4m]))) unless (avg(rate(foo[3m])) and avg(rate(foo[2m])))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
+		{
+			`(((-1 * -Inf) < avg(rate(foo[4m]))) unless avg(rate(foo[3m])) and avg(rate(foo[2m]))) or avg(rate(foo[1m]))`,
+			`avg(rate(foo[1m]))`,
+		},
 	} {
 		tt := tt
 
