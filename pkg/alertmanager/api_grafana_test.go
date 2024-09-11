@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
@@ -311,12 +310,9 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
-		store:  alertstore,
-		logger: test.NewTestingLogger(t),
-		configSize: promauto.With(prometheus.NewRegistry()).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_alertmanager_config_size_bytes",
-			Help: "Size of the last received alertmanager configuration.",
-		}, []string{"user"}),
+		store:              alertstore,
+		logger:             test.NewTestingLogger(t),
+		multitenantMetrics: newMultitenantAlertmanagerMetrics(prometheus.NewRegistry()),
 	}
 
 	require.Len(t, storage.Objects(), 0)
