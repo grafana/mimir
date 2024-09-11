@@ -28,41 +28,42 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
 			// First series: all histograms should be nil-ed out after returning, as they're all retained for use.
-			histograms, err := types.HPointSlicePool.Get(3, memoryConsumptionTracker)
+			histograms, err := types.HPointSlicePool.Get(4, memoryConsumptionTracker)
 			require.NoError(t, err)
 
 			h1 := &histogram.FloatHistogram{Sum: 1}
 			h2 := &histogram.FloatHistogram{Sum: 2}
+			h3 := &histogram.FloatHistogram{Sum: 3}
 			histograms = append(histograms, promql.HPoint{T: 0, H: h1})
 			histograms = append(histograms, promql.HPoint{T: 1, H: h2})
 			histograms = append(histograms, promql.HPoint{T: 2, H: h2}) // T=2 is a lookback and refers to the same histogram as T=1.
+			histograms = append(histograms, promql.HPoint{T: 4, H: h3})
 			series := types.InstantVectorSeriesData{Histograms: histograms}
 
 			require.NoError(t, group.AccumulateSeries(series, 5, 0, 1, memoryConsumptionTracker, nil))
-			require.Equal(t, []promql.HPoint{{T: 0, H: nil}, {T: 1, H: nil}, {T: 2, H: nil}}, series.Histograms, "all histograms retained should be nil-ed out after accumulating series")
+			require.Equal(t, []promql.HPoint{{T: 0, H: nil}, {T: 1, H: nil}, {T: 2, H: nil}, {T: 4, H: nil}}, series.Histograms, "all histograms retained should be nil-ed out after accumulating series")
 
 			// Second series: all histograms that are not retained should be nil-ed out after returning.
 			histograms, err = types.HPointSlicePool.Get(5, memoryConsumptionTracker)
 			require.NoError(t, err)
-			h3 := &histogram.FloatHistogram{Sum: 3}
 			h4 := &histogram.FloatHistogram{Sum: 4}
 			h5 := &histogram.FloatHistogram{Sum: 5}
 			h6 := &histogram.FloatHistogram{Sum: 6}
-			histograms = append(histograms, promql.HPoint{T: 0, H: h3})
-			histograms = append(histograms, promql.HPoint{T: 1, H: h4})
-			histograms = append(histograms, promql.HPoint{T: 2, H: h5})
-			histograms = append(histograms, promql.HPoint{T: 3, H: h5}) // T=3 is a lookback and refers to the same histogram as T=2.
+			histograms = append(histograms, promql.HPoint{T: 0, H: h4})
+			histograms = append(histograms, promql.HPoint{T: 1, H: h5})
+			histograms = append(histograms, promql.HPoint{T: 2, H: h6})
+			histograms = append(histograms, promql.HPoint{T: 3, H: h6}) // T=3 is a lookback and refers to the same histogram as T=2.
 			histograms = append(histograms, promql.HPoint{T: 4, H: h6})
 			series = types.InstantVectorSeriesData{Histograms: histograms}
 
 			require.NoError(t, group.AccumulateSeries(series, 5, 0, 1, memoryConsumptionTracker, nil))
 
 			expected := []promql.HPoint{
-				{T: 0, H: h3},  // h3 not retained (added to h1)
-				{T: 1, H: h4},  // h4 not retained (added to h2)
-				{T: 2, H: nil}, // h5 is retained for T=3
-				{T: 3, H: nil}, // h5 is retained for this point
-				{T: 4, H: nil}, // h6 is retained for this point
+				{T: 0, H: h4},  // h4 not retained (added to h1)
+				{T: 1, H: h5},  // h5 not retained (added to h2)
+				{T: 2, H: nil}, // h6 is retained for T=3
+				{T: 3, H: nil}, // h6 is retained for this point
+				{T: 4, H: nil}, // h7 is retained for T=4
 			}
 
 			require.Equal(t, expected, series.Histograms, "all histograms retained should be nil-ed out after accumulating series")

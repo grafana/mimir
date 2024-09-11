@@ -175,15 +175,17 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			continue
 		}
 
+		if lastUncopiedHistogram == p.H {
+			// Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we're retaining a reference to it.
+			data.Histograms[inputIdx].H = nil
+		}
+
 		if g.histograms[outputIdx] == nil {
 			if lastUncopiedHistogram == p.H {
 				// We've already used this histogram for a previous point due to lookback.
 				// Make a copy of it so we don't modify the other point.
 				g.histograms[outputIdx] = p.H.Copy()
 				g.histogramPointCount++
-
-				// Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we're retaining a reference to it.
-				data.Histograms[inputIdx].H = nil
 
 				continue
 			}
