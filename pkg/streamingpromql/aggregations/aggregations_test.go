@@ -63,7 +63,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 				{T: 1, H: h5},  // h5 not retained (added to h2)
 				{T: 2, H: nil}, // h6 is retained for T=3
 				{T: 3, H: nil}, // h6 is retained for this point
-				{T: 4, H: nil}, // h6 is retained for T=4
+				{T: 4, H: nil}, // h6 is retained for T=3
 			}
 
 			require.Equal(t, expected, series.Histograms, "all histograms retained should be nil-ed out after accumulating series")
