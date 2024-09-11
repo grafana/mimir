@@ -288,7 +288,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 
 func getRuleGroupNextToken(file, group string) string {
 	h := xxhash.New()
-	h.Write([]byte(file + ":" + group))
+	_, _ = h.Write([]byte(file + ":" + group))
 
 	return hex.EncodeToString(h.Sum(nil))
 }
