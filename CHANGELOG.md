@@ -156,6 +156,7 @@
 * [CHANGE] `$.replicaTemplate` function now takes replicas and labelSelector parameter. #9248
 * [CHANGE] Renamed `ingest_storage_ingester_autoscaling_replica_template_custom_resource_definition_enabled` to `replica_template_custom_resource_definition_enabled`. #9248
 * [FEATURE] Add support for automatically deleting compactor, store-gateway, ingester and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382 #8736
+* [FEATURE] Automatically set GOMAXPROCS on ingesters. #9273
 * [ENHANCEMENT] Added the following config options to set the number of partition ingester replicas when migrating to experimental ingest storage. #8517
   * `ingest_storage_migration_partition_ingester_zone_a_replicas`
   * `ingest_storage_migration_partition_ingester_zone_b_replicas`
