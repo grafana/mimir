@@ -15,8 +15,9 @@ import (
 
 func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 	// This test exists to ensure that AggregationGroup implementations correctly remove FloatHistogram instances they retain,
-	// so that retained FloatHistogram instances are not mutated when the HPoint slice they receive is later reused by something else.
+	// so that retained FloatHistogram instances are not mutated when the HPoint slice is later reused by something else.
 
+	// These are the aggregations that retain the first FloatHistogram instance for an output timestamp.
 	groups := map[string]AggregationGroup{
 		"sum": &SumAggregationGroup{},
 		"avg": &AvgAggregationGroup{},
@@ -34,7 +35,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			h2 := &histogram.FloatHistogram{Sum: 2}
 			histograms = append(histograms, promql.HPoint{T: 0, H: h1})
 			histograms = append(histograms, promql.HPoint{T: 1, H: h2})
-			histograms = append(histograms, promql.HPoint{T: 2, H: h2})
+			histograms = append(histograms, promql.HPoint{T: 2, H: h2}) // T=2 is a lookback and refers to the same histogram as T=1.
 			series := types.InstantVectorSeriesData{Histograms: histograms}
 
 			require.NoError(t, group.AccumulateSeries(series, 5, 0, 1, memoryConsumptionTracker, nil))
@@ -50,7 +51,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			histograms = append(histograms, promql.HPoint{T: 0, H: h3})
 			histograms = append(histograms, promql.HPoint{T: 1, H: h4})
 			histograms = append(histograms, promql.HPoint{T: 2, H: h5})
-			histograms = append(histograms, promql.HPoint{T: 3, H: h5})
+			histograms = append(histograms, promql.HPoint{T: 3, H: h5}) // T=3 is a lookback and refers to the same histogram as T=2.
 			histograms = append(histograms, promql.HPoint{T: 4, H: h6})
 			series = types.InstantVectorSeriesData{Histograms: histograms}
 
