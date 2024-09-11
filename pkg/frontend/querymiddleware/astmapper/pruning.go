@@ -58,6 +58,8 @@ func (pruner *queryPruner) pruneBinOp(expr *parser.BinaryExpr) (mapped parser.Ex
 	}
 }
 
+// The bool signifies if the number evaluates to infinity, and if it does
+// we return the infinity of the correct sign.
 func calcInf(isPositive bool, num string) (*parser.NumberLiteral, bool) {
 	coeff, err := strconv.Atoi(num)
 	if err != nil || coeff == 0 {
@@ -139,6 +141,8 @@ func (pruner *queryPruner) handleCompOp(expr *parser.BinaryExpr) parser.Expr {
 	return expr
 }
 
+// 1st bool is true if the number is infinite.
+// 2nd bool is true if the number is positive infinity.
 func (pruner *queryPruner) isInfinite(expr parser.Expr) (bool, bool) {
 	mapped, _, err := pruner.MapExpr(expr)
 	if err == nil {

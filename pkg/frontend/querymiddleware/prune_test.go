@@ -10,33 +10,22 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 )
 
 func TestQueryPruning(t *testing.T) {
-	numSeries := 10
 	endTime := 100
-	storageSeries := make([]*promql.StorageSeries, 0, numSeries)
-	floats := make([]promql.FPoint, 0, endTime)
-	for i := 0; i < endTime; i++ {
-		floats = append(floats, promql.FPoint{
-			T: int64(i * 1000),
-			F: float64(i),
-		})
-	}
-	histograms := make([]promql.HPoint, 0)
 	seriesName := `test_float`
-	for i := 0; i < numSeries; i++ {
-		nss := promql.NewStorageSeries(promql.Series{
-			Metric:     labels.FromStrings("__name__", seriesName, "series", fmt.Sprint(i)),
-			Floats:     floats,
-			Histograms: histograms,
-		})
-		storageSeries = append(storageSeries, nss)
-	}
-	queryable := storageSeriesQueryable(storageSeries)
+	const data = `
+		load 1m
+			test_float{series="1"} 0+1x100
+			test_float{series="2"} 0+2x100
+			test_float{series="3"} 0+3x100
+			test_float{series="4"} 0+4x100
+			test_float{series="5"} 0+5x100
+	`
+	queryable := promqltest.LoadedStorage(t, data)
 
 	const step = 20 * time.Second
 
@@ -73,7 +62,7 @@ func TestQueryPruning(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
 				path:      "/query_range",
 				start:     0,
-				end:       int64(endTime * 1000),
+				end:       int64(endTime * 1000 * 60),
 				step:      step.Milliseconds(),
 				queryExpr: parseQuery(t, query),
 			}
