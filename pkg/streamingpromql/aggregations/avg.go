@@ -195,7 +195,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			lastUncopiedHistogram = p.H
 
 			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused, including if it was used at previous points.
-			removeReferencesToRetainedHistogram(data.Histograms, p.H, inputIdx)
+			data.RemoveReferencesToRetainedHistogram(p.H, inputIdx)
 
 			continue
 		}
