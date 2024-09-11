@@ -36,9 +36,10 @@ killercoda:
         replacement: https://grafana.com/media/docs/mimir/tutorial-architecture.png
   backend:
     imageid: ubuntu
-
 ---
+
 <!-- INTERACTIVE page intro.md START -->
+
 # Play with Mimir
 
 Grafana Mimir is a distributed, horizontally scalable, and highly available long term storage for [Prometheus](https://prometheus.io).
@@ -51,6 +52,7 @@ In this tutorial, you'll:
 - Configure a testing recording rule and alert in Grafana Mimir
 
 <!-- INTERACTIVE ignore START -->
+
 ## Prerequisites
 
 - Git
@@ -63,6 +65,7 @@ Alternatively, you can try out this example in our interactive learning environm
 It's a fully configured environment with all the dependencies already installed.
 
 {{< /admonition >}}
+
 <!-- INTERACTIVE ignore END -->
 
 <!-- INTERACTIVE page intro.md END -->
@@ -82,7 +85,7 @@ It's a fully configured environment with all the dependencies already installed.
    ```
 
 {{< admonition type="note" >}}
- The instructions in this tutorial assume that your working directory is `docs/sources/mimir/get-started/play-with-grafana-mimir/`.
+The instructions in this tutorial assume that your working directory is `docs/sources/mimir/get-started/play-with-grafana-mimir/`.
 {{< /admonition >}}
 
 <!-- INTERACTIVE page step1.md END -->
@@ -202,9 +205,8 @@ tooling offered by Grafana.
    1. Select `New folder` and type `example-folder` in the **Folder name** field.
    1. Select `New evaluation group` and type `example-group` in the **Group name** field. Set evaluation interval to `30s`.
 1. Scroll down to **Configure labels and notifications**:
-   1. Select the `Contract point` dropdown and choose `grafana-default-email`. 
-1. Click the **Save rule and exit** button. 
-
+   1. Select the `Contract point` dropdown and choose `grafana-default-email`.
+1. Click the **Save rule and exit** button.
 
 Your `MimirNotRunning` alert rule is now being created in Grafana Mimir ruler and is expected to fire when the number of
 Grafana Mimir instances is less than three. You can check its status by opening the [Grafana Alerting](http://localhost:9000/alerting/list)
@@ -251,11 +253,13 @@ some metrics to Grafana Mimir. You then queried those metrics stored in Mimir us
 Lastly, you configured a recording rule and an alert via the Grafana Alerting UI and verified that the alert fired as expected when the condition was met.
 
 <!-- INTERACTIVE ignore START -->
+
 Once you've completed the tutorial, release all Docker resources by running this Docker command:
 
 ```bash
 docker-compose down -v
 ```
+
 <!-- INTERACTIVE ignore END -->
 
 <!-- INTERACTIVE page finish.md END -->
