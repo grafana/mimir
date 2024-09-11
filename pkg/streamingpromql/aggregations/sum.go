@@ -110,7 +110,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 				continue
 			}
 
-			// This is the first time we have seen this histogram.
+			// We have not previously used this histogram as the start of an output point.
 			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
 			g.histogramSums[outputIdx] = p.H
 			g.histogramPointCount++
