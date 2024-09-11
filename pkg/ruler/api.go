@@ -6,16 +6,17 @@
 package ruler
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
@@ -64,6 +65,7 @@ type Alert struct {
 // RuleDiscovery has info for all rules
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
+	NextToken  string       `json:"nextToken,omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group
@@ -166,6 +168,16 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	nextToken := req.URL.Query().Get("next_token")
+	var maxGroups int
+	if maxGroupsVal := req.URL.Query().Get("max_groups"); maxGroupsVal != "" {
+		maxGroups, err = strconv.Atoi(maxGroupsVal)
+		if err != nil || maxGroups < 0 {
+			respondInvalidRequest(logger, w, "invalid max groups value")
+			return
+		}
+	}
+
 	rulesReq := RulesRequest{
 		Filter:    AnyRule,
 		RuleName:  req.URL.Query()["rule_name"],
@@ -195,8 +207,21 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	groups := make([]*RuleGroup, 0, len(rgs))
-
+	var newToken string
+	foundToken := false
 	for _, g := range rgs {
+		if nextToken != "" && !foundToken {
+			if nextToken != getRuleGroupNextToken(g.Group.Namespace, g.Group.Name) {
+				continue
+			}
+			foundToken = true
+		}
+
+		if maxGroups > 0 && len(groups) == maxGroups {
+			newToken = getRuleGroupNextToken(g.Group.Namespace, g.Group.Name)
+			break
+		}
+
 		grp := RuleGroup{
 			Name:           g.Group.Name,
 			File:           g.Group.Namespace,
@@ -241,17 +266,13 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 				}
 			}
 		}
+
 		groups = append(groups, &grp)
 	}
 
-	// keep data.groups are in order
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].File < groups[j].File
-	})
-
 	b, err := json.Marshal(&response{
 		Status: "success",
-		Data:   &RuleDiscovery{RuleGroups: groups},
+		Data:   &RuleDiscovery{RuleGroups: groups, NextToken: newToken},
 	})
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
@@ -263,6 +284,13 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	if n, err := w.Write(b); err != nil {
 		level.Error(logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
+}
+
+func getRuleGroupNextToken(file, group string) string {
+	h := xxhash.New()
+	h.Write([]byte(file + ":" + group))
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
