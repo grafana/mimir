@@ -251,14 +251,14 @@ type partitionState struct {
 	Commit kadm.Offset
 	// CommitRecTimestamp is the timestamp of the record whose offset was committed (and not the time of commit).
 	CommitRecTimestamp time.Time
-	// OldestSeenOffset is the offset of the last record consumed in the commiter-cycle. It can be greater than Commit.Offset if previous cycle overconumed.
-	OldestSeenOffset int64
+	// LastSeenOffset is the offset of the last record consumed in the commiter-cycle. It can be greater than Commit.Offset if previous cycle overconsumed.
+	LastSeenOffset int64
 	// LastBlockEnd is the timestamp of the block end in the commiter-cycle.
 	LastBlockEnd time.Time
 }
 
 func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackMillis int64) *partitionState {
-	commitRecTs, oldestSeenOffset, lastBlockEndTs, err := unmarshallCommitMeta(lag.Commit.Metadata)
+	commitRecTs, lastSeenOffset, lastBlockEndTs, err := unmarshallCommitMeta(lag.Commit.Metadata)
 	if err != nil {
 		// If there is an error in unmarshalling the metadata, treat it as if
 		// we have no commit. There is no reason to stop the cycle for this.
@@ -278,7 +278,7 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 		Lag:                lag.Lag,
 		Commit:             lag.Commit,
 		CommitRecTimestamp: time.UnixMilli(commitRecTs),
-		OldestSeenOffset:   oldestSeenOffset,
+		LastSeenOffset:     lastSeenOffset,
 		LastBlockEnd:       time.UnixMilli(lastBlockEndTs),
 	}
 }
@@ -293,7 +293,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 		// We iterate through all the ConsumeInterval intervals, starting from the first one after the last commit until the cycleEnd,
 		// i.e. [T, T+interval), [T+interval, T+2*interval), ... [T+S*interval, cycleEnd)
 		// where T is the CommitRecTimestamp, the timestamp of the record, whose offset we committed previously.
-		// When there is no kafka commit, we play safe and assume oldestSeenOffset and lastBlockEnd was 0 to not discard any samples unnecessarily.
+		// When there is no kafka commit, we play safe and assume LastSeenOffset, and LastBlockEnd were 0 to not discard any samples unnecessarily.
 		sectionCycleEnd, _ = nextCycleEnd(
 			state.CommitRecTimestamp,
 			b.cfg.ConsumeInterval,
@@ -337,7 +337,7 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogge
 		level.Info(partitionLogger).Log("msg", "done consuming", "duration", dur,
 			"start_lag", startState.Lag, "end_lag", state.Lag,
 			"last_block_end", startState.LastBlockEnd, "curr_block_end", blockEnd,
-			"last_oldest_seen_offset", startState.OldestSeenOffset, "curr_seen_offset", state.OldestSeenOffset,
+			"last_seen_offset", startState.LastSeenOffset, "curr_seen_offset", state.LastSeenOffset,
 			"num_blocks", numBlocks)
 	}(time.Now(), *state)
 
@@ -390,7 +390,7 @@ consumerLoop:
 				break consumerLoop
 			}
 
-			recProcessedBefore := rec.Offset <= state.OldestSeenOffset
+			recProcessedBefore := rec.Offset <= state.LastSeenOffset
 			allSamplesProcessed, err := builder.Process(ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(), recProcessedBefore)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
@@ -400,7 +400,7 @@ consumerLoop:
 				if lastRec == nil {
 					// The first record was not fully processed, meaning the record before this is the commit point.
 					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
-					// with the new value of oldestSeenOffset. This is so the next cycle handled partially processed record properly.
+					// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
 					commitRec = &kgo.Record{
 						Topic:       state.Commit.Topic,
 						Partition:   state.Commit.Partition,
@@ -442,10 +442,9 @@ consumerLoop:
 
 	commitRecOffset := commitRec.Offset + 1 // offset+1 means everything up to (including) the offset was processed
 
-	// We should take the max of "seen till" offset. If the partition was lagging
-	// due to some record not being processed because of a future sample, we might be
-	// coming back to the same consume cycle again.
-	oldestSeenOffset := max(lastRec.Offset, state.OldestSeenOffset)
+	// We should take the max of last seen offsets. If the partition was lagging due to some record not being processed
+	// because of a future sample, we might be coming back to the same consume cycle again.
+	lastSeenOffset := max(lastRec.Offset, state.LastSeenOffset)
 	// Take the max of block max times because of the same reasons above.
 	lastBlockEnd := blockEnd
 	if lastBlockEnd.Before(state.LastBlockEnd) {
@@ -457,7 +456,7 @@ consumerLoop:
 		Partition:   commitRec.Partition,
 		At:          commitRecOffset,
 		LeaderEpoch: commitRec.LeaderEpoch,
-		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), oldestSeenOffset, lastBlockEnd.UnixMilli()),
+		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastSeenOffset, lastBlockEnd.UnixMilli()),
 	}
 	if err := b.commitOffset(ctx, partitionLogger, b.cfg.Kafka.ConsumerGroup, commit); err != nil {
 		return err
@@ -467,7 +466,7 @@ consumerLoop:
 	// the cycle will continue consuming the next portion of the lag.
 	state.Lag -= commitRecOffset - firstRec.Offset
 
-	state.OldestSeenOffset = oldestSeenOffset
+	state.LastSeenOffset = lastSeenOffset
 	state.LastBlockEnd = lastBlockEnd
 	state.Commit = commit
 
