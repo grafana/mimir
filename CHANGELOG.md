@@ -145,6 +145,7 @@
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 * [BUGFIX] Dashboards: avoid over-counting of ingesters metrics when migrating to experimental ingest storage. #9170
+* [BUGFIX] Dashboards: fix `job_prefix` not utilized in `jobSelector`. #9155
 
 ### Jsonnet
 
