@@ -1874,20 +1874,16 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-delayed-downscale: 13h
-    grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
-    grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
-    grafana.com/rollout-mirror-replicas-from-resource-name: ingester-zone-a
-    grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-instance-ring-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
+    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-a
   namespace: default
 spec:
   podManagementPolicy: Parallel
+  replicas: 1
   selector:
     matchLabels:
       name: ingester-zone-a
@@ -2162,15 +2158,10 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-delayed-downscale: 13h
-    grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
-    grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
-    grafana.com/rollout-mirror-replicas-from-resource-name: ingester-zone-a
-    grafana.com/rollout-mirror-replicas-from-resource-write-back: "false"
-    grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-instance-ring-downscale
+    grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
+    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-b
@@ -2439,15 +2430,10 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-delayed-downscale: 13h
-    grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
-    grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
-    grafana.com/rollout-mirror-replicas-from-resource-name: ingester-zone-a
-    grafana.com/rollout-mirror-replicas-from-resource-write-back: "false"
-    grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-instance-ring-downscale
+    grafana.com/rollout-downscale-leader: ingester-zone-b
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
+    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-c
@@ -3383,12 +3369,3 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
----
-apiVersion: rollout-operator.grafana.com/v1
-kind: ReplicaTemplate
-metadata:
-  name: ingester-zone-a
-  namespace: default
-spec:
-  labelSelector: name=ingester-zone-a
-  replicas: 1

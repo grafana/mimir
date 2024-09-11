@@ -2926,12 +2926,3 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
----
-apiVersion: rollout-operator.grafana.com/v1
-kind: ReplicaTemplate
-metadata:
-  name: ingester-zone-a
-  namespace: default
-spec:
-  labelSelector: name=ingester-zone-a
-  replicas: 1
