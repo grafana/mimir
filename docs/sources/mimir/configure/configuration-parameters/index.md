@@ -2087,6 +2087,16 @@ tenant_federation:
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
+# (experimental) Interval between sending queued rule sync requests to ruler
+# replicas.
+# CLI flag: -ruler.outbound-sync-queue-poll-interval
+[outbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) Interval between sending queued rule sync requests to ruler
+# replicas.
+# CLI flag: -ruler.inbound-sync-queue-poll-interval
+[inbound_sync_queue_poll_interval: <duration> | default = 10s]
+
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency
