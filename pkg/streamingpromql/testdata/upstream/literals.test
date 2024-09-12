@@ -12,17 +12,14 @@ eval instant at 50m 12.34e+6
 eval instant at 50m 12.34e-6
 	0.00001234
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1+1
-# 	2
+eval instant at 50m 1+1
+	2
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1-1
-# 	0
+eval instant at 50m 1-1
+	0
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1 - -1
-# 	2
+eval instant at 50m 1 - -1
+	2
 
 eval instant at 50m .2
 	0.2
@@ -51,22 +48,17 @@ eval instant at 50m nan
 eval instant at 50m 2.
 	2
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1 / 0
-# 	+Inf
+eval instant at 50m 1 / 0
+	+Inf
 
-# Unsupported by streaming engine.
-# eval instant at 50m ((1) / (0))
-# 	+Inf
+eval instant at 50m ((1) / (0))
+	+Inf
 
-# Unsupported by streaming engine.
-# eval instant at 50m -1 / 0
-# 	-Inf
+eval instant at 50m -1 / 0
+	-Inf
 
-# Unsupported by streaming engine.
-# eval instant at 50m 0 / 0
-# 	NaN
+eval instant at 50m 0 / 0
+	NaN
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1 % 0
-# 	NaN
+eval instant at 50m 1 % 0
+	NaN

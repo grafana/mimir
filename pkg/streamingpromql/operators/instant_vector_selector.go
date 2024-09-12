@@ -25,8 +25,6 @@ type InstantVectorSelector struct {
 	Selector                 *Selector
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
-	numSteps int
-
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
 }
@@ -38,9 +36,6 @@ func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	// Compute value we need on every call to NextSeries() once, here.
-	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
-
 	return v.Selector.SeriesMetadata(ctx)
 }
 
@@ -69,7 +64,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	lastHistogramT := int64(math.MinInt64)
 	var lastHistogram *histogram.FloatHistogram
 
-	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
+	for stepT := v.Selector.TimeRange.StartT; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMs {
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram
@@ -100,8 +95,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				t, h = atT, lastHistogram
 			} else {
 				t, h = v.memoizedIterator.AtFloatHistogram()
-				lastHistogramT = t
-				lastHistogram = h
 			}
 
 		default:
@@ -123,9 +116,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					// it if they are going to mutate it, but consuming operators don't check the underlying bucket slices, so without
 					// this, we can end up with incorrect query results.
 					h = lastHistogram
-				} else {
-					lastHistogramT = t
-					lastHistogram = h
 				}
 			}
 		}
@@ -142,16 +132,18 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// Only create the slice once we know the series is a histogram or not.
 				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 				var err error
-				if data.Histograms, err = types.HPointSlicePool.Get(v.numSteps, v.MemoryConsumptionTracker); err != nil {
+				if data.Histograms, err = types.HPointSlicePool.Get(v.Selector.TimeRange.StepCount, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
+			lastHistogramT = t
+			lastHistogram = h
 		} else {
 			if len(data.Floats) == 0 {
 				// Only create the slice once we know the series is a histogram or not
 				var err error
-				if data.Floats, err = types.FPointSlicePool.Get(v.numSteps, v.MemoryConsumptionTracker); err != nil {
+				if data.Floats, err = types.FPointSlicePool.Get(v.Selector.TimeRange.StepCount, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}

@@ -359,4 +359,32 @@ eval range from 0m to 18m step 6m 2 * {job="bar"}
 eval_fail range from 0m to 24m step 6m 2 * {job="bar"}
   expected_fail_message vector cannot contain metrics with the same labelset
 
+clear
 
+load 6m
+  metric 1 2 _ 3 stale 4 {{schema:3 sum:4 count:4 buckets:[1 2 1]}} 5
+
+# Scalars on both sides.
+eval range from 0m to 3m step 1m 1 + 2
+  {} 3 3 3 3
+
+eval range from 0m to 3m step 1m 1 - 2
+  {} -1 -1 -1 -1
+
+eval range from 0m to 3m step 1m 2 * 3
+  {} 6 6 6 6
+
+eval range from 0m to 3m step 1m 1 / 2
+  {} 0.5 0.5 0.5 0.5
+
+eval range from 0m to 3m step 1m 5 % 2
+  {} 1 1 1 1
+
+eval range from 0m to 3m step 1m 2 ^ 3
+  {} 8 8 8 8
+
+eval range from 0m to 3m step 1m 2 atan2 3
+  {} 0.5880026035475675 0.5880026035475675 0.5880026035475675 0.5880026035475675
+
+eval range from 0m to 42m step 6m scalar(metric) + 2
+  {} 3 4 NaN 5 NaN 6 NaN 7

@@ -75,7 +75,7 @@ func BenchmarkQuery(b *testing.B) {
 			}
 
 			for name, engine := range engines {
-				b.Run(name, func(b *testing.B) {
+				b.Run("engine="+name, func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
 						res, cleanup := c.Run(ctx, b, start, end, interval, engine, q)
 

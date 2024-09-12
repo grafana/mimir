@@ -13,6 +13,14 @@ patches:
       - op: remove
         path: /spec/template/spec/containers/0/env
 
+  # TODO dimitarvdimitrov: GOMAXPROCS isn't present in Helm for now
+  - target:
+      name: mimir-ingester
+      kind: StatefulSet
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/env
+
   # TODO(logiraptor): Jsonnet uses a deprecated PodDisruptionBudget api version
   - target:
       name: mimir-(ingester|store-gateway)

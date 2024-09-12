@@ -29,6 +29,7 @@ type config struct {
 	dryRun             bool
 	allowPartialBlocks bool
 	concurrency        int
+	skipExistenceCheck bool
 
 	mark    string
 	details string
@@ -44,7 +45,7 @@ func main() {
 	cfg := parseFlags()
 	marker, filename := createMarker(cfg.mark, logger, cfg.details)
 	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blocks)
-	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID, cfg.allowPartialBlocks, cfg.concurrency)
+	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID, cfg.allowPartialBlocks, cfg.concurrency, cfg.skipExistenceCheck)
 }
 
 func parseFlags() config {
@@ -66,6 +67,7 @@ func parseFlags() config {
 		f.StringVar(&cfg.details, "details", "", "Details field of the uploaded mark. Recommended. (default empty).")
 		f.BoolVar(&cfg.helpAll, "help-all", false, "Show help for all flags, including the bucket backend configuration.")
 		f.BoolVar(&cfg.allowPartialBlocks, "allow-partial", false, "Allow upload of marks into partial blocks (ie. blocks without meta.json). Only useful for deletion mark.")
+		f.BoolVar(&cfg.skipExistenceCheck, "skip-existence-check", false, "If true, do not check blocks exist before marking them.")
 	}
 
 	commonUsageHeader := func() {
@@ -172,48 +174,24 @@ func uploadMarks(
 	tenantID string,
 	allowPartialBlocks bool,
 	concurrency int,
+	skipExistenceCheck bool,
 ) {
 	userBucketWithGlobalMarkers := createUserBucketWithGlobalMarkers(ctx, logger, cfg, tenantID)
 
 	err := dskit_concurrency.ForEachJob(ctx, len(ulids), concurrency, func(ctx context.Context, idx int) error {
 		b := ulids[idx]
 
-		blockFiles := map[string]bool{}
-		// List all files in the blocks directory. We don't need recursive listing: if any segment
-		// files (chunks/0000xxx) are present, we will find "chunks" during iter.
-		err := userBucketWithGlobalMarkers.Iter(ctx, b.String(), func(fn string) error {
-			if !strings.HasPrefix(fn, b.String()+"/") {
-				return nil
-			}
-
-			fn = strings.TrimPrefix(fn, b.String()+"/")
-			fn = strings.TrimSuffix(fn, "/")
-
-			blockFiles[fn] = true
-			return nil
-		})
+		blockFiles, exists, err := getBlockFiles(ctx, b, userBucketWithGlobalMarkers, allowPartialBlocks, skipExistenceCheck, logger)
 		if err != nil {
-			if userBucketWithGlobalMarkers.IsObjNotFoundErr(err) {
-				level.Warn(logger).Log("msg", "Block does not exist", "block", b, "err", err)
-				return nil
-			}
-
-			level.Error(logger).Log("msg", "Failed to list files for block.", "block", b, "err", err)
 			return err
 		}
-
-		if len(blockFiles) == 0 {
-			level.Warn(logger).Log("msg", "Block does not exist, skipping.", "block", b)
+		if !exists {
 			return nil
 		}
 
-		if !blockFiles[block.MetaFilename] && !allowPartialBlocks {
-			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
-			return nil
-		}
-
+		blockMarkPath := fmt.Sprintf("%s/%s", b, markFilename)
 		if blockFiles[markFilename] {
-			level.Warn(logger).Log("msg", "Mark already exists, skipping.", "block", b)
+			level.Warn(logger).Log("msg", "Mark already exists in block directory, skipping.", "block", b, "path", blockMarkPath)
 			return nil
 		}
 
@@ -223,7 +201,6 @@ func uploadMarks(
 			return err
 		}
 
-		blockMarkPath := fmt.Sprintf("%s/%s", b, markFilename)
 		if dryRun {
 			level.Info(logger).Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkPath, "data", string(data))
 			return nil
@@ -241,6 +218,51 @@ func uploadMarks(
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+func getBlockFiles(ctx context.Context, b ulid.ULID, bucket objstore.Bucket, allowPartialBlocks bool, skipExistenceCheck bool, logger log.Logger) (map[string]bool, bool, error) {
+	blockFiles := map[string]bool{}
+	// List all files in the blocks directory. We don't need recursive listing: if any segment
+	// files (chunks/0000xxx) are present, we will find "chunks" during iter.
+	err := bucket.Iter(ctx, b.String(), func(fn string) error {
+		if !strings.HasPrefix(fn, b.String()+"/") {
+			return nil
+		}
+
+		fn = strings.TrimPrefix(fn, b.String()+"/")
+		fn = strings.TrimSuffix(fn, "/")
+
+		blockFiles[fn] = true
+		return nil
+	})
+
+	if err != nil {
+		if bucket.IsObjNotFoundErr(err) {
+			if skipExistenceCheck {
+				return blockFiles, true, nil
+			}
+
+			level.Warn(logger).Log("msg", "Block does not exist, skipping.", "block", b, "err", err)
+			return nil, false, nil
+		}
+
+		level.Error(logger).Log("msg", "Failed to list files for block.", "block", b, "err", err)
+		return nil, false, err
+	}
+
+	if !skipExistenceCheck {
+		if len(blockFiles) == 0 {
+			level.Warn(logger).Log("msg", "Block does not exist, skipping.", "block", b)
+			return nil, false, nil
+		}
+
+		if !blockFiles[block.MetaFilename] && !allowPartialBlocks {
+			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
+			return nil, false, nil
+		}
+	}
+
+	return blockFiles, true, nil
 }
 
 func createUserBucketWithGlobalMarkers(ctx context.Context, logger log.Logger, cfg bucket.Config, tenantID string) objstore.Bucket {

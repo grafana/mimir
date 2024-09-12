@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r306-d685f76
+  tag: r307-ee993e2
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -3745,6 +3745,15 @@ metaMonitoring:
           # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
           passwordSecretKey: ""
 
+        # -- Configuration for SigV4 authentication.
+        # sigv4:
+        #   accessKey: abcd
+        #   profile: default
+        #   region: us-east-1
+        #   roleARN: arn:aws:iam::1234:role/1234
+        #   secretKey: abcd
+        sigv4: {}
+
       # -- Additional remote-write for the MetricsInstance that will scrape Mimir pods. Follows the format of .remote.
       additionalRemoteWriteConfigs: []
 
@@ -3847,7 +3856,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r306-ed2300d5
+    tag: r307-bcccee82
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4381,9 +4390,11 @@ continuous_test:
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
-  ## -- Mimir Write Endpoint if not set, its will be set to mimir.gatewayUrl
+  # -- The endpoints to use for writing to and reading metrics from your instance.
+  # Defaults to the gateway URL, but you may want to test from an external ingress which you can configure here.
+  ## -- Mimir Write Endpoint to use for writing metrics to your instance. Defaults to mimir.gatewayUrl if not set.
   write:
-  # -- Mimir Read Endpoint if not set, its will be set to mimir.gatewayUrl at /prometheus
+  # -- Mimir Read Endpoint to use for querying metrics from your instance. Defaults to mimir.gatewayUrl if not set. Path /prometheus is appended to value.
   read:
   # -- Authentication settings of continuous test
   auth:

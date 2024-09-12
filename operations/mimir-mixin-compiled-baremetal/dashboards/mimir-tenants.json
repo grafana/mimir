@@ -8,7 +8,25 @@
          }
       ],
       "annotations": {
-         "list": [ ]
+         "list": [
+            {
+               "datasource": "$datasource",
+               "enable": true,
+               "expr": "sum by (user) (cortex_ingester_active_series_loading{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}) > 0",
+               "filter": {
+                  "exclude": false,
+                  "ids": [
+                     2,
+                     7,
+                     8
+                  ]
+               },
+               "hide": true,
+               "iconColor": "yellow",
+               "name": "Active Series Reload",
+               "titleFormat": "Active series reloading for user {{user}}"
+            }
+         ]
       },
       "editable": true,
       "gnetId": null,
@@ -1628,13 +1646,13 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0",
+                        "expr": "topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0)",
                         "format": "time_series",
                         "legendFormat": "{{ rule_group }}",
                         "legendLink": null
                      }
                   ],
-                  "title": "Failed evaluations rate",
+                  "title": "Failed evaluations rate (top 50 rule groups)",
                   "type": "timeseries"
                }
             ],
