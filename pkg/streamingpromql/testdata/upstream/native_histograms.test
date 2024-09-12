@@ -930,9 +930,8 @@ eval instant at 10m float_series_0*histogram_mul_div
 eval instant at 10m histogram_mul_div/float_series_0
     {} {{schema:0 count:Inf sum:Inf z_bucket:Inf z_bucket_w:0.001 buckets:[Inf Inf Inf] n_buckets:[Inf Inf Inf]}}
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_mul_div*0/0
-#     {} {{schema:0 count:NaN sum:NaN z_bucket:NaN z_bucket_w:0.001 buckets:[NaN NaN NaN] n_buckets:[NaN NaN NaN]}}
+eval instant at 10m histogram_mul_div*0/0
+    {} {{schema:0 count:NaN sum:NaN z_bucket:NaN z_bucket_w:0.001 buckets:[NaN NaN NaN] n_buckets:[NaN NaN NaN]}}
 
 clear
 
