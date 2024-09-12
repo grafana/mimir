@@ -53,6 +53,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 * [BUGFIX] Helm: fix second relabeling in ServiceMonitor and PVC template in compactor to not show diff in ArgoCD. #9195
 * [BUGFIX] Helm: create query-scheduler `PodDisruptionBudget` only when the component is enabled. #9270
+* [ENHANCEMENT] Add support for sigv4 for metamonitoring. Allows you to connect metamonitoring to AMP #9279
 
 ## 5.4.1
 
