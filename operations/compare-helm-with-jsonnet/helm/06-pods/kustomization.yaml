@@ -83,11 +83,3 @@ patches:
     patch: |-
       - op: remove
         path: /spec/template/metadata/namespace
-
-  # TODO dimitarvdimitrov: GOMAXPROCS isn't present in Helm for now
-  - target:
-      name: mimir-ingester
-      kind: StatefulSet
-    patch: |-
-      - op: remove
-        path: /spec/template/spec/containers/0/env
