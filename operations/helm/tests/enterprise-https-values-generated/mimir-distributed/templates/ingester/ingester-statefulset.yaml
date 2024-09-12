@@ -143,8 +143,9 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            
             - name: "GOMAXPROCS"
-              value: "3"
+              value: "4"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
 ---
@@ -292,8 +293,9 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            
             - name: "GOMAXPROCS"
-              value: "3"
+              value: "4"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
 ---
@@ -441,7 +443,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            
             - name: "GOMAXPROCS"
-              value: "3"
+              value: "4"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
