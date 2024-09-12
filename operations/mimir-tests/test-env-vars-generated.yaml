@@ -1163,6 +1163,8 @@ spec:
         env:
         - name: GOGC
           value: "off"
+        - name: GOMAXPROCS
+          value: "9"
         - name: GOMEMLIMIT
           value: 1Gi
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
