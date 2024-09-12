@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,16 +16,17 @@ import (
 )
 
 func TestQueryPruning(t *testing.T) {
-	endTime := 100
+	numSamples := 100
 	seriesName := `test_float`
-	const data = `
+	replacer := strings.NewReplacer("<series name>", seriesName, "<num samples>", fmt.Sprintf("%d", numSamples))
+	data := replacer.Replace(`
 		load 1m
-			test_float{series="1"} 0+1x100
-			test_float{series="2"} 0+2x100
-			test_float{series="3"} 0+3x100
-			test_float{series="4"} 0+4x100
-			test_float{series="5"} 0+5x100
-	`
+			<series name>{series="1"} 0+1x<num samples>
+			<series name>{series="2"} 0+2x<num samples>
+			<series name>{series="3"} 0+3x<num samples>
+			<series name>{series="4"} 0+4x<num samples>
+			<series name>{series="5"} 0+5x<num samples>
+	`)
 	queryable := promqltest.LoadedStorage(t, data)
 
 	const step = 20 * time.Second
@@ -62,7 +64,7 @@ func TestQueryPruning(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
 				path:      "/query_range",
 				start:     0,
-				end:       int64(endTime * 1000 * 60),
+				end:       int64(numSamples) * time.Minute.Milliseconds(),
 				step:      step.Milliseconds(),
 				queryExpr: parseQuery(t, query),
 			}
