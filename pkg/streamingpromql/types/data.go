@@ -6,11 +6,12 @@
 package types
 
 import (
+	"time"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"time"
 )
 
 type SeriesMetadata struct {

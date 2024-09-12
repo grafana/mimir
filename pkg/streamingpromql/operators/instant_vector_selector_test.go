@@ -4,7 +4,6 @@ package operators
 
 import (
 	"context"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
