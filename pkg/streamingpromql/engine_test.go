@@ -1682,3 +1682,129 @@ func TestAnnotations(t *testing.T) {
 		})
 	}
 }
+
+func TestCompareVariousMixedMetrics(t *testing.T) {
+	// Although most tests are covered with the promql test files (both ours and upstream),
+	// there is a lot of repetition around a few edge cases.
+	// This is not intended to be comprehensive, but instead check for some common edge cases
+	// ensuring MQE and Prometheus' engines return the same result when querying:
+	// - Series with mixed floats and histograms
+	// - Aggregations with mixed data types
+	// - Points with NaN
+	// - Stale markers
+	// - Look backs
+
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	// We're loading series with the follow combinations of values. This is difficult to visually see in the actual
+	// data loaded, so it is represented in a table here.
+	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale
+	// {a} f f f f f f
+	// {b} h h h h h h
+	// {c} f h f h N h
+	// {d} f _ _ s f f
+	// {f} h h _ s h N
+	// {g} f N _ f f N
+	// {h} N N N N N N
+	// {i} N N N _ N s
+	// {j} f h _ N h s
+	// {k} f f s s s s
+	// {l} 0 0 0 N s 0
+
+	pointsPerSeries := 6
+	samples := `
+		series{label="a", group="a"} 1 2 3 4 5 -50
+		series{label="b", group="a"} {{schema:5 sum:15 count:10 buckets:[3 2 5]}} {{schema:5 sum:20 count:15 buckets:[4 5 6]}} {{schema:5 sum:25 count:20 buckets:[5 7 8]}} {{schema:5 sum:30 count:25 buckets:[6 9 10]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}} {{schema:5 sum:40 count:35 buckets:[8 11 14]}}
+		series{label="c", group="a"} 1 {{schema:3 sum:5 count:3 buckets:[1 1 1]}} 3 {{schema:3 sum:10 count:6 buckets:[2 2 2]}} NaN {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
+		series{label="d", group="a"} 1 _ _ stale 5 6
+		series{label="e", group="b"} {{schema:4 sum:12 count:8 buckets:[2 3 3]}} {{schema:4 sum:14 count:9 buckets:[3 3 3]}} _ stale {{schema:4 sum:18 count:11 buckets:[4 4 3]}} NaN
+		series{label="f", group="b"} 1 NaN _ 4 5 NaN
+		series{label="g", group="b"} NaN NaN NaN NaN NaN NaN
+		series{label="h", group="b"} NaN NaN NaN _ NaN stale
+		series{label="i", group="c"} 1 {{schema:5 sum:15 count:10 buckets:[3 2 5]}} _ NaN {{schema:5 sum:30 count:25 buckets:[6 9 10]}} stale
+		series{label="j", group="c"} 1 -20 stale stale stale stale
+		series{label="k", group="c"} 0 0 0 NaN stale 0
+	`
+
+	// Labels for generating combinations
+	labels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}
+
+	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
+	// These will be used for binary operations, so we can add up to 3 series.
+	labelCombinations := combinations(labels, 2)
+	labelCombinations = append(labelCombinations, combinations(labels, 3)...)
+
+	expressions := []string{}
+
+	// Binary operations
+	for _, labels := range labelCombinations {
+		if len(labels) >= 2 {
+			for _, op := range []string{"+", "-", "*", "/"} {
+				binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+				for _, label := range labels[1:] {
+					binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
+				}
+				expressions = append(expressions, binaryExpr)
+			}
+		}
+	}
+
+	// For aggregations, also add combinations of 4 labels. (e.g., "a,b,c,d", "c,d,e,f" etc)
+	labelCombinations = append(labelCombinations, combinations(labels, 4)...)
+
+	// Aggregations
+	for _, labels := range labelCombinations {
+		labelRegex := strings.Join(labels, "|")
+		for _, aggFunc := range []string{"sum", "avg", "min", "max"} {
+			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
+		}
+	}
+
+	timeRanges := []struct {
+		loadStep int
+		interval time.Duration
+	}{
+		{loadStep: 1, interval: 1 * time.Minute},
+		{loadStep: 6, interval: 6 * time.Minute},
+		{loadStep: 6, interval: 5 * time.Minute},
+	}
+
+	// Total tests:
+	// Binary operation labels: 11C2 + 11C3 = 220
+	// * 4 operations = 880
+	// Aggregation labels: 220 + 11C4 = 550
+	// * 4 aggregations * 3 groups = 6600
+	// Total = 7480
+	// * 3 time ranges = 22440
+
+	for _, tr := range timeRanges {
+		start := timestamp.Time(0)
+		end := start.Add(time.Duration(pointsPerSeries) * time.Duration(tr.loadStep) * time.Minute) // Deliberately queries 1 step past the final loaded point
+
+		storage := promqltest.LoadedStorage(t, fmt.Sprintf("load %dm", tr.loadStep)+samples)
+		t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+		for _, expr := range expressions {
+			testName := fmt.Sprintf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
+			t.Run(testName, func(t *testing.T) {
+				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+				require.NoError(t, err)
+				defer q.Close()
+				expectedResults := q.Exec(context.Background())
+
+				q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+				require.NoError(t, err)
+				defer q.Close()
+				mimirResults := q.Exec(context.Background())
+
+				RequireEqualResults(t, expr, expectedResults, mimirResults)
+			})
+		}
+	}
+}

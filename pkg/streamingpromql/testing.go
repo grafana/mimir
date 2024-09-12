@@ -202,3 +202,24 @@ func sortVector(v promql.Vector) {
 		return labels.Compare(a.Metric, b.Metric)
 	})
 }
+
+// combinations generates all combinations of a given length from a slice of strings.
+func combinations(arr []string, length int) [][]string {
+	if length == 0 || length > len(arr) {
+		return nil
+	}
+	var combine func([]string, int, int) [][]string
+	combine = func(arr []string, length, start int) [][]string {
+		if length == 0 {
+			return [][]string{{}}
+		}
+		result := [][]string{}
+		for i := start; i <= len(arr)-length; i++ {
+			for _, suffix := range combine(arr, length-1, i+1) {
+				result = append(result, append([]string{arr[i]}, suffix...))
+			}
+		}
+		return result
+	}
+	return combine(arr, length, 0)
+}
