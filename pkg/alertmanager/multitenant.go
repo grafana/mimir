@@ -194,7 +194,7 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 	m.grafanaConfigSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "cortex",
 		Name:      "alertmanager_grafana_config_size_bytes",
-		Help:      "Size of the last received grafana alertmanager configuration.",
+		Help:      "Size of the grafana alertmanager configuration.",
 	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
