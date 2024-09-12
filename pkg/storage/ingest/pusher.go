@@ -109,8 +109,6 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		index    int
 	}
 
-	writer := c.newStorageWriter()
-
 	recordsChannel := make(chan parsedRecord)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
@@ -151,6 +149,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		}
 	}(ctx, records, recordsChannel)
 
+	writer := c.newStorageWriter()
 	for r := range recordsChannel {
 		if r.err != nil {
 			level.Error(c.logger).Log("msg", "failed to parse write request; skipping", "err", r.err)
