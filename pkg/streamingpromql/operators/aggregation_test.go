@@ -4,10 +4,10 @@ package operators
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
