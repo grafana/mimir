@@ -4,12 +4,12 @@ package operators
 
 import (
 	"context"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"testing"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
@@ -218,9 +218,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
-					Start:     timestamp.FromTime(startTime),
-					End:       timestamp.FromTime(endTime),
-					Interval:  time.Minute.Milliseconds(),
+					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
 					Matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_metric"),
 					},

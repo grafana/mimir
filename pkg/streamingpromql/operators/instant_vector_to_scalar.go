@@ -16,9 +16,7 @@ import (
 // InstantVectorToScalar is an operator that implements the scalar() function.
 type InstantVectorToScalar struct {
 	Inner                    types.InstantVectorOperator
-	Start                    int64 // Milliseconds since Unix epoch
-	End                      int64 // Milliseconds since Unix epoch
-	Interval                 int64 // In milliseconds
+	TimeRange                types.QueryTimeRange
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
@@ -28,17 +26,13 @@ var _ types.ScalarOperator = &InstantVectorToScalar{}
 
 func NewInstantVectorToScalar(
 	inner types.InstantVectorOperator,
-	start int64,
-	end int64,
-	interval int64,
+	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *InstantVectorToScalar {
 	return &InstantVectorToScalar{
 		Inner:                    inner,
-		Start:                    start,
-		End:                      end,
-		Interval:                 interval,
+		TimeRange:                timeRange,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
@@ -50,21 +44,20 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 		return types.ScalarData{}, err
 	}
 
-	stepCount := stepCount(i.Start, i.End, i.Interval)
-	seenPoint, err := types.BoolSlicePool.Get(stepCount, i.MemoryConsumptionTracker)
+	seenPoint, err := types.BoolSlicePool.Get(i.TimeRange.StepCount, i.MemoryConsumptionTracker)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
 
 	defer types.BoolSlicePool.Put(seenPoint, i.MemoryConsumptionTracker)
-	seenPoint = seenPoint[:stepCount]
+	seenPoint = seenPoint[:i.TimeRange.StepCount]
 
-	output, err := types.FPointSlicePool.Get(stepCount, i.MemoryConsumptionTracker)
+	output, err := types.FPointSlicePool.Get(i.TimeRange.StepCount, i.MemoryConsumptionTracker)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
 
-	for t := i.Start; t <= i.End; t += i.Interval {
+	for t := i.TimeRange.StartT; t <= i.TimeRange.EndT; t += i.TimeRange.IntervalMs {
 		output = append(output, promql.FPoint{
 			T: t,
 			F: math.NaN(),
@@ -78,7 +71,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 		}
 
 		for _, p := range seriesData.Floats {
-			sampleIdx := (p.T - i.Start) / i.Interval
+			sampleIdx := (p.T - i.TimeRange.StartT) / i.TimeRange.IntervalMs
 
 			if seenPoint[sampleIdx] {
 				// We've already seen another point at this timestamp, so return NaN at this timestamp.
