@@ -100,8 +100,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				t, h = atT, lastHistogram
 			} else {
 				t, h = v.memoizedIterator.AtFloatHistogram()
-				lastHistogramT = t
-				lastHistogram = h
 			}
 
 		default:
@@ -123,9 +121,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					// it if they are going to mutate it, but consuming operators don't check the underlying bucket slices, so without
 					// this, we can end up with incorrect query results.
 					h = lastHistogram
-				} else {
-					lastHistogramT = t
-					lastHistogram = h
 				}
 			}
 		}
@@ -147,6 +142,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				}
 			}
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
+			lastHistogramT = t
+			lastHistogram = h
 		} else {
 			if len(data.Floats) == 0 {
 				// Only create the slice once we know the series is a histogram or not
