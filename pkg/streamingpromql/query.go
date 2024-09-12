@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -44,9 +43,7 @@ type Query struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 
-	startT     int64 // Start timestamp, in milliseconds since Unix epoch.
-	endT       int64 // End timestamp, in milliseconds since Unix epoch.
-	intervalMs int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to statement.Interval for instant queries (where it is 0) to simplify some loop conditions.
+	timeRange types.QueryTimeRange
 
 	result *promql.Result
 }
@@ -83,21 +80,18 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 			Interval:      interval, // 0 for instant queries
 			LookbackDelta: opts.LookbackDelta(),
 		},
-
-		startT:     timestamp.FromTime(start),
-		endT:       timestamp.FromTime(end),
-		intervalMs: interval.Milliseconds(), // 1 for instant queries (set below)
 	}
 
 	if q.IsInstant() {
-		q.intervalMs = 1
-	}
+		q.timeRange = types.NewInstantQueryTimeRange(start)
+	} else {
+		q.timeRange = types.NewRangeQueryTimeRange(start, end, interval)
 
-	if !q.IsInstant() {
 		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
 	}
+
 	q.root, err = q.convertToOperator(expr)
 	if err != nil {
 		return nil, err
@@ -139,10 +133,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			Selector: &operators.Selector{
 				Queryable:     q.queryable,
-				Start:         q.startT,
-				End:           q.endT,
+				TimeRange:     q.timeRange,
 				Timestamp:     e.Timestamp,
-				Interval:      q.intervalMs,
 				Offset:        e.OriginalOffset.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
@@ -166,9 +158,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 
 		return operators.NewAggregation(
 			inner,
-			q.startT,
-			q.endT,
-			q.intervalMs,
+			q.timeRange,
 			e.Grouping,
 			e.Without,
 			e.Op,
@@ -219,7 +209,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 
 			scalarIsLeftSide := e.LHS.Type() == parser.ValueTypeScalar
 
-			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, q.startT, q.endT, q.intervalMs, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, q.timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 			if err != nil {
 				return nil, err
 			}
@@ -308,10 +298,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 		return &operators.RangeVectorSelector{
 			Selector: &operators.Selector{
 				Queryable: q.queryable,
-				Start:     q.startT,
-				End:       q.endT,
+				TimeRange: q.timeRange,
 				Timestamp: vectorSelector.Timestamp,
-				Interval:  q.intervalMs,
 				Offset:    vectorSelector.OriginalOffset.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
@@ -342,9 +330,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	case *parser.NumberLiteral:
 		o := operators.NewScalarConstant(
 			e.Val,
-			q.startT,
-			q.endT,
-			q.intervalMs,
+			q.timeRange,
 			q.memoryConsumptionTracker,
 			e.PositionRange(),
 		)
@@ -412,7 +398,7 @@ func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call) (types.Scala
 		args[i] = a
 	}
 
-	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, q.startT, q.endT, q.intervalMs)
+	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, q.timeRange)
 }
 
 func (q *Query) IsInstant() bool {

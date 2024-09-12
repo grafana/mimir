@@ -6,8 +6,11 @@
 package types
 
 import (
+	"time"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -149,5 +152,37 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 		}
 
 		return false
+	}
+}
+
+type QueryTimeRange struct {
+	StartT     int64 // Start timestamp, in milliseconds since Unix epoch.
+	EndT       int64 // End timestamp, in milliseconds since Unix epoch.
+	IntervalMs int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+
+	StepCount int // 1 for instant queries.
+}
+
+func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
+	ts := timestamp.FromTime(t)
+
+	return QueryTimeRange{
+		StartT:     ts,
+		EndT:       ts,
+		IntervalMs: 1,
+		StepCount:  1,
+	}
+}
+
+func NewRangeQueryTimeRange(start time.Time, end time.Time, interval time.Duration) QueryTimeRange {
+	startT := timestamp.FromTime(start)
+	endT := timestamp.FromTime(end)
+	intervalMs := interval.Milliseconds()
+
+	return QueryTimeRange{
+		StartT:     startT,
+		EndT:       endT,
+		IntervalMs: intervalMs,
+		StepCount:  int((endT-startT)/intervalMs) + 1,
 	}
 }
