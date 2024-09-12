@@ -307,3 +307,10 @@ eval range from 0m to 10m step 5m sum (native_histogram)
   {} {{schema:3 count:11 sum:14 buckets:[5 6]}} {{schema:3 count:11 sum:12 buckets:[5 6]}} {{schema:5 count:17 sum:18 buckets:[1 5 1]}}
 
 clear
+
+load 1m
+	series{label="a"} {{schema:5 sum:15 count:10 buckets:[3 2 5]}} {{schema:5 sum:20 count:15 buckets:[4 5 6]}} {{schema:5 sum:25 count:20 buckets:[5 7 8]}} {{schema:5 sum:30 count:25 buckets:[6 9 10]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}}
+	series{label="b"} {{schema:4 sum:12 count:8 buckets:[2 3 3]}} {{schema:4 sum:14 count:9 buckets:[3 3 3]}} _ {{schema:4 sum:16 count:10 buckets:[3 4 3]}} {{schema:4 sum:18 count:11 buckets:[4 4 3]}}
+
+eval range from 0m to 4m step 1m avg(series)
+  {} {{schema:4 count:9 sum:13.5 buckets:[2.5 5 1.5]}} {{schema:4 count:12 sum:17 buckets:[3.5 7 1.5]}} {{schema:4 count:14.5 sum:19.5 buckets:[4 9 1.5]}} {{schema:4 count:17.5 sum:23 buckets:[4.5 11.5 1.5]}} {{schema:4 count:20.5 sum:26.5 buckets:[5.5 13.5 1.5]}}
