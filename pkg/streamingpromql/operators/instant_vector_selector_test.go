@@ -183,6 +183,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 5,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 4)
+				requireNotSame(t, points[0].H, points[2].H)
 				require.Same(t, points[0].H, points[1].H)
 				require.Same(t, points[2].H, points[3].H)
 			},
