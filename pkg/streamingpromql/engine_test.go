@@ -41,9 +41,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"1 + 2":                      "binary expression between two scalars",
-		"metric{} < other_metric{}":  "binary expression with '<'",
-		"metric{} or other_metric{}": "binary expression with many-to-many matching",
+		"metric{} < other_metric{}":                    "binary expression with '<'",
+		"metric{} or other_metric{}":                   "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
@@ -88,6 +87,15 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} + other_metric{}", "binary expressions")
 		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} + other_metric{}", "binary expressions")
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} + 1", "binary expressions")
+		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} + 1", "binary expressions")
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "1 + metric{}", "binary expressions")
+		requireInstantQueryIsUnsupported(t, featureToggles, "1 + metric{}", "binary expressions")
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "2 + 1", "binary expressions")
+		requireInstantQueryIsUnsupported(t, featureToggles, "2 + 1", "binary expressions")
 	})
 
 	t.Run("..._over_time functions", func(t *testing.T) {
