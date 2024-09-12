@@ -189,7 +189,7 @@ spec:
             {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
             {{- if $cpu_request }}
               {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
-            {{/* copy logic form jsonnet */}}
+            {{/* copy logic from operations/mimir/ingester.libsonnet */}}
             - name: "GOMAXPROCS"
               value: {{ addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString | toYaml }}
             {{- end }}
