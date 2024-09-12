@@ -31,7 +31,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	promRules "github.com/prometheus/prometheus/rules"
 	"golang.org/x/sync/errgroup"
 
@@ -1025,6 +1027,24 @@ func makeStringFilterSet(values []string) StringFilterSet {
 	return set
 }
 
+func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
+	matcherSets, err := parser.ParseMetricSelectors(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+OUTER:
+	for _, ms := range matcherSets {
+		for _, lm := range ms {
+			if lm != nil && !lm.Matches("") {
+				continue OUTER
+			}
+		}
+		return nil, errors.New("match[] must contain at least one non-empty matcher")
+	}
+	return matcherSets, nil
+}
+
 // IsFiltered returns whether to filter the value or not.
 // If the set is empty, then nothing is filtered.
 func (fs StringFilterSet) IsFiltered(val string) bool {
@@ -1066,6 +1086,12 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 	groupSet := makeStringFilterSet(req.RuleGroup)
 	ruleSet := makeStringFilterSet(req.RuleName)
 
+	matchers, err := parseMatchersParam(req.Match)
+	if err != nil {
+		// We validate matchers at the API entry point, so this shouldn't happen.
+		return nil, errors.Wrap(err, "failed to parse matchers")
+	}
+
 	for _, group := range groups {
 		if groupSet.IsFiltered(group.Name()) {
 			continue
@@ -1094,7 +1120,7 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 			EvaluationTimestamp: group.GetLastEvaluation(),
 			EvaluationDuration:  group.GetEvaluationTime(),
 		}
-		for _, r := range group.Rules() {
+		for _, r := range group.Rules(matchers...) {
 			if ruleSet.IsFiltered(r.Name()) {
 				continue
 			}
