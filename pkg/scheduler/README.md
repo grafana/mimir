@@ -32,7 +32,7 @@ This need for higher pod counts introduces connection scaling issues with the Qu
 ### Querier Connection Scaling
 
 Each of N active Querier pods maintains at least one connection to each of M component pods dispatching queries,
-whether that component is the Query Frontend or the Query Scheduler.
+whether that dispatching component is the Query Frontend or the Query Scheduler.
 
 In the v1 Frontend, the Queriers connect directly to the Frontends.
 The horizontal scale of both Frontends and Queriers can quickly create a very large number of connections to maintain.
@@ -41,13 +41,13 @@ In response, each Querier must increase its number of concurrent Querier-Worker 
 in order to maintain the minimum connections to each available Frontend.
 
 Each of those Querier-Worker goroutines does full end-to-end data fetching and query processing.
-Because the Querier does not have a robust internal pooling, queuing, or rate-limiting mechanism,
-excessive concurrency can quickly cause issues as resource usage spikes in the Querier.
-The system has no ability to react to those queries stuck in the Querier
-other than waiting for completion, cancellations, or crashes.
+Because the Querier does not have a robust internal queuing or rate-limiting mechanism,
+excessive concurrency can quickly cause issues as resource usage spikes and runs up against limits.
+The system has no ability to react to those queries stuck or slowed down in the Querier
+other than waiting for completion, cancellation, or timeout.
 
 In contrast, a Mimir deployment of any size generally only uses 2 Scheduler pods,
-and the Scheduler currently does not utilize horizontal autoscaling.
+and the Scheduler does not utilize horizontal autoscaling.
 Each Querier can therefore maintain fewer connections to receive queries
 and is far less likely to experience issues with excessive concurrency.
 
@@ -57,7 +57,7 @@ The Querier uses service discovery to track when a Scheduler instance is availab
 It creates a Querier-Worker connections to the Scheduler, each of which which begins the `QuerierLoop`,
 which is the core method that triggers changes to the state of Querier-Worker connections to the Scheduler.
 
-The Scheduler tracks Querier-Worker connections by Querier ID, which is generally just the Querier pod name.
+The Scheduler tracks Querier-Worker connections by Querier ID.
 This connection tracking serves two purposes:
 
 1. Adding and removing Queriers from the Tenant-Querier [shuffle sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#query-frontend-and-query-scheduler-shuffle-sharding)
@@ -66,17 +66,18 @@ This connection tracking serves two purposes:
 
 ### Querier Shutdown
 
-There are two ways for the persistent Querier-Worker connections to disconnect from the Scheduler. Both use the persistent connection in the `QuerierLoop` rpc between Querier-Workers and the Scheduler, triggering state updates when the loop begins and using defers to perform cleanup tasks when the loop disconnects.
+There are two ways for the persistent Querier-Worker connections to disconnect from the Scheduler.
+Both utilize the control flow in the `QuerierLoop` rpc between Querier-Workers and the Scheduler,
+triggering state updates when the loop begins and using defers to perform cleanup tasks when the loop disconnects.
 
 #### Querier-Worker Disconnection Process 1: Errors in QuerierLoop
 
 If any part of the Scheduler's `QuerierLoop` errors out for any reason,
 it triggers defers which deregister the Querier-Worker connection from the queue.
-The errors occurring in this process are generally unexpected,
-such as infrastructure issues causing broken or timed-out connections.
+The errors captured by this process are generally unexpected, such as broken or timed-out connections.
 
 1. The defer calls in the Scheduler's `QuerierLoop` tell the `RequestQueue`
-   to decrement the number of connections for that Querier ID.
+   to decrement the connection count for that Querier ID.
 1. If the Querier no longer has any active worker connections _and_ `querier-forget-delay` _is not enabled_,
    the Querier will be immediately deregistered from the `RequestQueue`, triggering a shuffle-shard update.
 1. Otherwise, if the Querier no longer has any worker connections and `querier-forget-delay` _is enabled_,
@@ -84,7 +85,8 @@ such as infrastructure issues causing broken or timed-out connections.
 1. The `RequestQueue` periodically calls a `forgetDisconnectedQueriers` which will deregister all Queriers
    with no remaining connections whose `disconnectedAt` exceeds the `querier-forget-delay` grace period,
    then trigger shuffle-shard updates.
-1. If the Querier reconnects during the grace period, the `disconnectedAt` state is cleared.
+1. If the Querier reconnects during the grace period, the `disconnectedAt` state for the Querier is cleared
+and it will not be affected by the calls to `forgetDisconnectedQueriers`.
 
 #### Querier-Worker Disconnection Process 2: Graceful Shutdown Notification from Querier
 
@@ -96,5 +98,5 @@ With minor differences, this process utilizes the same mechanisms as the error-c
 1. All worker connections from that Querier ID in the `QuerierLoop` will receive an `ErrQuerierShuttingDown` from the `RequestQueue` when they ask to dequeue their next query request.
 1. The rest of the lifecycle is handled by the logic in the "Errors in QuerierLoop" process described above,
    with the exception that `querier-forget-delay` is ignored when the Querier is in a `shuttingDown` state.
-   The Querier is removed immediately when the last Querier Worker connection is deregistered,
+   The Querier is removed as soon as the last Querier-Worker connection is deregistered,
    and shuffle-shard updates are triggered.
