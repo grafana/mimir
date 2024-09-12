@@ -493,7 +493,10 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
 	}
 
-	q.result.Warnings = *q.annotations
+	// To make comparing to Prometheus' engine easier, only return Annotations if there are some, otherwise, return nil.
+	if len(*q.annotations) > 0 {
+		q.result.Warnings = *q.annotations
+	}
 
 	return q.result
 }
@@ -547,6 +550,10 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 }
 
 func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
+	if len(series) == 0 {
+		return nil, nil
+	}
+
 	m := types.GetMatrix(len(series))
 
 	for i, s := range series {
