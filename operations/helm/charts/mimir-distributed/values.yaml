@@ -3745,6 +3745,15 @@ metaMonitoring:
           # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
           passwordSecretKey: ""
 
+        # -- specifies configuration to perform SigV4 authentication.
+        # sigv4:
+        #   accessKey: abcd
+        #   profile: default
+        #   region: us-east-1
+        #   roleARN: arn:aws:iam::1234:role/1234
+        #   secretKey: abcd
+        sigv4: {}
+
       # -- Additional remote-write for the MetricsInstance that will scrape Mimir pods. Follows the format of .remote.
       additionalRemoteWriteConfigs: []
 
