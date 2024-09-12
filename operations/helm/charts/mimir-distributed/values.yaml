@@ -3745,7 +3745,7 @@ metaMonitoring:
           # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
           passwordSecretKey: ""
 
-        # -- specifies configuration to perform SigV4 authentication.
+        # -- Configuration for SigV4 authentication.
         # sigv4:
         #   accessKey: abcd
         #   profile: default
