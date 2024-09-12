@@ -1771,6 +1771,8 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 		interval time.Duration
 	}{
 		{loadStep: 1, interval: 1 * time.Minute},
+		{loadStep: 1, interval: 6 * time.Minute},
+		{loadStep: 1, interval: 5 * time.Minute},
 		{loadStep: 6, interval: 6 * time.Minute},
 		{loadStep: 6, interval: 5 * time.Minute},
 	}
@@ -1781,7 +1783,7 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	// Aggregation labels: 220 + 11C4 = 550
 	// * 4 aggregations * 3 groups = 6600
 	// Total = 7480
-	// * 3 time ranges = 22440
+	// * 5 time ranges = 37400
 
 	for _, tr := range timeRanges {
 		start := timestamp.Time(0)
