@@ -61,7 +61,8 @@
     local requestsWithHeadroom = std.ceil(
       // double the requests, but with headroom of at least 3 and at most 6 CPU
       // too little headroom can lead to throttling
-      // too much headroom can lead to setting the limit above the available CPU cores
+      // too much headroom can lead to inefficeint scheduling of goroutines
+      // (e.g. when NumCPU is 128, but the ingester only needs 5 cores).
       requests + std.max(3, std.min(6, requests)),
     ) + 1,
     // If the ingester read path is limited,
