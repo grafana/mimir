@@ -67,29 +67,30 @@ There are two ways for the persistent Querier-Worker connections to disconnect f
 #### Querier-Worker Disconnection Process 1: Errors in QuerierLoop
 
 If any part of the Scheduler's `QuerierLoop` errors out for any reason,
-it triggers defers which de-register the Querier-Worker connection from the queue.
+it triggers defers which deregister the Querier-Worker connection from the queue.
 The errors occurring in this process are generally unexpected,
-such as infrastructure issues causing broken or very slow connections.
+such as infrastructure issues causing broken or timed-out connections.
 
 1. The defer calls in the Scheduler's `QuerierLoop` tell the `RequestQueue`
 to decrement the number of connections for that Querier ID.
 1. If the Querier no longer has any active worker connections *and* `querier-forget-delay` *is not enabled*,
 the Querier will be immediately deregistered from the `RequestQueue`, triggering a shuffle-shard update.
-1. Otherwise if the Querier no longer has any worker connections and `querier-forget-delay` *is enabled*,
+1. Otherwise, if the Querier no longer has any worker connections and `querier-forget-delay` *is enabled*,
 then the `RequestQueue` notes the time the Querier was disconnected at but does not deregister it yet.
 1. The `RequestQueue` periodically calls a `forgetDisconnectedQueriers` which will deregister all Queriers
 with no remaining connections whose `disconnectedAt` exceeds the `querier-forget-delay` grace period,
-then trigger shuffle shard updates.
+then trigger shuffle-shard updates.
 1. If the Querier reconnects during the grace period, the `disconnectedAt` state is cleared.
 
-#### Querier-Worker Disconnection Process 2: Shutdown Notification from Querier
+#### Querier-Worker Disconnection Process 2: Graceful Shutdown Notification from Querier
 
-The top-level Querier process calls a `NotifyShutdown` rpc on the Scheduler to tell the Scheduler that Querier is shutting down. This ultimately utilizes the same mechanisms as the first process, but is the expected graceful shutdown behavior
-we see when Queriers are shut down as part of normal rollout or downscaling procedures.
+The top-level Querier process calls a `NotifyShutdown` rpc on the Scheduler to tell the Scheduler that the Querier is shutting down.
+This is the expected behavior we see when Queriers are shut down as part of normal rollout or downscaling procedures.
+With minor differences, this process utilizes the same mechanisms as the error-case process described above.
 
 1. The Scheduler tells the `RequestQueue` to mark the connection state as `shuttingDown` for the given Querier ID.
 1. All worker connections from that Querier ID in the `QuerierLoop` will receive an `ErrQuerierShuttingDown` from the `RequestQueue` when they ask to dequeue their next query request.
 3. The rest of the lifecycle is handled by the logic in the "Errors in QuerierLoop" process described above,
-with the exception that the forget delay is ignored when the Querier is in a `shuttingDown` state.
-The Querier is removed immediately when the last Querier Worker connection is deregistered by the defers in the `QuerierLoop`,
+with the exception that `querier-forget-delay` is ignored when the Querier is in a `shuttingDown` state.
+The Querier is removed immediately when the last Querier Worker connection is deregistered,
 and shuffle-shard updates are triggered.
