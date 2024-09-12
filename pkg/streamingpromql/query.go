@@ -362,7 +362,22 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	case *parser.ParenExpr:
 		return q.convertToScalarOperator(e.Expr)
 	case *parser.BinaryExpr:
-		return nil, compat.NewNotSupportedError("binary expression between two scalars")
+		if !q.engine.featureToggles.EnableBinaryOperations {
+			return nil, compat.NewNotSupportedError("binary expressions")
+		}
+
+		lhs, err := q.convertToScalarOperator(e.LHS)
+		if err != nil {
+			return nil, err
+		}
+
+		rhs, err := q.convertToScalarOperator(e.RHS)
+		if err != nil {
+			return nil, err
+		}
+
+		return operators.NewScalarScalarBinaryOperation(lhs, rhs, e.Op, q.memoryConsumptionTracker, e.PositionRange())
+
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for scalars", e))
 	}
