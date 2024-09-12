@@ -82,36 +82,6 @@ func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
 // or a frontend/v1 request when running with the RequestQueue embedded in the v1 frontend.
 type QueryRequest interface{}
 
-// QuerierWorkerConn is a connection from the querier-worker to the request queue.
-//
-// WorkerID is unique only per querier; querier-1 and querier-2 will both have a WorkerID=0.
-// WorkerID is derived internally in order to distribute worker connections across queue dimensions.
-// Unregistered querier-worker connections are assigned a sentinel unregisteredWorkerID.
-//
-// QuerierWorkerConn is also used when passing querierWorkerOperation messages to update querier connection statuses.
-// The querierWorkerOperations can be specific to a querier, but not a particular worker connection (notifyShutdown),
-// or may apply to all queriers instead of any particular querier (forgetDisconnected).
-// In these cases the relevant ID fields are ignored and should be left as their unregistered or zero values.
-type QuerierWorkerConn struct {
-	ctx       context.Context
-	QuerierID QuerierID
-	WorkerID  int
-}
-
-const unregisteredWorkerID = -1
-
-func NewUnregisteredQuerierWorkerConn(ctx context.Context, querierID QuerierID) *QuerierWorkerConn {
-	return &QuerierWorkerConn{
-		ctx:       ctx,
-		QuerierID: querierID,
-		WorkerID:  unregisteredWorkerID,
-	}
-}
-
-func (qwc *QuerierWorkerConn) IsRegistered() bool {
-	return qwc.WorkerID != unregisteredWorkerID
-}
-
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
 // Dequeuing selects the next request from an appropriate queue given the state of the system.
 // Two layers of QueueAlgorithms are used by the RequestQueue to select the next queue to dequeue a request from:
