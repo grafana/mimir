@@ -1707,13 +1707,13 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	// {b} h h h h h h
 	// {c} f h f h N h
 	// {d} f _ _ s f f
-	// {f} h h _ s h N
-	// {g} f N _ f f N
-	// {h} N N N N N N
-	// {i} N N N _ N s
-	// {j} f h _ N h s
-	// {k} f f s s s s
-	// {l} 0 0 0 N s 0
+	// {e} h h _ s h N
+	// {f} f N _ f f N
+	// {g} N N N N N N
+	// {h} N N N _ N s
+	// {i} f h _ N h s
+	// {j} f f s s s s
+	// {k} 0 0 0 N s 0
 
 	pointsPerSeries := 6
 	samples := `
