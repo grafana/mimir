@@ -24,18 +24,18 @@ type SumAggregationGroup struct {
 	histogramPointCount     int
 }
 
-func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
 	}
 
-	err := g.accumulateFloats(data, steps, start, interval, memoryConsumptionTracker)
+	err := g.accumulateFloats(data, timeRange, memoryConsumptionTracker)
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, steps, start, interval, memoryConsumptionTracker, emitAnnotationFunc)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotationFunc)
 	if err != nil {
 		return err
 	}
@@ -43,32 +43,32 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
 	var err error
 
 	if len(data.Floats) > 0 && g.floatSums == nil {
 		// First series with float values for this group, populate it.
-		g.floatSums, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
+		g.floatSums, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
 
-		g.floatCompensatingValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
+		g.floatCompensatingValues, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
 
-		g.floatPresent, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
+		g.floatPresent, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
-		g.floatSums = g.floatSums[:steps]
-		g.floatCompensatingValues = g.floatCompensatingValues[:steps]
-		g.floatPresent = g.floatPresent[:steps]
+		g.floatSums = g.floatSums[:timeRange.StepCount]
+		g.floatCompensatingValues = g.floatCompensatingValues[:timeRange.StepCount]
+		g.floatPresent = g.floatPresent[:timeRange.StepCount]
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - start) / interval
+		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
 		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
@@ -76,21 +76,21 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
 	var err error
 	var lastUncopiedHistogram *histogram.FloatHistogram
 
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
 		// First series with histogram values for this group, populate it.
-		g.histogramSums, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
+		g.histogramSums, err = types.HistogramSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
-		g.histogramSums = g.histogramSums[:steps]
+		g.histogramSums = g.histogramSums[:timeRange.StepCount]
 	}
 
 	for inputIdx, p := range data.Histograms {
-		outputIdx := (p.T - start) / interval
+		outputIdx := (p.T - timeRange.StartT) / timeRange.IntervalMs
 
 		if g.histogramSums[outputIdx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
@@ -181,7 +181,7 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	return floatPointCount, haveMixedFloatsAndHistograms
 }
 
-func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *SumAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount, hasMixedData := g.reconcileAndCountFloatPoints()
 	var floatPoints []promql.FPoint
 	var err error
@@ -193,7 +193,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 
 		for i, havePoint := range g.floatPresent {
 			if havePoint {
-				t := start + int64(i)*interval
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
 				f := g.floatSums[i] + g.floatCompensatingValues[i]
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
@@ -209,7 +209,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 
 		for i, h := range g.histogramSums {
 			if h != nil && h != invalidCombinationOfHistograms {
-				t := start + int64(i)*interval
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
 			}
 		}

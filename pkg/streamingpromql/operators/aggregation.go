@@ -262,7 +262,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.TimeRange.StartT, a.TimeRange.IntervalMs, a.MemoryConsumptionTracker)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.TimeRange, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -292,7 +292,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange.StepCount, a.TimeRange.StartT, a.TimeRange.IntervalMs, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
+		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
 			return err
 		}
 		thisSeriesGroup.remainingSeriesCount--
