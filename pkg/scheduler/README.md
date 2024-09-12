@@ -86,7 +86,7 @@ The errors captured by this process are generally unexpected, such as broken or 
    with no remaining connections whose `disconnectedAt` exceeds the `querier-forget-delay` grace period,
    then trigger shuffle-shard updates.
 1. If the Querier reconnects during the grace period, the `disconnectedAt` state for the Querier is cleared
-and it will not be affected by the calls to `forgetDisconnectedQueriers`.
+   and it will not be affected by the calls to `forgetDisconnectedQueriers`.
 
 #### Querier-Worker Disconnection Process 2: Graceful Shutdown Notification from Querier
 
