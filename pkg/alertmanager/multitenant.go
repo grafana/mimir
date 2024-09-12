@@ -659,6 +659,8 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	for user, cfgs := range cfgMap {
+		am.multitenantMetrics.grafanaConfigSize.WithLabelValues(user).Set(float64(len(cfgs.Grafana.RawConfig)))
+
 		cfg, err := am.computeConfig(cfgs)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
@@ -728,12 +730,10 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
-		am.multitenantMetrics.grafanaConfigSize.WithLabelValues(cfgs.Grafana.User).Set(float64(len(cfgs.Grafana.RawConfig)))
 		return createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
 
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config with the default globals", "user", cfgs.Grafana.User)
-		am.multitenantMetrics.grafanaConfigSize.WithLabelValues(cfgs.Grafana.User).Set(float64(len(cfgs.Grafana.RawConfig)))
 		return createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 
 	// Both configurations.
