@@ -34,7 +34,7 @@ This need for higher pod counts introduces connection scaling issues with the Qu
 Each of N active Querier pods maintains at least one connection to each of M component pods dispatching queries,
 whether that dispatching component is the Query Frontend or the Query Scheduler.
 
-In the v1 Frontend, the Queriers connect directly to the Frontends.
+When Mimir is deployed using the v1 Frontend, the Queriers connect directly to the Frontends.
 The horizontal scale of both Frontends and Queriers can quickly create a very large number of connections to maintain.
 A Mimir deployment may have 2 Frontends and 20 Queriers at idle and scale quickly up to 10 Frontends and 100 Queriers.
 In response, each Querier must increase its number of concurrent Querier-Worker goroutines
