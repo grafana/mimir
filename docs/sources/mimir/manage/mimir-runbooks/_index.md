@@ -624,6 +624,10 @@ How to **investigate**:
         ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
         ```
     - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor#compaction-algorithm" >}}).
+  - Compactor network disk unresponsive:
+    - **How to detect**: A telltale clue is the kernel complaining of hung `jbd2` tasks in the kernel logs (check `dmesg`). Or many cores of sustained kernel-mode CPU usage by the compactor container (check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.)
+    - **What it means**: The compactor process has frozen because it is blocked on kernel-mode flushes to an unresponsive network block storage device.
+    - **How to mitigate**: Unknown. This typically self-resolves after 10-20 minutes.
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor" >}}) and set it to view the last 7 days.
 
