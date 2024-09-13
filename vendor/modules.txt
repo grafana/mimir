@@ -614,7 +614,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20240826073544-47b1b6311db3
+# github.com/grafana/dskit v0.0.0-20240826073544-47b1b6311db3 => github.com/deniszh/dskit v0.0.0-20240913083547-a031aae8d275
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -628,6 +628,7 @@ github.com/grafana/dskit/dns/miekgdns
 github.com/grafana/dskit/flagext
 github.com/grafana/dskit/gate
 github.com/grafana/dskit/grpcclient
+github.com/grafana/dskit/grpcencoding/s2
 github.com/grafana/dskit/grpcencoding/snappy
 github.com/grafana/dskit/grpcutil
 github.com/grafana/dskit/httpgrpc
