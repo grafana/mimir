@@ -20,11 +20,6 @@
   _config+: {
     ingester_automated_downscale_v2_enabled: false,
 
-    // Allow to selectively enable it on a per-zone basis. Note that zone-a must be enabled first.
-    ingester_automated_downscale_v2_zone_a_enabled: $._config.ingester_automated_downscale_v2_enabled,
-    ingester_automated_downscale_v2_zone_b_enabled: $._config.ingester_automated_downscale_v2_enabled,
-    ingester_automated_downscale_v2_zone_c_enabled: $._config.ingester_automated_downscale_v2_enabled,
-
     // Number of ingester replicas per zone. All zones will have the same number of replicas.
     ingester_automated_downscale_v2_ingester_zones: 3,
     ingester_automated_downscale_v2_replicas_per_zone: std.ceil($._config.multi_zone_ingester_replicas / $._config.ingester_automated_downscale_v2_ingester_zones),
@@ -37,16 +32,10 @@
       '13h',
   },
 
-  local downscale_v2_enabled_in_at_least_one_zone = $._config.ingester_automated_downscale_v2_zone_a_enabled ||
-                                                    $._config.ingester_automated_downscale_v2_zone_b_enabled ||
-                                                    $._config.ingester_automated_downscale_v2_zone_c_enabled,
-
   // Validate the configuration.
   assert !$._config.ingester_automated_downscale_v2_enabled || $._config.multi_zone_ingester_enabled : 'ingester downscaling requires multi_zone_ingester_enabled in namespace %s' % $._config.namespace,
   assert !$._config.ingester_automated_downscale_v2_enabled || $._config.multi_zone_ingester_replicas > 0 : 'ingester downscaling requires multi_zone_ingester_replicas > 0 in namespace %s' % $._config.namespace,
   assert !$._config.ingester_automated_downscale_v2_enabled || !$._config.ingester_automated_downscale_enabled : 'ingester_automated_downscale_enabled_v2 and ingester_automated_downscale_enabled are mutually exclusive in namespace %s' % $._config.namespace,
-  assert !$._config.ingester_automated_downscale_v2_zone_b_enabled || $._config.ingester_automated_downscale_v2_zone_a_enabled : 'ingester_automated_downscale_v2_zone_b_enabled enabled, but zone-a is not. ingester_automated_downscale_v2_zone_a_enabled must be enabled first in zone-a in namespace %s' % $._config.namespace,
-  assert !$._config.ingester_automated_downscale_v2_zone_c_enabled || $._config.ingester_automated_downscale_v2_zone_a_enabled : 'ingester_automated_downscale_v2_zone_c_enabled enabled, but zone-a is not. ingester_automated_downscale_v2_zone_a_enabled must be enabled first in zone-a in namespace %s' % $._config.namespace,
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
@@ -90,10 +79,10 @@
   // HPA requires that label selector exists and is valid, but it will not be used for target type of AverageValue.
   // In GKE however we see that selector is used to find pods and compute current usage, so we set it to target pods with given name.
   ingester_zone_a_replica_template:
-    if !downscale_v2_enabled_in_at_least_one_zone then null
+    if !$._config.ingester_automated_downscale_v2_enabled then null
     else $.replicaTemplate('ingester-zone-a', $._config.ingester_automated_downscale_v2_replicas_per_zone, 'name=ingester-zone-a'),
 
-  ingester_zone_a_statefulset: updateIngesterZone($._config.ingester_automated_downscale_v2_zone_a_enabled, 'ingester_zone_a_statefulset', true),
-  ingester_zone_b_statefulset: updateIngesterZone($._config.ingester_automated_downscale_v2_zone_b_enabled, 'ingester_zone_b_statefulset', false),
-  ingester_zone_c_statefulset: updateIngesterZone($._config.ingester_automated_downscale_v2_zone_c_enabled, 'ingester_zone_c_statefulset', false),
+  ingester_zone_a_statefulset: updateIngesterZone($._config.ingester_automated_downscale_v2_enabled, 'ingester_zone_a_statefulset', true),
+  ingester_zone_b_statefulset: updateIngesterZone($._config.ingester_automated_downscale_v2_enabled, 'ingester_zone_b_statefulset', false),
+  ingester_zone_c_statefulset: updateIngesterZone($._config.ingester_automated_downscale_v2_enabled, 'ingester_zone_c_statefulset', false),
 }
