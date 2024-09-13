@@ -4712,6 +4712,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_created_timestamp_zero_ingestion_enabled",
+          "required": false,
+          "desc": "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-created-timestamp-zero-ingestion-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
