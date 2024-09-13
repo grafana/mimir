@@ -625,7 +625,7 @@ How to **investigate**:
         ```
     - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor#compaction-algorithm" >}}).
   - Compactor network disk unresponsive:
-    - **How to detect**: A telltale clue is many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
+    - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
     - **What it means**: The compactor process has frozen because it's blocked on kernel-mode flushes to an unresponsive network block storage device.
     - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
