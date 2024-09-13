@@ -30,7 +30,7 @@
     // Ignore these labels used for controlling webhook behavior when creating services.
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
 
-    rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
+    rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
   },
 
   local rollout_operator_enabled =

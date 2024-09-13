@@ -1,6 +1,6 @@
 {
   _config+: {
-    replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
+    replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
   },
 
   replica_template:: std.parseYaml(importstr 'replica-templates.yaml'),
