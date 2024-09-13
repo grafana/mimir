@@ -315,3 +315,5 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
 replace google.golang.org/grpc => google.golang.org/grpc v1.65.0
+
+replace github.com/grafana/dskit v0.0.0-20240826073544-47b1b6311db3 => github.com/deniszh/dskit v0.0.0-20240913083547-a031aae8d275
