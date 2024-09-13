@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -602,7 +603,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			pusher := &mockPusher{}
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
-			shardingP := newParallelStorageShards(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher)
+			shardingP := newParallelStorageShards(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
 			for i, req := range tc.expectedUpstreamPushes {
 				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])

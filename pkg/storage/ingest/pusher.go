@@ -330,17 +330,22 @@ func (c parallelStoragePusher) shardsFor(userID string) *parallelStorageShards {
 	if p := c.pushers[userID]; p != nil {
 		return p
 	}
-	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, shardForSeriesBuffer, c.upstreamPusher)
+	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
+	hashLabels := labels.Labels.Hash
+	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, shardForSeriesBuffer, c.upstreamPusher, hashLabels)
 	c.pushers[userID] = p
 	return p
 }
+
+type labelsHashFunc func(labels.Labels) uint64
 
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own BatchingQueue.
 type parallelStorageShards struct {
 	numTimeSeriesPerFlush prometheus.Histogram
 
-	pusher Pusher
+	pusher     Pusher
+	hashLabels labelsHashFunc
 
 	numShards int
 	batchSize int
@@ -358,10 +363,11 @@ type FlushableWriteRequest struct {
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(numTimeSeriesPerFlush prometheus.Histogram, numShards int, batchSize int, capacity int, pusher Pusher) *parallelStorageShards {
+func newParallelStorageShards(numTimeSeriesPerFlush prometheus.Histogram, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
 	p := &parallelStorageShards{
 		numShards:             numShards,
 		pusher:                pusher,
+		hashLabels:            hashLabels,
 		capacity:              capacity,
 		numTimeSeriesPerFlush: numTimeSeriesPerFlush,
 		batchSize:             batchSize,
@@ -384,7 +390,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 
 	for _, ts := range request.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		shard := nonCopiedLabels.Hash() % uint64(p.numShards)
+		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
 
 		// TODO: Add metrics to measure how long are items sitting in the queue before they are flushed.
 		p.shards[shard].AddToBatch(ctx, ts)
