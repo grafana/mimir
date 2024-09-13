@@ -268,6 +268,8 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 		commitRecTs = fallbackMillis
 	}
 
+	level.Debug(logger).Log("msg", "creating partition state", "partition", lag.Partition, "lag", lag.Lag, "commit_rec_ts", commitRecTs, "last_seen_offset", lastSeenOffset, "last_block_end_ts", lastBlockEndTs)
+
 	return partitionState{
 		Lag:                lag.Lag,
 		Commit:             lag.Commit,
@@ -293,7 +295,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 			b.cfg.ConsumeInterval,
 			b.cfg.ConsumeIntervalBuffer,
 		)
-		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd, "cycle_end", cycleEnd)
+		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd, "cycle_end", cycleEnd, "commit_rec_ts", state.CommitRecTimestamp)
 	}
 	for !sectionCycleEnd.After(cycleEnd) {
 		partitionLogger := log.With(b.logger, "partition", partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd)
