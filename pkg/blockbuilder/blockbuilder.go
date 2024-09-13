@@ -89,22 +89,19 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 	// Fallback offset is a millisecond timestamp used to look up a real offset if partition doesn't have a commit.
 	b.fallbackOffsetMillis = time.Now().Add(-b.cfg.LookbackOnNoCommit).UnixMilli()
 
-	opts := []kgo.Opt{
-		kgo.ConsumeTopics(b.cfg.Kafka.Topic),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AfterMilli(b.fallbackOffsetMillis)),
-	}
 	b.kafkaClient, err = ingest.NewKafkaReaderClient(
 		b.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder", b.register),
 		b.logger,
-		opts...,
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
 
-	// Immediately pause fetching all assigned partitions. We control the order and the pace of partition fetching within the cycles.
-	b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.assignedPartitionIDs})
+	// Immediately unassign (remove) all partitions from the client. We control the order and the pace of fetching within the cycles.
+	b.kafkaClient.RemoveConsumePartitions(map[string][]int32{
+		b.cfg.Kafka.Topic: b.assignedPartitionIDs,
+	})
 
 	return nil
 }
@@ -341,16 +338,16 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogge
 			"num_blocks", numBlocks)
 	}(time.Now(), *state)
 
-	// TopicPartition to resume consuming on this iteration.
-	tp := map[string][]int32{b.cfg.Kafka.Topic: {state.Partition}}
-	b.kafkaClient.ResumeFetchPartitions(tp)
-	defer b.kafkaClient.PauseFetchPartitions(tp)
+	// We always rewind the partition's offset to the commit offset by reassigning the partition to the client (this triggers partition assignment).
+	// This is so the cycle started exactly at the commit offset, and not at what was (potentially over-) consumed previously.
+	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		b.cfg.Kafka.Topic: {
+			state.Partition: kgo.NewOffset().At(state.Commit.At),
+		},
+	})
+	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {state.Partition}})
 
 	level.Info(partitionLogger).Log("msg", "start consuming", "offset", state.Commit.At, "lag", state.Lag)
-
-	// We always rewind the partition's offset to the commit offset. This is so the cycle started exactly at the commit point,
-	// and not at what was (potentially over-) consumed previously.
-	b.seekPartition(state.Partition, state.Commit.At)
 
 	var (
 		firstRec  *kgo.Record
@@ -471,18 +468,6 @@ consumerLoop:
 	state.Commit = commit
 
 	return nil
-}
-
-func (b *BlockBuilder) seekPartition(partition int32, offset int64) {
-	offsets := map[string]map[int32]kgo.EpochOffset{
-		b.cfg.Kafka.Topic: {
-			partition: {
-				Epoch:  -1, // Epoch doesn't play any role outside the group consumption.
-				Offset: offset,
-			},
-		},
-	}
-	b.kafkaClient.SetOffsets(offsets)
 }
 
 func (b *BlockBuilder) commitOffset(ctx context.Context, partitionLogger log.Logger, group string, offset kadm.Offset) error {
