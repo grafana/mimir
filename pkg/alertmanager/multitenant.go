@@ -183,12 +183,19 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
+	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 }
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
+
+	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "alertmanager_grafana_state_size_bytes",
+		Help:      "Size of the grafana alertmanager state.",
+	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "cortex",
@@ -796,6 +803,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 		return err
 	}
 	userAM.usingGrafanaState.Store(true)
+	am.multitenantMetrics.grafanaStateSize.WithLabelValues(cfg.User).Set(float64(s.State.Size()))
 
 	// Delete state.
 	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
