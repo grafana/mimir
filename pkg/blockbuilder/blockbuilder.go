@@ -299,8 +299,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, state *partitionSta
 		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", state.Partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd, "cycle_end", cycleEnd)
 	}
 	for !sectionCycleEnd.After(cycleEnd) {
-		partitionLogger := log.With(b.logger, "partition", state.Partition, "section_cycle_end", sectionCycleEnd)
-
+		partitionLogger := log.With(b.logger, "partition", state.Partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd)
 		if err := b.consumePartitionCycle(ctx, partitionLogger, builder, state, sectionCycleEnd); err != nil {
 			return fmt.Errorf("consume partition %d: %w", state.Partition, err)
 		}
@@ -326,13 +325,12 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogge
 		}
 
 		if retErr != nil {
-			level.Error(partitionLogger).Log("msg", "partition consumption failed", "duration", dur, "start_lag", startState.Lag, "end_lag", state.Lag, "err", retErr)
+			level.Error(partitionLogger).Log("msg", "partition consumption failed", "duration", dur, "curr_lag", state.Lag, "err", retErr)
 			return
 		}
 
 		b.blockBuilderMetrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", state.Partition)).Observe(dur.Seconds())
-		level.Info(partitionLogger).Log("msg", "done consuming", "duration", dur,
-			"start_lag", startState.Lag, "end_lag", state.Lag,
+		level.Info(partitionLogger).Log("msg", "done consuming", "duration", dur, "curr_lag", state.Lag,
 			"last_block_end", startState.LastBlockEnd, "curr_block_end", blockEnd,
 			"last_seen_offset", startState.LastSeenOffset, "curr_seen_offset", state.LastSeenOffset,
 			"num_blocks", numBlocks)
@@ -347,7 +345,7 @@ func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, partitionLogge
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {state.Partition}})
 
-	level.Info(partitionLogger).Log("msg", "start consuming", "offset", state.Commit.At, "lag", state.Lag)
+	level.Info(partitionLogger).Log("msg", "start consuming", "offset", state.Commit.At)
 
 	var (
 		firstRec  *kgo.Record
@@ -378,8 +376,6 @@ consumerLoop:
 			if firstRec == nil {
 				firstRec = rec
 			}
-
-			level.Debug(partitionLogger).Log("msg", "consumed record", "offset", rec.Offset, "rec_ts", rec.Timestamp, "last_block_end", state.LastBlockEnd, "block_end", blockEnd)
 
 			// Stop consuming after we reached the cycleEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
