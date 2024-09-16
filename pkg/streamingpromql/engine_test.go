@@ -1718,14 +1718,14 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	pointsPerSeries := 6
 	samples := `
 		series{label="a", group="a"} 1 2 3 4 5 -50
-		series{label="b", group="a"} {{schema:5 sum:15 count:10 buckets:[3 2 5]}} {{schema:5 sum:20 count:15 buckets:[4 5 6]}} {{schema:5 sum:25 count:20 buckets:[5 7 8]}} {{schema:5 sum:30 count:25 buckets:[6 9 10]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}} {{schema:5 sum:40 count:35 buckets:[8 11 14]}}
+		series{label="b", group="a"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}} {{schema:2 sum:20 count:15 buckets:[4]}} {{schema:3 sum:25 count:20 buckets:[5 8]}} {{schema:4 sum:30 count:25 buckets:[6 9 10 11]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}} {{schema:6 sum:40 count:35 buckets:[8 11 14]}}
 		series{label="c", group="a"} 1 {{schema:3 sum:5 count:3 buckets:[1 1 1]}} 3 {{schema:3 sum:10 count:6 buckets:[2 2 2]}} NaN {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
 		series{label="d", group="a"} 1 _ _ stale 5 6
 		series{label="e", group="b"} {{schema:4 sum:12 count:8 buckets:[2 3 3]}} {{schema:4 sum:14 count:9 buckets:[3 3 3]}} _ stale {{schema:4 sum:18 count:11 buckets:[4 4 3]}} NaN
 		series{label="f", group="b"} 1 NaN _ 4 5 NaN
 		series{label="g", group="b"} NaN NaN NaN NaN NaN NaN
 		series{label="h", group="b"} NaN NaN NaN _ NaN stale
-		series{label="i", group="c"} 1 {{schema:5 sum:15 count:10 buckets:[3 2 5]}} _ NaN {{schema:5 sum:30 count:25 buckets:[6 9 10]}} stale
+		series{label="i", group="c"} 1 {{schema:5 sum:15 count:10 buckets:[3 2 5]}} _ NaN {{schema:2 sum:30 count:25 buckets:[6 9 10 9 1]}} stale
 		series{label="j", group="c"} 1 -20 stale stale stale stale
 		series{label="k", group="c"} 0 0 0 NaN stale 0
 	`
