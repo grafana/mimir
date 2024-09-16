@@ -113,7 +113,7 @@
 * [BUGFIX] Alertmanager: Fix config validation gap around unreferenced templates. #9207
 * [BUGFIX] Alertmanager: Fix goroutine leak when stored config fails to apply and there is no existing tenant alertmanager #9211
 * [BUGFIX] Querier: fix issue where both recently compacted blocks and their source blocks can be skipped during querying if store-gateways are restarting. #9224
-* [BUGFIX] Alertmanager: fix receiver firewal to detect `0.0.0.0` and IPv6 interface-local multicast address as local addresses. #9308
+* [BUGFIX] Alertmanager: fix receiver firewall to detect `0.0.0.0` and IPv6 interface-local multicast address as local addresses. #9308
 
 ### Mixin
 
