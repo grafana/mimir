@@ -66,7 +66,7 @@ func BenchmarkQuery(b *testing.B) {
 				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
 				mimirResult, mimirClose := c.Run(ctx, b, start, end, interval, mimirEngine, q)
 
-				streamingpromql.RequireEqualResults(b, c.Expr, prometheusResult, mimirResult)
+				streamingpromql.RequireEqualResults(b, c.Expr, prometheusResult, mimirResult, true)
 
 				prometheusClose()
 				mimirClose()
@@ -107,7 +107,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			streamingpromql.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult)
+			streamingpromql.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, true)
 
 			prometheusClose()
 			mimirClose()
