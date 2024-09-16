@@ -104,10 +104,10 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 					requireInEpsilonIfNotZero(t, h1.ZeroThreshold, h2.ZeroThreshold, "histogram thresholds match")
 					requireInEpsilonIfNotZero(t, h1.ZeroCount, h2.ZeroCount, "histogram zero counts match")
 
-					require.True(t, spansMatch(h1.NegativeSpans, h2.NegativeSpans), "spans match")
+					requireSpansMatch(t, h1.NegativeSpans, h2.NegativeSpans)
 					requireFloatBucketsMatch(t, h1.NegativeBuckets, h2.NegativeBuckets)
 
-					require.True(t, spansMatch(h1.PositiveSpans, h2.PositiveSpans))
+					requireSpansMatch(t, h1.PositiveSpans, h2.PositiveSpans)
 					requireFloatBucketsMatch(t, h1.PositiveBuckets, h2.PositiveBuckets)
 				}
 			}
@@ -132,69 +132,12 @@ func requireFloatBucketsMatch(t testing.TB, b1, b2 []float64) {
 	}
 }
 
-// Copied from prometheus as it is not exported
-// spansMatch returns true if both spans represent the same bucket layout
-// after combining zero length spans with the next non-zero length span.
-func spansMatch(s1, s2 []histogram.Span) bool {
-	if len(s1) == 0 && len(s2) == 0 {
-		return true
+func requireSpansMatch(t testing.TB, s1, s2 []histogram.Span) {
+	require.Equal(t, len(s1), len(s2), "number of spans")
+	for i, _ := range s1 {
+		require.Equal(t, s1[i].Length, s2[i].Length, "Span lengths match")
+		require.Equal(t, s1[i].Offset, s2[i].Offset, "Span offsets match")
 	}
-
-	s1idx, s2idx := 0, 0
-	for {
-		if s1idx >= len(s1) {
-			return allEmptySpans(s2[s2idx:])
-		}
-		if s2idx >= len(s2) {
-			return allEmptySpans(s1[s1idx:])
-		}
-
-		currS1, currS2 := s1[s1idx], s2[s2idx]
-		s1idx++
-		s2idx++
-		if currS1.Length == 0 {
-			// This span is zero length, so we add consecutive such spans
-			// until we find a non-zero span.
-			for ; s1idx < len(s1) && s1[s1idx].Length == 0; s1idx++ {
-				currS1.Offset += s1[s1idx].Offset
-			}
-			if s1idx < len(s1) {
-				currS1.Offset += s1[s1idx].Offset
-				currS1.Length = s1[s1idx].Length
-				s1idx++
-			}
-		}
-		if currS2.Length == 0 {
-			// This span is zero length, so we add consecutive such spans
-			// until we find a non-zero span.
-			for ; s2idx < len(s2) && s2[s2idx].Length == 0; s2idx++ {
-				currS2.Offset += s2[s2idx].Offset
-			}
-			if s2idx < len(s2) {
-				currS2.Offset += s2[s2idx].Offset
-				currS2.Length = s2[s2idx].Length
-				s2idx++
-			}
-		}
-
-		if currS1.Length == 0 && currS2.Length == 0 {
-			// The last spans of both set are zero length. Previous spans match.
-			return true
-		}
-
-		if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
-			return false
-		}
-	}
-}
-
-func allEmptySpans(s []histogram.Span) bool {
-	for _, ss := range s {
-		if ss.Length > 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func sortVector(v promql.Vector) {
