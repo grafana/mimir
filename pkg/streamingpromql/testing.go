@@ -136,7 +136,7 @@ func requireFloatBucketsMatch(t testing.TB, b1, b2 []float64) {
 
 func requireSpansMatch(t testing.TB, s1, s2 []histogram.Span) {
 	require.Equal(t, len(s1), len(s2), "number of spans")
-	for i, _ := range s1 {
+	for i := range s1 {
 		require.Equal(t, s1[i].Length, s2[i].Length, "Span lengths match")
 		require.Equal(t, s1[i].Offset, s2[i].Offset, "Span offsets match")
 	}
