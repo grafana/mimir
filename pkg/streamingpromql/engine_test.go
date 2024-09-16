@@ -1756,14 +1756,16 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	// For aggregations, also add combinations of 4 labels. (e.g., "a,b,c,d", "c,d,e,f" etc)
 	labelCombinations = append(labelCombinations, combinations(labels, 4)...)
 
-	// Aggregations
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
+		// Aggregations
 		for _, aggFunc := range []string{"sum", "avg", "min", "max"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 		}
+		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
 	}
 
 	timeRanges := []struct {
@@ -1777,17 +1779,9 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 		{loadStep: 6, interval: 5 * time.Minute},
 	}
 
-	// Total tests:
-	// Binary operation labels: 11C2 + 11C3 = 220
-	// * 4 operations = 880
-	// Aggregation labels: 220 + 11C4 = 550
-	// * 4 aggregations * 3 groups = 6600
-	// Total = 7480
-	// * 5 time ranges = 37400
-
 	for _, tr := range timeRanges {
 		start := timestamp.Time(0)
-		end := start.Add(time.Duration(pointsPerSeries) * time.Duration(tr.loadStep) * time.Minute) // Deliberately queries 1 step past the final loaded point
+		end := start.Add(time.Duration(pointsPerSeries*tr.loadStep) * time.Minute) // Deliberately queries 1 step past the final loaded point
 
 		storage := promqltest.LoadedStorage(t, fmt.Sprintf("load %dm", tr.loadStep)+samples)
 		t.Cleanup(func() { require.NoError(t, storage.Close()) })
