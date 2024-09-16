@@ -14,6 +14,7 @@ func TestCombinations(t *testing.T) {
 		input    []string
 		length   int
 		expected [][]string
+		panics   bool
 	}{
 		"combinations of 2 from 3 items": {
 
@@ -40,22 +41,29 @@ func TestCombinations(t *testing.T) {
 		"combinations of 0 length": {
 			input:    []string{"a", "b", "c"},
 			length:   0,
-			expected: nil,
+			expected: [][]string{{}},
 		},
 		"length greater than array size": {
-			input:    []string{"a", "b"},
-			length:   3,
-			expected: nil, // nil because length is greater than the input size
+			input:  []string{"a", "b"},
+			length: 3,
+			panics: true,
 		},
 		"empty array": {
 			input:    []string{},
-			length:   2,
-			expected: nil,
+			length:   0,
+			expected: [][]string{{}},
 		},
 	}
 
 	for tName, test := range tests {
 		t.Run(tName, func(t *testing.T) {
+			if test.panics {
+				f := func() {
+					combinations(test.input, test.length)
+				}
+				require.Panics(t, f)
+				return
+			}
 			output := combinations(test.input, test.length)
 			require.Equal(t, test.expected, output)
 		})
