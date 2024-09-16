@@ -81,7 +81,7 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 			aggregator := &Aggregation{
 				Inner:                   &testOperator{series: testCase.inputSeries},
 				Grouping:                testCase.grouping,
-				metricNames:             &MetricNames{},
+				metricNames:             &types.MetricNames{},
 				aggregationGroupFactory: func() aggregations.AggregationGroup { return &aggregations.SumAggregationGroup{} },
 			}
 

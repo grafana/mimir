@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operators
+package types
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
-
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // MetricNames captures and stores the metric names of each series for later use in an operator.
@@ -16,7 +14,7 @@ type MetricNames struct {
 	names []string
 }
 
-func (n *MetricNames) CaptureMetricNames(metadata []types.SeriesMetadata) {
+func (n *MetricNames) CaptureMetricNames(metadata []SeriesMetadata) {
 	n.names = make([]string, len(metadata))
 
 	for i, series := range metadata {

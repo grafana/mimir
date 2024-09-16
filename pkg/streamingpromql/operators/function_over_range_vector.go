@@ -26,7 +26,7 @@ type FunctionOverRangeVector struct {
 
 	Annotations *annotations.Annotations
 
-	metricNames        *MetricNames
+	metricNames        *types.MetricNames
 	currentSeriesIndex int
 
 	numSteps        int
@@ -61,7 +61,7 @@ func NewFunctionOverRangeVector(
 	}
 
 	if f.NeedsSeriesNamesForAnnotations {
-		o.metricNames = &MetricNames{}
+		o.metricNames = &types.MetricNames{}
 	}
 
 	o.emitAnnotationFunc = o.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
