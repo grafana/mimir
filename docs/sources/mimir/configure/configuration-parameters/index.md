@@ -5265,6 +5265,18 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 &nbsp;
 
 ```yaml
+# OpenStack Swift application credential id
+# CLI flag: -<prefix>.swift.application-credential-id
+[application_credential_id: <string> | default = ""]
+
+# OpenStack Swift application credential name
+# CLI flag: -<prefix>.swift.application-credential-name
+[application_credential_name: <string> | default = ""]
+
+# OpenStack Swift application credential secret
+# CLI flag: -<prefix>.swift.application-credential-secret
+[application_credential_secret: <string> | default = ""]
+
 # OpenStack Swift authentication API version. 0 to autodetect.
 # CLI flag: -<prefix>.swift.auth-version
 [auth_version: <int> | default = 0]
