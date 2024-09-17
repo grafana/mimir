@@ -7,7 +7,7 @@ import (
 
 const unregisteredWorkerID = -1
 
-type querierConnManager struct {
+type querierConnections struct {
 	queriersByID map[QuerierID]*querierState
 
 	// How long to wait before removing a querier which has got disconnected
@@ -15,21 +15,21 @@ type querierConnManager struct {
 	querierForgetDelay time.Duration
 }
 
-func newQuerierConnManager(forgetDelay time.Duration) *querierConnManager {
-	return &querierConnManager{
+func newQuerierConnections(forgetDelay time.Duration) *querierConnections {
+	return &querierConnections{
 		queriersByID:       map[QuerierID]*querierState{},
 		querierForgetDelay: forgetDelay,
 	}
 }
 
-// querierIsAvailable returns true if the querier is registered to the querierConnManager and is not shutting down.
-func (qcm *querierConnManager) querierIsAvailable(querierID QuerierID) bool {
+// querierIsAvailable returns true if the querier is registered to the querierConnections and is not shutting down.
+func (qcm *querierConnections) querierIsAvailable(querierID QuerierID) bool {
 	q := qcm.queriersByID[querierID]
 	return q != nil && !q.shuttingDown
 }
 
 // does not manage updating querierIDsSorted; that should be managed by the caller/whatever cares about it getting updated.
-func (qcm *querierConnManager) addQuerierWorkerConn(conn *QuerierWorkerConn) (addQuerier bool) {
+func (qcm *querierConnections) addQuerierWorkerConn(conn *QuerierWorkerConn) (addQuerier bool) {
 	if conn.IsRegistered() {
 		panic("received request to register a querier-worker which was already registered")
 	}
@@ -53,7 +53,7 @@ func (qcm *querierConnManager) addQuerierWorkerConn(conn *QuerierWorkerConn) (ad
 	return true
 }
 
-func (qcm *querierConnManager) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (removedQuerier bool) {
+func (qcm *querierConnections) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (removedQuerier bool) {
 	querier := qcm.queriersByID[conn.QuerierID]
 	if querier == nil || !querier.IsActive() {
 		panic("unexpected number of connections for querier")
@@ -71,7 +71,7 @@ func (qcm *querierConnManager) removeQuerierWorkerConn(conn *QuerierWorkerConn, 
 	// No more active connections. We can remove the querier only if
 	// the querier has sent a shutdown signal or if no forget delay is enabled.
 	if querier.shuttingDown || qcm.querierForgetDelay == 0 {
-		qcm.removeQuerier(conn.QuerierID)
+		delete(qcm.queriersByID, conn.QuerierID)
 		return true
 	}
 
@@ -82,13 +82,9 @@ func (qcm *querierConnManager) removeQuerierWorkerConn(conn *QuerierWorkerConn, 
 	return false
 }
 
-func (qcm *querierConnManager) removeQuerier(querierID QuerierID) {
-	delete(qcm.queriersByID, querierID)
-}
-
 // shutdownQuerier handles a graceful shutdown notification from a querier. Updates the querier state to shuttingDown if
 // applicable, and returns true if the querier is inactive; the querier can be removed from queriersByID in this case.
-func (qcm *querierConnManager) shutdownQuerier(querierID QuerierID) (canRemoveQuerier bool) {
+func (qcm *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQuerier bool) {
 	querier := qcm.queriersByID[querierID]
 	if querier == nil {
 		// The querier may have already been removed, so we just ignore it.
@@ -98,7 +94,7 @@ func (qcm *querierConnManager) shutdownQuerier(querierID QuerierID) (canRemoveQu
 	// We don't check the delay on shutdown notifications, so it's safe to remove the querier as long as
 	// there are no more connections.
 	if !querier.IsActive() {
-		qcm.removeQuerier(querierID)
+		delete(qcm.queriersByID, querierID)
 		return true
 	}
 
@@ -109,7 +105,7 @@ func (qcm *querierConnManager) shutdownQuerier(querierID QuerierID) (canRemoveQu
 }
 
 // forgettableQueriers returns a slice of all queriers which have had zero connections for longer than the forget delay.
-func (qcm *querierConnManager) forgettableQueriers(now time.Time) []QuerierID {
+func (qcm *querierConnections) forgettableQueriers(now time.Time) []QuerierID {
 	// if forget delay is disabled, removal is done immediately on querier disconnect or shutdown; do nothing
 	if qcm.querierForgetDelay == 0 {
 		return nil
@@ -121,6 +117,7 @@ func (qcm *querierConnManager) forgettableQueriers(now time.Time) []QuerierID {
 	for querierID, querier := range qcm.queriersByID {
 		if querier.activeWorkerConns == 0 && querier.disconnectedAt.Before(threshold) {
 			removableQueriers = append(removableQueriers, querierID)
+			delete(qcm.queriersByID, querierID)
 		}
 	}
 

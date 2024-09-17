@@ -34,7 +34,7 @@ type queueBroker struct {
 	tree Tree
 
 	tenantQuerierAssignments *tenantQuerierAssignments
-	querierConnections       *querierConnManager
+	querierConnections       *querierConnections
 
 	maxTenantQueueSize        int
 	prioritizeQueryComponents bool
@@ -45,7 +45,7 @@ func newQueueBroker(
 	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
-	qc := newQuerierConnManager(forgetDelay)
+	qc := newQuerierConnections(forgetDelay)
 	tqas := newTenantQuerierAssignments()
 	var tree Tree
 	var err error
@@ -199,7 +199,6 @@ func (qb *queueBroker) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded 
 		return qb.tenantQuerierAssignments.recomputeTenantQueriers()
 	}
 	return false
-	//return qb.tenantQuerierAssignments.addQuerierWorkerConn(conn)
 }
 
 func (qb *queueBroker) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
@@ -214,8 +213,7 @@ func (qb *queueBroker) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time
 // Returns true if tenant-querier reshard was triggered.
 func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
 	if removedQuerier := qb.querierConnections.shutdownQuerier(querierID); removedQuerier {
-		qb.tenantQuerierAssignments.removeQueriers(querierID)
-		return qb.tenantQuerierAssignments.recomputeTenantQueriers()
+		return qb.tenantQuerierAssignments.removeQueriers(querierID)
 	}
 	return false
 }
@@ -223,9 +221,5 @@ func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded boo
 // forgetDisconnectedQueriers removes all queriers which have had zero connections for longer than the forget delay.
 // Returns true if tenant-querier reshard was triggered.
 func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
-	queriersToRemove := qb.querierConnections.forgettableQueriers(now)
-	for _, querierID := range queriersToRemove {
-		qb.querierConnections.removeQuerier(querierID)
-	}
-	return qb.tenantQuerierAssignments.removeQueriers(queriersToRemove...)
+	return qb.tenantQuerierAssignments.removeQueriers(qb.querierConnections.forgettableQueriers(now)...)
 }

@@ -512,7 +512,7 @@ func TestQueuesConsistency(t *testing.T) {
 							assert.Nil(t, err)
 						case 1:
 							querierID := generateQuerier(r)
-							tenantIndex := qb.getNextTenantForQuerier(lastTenantIndexes[querierID], querierID)
+							tenantIndex := getNextTenantForQuerier(qb, lastTenantIndexes[querierID], querierID)
 							lastTenantIndexes[querierID] = tenantIndex
 						case 2:
 							qb.removeTenantQueue(generateTenant(r))
@@ -919,13 +919,11 @@ func (n *Node) nodeCount() int {
 	return count
 }
 
-// getNextTenantForQuerier is a test utility, not intended for use by consumers of queueBroker
-//
 // The next tenant for the querier is obtained by rotating through the global tenant order
 // starting just after the last tenant the querier received a request for, until a tenant
 // is found that is assigned to the given querier according to the querier shuffle sharding.
 // A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
-func (qb *queueBroker) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) int {
+func getNextTenantForQuerier(qb *queueBroker, lastTenantIndex int, querierID QuerierID) int {
 	if !qb.querierConnections.querierIsAvailable(querierID) {
 		return lastTenantIndex
 	}
