@@ -1734,6 +1734,9 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	// {i} f h _ N h s
 	// {j} f f s s s s
 	// {k} 0 0 0 N s 0
+	// {l} h _ f _ s N
+	// {m} s s N _ _ f
+	// {n} _ _ _ _ _ _
 
 	pointsPerSeries := 6
 	samples := `
@@ -1748,6 +1751,9 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 		series{label="i", group="c"} 1 {{schema:5 sum:15 count:10 buckets:[3 2 5]}} _ NaN {{schema:2 sum:30 count:25 buckets:[6 9 10 9 1]}} stale
 		series{label="j", group="c"} 1 -20 stale stale stale stale
 		series{label="k", group="c"} 0 0 0 NaN stale 0
+		series{label="l", group="d"} {{schema:1 sum:10 count:5 buckets:[1 2]}} _ 3 _ stale NaN
+		series{label="m", group="d"} stale stale NaN _ _ 4
+		series{label="n", group="d"}
 	`
 
 	// Labels for generating combinations
