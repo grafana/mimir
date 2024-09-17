@@ -23,24 +23,32 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
+	"github.com/go-kit/log"
+	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
-
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type Settings struct {
-	Namespace                 string
-	ExternalLabels            map[string]string
-	DisableTargetInfo         bool
-	ExportCreatedMetric       bool
-	AddMetricSuffixes         bool
-	SendMetadata              bool
-	PromoteResourceAttributes []string
+	Namespace                           string
+	ExternalLabels                      map[string]string
+	DisableTargetInfo                   bool
+	ExportCreatedMetric                 bool
+	AddMetricSuffixes                   bool
+	SendMetadata                        bool
+	PromoteResourceAttributes           []string
+	EnableCreatedTimestampZeroIngestion bool
+}
+
+type StartTsAndTs struct {
+	StartTs int64
+	Ts      int64
+	Labels  []mimirpb.LabelAdapter
 }
 
 // MimirConverter converts from OTel write format to Mimir remote write format.
@@ -58,7 +66,7 @@ func NewMimirConverter() *MimirConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Mimir remote write format.
-func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (errs error) {
+func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger log.Logger) (errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -109,7 +117,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -121,7 +129,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -151,7 +159,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -224,4 +232,19 @@ func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelA
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+type labelsStringer []mimirpb.LabelAdapter
+
+func (ls labelsStringer) String() string {
+	var seriesBuilder strings.Builder
+	seriesBuilder.WriteString("{")
+	for i, l := range ls {
+		if i > 0 {
+			seriesBuilder.WriteString(",")
+		}
+		seriesBuilder.WriteString(fmt.Sprintf("%s=%s", l.Name, l.Value))
+	}
+	seriesBuilder.WriteString("}")
+	return seriesBuilder.String()
 }

@@ -22,6 +22,8 @@ import (
 	"context"
 	"math"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -48,9 +50,9 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 			model.MetricNameLabel,
 			name,
 		)
+		timestamp := convertTimeStamp(pt.Timestamp())
 		sample := &mimirpb.Sample{
-			// convert ns to ms
-			TimestampMs: convertTimeStamp(pt.Timestamp()),
+			TimestampMs: timestamp,
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -68,13 +70,15 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string) error {
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger log.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
 		}
 
 		pt := dataPoints.At(x)
+		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
@@ -84,9 +88,9 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			model.MetricNameLabel,
 			name,
 		)
+
 		sample := &mimirpb.Sample{
-			// convert ns to ms
-			TimestampMs: convertTimeStamp(pt.Timestamp()),
+			TimestampMs: timestamp,
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -96,6 +100,10 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
+		}
+		isMonotonic := metric.Sum().IsMonotonic()
+		if isMonotonic {
+			c.handleStartTime(startTimestampMs, timestamp, lbls, settings, "sum", sample.Value, logger)
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
@@ -107,9 +115,8 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 
 		// add created time series if needed
-		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
-			startTimestamp := pt.StartTimestamp()
-			if startTimestamp == 0 {
+		if settings.ExportCreatedMetric && isMonotonic {
+			if startTimestampMs == 0 {
 				return nil
 			}
 
@@ -121,8 +128,9 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 					break
 				}
 			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
+		level.Debug(logger).Log("labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
 	return nil
