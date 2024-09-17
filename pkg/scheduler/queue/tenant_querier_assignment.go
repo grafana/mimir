@@ -6,9 +6,10 @@
 package queue
 
 import (
-	"github.com/grafana/mimir/pkg/util"
 	"math/rand"
 	"sort"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type queueTenant struct {
@@ -40,42 +41,47 @@ func (s querierIDSlice) Search(x QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
 
-// tenantQuerierAssignments implements QueuingAlgorithm. In the context of a MultiQueuingAlgorithmTreeQueue, it maintains a mapping of
-// tenants to queriers in order to support dequeuing from an appropriate tenant if shuffle-sharding is enabled.
+// tenantQuerierAssignments implements QueuingAlgorithm. In the context of a MultiQueuingAlgorithmTreeQueue,
+// it maintains a mapping of tenants to queriers in order to support dequeuing from an appropriate tenant
+// if shuffle-sharding is enabled. A tenant has many queriers which can process its requests.
+// A tenant has *all* queriers if:
+//   - sharding is disabled (query-frontend.max-queriers-per-tenant=0)
+//   - OR if max-queriers-per-tenant >= the number of queriers
+//
+// Queriers are assigned to a tenant via a shuffle-shard seed, which is consistently hashed from the tenant ID.
+// tenantQuerierAssignments keeps track of these assignments, and determines which tenant requests a given querier can
+// process when it is attempting to dequeue a request.
+//
+// The tenant-querier mapping is reshuffled when:
+//   - a querier connection is added or removed
+//   - it is detected during request enqueueing that a tenant's queriers were calculated from
+//     an outdated max-queriers-per-tenant value
 type tenantQuerierAssignments struct {
-	// a tenant has many queriers
-	// a tenant has *all* queriers if:
-	//  - sharding is disabled (max-queriers-per-tenant=0)
-	//  - or if max-queriers-per-tenant >= the number of queriers
-	//
-	// Tenant -> Queriers is the core relationship randomized from the shuffle shard seed.
-	// The shuffle shard seed is itself consistently hashed from the tenant ID.
-	// However, the most common operation is the querier asking for its next request,
-	// which requires a relatively efficient lookup or check of Querier -> Tenant.
-	//
-	// Reshuffling is done when:
-	//  - a querier connection is added or removed
-	//  - it is detected during request enqueueing that a tenant's queriers
-	//    were calculated from an outdated max-queriers-per-tenant value
-
-	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
+	// Sorted list of querier ids, used when shuffle-sharding queriers for tenant
 	querierIDsSorted querierIDSlice
 
 	// List of all tenants with queues, used for iteration when searching for next queue to handle.
 	tenantIDOrder []TenantID
 	tenantsByID   map[TenantID]*queueTenant
+
 	// tenantOrderIndex is the index of the _last_ tenant dequeued from; it is passed by
 	// the querier, and then updated to the index of the last tenant dequeued from, so it
 	// can be returned to the querier. Newly connected queriers should pass -1 to start at the
 	// beginning of tenantIDOrder.
 	tenantOrderIndex int
-	tenantNodes      map[string][]*Node
 
-	// Tenant assigned querier ID set as determined by shuffle sharding.
-	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
-	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
+	// tenantNodes tracks all tree nodes of the same name; it is used to track whether a tenant should be
+	// removed from the tenantIDOrder when a node in Tree is exhausted.
+	tenantNodes map[string][]*Node
+
+	// Set of Querier IDs assigned to each tenant as determined by shuffle sharding.
+	// If tenantQuerierIDs[tenantID] for a given tenantID is non-nil, only those queriers can handle
+	// the tenant's requests,
+	// tenantQuerierIDs[tenantID] is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
 	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
-	currentQuerier   QuerierID
+
+	// The querier currently making a dequeue request; updated before dequeues by setup.
+	currentQuerier QuerierID
 }
 
 func newTenantQuerierAssignments() *tenantQuerierAssignments {

@@ -28,8 +28,9 @@ type tenantRequest struct {
 	req      QueryRequest
 }
 
-// queueBroker encapsulates access to tenant queues for pending requests
-// and maintains consistency with the tenant-querier assignments
+// queueBroker encapsulates access to the Tree queue for pending requests, and brokers logic dependencies between
+// querier connections and tenant-querier assignments (e.g., assigning newly-connected queriers to tenants, or
+// reshuffling queriers when a querier has disconnected).
 type queueBroker struct {
 	tree Tree
 

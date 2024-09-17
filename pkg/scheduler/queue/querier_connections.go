@@ -7,6 +7,8 @@ import (
 
 const unregisteredWorkerID = -1
 
+// querierConnections manages information about queriers connected to the request queue. The queueBroker
+// receives information about querier connections via RequestQueue's querierWorkerOperations channel.
 type querierConnections struct {
 	queriersByID map[QuerierID]*querierState
 
@@ -23,18 +25,19 @@ func newQuerierConnections(forgetDelay time.Duration) *querierConnections {
 }
 
 // querierIsAvailable returns true if the querier is registered to the querierConnections and is not shutting down.
-func (qcm *querierConnections) querierIsAvailable(querierID QuerierID) bool {
-	q := qcm.queriersByID[querierID]
+func (qc *querierConnections) querierIsAvailable(querierID QuerierID) bool {
+	q := qc.queriersByID[querierID]
 	return q != nil && !q.shuttingDown
 }
 
-// does not manage updating querierIDsSorted; that should be managed by the caller/whatever cares about it getting updated.
-func (qcm *querierConnections) addQuerierWorkerConn(conn *QuerierWorkerConn) (addQuerier bool) {
+// addQuerierWorkerConn is called when the queueBroker processes a querierWorkerOperation; it adds the querier-worker
+// connection, creating a new querier connection if we've never seen this querier before.
+func (qc *querierConnections) addQuerierWorkerConn(conn *QuerierWorkerConn) (addQuerier bool) {
 	if conn.IsRegistered() {
 		panic("received request to register a querier-worker which was already registered")
 	}
 
-	querier := qcm.queriersByID[conn.QuerierID]
+	querier := qc.queriersByID[conn.QuerierID]
 	if querier != nil {
 		querier.AddWorkerConn(conn)
 
@@ -48,13 +51,17 @@ func (qcm *querierConnections) addQuerierWorkerConn(conn *QuerierWorkerConn) (ad
 	// First connection from this querier.
 	newQuerierConns := &querierState{}
 	newQuerierConns.AddWorkerConn(conn)
-	qcm.queriersByID[conn.QuerierID] = newQuerierConns
+	qc.queriersByID[conn.QuerierID] = newQuerierConns
 
 	return true
 }
 
-func (qcm *querierConnections) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (removedQuerier bool) {
-	querier := qcm.queriersByID[conn.QuerierID]
+// removeQuerierWorkerConn removes a registered QuerierWorkerConn from an active querier. If the removed querier-worker
+// connection is the last active worker connection for the querier, it also deletes the querier connection, or records
+// the disconnection time so the querier can be forgotten if it does not establish any new querier-worker connections
+// before querierForgetDelay time has passed.
+func (qc *querierConnections) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (removedQuerier bool) {
+	querier := qc.queriersByID[conn.QuerierID]
 	if querier == nil || !querier.IsActive() {
 		panic("unexpected number of connections for querier")
 	}
@@ -70,8 +77,8 @@ func (qcm *querierConnections) removeQuerierWorkerConn(conn *QuerierWorkerConn, 
 
 	// No more active connections. We can remove the querier only if
 	// the querier has sent a shutdown signal or if no forget delay is enabled.
-	if querier.shuttingDown || qcm.querierForgetDelay == 0 {
-		delete(qcm.queriersByID, conn.QuerierID)
+	if querier.shuttingDown || qc.querierForgetDelay == 0 {
+		delete(qc.queriersByID, conn.QuerierID)
 		return true
 	}
 
@@ -82,10 +89,10 @@ func (qcm *querierConnections) removeQuerierWorkerConn(conn *QuerierWorkerConn, 
 	return false
 }
 
-// shutdownQuerier handles a graceful shutdown notification from a querier. Updates the querier state to shuttingDown if
-// applicable, and returns true if the querier is inactive; the querier can be removed from queriersByID in this case.
-func (qcm *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQuerier bool) {
-	querier := qcm.queriersByID[querierID]
+// shutdownQuerier handles a graceful shutdown notification from a querier. It updates the querier state to shuttingDown
+// if applicable, and returns true if the querier is inactive; the querier can be removed from queriersByID in this case.
+func (qc *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQuerier bool) {
+	querier := qc.queriersByID[querierID]
 	if querier == nil {
 		// The querier may have already been removed, so we just ignore it.
 		return false
@@ -94,7 +101,7 @@ func (qcm *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQu
 	// We don't check the delay on shutdown notifications, so it's safe to remove the querier as long as
 	// there are no more connections.
 	if !querier.IsActive() {
-		delete(qcm.queriersByID, querierID)
+		delete(qc.queriersByID, querierID)
 		return true
 	}
 
@@ -104,20 +111,22 @@ func (qcm *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQu
 	return false
 }
 
-// forgettableQueriers returns a slice of all queriers which have had zero connections for longer than the forget delay.
-func (qcm *querierConnections) forgettableQueriers(now time.Time) []QuerierID {
+// forgettableQueriers removes all querier connections which no longer have any querier-worker connections and for whom
+// querierForgetDelay time has passed since the querier disconnected. It returns a slice of all querier IDs which were
+// removed.
+func (qc *querierConnections) forgettableQueriers(now time.Time) []QuerierID {
 	// if forget delay is disabled, removal is done immediately on querier disconnect or shutdown; do nothing
-	if qcm.querierForgetDelay == 0 {
+	if qc.querierForgetDelay == 0 {
 		return nil
 	}
 
 	removableQueriers := make([]QuerierID, 0)
 	// Remove all queriers with no connections that have gone since at least the forget delay.
-	threshold := now.Add(-qcm.querierForgetDelay)
-	for querierID, querier := range qcm.queriersByID {
+	threshold := now.Add(-qc.querierForgetDelay)
+	for querierID, querier := range qc.queriersByID {
 		if querier.activeWorkerConns == 0 && querier.disconnectedAt.Before(threshold) {
 			removableQueriers = append(removableQueriers, querierID)
-			delete(qcm.queriersByID, querierID)
+			delete(qc.queriersByID, querierID)
 		}
 	}
 
@@ -152,7 +161,7 @@ func (qwc *QuerierWorkerConn) IsRegistered() bool {
 	return qwc.WorkerID != unregisteredWorkerID
 }
 
-// querierState contains information about a querier and its worker connections which is relevant to the request queue.
+// querierState contains information which is relevant to the request queue about a querier and its worker connections.
 type querierState struct {
 	// active worker connections from this querier
 	workerConns       []*QuerierWorkerConn
