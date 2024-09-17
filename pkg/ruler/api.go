@@ -283,7 +283,7 @@ func parseExcludeAlerts(req *http.Request) (bool, error) {
 
 	value, err := strconv.ParseBool(excludeAlerts)
 	if err != nil {
-		return false, fmt.Errorf("unable to pase exclude_alerts value %w", err)
+		return false, fmt.Errorf("unable to parse exclude_alerts value %w", err)
 	}
 
 	return value, nil

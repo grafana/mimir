@@ -604,7 +604,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 		},
-		"Invalid exlude_alerts param": {
+		"Invalid exclude_alerts param": {
 			configuredRules:    rulespb.RuleGroupList{},
 			expectedConfigured: 0,
 			queryParams:        "?exclude_alerts=foo",
