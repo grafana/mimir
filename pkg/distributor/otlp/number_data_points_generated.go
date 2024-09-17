@@ -23,6 +23,7 @@ import (
 	"math"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -102,7 +103,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 		isMonotonic := metric.Sum().IsMonotonic()
 		if isMonotonic {
-			c.handleStartTime(startTimestampMs, timestamp, lbls, settings)
+			c.handleStartTime(startTimestampMs, timestamp, lbls, settings, "sum", sample.Value, logger)
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
@@ -129,7 +130,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			}
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
-		c.trackStartTimestampForSeries(startTimestampMs, timestamp, lbls, logger)
+		level.Debug(logger).Log("labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
 	return nil
