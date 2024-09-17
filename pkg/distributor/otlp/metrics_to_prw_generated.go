@@ -26,7 +26,6 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -130,7 +129,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -160,7 +159,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -235,21 +234,17 @@ func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelA
 	return ts
 }
 
-// TODO(jesus.vazquez) This method is for debugging only and its meant to be removed soon.
-// trackStartTimestampForSeries logs the start timestamp for a series if it has been seen before.
-func (c *MimirConverter) trackStartTimestampForSeries(startTs, ts int64, lbls []mimirpb.LabelAdapter, logger log.Logger) {
-	h := timeSeriesSignature(lbls)
-	if _, ok := c.unique[h]; ok {
-		var seriesBuilder strings.Builder
-		seriesBuilder.WriteString("{")
-		for i, l := range lbls {
-			if i > 0 {
-				seriesBuilder.WriteString(",")
-			}
-			seriesBuilder.WriteString(fmt.Sprintf("%s=%s", l.Name, l.Value))
+type labelsStringer []mimirpb.LabelAdapter
 
+func (ls labelsStringer) String() string {
+	var seriesBuilder strings.Builder
+	seriesBuilder.WriteString("{")
+	for i, l := range ls {
+		if i > 0 {
+			seriesBuilder.WriteString(",")
 		}
-		seriesBuilder.WriteString("}")
-		level.Debug(logger).Log("labels", seriesBuilder.String(), "start_ts", startTs, "ts", ts)
+		seriesBuilder.WriteString(fmt.Sprintf("%s=%s", l.Name, l.Value))
 	}
+	seriesBuilder.WriteString("}")
+	return seriesBuilder.String()
 }
