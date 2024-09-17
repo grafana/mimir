@@ -115,7 +115,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, testConfig(0, 1))
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -160,7 +160,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, testConfig(0, 1))
 
 	for _, tc := range []struct {
 		name    string
@@ -336,7 +336,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, testConfig(0, 1))
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -438,7 +438,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, testConfig(scenario.slowResponseThreshold, 1))
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -507,7 +507,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, testConfig(0, 1))
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -842,7 +842,7 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion)
+			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, testConfig(0, testCase.secondaryBackendRequestProportion))
 			preferredOnlySelectionCount := 0
 
 			for i := 0; i < runCount; i++ {
@@ -864,5 +864,12 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 				require.InEpsilonf(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount, 0.2, "expected to choose only the preferred backend %v times, but chose it %v times", testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
 			}
 		})
+	}
+}
+
+func testConfig(slowQueryResponseThreshold time.Duration, secondaryBackendsRequestProportion float64) ProxyConfig {
+	return ProxyConfig{
+		LogSlowQueryResponseThreshold:      slowQueryResponseThreshold,
+		SecondaryBackendsRequestProportion: secondaryBackendsRequestProportion,
 	}
 }
