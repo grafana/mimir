@@ -96,7 +96,7 @@ Complete the following steps to scale down ingesters in any zone.
 
    a. Send a POST request to the `/ingester/shutdown` API endpoint on the ingester to terminate it.
 
-   b. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
+   b. Wait until the API endpoint call has successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
 
    c. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
 
