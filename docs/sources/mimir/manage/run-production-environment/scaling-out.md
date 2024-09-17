@@ -88,9 +88,9 @@ Complete the following steps to scale down ingesters in any zone.
 
 1. Wait until the blocks uploaded by read-only ingesters are available for querying before proceeding. The required amount of time to wait depends on your configuration and is the maximum value for the following settings:
 
-- The configured `-querier.query-store-after`
-- Two times the configured `-blocks-storage.bucket-store.sync-interval`
-- Two times the configured `-compactor.cleanup-interval`
+- The configured `-querier.query-store-after` setting
+- Two times the configured `-blocks-storage.bucket-store.sync-interval` setting
+- Two times the configured `-compactor.cleanup-interval` setting
 
 1. Scale down each ingester:
 
