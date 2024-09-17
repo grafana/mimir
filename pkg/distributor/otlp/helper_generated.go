@@ -30,6 +30,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
+	gokitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -245,7 +247,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string) error {
+	resource pcommon.Resource, settings Settings, baseName string, logger gokitlog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -270,7 +272,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 				sum.Value = math.Float64frombits(value.StaleNaN)
 			}
 
-			c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings)
+			c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings, "histogram_sum", sum.Value, logger)
 			c.addSample(sum, sumlabels)
 
 		}
@@ -285,7 +287,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 		}
 
 		countlabels := createLabels(baseName+countStr, baseLabels)
-		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings, "histogram_count", count.Value, logger)
 		c.addSample(count, countlabels)
 
 		// cumulative count for conversion to cumulative histogram
@@ -310,7 +312,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			labels := createLabels(baseName+bucketStr, baseLabels, leStr, boundStr)
-			c.handleStartTime(startTimestampMs, timestamp, labels, settings)
+			c.handleStartTime(startTimestampMs, timestamp, labels, settings, "histogram_bucket", bucket.Value, logger)
 			ts := c.addSample(bucket, labels)
 
 			bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: bound})
@@ -325,7 +327,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			infBucket.Value = float64(pt.Count())
 		}
 		infLabels := createLabels(baseName+bucketStr, baseLabels, leStr, pInfStr)
-		c.handleStartTime(startTimestampMs, timestamp, infLabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, infLabels, settings, "histogram_inf_bucket", infBucket.Value, logger)
 		ts := c.addSample(infBucket, infLabels)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
@@ -337,6 +339,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			labels := createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(labels, startTimestampMs, pt.Timestamp())
 		}
+		level.Debug(logger).Log("labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
 	}
 
 	return nil
@@ -442,7 +445,7 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string) error {
+	settings Settings, baseName string, logger gokitlog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -463,7 +466,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 		}
 		// sum and count of the summary should append suffix to baseName
 		sumlabels := createLabels(baseName+sumStr, baseLabels)
-		c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings, "summary_sum", sum.Value, logger)
 		c.addSample(sum, sumlabels)
 
 		// treat count as a sample in an individual TimeSeries
@@ -475,7 +478,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			count.Value = math.Float64frombits(value.StaleNaN)
 		}
 		countlabels := createLabels(baseName+countStr, baseLabels)
-		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings)
+		c.handleStartTime(startTimestampMs, timestamp, countlabels, settings, "summary_count", count.Value, logger)
 		c.addSample(count, countlabels)
 
 		// process each percentile/quantile
@@ -490,7 +493,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := createLabels(baseName, baseLabels, quantileStr, percentileStr)
-			c.handleStartTime(startTimestampMs, timestamp, qtlabels, settings)
+			c.handleStartTime(startTimestampMs, timestamp, qtlabels, settings, "summary_quantile", quantile.Value, logger)
 			c.addSample(quantile, qtlabels)
 		}
 
@@ -498,6 +501,8 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			createdLabels := createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
+
+		level.Debug(logger).Log("labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
 	}
 
 	return nil
@@ -580,7 +585,7 @@ const validIntervalForStartTimestamps = 120_000
 // make use of its direct support fort Created Timestamps instead.
 // See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
 // resets for cumulative metrics.
-func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings) {
+func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings, typ string, value float64, logger gokitlog.Logger) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
@@ -596,6 +601,8 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 	if ts-startTs > validIntervalForStartTimestamps {
 		return
 	}
+
+	level.Debug(logger).Log("msg", "adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", value)
 
 	// See https://github.com/prometheus/prometheus/issues/14600 for context.
 	c.addSample(&mimirpb.Sample{TimestampMs: startTs}, labels)
