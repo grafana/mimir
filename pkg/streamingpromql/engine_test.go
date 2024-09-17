@@ -1786,7 +1786,7 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
 		// Aggregations
-		for _, aggFunc := range []string{"sum", "avg", "min", "max"} {
+		for _, aggFunc := range []string{"avg", "count", "min", "max", "sum"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
