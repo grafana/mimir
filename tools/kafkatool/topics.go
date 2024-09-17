@@ -18,6 +18,7 @@ type TopicsCommand struct {
 	replicationFactor int16
 
 	create   bool
+	delete   bool
 	list     bool
 	describe bool
 }
@@ -26,11 +27,12 @@ func (c *TopicsCommand) Register(app *kingpin.Application, getKafkaClient func()
 	c.getKafkaClient = getKafkaClient
 	c.printer = printer
 
-	cmd := app.Command("topic", "Create, list, or describe Kafka topic(s).").Action(c.topicCommand)
+	cmd := app.Command("topic", "Create, delete, list, or describe Kafka topic(s).").Action(c.topicCommand)
 	cmd.Flag("topic", "The name of the Kafka topic.").StringVar(&c.topic)
 	cmd.Flag("num-partitions", "The number of partitions to create the topic with.").Int32Var(&c.numPartitions)
 	cmd.Flag("replication-factor", "The replication factor to create the topic with.").Int16Var(&c.replicationFactor)
 	cmd.Flag("create", "Create the Kafka topic.").BoolVar(&c.create)
+	cmd.Flag("delete", "Delete the Kafka topic.").BoolVar(&c.delete)
 	cmd.Flag("list", "List all Kafka topics.").BoolVar(&c.list)
 	cmd.Flag("describe", "Describe the Kafka topic.").BoolVar(&c.describe)
 }
@@ -38,12 +40,14 @@ func (c *TopicsCommand) Register(app *kingpin.Application, getKafkaClient func()
 func (c *TopicsCommand) topicCommand(_ *kingpin.ParseContext) error {
 	if c.create {
 		return c.createTopic()
+	} else if c.delete {
+		return c.deleteTopic()
 	} else if c.describe {
 		c.printer.PrintLine("The '--describe' command is still unimplemented.") // TODO
 	} else if c.list {
 		c.printer.PrintLine("The '--list' command is still unimplemented.") // TODO
 	} else {
-		c.printer.PrintLine("Must specify either '--create', '--list', or '--describe'")
+		c.printer.PrintLine("Must specify either '--create', '--delete', '--list', or '--describe'")
 	}
 
 	return nil
@@ -71,6 +75,26 @@ func (c *TopicsCommand) createTopic() error {
 	}
 
 	c.printer.PrintLine(fmt.Sprintf("Topic %s created with %d partitions and rf=%d", resp.Topic, resp.NumPartitions, resp.ReplicationFactor))
+
+	return nil
+}
+
+func (c *TopicsCommand) deleteTopic() error {
+	if c.topic == "" {
+		return fmt.Errorf("missing topic name")
+	}
+
+	adm := kadm.NewClient(c.getKafkaClient())
+
+	resp, err := adm.DeleteTopic(context.Background(), c.topic)
+	if err != nil {
+		return err
+	}
+	if resp.Err != nil {
+		return fmt.Errorf("problem deleting topic: %w (%s)", resp.Err, resp.ErrMessage)
+	}
+
+	c.printer.PrintLine(fmt.Sprintf("Topic %s deleted", resp.Topic))
 
 	return nil
 }
