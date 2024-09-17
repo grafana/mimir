@@ -29,22 +29,19 @@ type ResponsesComparator interface {
 }
 
 type ProxyEndpoint struct {
-	backends                          []ProxyBackendInterface
-	metrics                           *ProxyMetrics
-	logger                            log.Logger
-	comparator                        ResponsesComparator
-	slowResponseThreshold             time.Duration
-	secondaryBackendRequestProportion float64
+	backends   []ProxyBackendInterface
+	metrics    *ProxyMetrics
+	logger     log.Logger
+	comparator ResponsesComparator
+	cfg        ProxyConfig
 
 	// The preferred backend, if any.
 	preferredBackend ProxyBackendInterface
 
-	shiftComparisonQueriesBy time.Duration
-
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, shiftComparisonQueriesBy time.Duration) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, cfg ProxyConfig) *ProxyEndpoint {
 	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -54,15 +51,13 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 	}
 
 	return &ProxyEndpoint{
-		backends:                          backends,
-		route:                             route,
-		metrics:                           metrics,
-		logger:                            logger,
-		comparator:                        comparator,
-		slowResponseThreshold:             slowResponseThreshold,
-		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
-		preferredBackend:                  preferredBackend,
-		shiftComparisonQueriesBy:          shiftComparisonQueriesBy,
+		backends:         backends,
+		route:            route,
+		metrics:          metrics,
+		logger:           logger,
+		comparator:       comparator,
+		cfg:              cfg,
+		preferredBackend: preferredBackend,
 	}
 }
 
@@ -89,15 +84,15 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
-	if len(p.backends) == 1 || p.secondaryBackendRequestProportion == 1.0 {
+	if len(p.backends) == 1 || p.cfg.SecondaryBackendsRequestProportion == 1.0 {
 		return p.backends
 	}
 
-	if p.secondaryBackendRequestProportion == 0.0 {
+	if p.cfg.SecondaryBackendsRequestProportion == 0.0 {
 		return []ProxyBackendInterface{p.preferredBackend}
 	}
 
-	if rand.Float64() > p.secondaryBackendRequestProportion {
+	if rand.Float64() > p.cfg.SecondaryBackendsRequestProportion {
 		return []ProxyBackendInterface{p.preferredBackend}
 	}
 
@@ -194,7 +189,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 			elapsed, status, body, resp, err := b.ForwardRequest(ctx, req, bodyReader)
 			contentType := ""
 
-			if p.slowResponseThreshold > 0 {
+			if p.cfg.LogSlowQueryResponseThreshold > 0 {
 				timingMtx.Lock()
 				if elapsed > slowestDuration {
 					slowestDuration = elapsed
@@ -270,8 +265,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	}
 
 	var shiftedReq *http.Request
-	if p.shiftComparisonQueriesBy > 0 {
-		shiftedReq, err = shiftQueryRequest(req, p.shiftComparisonQueriesBy)
+	if p.cfg.ShiftComparisonQueriesBy > 0 && rand.Float64() < p.cfg.ShiftComparisonSamplingRatio {
+		shiftedReq, err = shiftQueryRequest(req, p.cfg.ShiftComparisonQueriesBy)
 		if err != nil {
 			// TODO: logs & metrics
 		}
@@ -338,7 +333,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	}
 
 	// Log queries that are slower in some backends than others
-	if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
+	if p.cfg.LogSlowQueryResponseThreshold > 0 && slowestDuration-fastestDuration >= p.cfg.LogSlowQueryResponseThreshold {
 		level.Warn(logger).Log(
 			"msg", "response time difference between backends exceeded threshold",
 			"slowest_duration", slowestDuration,
