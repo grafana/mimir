@@ -48,6 +48,7 @@ import (
 	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -123,6 +124,7 @@ type Config struct {
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
 	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder     blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
@@ -181,6 +183,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.BlockBuilder.RegisterFlags(f, logger)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -730,6 +733,7 @@ type Mimir struct {
 	ActivityTracker                 *activitytracker.ActivityTracker
 	Vault                           *vault.Vault
 	UsageStatsReporter              *usagestats.Reporter
+	BlockBuilder                    *blockbuilder.BlockBuilder
 	ContinuousTestManager           *continuoustest.Manager
 	BuildInfoHandler                http.Handler
 }
