@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"io"
 	"math/rand"
 	"net/http"
@@ -38,10 +39,12 @@ type ProxyEndpoint struct {
 	// The preferred backend, if any.
 	preferredBackend ProxyBackendInterface
 
+	shiftComparisonQueriesBy time.Duration
+
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, shiftComparisonQueriesBy time.Duration) *ProxyEndpoint {
 	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -59,6 +62,7 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 		slowResponseThreshold:             slowResponseThreshold,
 		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
 		preferredBackend:                  preferredBackend,
+		shiftComparisonQueriesBy:          shiftComparisonQueriesBy,
 	}
 }
 
@@ -102,14 +106,11 @@ func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
 	var (
-		wg           = sync.WaitGroup{}
-		err          error
-		body         []byte
-		responses    = make([]*backendResponse, 0, len(backends))
-		responsesMtx = sync.Mutex{}
-		timingMtx    = sync.Mutex{}
-		query        = req.URL.RawQuery
-		logger, ctx  = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming proxied request")
+		err         error
+		body        []byte
+		timingMtx   = sync.Mutex{}
+		query       = req.URL.RawQuery
+		logger, ctx = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming proxied request")
 	)
 
 	defer logger.Finish()
@@ -168,10 +169,12 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 		fastestBackend  ProxyBackendInterface
 		slowestDuration time.Duration
 		slowestBackend  ProxyBackendInterface
+		responses       = make([]*backendResponse, 0, len(backends))
+		responsesMtx    = sync.Mutex{}
+		wg              = sync.WaitGroup{}
 	)
 
-	wg.Add(len(backends))
-	for _, b := range backends {
+	spawnRequest := func(b ProxyBackendInterface, req *http.Request, body []byte, recordResponse bool) {
 		go func() {
 			defer wg.Done()
 
@@ -236,7 +239,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 			logger.SetTag("status", status)
 
 			// Keep track of the response if required.
-			if p.comparator != nil {
+			if p.comparator != nil && recordResponse {
 				responsesMtx.Lock()
 				responses = append(responses, res)
 				responsesMtx.Unlock()
@@ -246,52 +249,135 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 		}()
 	}
 
+	if p.comparator == nil || len(backends) != 2 {
+		// If we're not comparing responses, we can spawn all requests at once and simply return.
+		wg.Add(len(backends))
+		for _, b := range backends {
+			spawnRequest(b, req, body, false)
+		}
+		wg.Wait()
+		close(resCh)
+		return
+	}
+
+	// We have only 2 backends when comparing responses.
+
+	// We do one request with original timings for the primary backend.
+	// We then do the shifted request for both backends again and compare those responses.
+	preferred, secondary := backends[0], backends[1]
+	if secondary.Preferred() {
+		preferred, secondary = secondary, preferred
+	}
+
+	var shiftedReq *http.Request
+	if p.shiftComparisonQueriesBy > 0 {
+		shiftedReq, err = shiftQueryRequest(req, p.shiftComparisonQueriesBy)
+		if err != nil {
+			// TODO: logs & metrics
+		}
+	}
+
+	if shiftedReq == nil {
+		wg.Add(2)
+		spawnRequest(preferred, req, body, true)
+		spawnRequest(secondary, req, body, true)
+	} else {
+		wg.Add(1)
+		spawnRequest(preferred, req, body, false)
+
+		var shiftedBody []byte
+		if shiftedReq.Body != nil {
+			shiftedBody, err = io.ReadAll(shiftedReq.Body)
+			if err != nil {
+				// TODO: dont hard fail. Add logs/metrics
+			}
+			if err := shiftedReq.Body.Close(); err != nil {
+				level.Warn(logger).Log("msg", "Unable to close request body", "err", err)
+			}
+
+			shiftedReq.Body = io.NopCloser(bytes.NewReader(shiftedBody))
+			if err := shiftedReq.ParseForm(); err != nil {
+				level.Warn(logger).Log("msg", "Unable to parse form", "err", err)
+			}
+		}
+
+		// TODO: verify that the user gets the response from the above query
+		// and the below duplicate query to the preferred backend does not
+		// change anything user facing.
+		wg.Add(2)
+		spawnRequest(preferred, shiftedReq, shiftedBody, true)
+		spawnRequest(secondary, shiftedReq, shiftedBody, true)
+	}
+
 	// Wait until all backend requests completed.
 	wg.Wait()
 	close(resCh)
 
-	// Compare responses, but only if comparison is enabled and we ran this request against two backends.
-	if p.comparator != nil && len(backends) == 2 {
-		expectedResponse := responses[0]
-		actualResponse := responses[1]
-		if responses[1].backend.Preferred() {
-			expectedResponse, actualResponse = actualResponse, expectedResponse
-		}
-
-		result, err := p.compareResponses(expectedResponse, actualResponse)
-		if result == ComparisonFailed {
-			level.Error(logger).Log(
-				"msg", "response comparison failed",
-				"err", err,
-				"expected_response_duration", expectedResponse.elapsedTime,
-				"actual_response_duration", actualResponse.elapsedTime,
-			)
-		} else if result == ComparisonSkipped {
-			level.Warn(logger).Log(
-				"msg", "response comparison skipped",
-				"err", err,
-				"expected_response_duration", expectedResponse.elapsedTime,
-				"actual_response_duration", actualResponse.elapsedTime,
-			)
-		}
-
-		// Log queries that are slower in some backends than others
-		if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
-			level.Warn(logger).Log(
-				"msg", "response time difference between backends exceeded threshold",
-				"slowest_duration", slowestDuration,
-				"slowest_backend", slowestBackend.Name(),
-				"fastest_duration", fastestDuration,
-				"fastest_backend", fastestBackend.Name(),
-			)
-		}
-
-		relativeDuration := actualResponse.elapsedTime - expectedResponse.elapsedTime
-		proportionalDurationDifference := relativeDuration.Seconds() / expectedResponse.elapsedTime.Seconds()
-		p.metrics.relativeDuration.WithLabelValues(p.route.RouteName).Observe(relativeDuration.Seconds())
-		p.metrics.proportionalDuration.WithLabelValues(p.route.RouteName).Observe(proportionalDurationDifference)
-		p.metrics.responsesComparedTotal.WithLabelValues(p.route.RouteName, string(result)).Inc()
+	// Compare responses.
+	expectedResponse := responses[0]
+	actualResponse := responses[1]
+	if responses[1].backend.Preferred() {
+		expectedResponse, actualResponse = actualResponse, expectedResponse
 	}
+
+	result, err := p.compareResponses(expectedResponse, actualResponse)
+	if result == ComparisonFailed {
+		level.Error(logger).Log(
+			"msg", "response comparison failed",
+			"err", err,
+			"expected_response_duration", expectedResponse.elapsedTime,
+			"actual_response_duration", actualResponse.elapsedTime,
+		)
+	} else if result == ComparisonSkipped {
+		level.Warn(logger).Log(
+			"msg", "response comparison skipped",
+			"err", err,
+			"expected_response_duration", expectedResponse.elapsedTime,
+			"actual_response_duration", actualResponse.elapsedTime,
+		)
+	}
+
+	// Log queries that are slower in some backends than others
+	if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
+		level.Warn(logger).Log(
+			"msg", "response time difference between backends exceeded threshold",
+			"slowest_duration", slowestDuration,
+			"slowest_backend", slowestBackend.Name(),
+			"fastest_duration", fastestDuration,
+			"fastest_backend", fastestBackend.Name(),
+		)
+	}
+
+	relativeDuration := actualResponse.elapsedTime - expectedResponse.elapsedTime
+	proportionalDurationDifference := relativeDuration.Seconds() / expectedResponse.elapsedTime.Seconds()
+	p.metrics.relativeDuration.WithLabelValues(p.route.RouteName).Observe(relativeDuration.Seconds())
+	p.metrics.proportionalDuration.WithLabelValues(p.route.RouteName).Observe(proportionalDurationDifference)
+	p.metrics.responsesComparedTotal.WithLabelValues(p.route.RouteName, string(result)).Inc()
+}
+
+func shiftQueryRequest(req *http.Request, d time.Duration) (shiftedRequest *http.Request, err error) {
+	if !querymiddleware.IsRangeQuery(req.URL.Path) && !querymiddleware.IsInstantQuery(req.URL.Path) {
+		return
+	}
+
+	// TODOs:
+	// * use this shifted request to make the request for both primary and secondary when there is going to be a comparison.
+	//   note that there will be 2 queries for the primary in this case - original request and shifted request
+	// * add the duration of shift as a config option
+	// * add metrics
+	// * copy the body like the original request. we probably don't need the shifted request, rather only shifted body.
+	codec := querymiddleware.NewPrometheusCodec(nil, 5*time.Minute, "protobuf")
+	decodedRequest, err := codec.DecodeMetricsQueryRequest(req.Context(), req)
+	if err != nil {
+		return nil, err
+	}
+	start := decodedRequest.GetStart() - d.Milliseconds()
+	end := decodedRequest.GetEnd() - d.Milliseconds()
+	decodedRequest, err = decodedRequest.WithStartEnd(start, end)
+	if err != nil {
+		return nil, err
+	}
+	return codec.EncodeMetricsQueryRequest(req.Context(), decodedRequest)
 }
 
 func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResponse) *backendResponse {
