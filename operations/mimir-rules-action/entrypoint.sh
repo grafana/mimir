@@ -56,9 +56,9 @@ verifyAndConstructNamespaceSelection() {
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
     NAMESPACES_SELECTION="${IGNORED_NAMESPACES:+ --ignored-namespaces=${IGNORED_NAMESPACES}}"
   fi
-  if [ -n "${INGORED_NAMESPACES_REGEX}" ]; then
+  if [ -n "${IGNORED_NAMESPACES_REGEX}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${INGORED_NAMESPACES_REGEX:+ --ignored-namespaces-regex=${INGORED_NAMESPACES_REGEX}}"
+    NAMESPACES_SELECTION="${IGNORED_NAMESPACES_REGEX:+ --ignored-namespaces-regex=${IGNORED_NAMESPACES_REGEX}}"
   fi
 
   if [ "${NAMESPACE_SELECTIONS_COUNT}" -gt 1 ]; then
@@ -71,13 +71,17 @@ case "${ACTION}" in
   "$SYNC_CMD")
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
-    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "${NAMESPACES_SELECTION}" "$@")
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION "$@")
     STATUS=$?
     ;;
   "$DIFF_CMD")
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
-    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" "${NAMESPACES_SELECTION}" --disable-color "$@")
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION --disable-color "$@")
     STATUS=$?
     ;;
   "$LINT_CMD")
