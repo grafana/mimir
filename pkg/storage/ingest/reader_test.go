@@ -27,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -1713,7 +1714,7 @@ func withLogger(logger log.Logger) func(cfg *readerTestCfg) {
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
-		logger:      testutil.NewLogger(t),
+		logger:      mimirtest.NewTestingLogger(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
 		consumer:    consumer,
