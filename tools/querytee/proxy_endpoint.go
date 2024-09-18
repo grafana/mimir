@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/util"
 	"io"
 	"math/rand"
 	"net/http"
@@ -256,9 +257,6 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	}
 
 	// We have only 2 backends when comparing responses.
-
-	// We do one request with original timings for the primary backend.
-	// We then do the shifted request for both backends again and compare those responses.
 	preferred, secondary := backends[0], backends[1]
 	if secondary.Preferred() {
 		preferred, secondary = secondary, preferred
@@ -268,24 +266,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 		shiftedReq  *http.Request
 		shiftedBody []byte
 	)
-	if p.cfg.ShiftComparisonQueriesBy > 0 && rand.Float64() < p.cfg.ShiftComparisonSamplingRatio {
-		shiftedReq = p.shiftQueryRequest(req, p.cfg.ShiftComparisonQueriesBy)
-		if shiftedReq != nil && shiftedReq.Body != nil {
-			shiftedBody, err = io.ReadAll(shiftedReq.Body)
-			if err != nil {
-				level.Warn(logger).Log("msg", "Unable to read shifted request body", "err", err)
-				shiftedReq = nil
-			} else {
-				if err := shiftedReq.Body.Close(); err != nil {
-					level.Warn(logger).Log("msg", "Unable to close request body", "err", err)
-				}
-
-				shiftedReq.Body = io.NopCloser(bytes.NewReader(shiftedBody))
-				if err := shiftedReq.ParseForm(); err != nil {
-					level.Warn(logger).Log("msg", "Unable to parse form", "err", err)
-				}
-			}
-		}
+	if p.cfg.ShiftComparisonQueriesBy > 0 && p.cfg.ShiftComparisonSamplingRatio > 0 &&
+		rand.Float64() < p.cfg.ShiftComparisonSamplingRatio {
+		shiftedReq, shiftedBody = p.shiftQueryRequest(req, p.cfg.ShiftComparisonQueriesBy)
 	}
 
 	if shiftedReq == nil {
@@ -293,6 +276,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 		spawnRequest(preferred, req, body, true)
 		spawnRequest(secondary, req, body, true)
 	} else {
+		// We do one request with original timings for the primary backend.
+		// We then do the shifted request for both backends again and compare those responses.
 		wg.Add(3)
 		spawnRequest(preferred, req, body, false)
 		// TODO: verify that the user gets the response from the above query
@@ -354,30 +339,44 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 
 // shiftQueryRequest shifts the query times of the request for instant and range queries.
 // If there was any error, the error is just logged and a nil request is returned.
-func (p *ProxyEndpoint) shiftQueryRequest(req *http.Request, d time.Duration) (shiftedRequest *http.Request) {
+func (p *ProxyEndpoint) shiftQueryRequest(req *http.Request, d time.Duration) (shiftedRequest *http.Request, shiftedBody []byte) {
 	if !querymiddleware.IsRangeQuery(req.URL.Path) && !querymiddleware.IsInstantQuery(req.URL.Path) {
 		return
 	}
 
-	codec := querymiddleware.NewPrometheusCodec(nil, 5*time.Minute, "protobuf")
+	codec := querymiddleware.NewPrometheusCodec(nil, 5*time.Minute, "json")
 	decodedRequest, err := codec.DecodeMetricsQueryRequest(req.Context(), req)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "Unable to decode request when shifting query", "err", err)
-		return nil
+		return nil, nil
 	}
 	start := decodedRequest.GetStart() - d.Milliseconds()
 	end := decodedRequest.GetEnd() - d.Milliseconds()
 	decodedRequest, err = decodedRequest.WithStartEnd(start, end)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "Unable to change times when shifting query", "err", err)
-		return nil
+		return nil, nil
 	}
 	shiftedRequest, err = codec.EncodeMetricsQueryRequest(req.Context(), decodedRequest)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "Unable to encode request when shifting query", "err", err)
-		return nil
+		return nil, nil
 	}
-	return shiftedRequest
+
+	if shiftedRequest == nil || shiftedRequest.Body == nil {
+		return shiftedRequest, nil
+	}
+
+	shiftedBody, err = util.ReadRequestBodyWithoutConsuming(shiftedRequest)
+	if err != nil {
+		level.Warn(p.logger).Log("msg", "Unable to read shifted request body", "err", err)
+		shiftedRequest = nil
+	} else {
+		if err := shiftedRequest.ParseForm(); err != nil {
+			level.Warn(p.logger).Log("msg", "Unable to parse shifted request form", "err", err)
+		}
+	}
+	return shiftedRequest, shiftedBody
 }
 
 func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResponse) *backendResponse {

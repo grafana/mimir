@@ -73,7 +73,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", 1.0, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set.")
 	f.DurationVar(&cfg.ShiftComparisonQueriesBy, "proxy.shift-comparison-queries-by", 0, "Shift the timestamps of the queries by the given duration before querying and comparing them. This will still do the query for the preferred backend with the original timestamps but do another query with shifted timestamps for comparison.")
 	// Defaulted to 0 to avoid mistakes of not setting this correctly and overloading the store-gateways with shifted queries.
-	f.Float64Var(&cfg.ShiftComparisonSamplingRatio, "proxy.shift-comparison-sampling-ratio", 0, "Ratio of queries for which query times are shifted based on proxy.shift-comparison-queries-by config, sampled randomly. Must be between 0 and 1 (inclusive).")
+	f.Float64Var(&cfg.ShiftComparisonSamplingRatio, "proxy.shift-comparison-sampling-ratio", 0, "Ratio of queries for which query times are shifted based on -proxy.shift-comparison-queries-by config, sampled randomly. Must be between 0 and 1 (inclusive).")
 }
 
 type Route struct {
