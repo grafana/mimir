@@ -4271,7 +4271,7 @@
           "required": false,
           "desc": "Time to live duration for cached non-transient errors",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "query-frontend.results-cache-ttl-for-errors",
           "fieldType": "duration",
           "fieldCategory": "experimental"

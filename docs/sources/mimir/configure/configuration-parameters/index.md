@@ -3471,7 +3471,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Time to live duration for cached non-transient errors
 # CLI flag: -query-frontend.results-cache-ttl-for-errors
-[results_cache_ttl_for_errors: <duration> | default = 0s]
+[results_cache_ttl_for_errors: <duration> | default = 5m]
 
 # (advanced) Cache requests that are not step-aligned.
 # CLI flag: -query-frontend.cache-unaligned-requests
