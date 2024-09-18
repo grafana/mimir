@@ -460,7 +460,7 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				assert.NoError(t, err)
 				offsets, err := kadm.NewClient(kafkaClient).ListEndOffsets(context.Background(), kafkaTopic)
 				assert.NoError(t, err)
-				t.Logf("Kafka topic %s end offsets: %v", kafkaTopic, offsets)
+				t.Logf("Kafka topic %s end offsets: %#v", kafkaTopic, offsets)
 			}
 
 			// Ensure series have been correctly sharded to ingesters.
