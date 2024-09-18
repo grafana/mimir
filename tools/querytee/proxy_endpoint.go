@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/util"
 	"io"
 	"math/rand"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -278,11 +278,14 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	} else {
 		// We do one request with original timings for the primary backend.
 		// We then do the shifted request for both backends again and compare those responses.
-		wg.Add(3)
+		wg.Add(1)
 		spawnRequest(preferred, req, body, false)
-		// TODO: verify that the user gets the response from the above query
-		// and the below duplicate query to the preferred backend does not
-		// change anything user facing.
+
+		// We wait for the original request to finish so that we do not send back
+		// the result from shifted queries due to any race.
+		wg.Wait()
+
+		wg.Add(2)
 		spawnRequest(preferred, shiftedReq, shiftedBody, true)
 		spawnRequest(secondary, shiftedReq, shiftedBody, true)
 

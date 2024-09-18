@@ -30,8 +30,8 @@ import (
 
 const (
 	day                                               = 24 * time.Hour
-	queryRangePathSuffix                              = "/api/v1/query_range"
-	instantQueryPathSuffix                            = "/api/v1/query"
+	QueryRangePathSuffix                              = "/api/v1/query_range"
+	InstantQueryPathSuffix                            = "/api/v1/query"
 	cardinalityLabelNamesPathSuffix                   = "/api/v1/cardinality/label_names"
 	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
@@ -499,11 +499,11 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 }
 
 func IsRangeQuery(path string) bool {
-	return strings.HasSuffix(path, queryRangePathSuffix)
+	return strings.HasSuffix(path, QueryRangePathSuffix)
 }
 
 func IsInstantQuery(path string) bool {
-	return strings.HasSuffix(path, instantQueryPathSuffix)
+	return strings.HasSuffix(path, InstantQueryPathSuffix)
 }
 
 func IsCardinalityQuery(path string) bool {

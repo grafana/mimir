@@ -815,12 +815,12 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	}{
 		"range query": {
 			makeRequest: func() *http.Request {
-				return httptest.NewRequest("GET", queryRangePathSuffix+"?start=1536673680&end=1536716880&step=120&query=up", nil)
+				return httptest.NewRequest("GET", QueryRangePathSuffix+"?start=1536673680&end=1536716880&step=120&query=up", nil)
 			},
 		},
 		"instant query": {
 			makeRequest: func() *http.Request {
-				return httptest.NewRequest("GET", instantQueryPathSuffix+"?time=1536673680&query=up", nil)
+				return httptest.NewRequest("GET", InstantQueryPathSuffix+"?time=1536673680&query=up", nil)
 			},
 		},
 		"cardinality label names": {

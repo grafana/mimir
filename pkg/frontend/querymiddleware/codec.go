@@ -554,9 +554,9 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		u = &url.URL{
 			Path: r.GetPath(),
 			RawQuery: url.Values{
-				"start": []string{encodeTime(r.GetStart())},
-				"end":   []string{encodeTime(r.GetEnd())},
-				"step":  []string{encodeDurationMs(r.GetStep())},
+				"start": []string{EncodeTime(r.GetStart())},
+				"end":   []string{EncodeTime(r.GetEnd())},
+				"step":  []string{EncodeDurationMs(r.GetStep())},
 				"query": []string{r.GetQuery()},
 			}.Encode(),
 		}
@@ -564,7 +564,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		u = &url.URL{
 			Path: r.GetPath(),
 			RawQuery: url.Values{
-				"time":  []string{encodeTime(r.GetTime())},
+				"time":  []string{EncodeTime(r.GetTime())},
 				"query": []string{r.GetQuery()},
 			}.Encode(),
 		}
@@ -617,10 +617,10 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 	case *PrometheusLabelNamesQueryRequest:
 		urlValues := url.Values{}
 		if req.GetStart() != 0 {
-			urlValues["start"] = []string{encodeTime(req.Start)}
+			urlValues["start"] = []string{EncodeTime(req.Start)}
 		}
 		if req.GetEnd() != 0 {
-			urlValues["end"] = []string{encodeTime(req.End)}
+			urlValues["end"] = []string{EncodeTime(req.End)}
 		}
 		if len(req.GetLabelMatcherSets()) > 0 {
 			urlValues["match[]"] = req.GetLabelMatcherSets()
@@ -637,10 +637,10 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		// does not support accessing struct members on a typeA|typeB switch
 		urlValues := url.Values{}
 		if req.GetStart() != 0 {
-			urlValues["start"] = []string{encodeTime(req.Start)}
+			urlValues["start"] = []string{EncodeTime(req.Start)}
 		}
 		if req.GetEnd() != 0 {
-			urlValues["end"] = []string{encodeTime(req.End)}
+			urlValues["end"] = []string{EncodeTime(req.End)}
 		}
 		if len(req.GetLabelMatcherSets()) > 0 {
 			urlValues["match[]"] = req.GetLabelMatcherSets()
@@ -958,12 +958,12 @@ func parseDurationMs(s string) (int64, error) {
 	return 0, apierror.Newf(apierror.TypeBadData, "cannot parse %q to a valid duration", s)
 }
 
-func encodeTime(t int64) string {
+func EncodeTime(t int64) string {
 	f := float64(t) / 1.0e3
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
-func encodeDurationMs(d int64) string {
+func EncodeDurationMs(d int64) string {
 	return strconv.FormatFloat(float64(d)/float64(time.Second/time.Millisecond), 'f', -1, 64)
 }
 
