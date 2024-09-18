@@ -100,12 +100,12 @@ For more information about out-of-order samples ingestion, refer to [Configuring
 
 ## Read-only mode
 
-Ingesters can be put into "Read-only" mode via a call to [Prepare Instance Ring Downscale]({{< relref "../../http-api/index.md#prepare-instance-ring-downscale" >}}) API endpoint.
-Ingesters in read-only mode will not be receiving any write requests, but can still receive read requests.
+You can put ingesters in "read-only" mode through calling the [Prepare Instance Ring Downscale]({{< relref "../../http-api/index.md#prepare-instance-ring-downscale" >}}) API endpoint.
+Ingesters in read-only mode don't receive write requests, but can still receive read requests.
 Ingesters in read-only mode are not part of the shuffle shard for the write operation.
 
 Read-only mode is useful in downscaling scenarios and is a preparation for later shutdown of the ingester.
 
-Ingester ring state like JOINING, ACTIVE or LEAVING is separate from read-only mode.
-Ingester that is both ACTIVE and read-only does not receive write requests.
+Ingester ring states like JOINING, ACTIVE, or LEAVING are separate from read-only mode.
+An ingester that is both ACTIVE and read-only does not receive write requests.
 Read-only mode is stored in the hash ring as well.
