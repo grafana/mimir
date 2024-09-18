@@ -71,18 +71,24 @@ case "${ACTION}" in
   "$SYNC_CMD")
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
-    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "${NAMESPACES_SELECTION}" "$@")
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION "$@")
     STATUS=$?
     ;;
   "$DIFF_CMD")
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
-    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" "${NAMESPACES_SELECTION}" --disable-color "$@")
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION --disable-color "$@")
     STATUS=$?
     ;;
   "$LINT_CMD")
     verifyAndConstructNamespaceSelection
-    OUTPUT=$(/bin/mimirtool rules lint --rule-dirs="${RULES_DIR}" "${NAMESPACES_SELECTION}" "$@")
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules lint --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION "$@")
     STATUS=$?
     ;;
   "$PREPARE_CMD")
