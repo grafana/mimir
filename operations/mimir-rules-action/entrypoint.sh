@@ -81,7 +81,8 @@ case "${ACTION}" in
     STATUS=$?
     ;;
   "$LINT_CMD")
-    OUTPUT=$(/bin/mimirtool rules lint --rule-dirs="${RULES_DIR}" "$@")
+    verifyAndConstructNamespaceSelection
+    OUTPUT=$(/bin/mimirtool rules lint --rule-dirs="${RULES_DIR}" "${NAMESPACES_SELECTION}" "$@")
     STATUS=$?
     ;;
   "$PREPARE_CMD")
