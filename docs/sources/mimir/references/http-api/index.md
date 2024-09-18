@@ -432,7 +432,7 @@ This endpoint prepares the ingester's partition for downscaling by setting it to
 
 A `GET` call to this endpoint returns a timestamp of when the partition was switched to the `INACTIVE` state, or 0, if the partition is not in the `INACTIVE` state.
 
-A `POST` call switches this ingester's partition to the `INACTIVE` state, if it isn't `INACTIVE` already, and returns the timestamp of when the switch to the `INACTIVE` state occured.
+A `POST` call switches this ingester's partition to the `INACTIVE` state, if it isn't `INACTIVE` already, and returns the timestamp of when the switch to the `INACTIVE` state occurred.
 
 A `DELETE` call sets the partition back from the `INACTIVE` to the `ACTIVE` state.
 
@@ -450,7 +450,7 @@ This endpoint prepares the ingester for downscaling by setting it to read-only m
 
 A `GET` call to this endpoint returns a timestamp of when the ingester was switched to read-only mode, or 0, if the ingester is not in read-only mode.
 
-A `POST` call switches this ingester's partition to read-only mode, if it isn't read-only already, and returns the timestamp of when the switch to read-only mode occured.
+A `POST` call switches this ingester's partition to read-only mode, if it isn't read-only already, and returns the timestamp of when the switch to read-only mode occurred.
 
 A `DELETE` call sets the ingester back to read-write mode.
 
