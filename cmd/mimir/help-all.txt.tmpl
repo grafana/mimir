@@ -93,6 +93,12 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -alertmanager-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -alertmanager-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -alertmanager-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -441,6 +447,8 @@ Usage of ./cmd/mimir/mimir:
     	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter. (default 10h0m0s)
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
     	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. (default 1h0m0s)
+  -blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay duration
+    	[experimental] Duration after which blocks marked for deletion will still be queried. This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet. (default 50m0s)
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
@@ -759,6 +767,12 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -blocks-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -blocks-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -blocks-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -941,6 +955,12 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.s3.trace.enabled
     	When enabled, low-level S3 HTTP operation information is logged at the debug level.
+  -common.storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -common.storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -common.storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -2083,6 +2103,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
+  -query-frontend.prune-queries
+    	[experimental] True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.
   -query-frontend.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-frontend.query-result-response-format string
@@ -2335,8 +2357,6 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -query-scheduler.service-discovery-mode string
     	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
-  -query-scheduler.use-multi-algorithm-query-queue
-    	[experimental] Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.
   -ruler-storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
@@ -2521,6 +2541,12 @@ Usage of ./cmd/mimir/mimir:
     	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -ruler-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -ruler-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -ruler-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int

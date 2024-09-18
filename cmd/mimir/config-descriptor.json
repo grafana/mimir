@@ -6369,6 +6369,17 @@
         },
         {
           "kind": "field",
+          "name": "prune_queries",
+          "required": false,
+          "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.prune-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -7181,6 +7192,36 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "auth_version",
@@ -9292,6 +9333,17 @@
               "fieldFlag": "blocks-storage.bucket-store.ignore-deletion-marks-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ignore_deletion_mark_while_querying_delay",
+              "required": false,
+              "desc": "Duration after which blocks marked for deletion will still be queried. This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3000000000000,
+              "fieldFlag": "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -13187,6 +13239,36 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "auth_version",
               "required": false,
               "desc": "OpenStack Swift authentication API version. 0 to autodetect.",
@@ -15380,6 +15462,36 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "auth_version",
               "required": false,
               "desc": "OpenStack Swift authentication API version. 0 to autodetect.",
@@ -16065,17 +16177,6 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "use_multi_algorithm_query_queue",
-          "required": false,
-          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -17804,6 +17905,36 @@
               "required": false,
               "desc": "",
               "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "application_credential_id",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential id",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_name",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_secret",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential secret",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-secret",
+                  "fieldType": "string"
+                },
                 {
                   "kind": "field",
                   "name": "auth_version",

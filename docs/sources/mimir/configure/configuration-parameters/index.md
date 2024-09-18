@@ -1674,6 +1674,12 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# (experimental) True to enable pruning dead code (eg. expressions that cannot
+# produce any results) and simplifying expressions (eg. expressions that can be
+# evaluated immediately) in queries.
+# CLI flag: -query-frontend.prune-queries
+[prune_queries: <boolean> | default = false]
+
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -1710,12 +1716,6 @@ The `query_scheduler` block configures the query-scheduler.
 # 429.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-# (experimental) Use an experimental version of the query queue which has the
-# same behavior as the existing queue, but integrates tenant selection into the
-# tree model.
-# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
-[use_multi_algorithm_query_queue: <boolean> | default = false]
 
 # (experimental) When enabled, the query scheduler primarily prioritizes
 # dequeuing fairly from queue components and secondarily prioritizes dequeuing
@@ -4077,6 +4077,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-delay
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
+  # (experimental) Duration after which blocks marked for deletion will still be
+  # queried. This ensures queriers still query blocks that are meant to be
+  # deleted but do not have a replacement yet.
+  # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay
+  [ignore_deletion_mark_while_querying_delay: <duration> | default = 50m]
+
   bucket_index:
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
@@ -5259,6 +5265,18 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 &nbsp;
 
 ```yaml
+# OpenStack Swift application credential id
+# CLI flag: -<prefix>.swift.application-credential-id
+[application_credential_id: <string> | default = ""]
+
+# OpenStack Swift application credential name
+# CLI flag: -<prefix>.swift.application-credential-name
+[application_credential_name: <string> | default = ""]
+
+# OpenStack Swift application credential secret
+# CLI flag: -<prefix>.swift.application-credential-secret
+[application_credential_secret: <string> | default = ""]
+
 # OpenStack Swift authentication API version. 0 to autodetect.
 # CLI flag: -<prefix>.swift.auth-version
 [auth_version: <int> | default = 0]

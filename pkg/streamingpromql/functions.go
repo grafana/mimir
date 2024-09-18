@@ -27,7 +27,7 @@ type ScalarFunctionOperatorFactory func(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-	start, end, interval int64,
+	timeRange types.QueryTimeRange,
 ) (types.ScalarOperator, error)
 
 // SingleInputVectorFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
@@ -206,16 +206,16 @@ func RegisterScalarFunctionOperatorFactory(functionName string, factory ScalarFu
 	return nil
 }
 
-func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, start, end, interval int64) (types.ScalarOperator, error) {
+func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
 	}
 
-	return operators.NewScalarConstant(math.Pi, start, end, interval, memoryConsumptionTracker, expressionPosition), nil
+	return operators.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, start, end, interval int64) (types.ScalarOperator, error) {
+func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for scalar, got %v", len(args))
@@ -227,7 +227,7 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 		return nil, fmt.Errorf("expected an instant vector argument for scalar, got %T", args[0])
 	}
 
-	return operators.NewInstantVectorToScalar(inner, start, end, interval, memoryConsumptionTracker, expressionPosition), nil
+	return operators.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) types.InstantVectorOperator {

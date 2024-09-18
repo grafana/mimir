@@ -26,12 +26,8 @@ type VectorScalarBinaryOperation struct {
 	Op                       parser.ItemType
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
-	start     int64 // Milliseconds since Unix epoch
-	end       int64 // Milliseconds since Unix epoch
-	interval  int64 // In milliseconds
-	stepCount int
-
-	opFunc vectorScalarBinaryOperationFunc
+	timeRange types.QueryTimeRange
+	opFunc    vectorScalarBinaryOperationFunc
 
 	expressionPosition posrange.PositionRange
 	emitAnnotation     functions.EmitAnnotationFunc
@@ -46,9 +42,7 @@ func NewVectorScalarBinaryOperation(
 	vector types.InstantVectorOperator,
 	scalarIsLeftSide bool,
 	op parser.ItemType,
-	start int64,
-	end int64,
-	interval int64,
+	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
@@ -65,11 +59,7 @@ func NewVectorScalarBinaryOperation(
 		Op:                       op,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
-		start:     start,
-		end:       end,
-		interval:  interval,
-		stepCount: stepCount(start, end, interval),
-
+		timeRange:          timeRange,
 		expressionPosition: expressionPosition,
 	}
 
@@ -175,7 +165,7 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 			break
 		}
 
-		scalarIdx := (t - v.start) / v.interval // Scalars always have a value at every step, so we can just compute the index of the corresponding scalar value from the timestamp.
+		scalarIdx := (t - v.timeRange.StartT) / v.timeRange.IntervalMs // Scalars always have a value at every step, so we can just compute the index of the corresponding scalar value from the timestamp.
 		scalarValue := v.scalarData.Samples[scalarIdx].F
 
 		f, h, ok, err := v.opFunc(scalarValue, vectorF, vectorH)

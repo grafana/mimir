@@ -62,9 +62,8 @@ func TestTimeSeriesIterator(t *testing.T) {
 			seriesSet: storage.EmptySeriesSet(),
 		},
 		{
-			name: "simple",
-			// Note: ts==0 can be removed once https://github.com/prometheus/prometheus/pull/14772 is in upstream.
-			seriesSet: NewMockSeriesSet(storage.MockSeries([]int64{0, 1000, 2000}, []float64{0, 1.23, 1.24}, []string{"__name__", "up"})),
+			name:      "simple",
+			seriesSet: NewMockSeriesSet(storage.MockSeries([]int64{1000, 2000}, []float64{1.23, 1.24}, []string{"__name__", "up"})),
 			expectedLabels: []string{
 				`{__name__="up"}`,
 				`{__name__="up"}`,
@@ -80,10 +79,9 @@ func TestTimeSeriesIterator(t *testing.T) {
 		},
 		{
 			name: "edge-cases",
-			// Note: ts==0 can be removed once https://github.com/prometheus/prometheus/pull/14772 is in upstream.
 			seriesSet: NewMockSeriesSet(
-				storage.MockSeries([]int64{0, 1000, 2000}, []float64{0, 1.23, 1.24}, []string{}),
-				storage.MockSeries([]int64{0, 1050}, []float64{0, 2.34}, []string{"__name__", "upper"}),
+				storage.MockSeries([]int64{1000, 2000}, []float64{1.23, 1.24}, []string{}),
+				storage.MockSeries([]int64{1050}, []float64{2.34}, []string{"__name__", "upper"}),
 				storage.MockSeries([]int64{}, []float64{}, []string{"__name__", "uppest"}),
 			),
 			expectedLabels: []string{

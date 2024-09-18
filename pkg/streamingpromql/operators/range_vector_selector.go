@@ -22,10 +22,8 @@ type RangeVectorSelector struct {
 	Selector *Selector
 
 	rangeMilliseconds int64
-	numSteps          int
-
-	chunkIterator chunkenc.Iterator
-	nextT         int64
+	chunkIterator     chunkenc.Iterator
+	nextT             int64
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
@@ -37,13 +35,12 @@ func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
 func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
-	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
 
 	return m.Selector.SeriesMetadata(ctx)
 }
 
 func (m *RangeVectorSelector) StepCount() int {
-	return m.numSteps
+	return m.Selector.TimeRange.StepCount
 }
 
 func (m *RangeVectorSelector) Range() time.Duration {
@@ -57,12 +54,12 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 		return err
 	}
 
-	m.nextT = m.Selector.Start
+	m.nextT = m.Selector.TimeRange.StartT
 	return nil
 }
 
 func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (types.RangeVectorStepData, error) {
-	if m.nextT > m.Selector.End {
+	if m.nextT > m.Selector.TimeRange.EndT {
 		return types.RangeVectorStepData{}, types.EOS
 	}
 
@@ -84,7 +81,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, hi
 		return types.RangeVectorStepData{}, err
 	}
 
-	m.nextT += m.Selector.Interval
+	m.nextT += m.Selector.TimeRange.IntervalMs
 
 	return types.RangeVectorStepData{
 		StepT:      stepT,
@@ -127,14 +124,6 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			}
 			hPoint, _ := histograms.NextPoint()
 			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
-			// The following works around an optimisation that can cause a problem when we re-use native histograms.
-			// The optimisation uses the same span slices between native histogram points if the spans are the same.
-			// This is fine when the buffer is filled for a first series. However when the buffer is reset for a new
-			// series, we retain the histograms in memory and then overwrite them with `AtFloatHistogram`.
-			// A problem can then occur when `AtFloatHistogram` tries to populate the spans, incorrectly keeping the
-			// same span between histograms where they should be different.
-			// This workaround can be reverted once https://github.com/prometheus/prometheus/pull/14771 is vendored.
-			applyWorkaroundForSharedSpanSlices(hPoint.H)
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859

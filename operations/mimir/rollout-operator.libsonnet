@@ -29,6 +29,8 @@
 
     // Ignore these labels used for controlling webhook behavior when creating services.
     service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
+
+    rollout_operator_replica_template_access_enabled: $._config.ingest_storage_ingester_autoscaling_enabled || $._config.ingester_automated_downscale_v2_enabled,
   },
 
   local rollout_operator_enabled =
@@ -80,17 +82,25 @@
   rollout_operator_role: if !rollout_operator_enabled then null else
     role.new('rollout-operator-role') +
     role.mixin.metadata.withNamespace($._config.namespace) +
-    role.withRulesMixin([
-      policyRule.withApiGroups('') +
-      policyRule.withResources(['pods']) +
-      policyRule.withVerbs(['list', 'get', 'watch', 'delete']),
-      policyRule.withApiGroups('apps') +
-      policyRule.withResources(['statefulsets']) +
-      policyRule.withVerbs(['list', 'get', 'watch', 'patch']),
-      policyRule.withApiGroups('apps') +
-      policyRule.withResources(['statefulsets/status']) +
-      policyRule.withVerbs(['update']),
-    ]),
+    role.withRulesMixin(
+      [
+        policyRule.withApiGroups('') +
+        policyRule.withResources(['pods']) +
+        policyRule.withVerbs(['list', 'get', 'watch', 'delete']),
+        policyRule.withApiGroups('apps') +
+        policyRule.withResources(['statefulsets']) +
+        policyRule.withVerbs(['list', 'get', 'watch', 'patch']),
+        policyRule.withApiGroups('apps') +
+        policyRule.withResources(['statefulsets/status']) +
+        policyRule.withVerbs(['update']),
+      ] + (
+        if $._config.rollout_operator_replica_template_access_enabled then [
+          policyRule.withApiGroups($.replica_template.spec.group) +
+          policyRule.withResources(['%s/scale' % $.replica_template.spec.names.plural, '%s/status' % $.replica_template.spec.names.plural]) +
+          policyRule.withVerbs(['get', 'patch']),
+        ] else []
+      )
+    ),
 
   rollout_operator_rolebinding: if !rollout_operator_enabled then null else
     roleBinding.new('rollout-operator-rolebinding') +

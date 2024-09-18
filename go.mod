@@ -1,13 +1,13 @@
 module github.com/grafana/mimir
 
-go 1.22
+go 1.22.0
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
 toolchain go1.22.5
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.3.2
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.0
 	github.com/alecthomas/units v0.0.0-20240626203959-61d1e3462e30
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
@@ -34,9 +34,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.27.0
-	github.com/prometheus/client_golang v1.20.0
+	github.com/prometheus/client_golang v1.20.3
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.56.0
+	github.com/prometheus/common v0.58.0
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -45,18 +45,18 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.26.0
-	golang.org/x/net v0.28.0
+	golang.org/x/crypto v0.27.0
+	golang.org/x/net v0.29.0
 	golang.org/x/sync v0.8.0
-	golang.org/x/time v0.5.0
-	google.golang.org/grpc v1.65.0
+	golang.org/x/time v0.6.0
+	google.golang.org/grpc v1.66.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	cloud.google.com/go/storage v1.41.0
-	github.com/alecthomas/chroma/v2 v2.12.0
+	cloud.google.com/go/storage v1.43.0
+	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/dennwc/varint v1.0.0
@@ -65,16 +65,16 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20240829185616-8454ac21d7e5
+	github.com/grafana/alerting v0.0.0-20240906191856-cdc634f213ea
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/vault/api v1.10.0
+	github.com/hashicorp/vault/api v1.14.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/prometheus/procfs v0.15.1
-	github.com/shirou/gopsutil/v4 v4.24.7
-	github.com/thanos-io/objstore v0.0.0-20240818203309-0363dadfdfb1
+	github.com/shirou/gopsutil/v4 v4.24.8
+	github.com/thanos-io/objstore v0.0.0-20240913165201-fd105025a2e5
 	github.com/twmb/franz-go v1.17.1
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240821035758-b77dd13e2bfa
@@ -83,19 +83,19 @@ require (
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.12.0
-	go.opentelemetry.io/otel v1.28.0
-	go.opentelemetry.io/otel/trace v1.28.0
+	go.opentelemetry.io/otel v1.29.0
+	go.opentelemetry.io/otel/trace v1.29.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
-	google.golang.org/api v0.190.0
+	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
+	google.golang.org/api v0.196.0
 	google.golang.org/protobuf v1.34.2
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
 
 require (
-	cloud.google.com/go/auth v0.7.3 // indirect
-	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.13.0 // indirect
+	cloud.google.com/go/auth v0.9.3 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.14.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.7.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
@@ -106,6 +106,7 @@ require (
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-test/deep v1.1.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
@@ -132,7 +133,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
@@ -142,9 +143,9 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.115.0 // indirect
+	cloud.google.com/go v0.115.1 // indirect
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
-	cloud.google.com/go/iam v1.1.12 // indirect
+	cloud.google.com/go/iam v1.2.0 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
@@ -170,7 +171,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4 // indirect
@@ -180,7 +181,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -199,11 +199,11 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20240711041743-f6c9dda6c6da // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56 // indirect
-	github.com/hashicorp/consul/api v1.29.2 // indirect
+	github.com/hashicorp/consul/api v1.29.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
@@ -262,26 +262,26 @@ require (
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.105.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.53.0 // indirect
-	go.opentelemetry.io/otel/metric v1.28.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
+	go.opentelemetry.io/otel/metric v1.29.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
-	golang.org/x/mod v0.20.0 // indirect
-	golang.org/x/oauth2 v0.21.0 // indirect
-	golang.org/x/sys v0.24.0 // indirect
-	golang.org/x/text v0.17.0 // indirect
-	golang.org/x/tools v0.24.0 // indirect
-	google.golang.org/genproto v0.0.0-20240730163845-b1a4ccb954bf // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240725223205-93522f1f2a9f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240823204242-4ba0660f739c
+	golang.org/x/mod v0.21.0 // indirect
+	golang.org/x/oauth2 v0.22.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/tools v0.25.0 // indirect
+	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240827150818-7e3bb234dfed // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240830150301-6b342fac9c48
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240917104844-e4312d119ad6
 
-// client_golang v1.20.0 has some bugs https://github.com/prometheus/client_golang/issues/1605, https://github.com/prometheus/client_golang/issues/1607
+// client_golang v1.20.3 has some data races in histogram exemplars.
 // Stick to v1.19.1 until they are fixed.
 replace github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.19.1
 
@@ -311,3 +311,7 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 
 // Replacing prometheus/alertmanager with our fork.
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
+
+// Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
+// Following https://github.com/grafana/dskit/pull/581
+replace google.golang.org/grpc => google.golang.org/grpc v1.65.0

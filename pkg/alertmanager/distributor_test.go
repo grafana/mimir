@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -38,6 +39,11 @@ import (
 )
 
 func TestDistributor_DistributeRequest(t *testing.T) {
+	utiltest.VerifyNoLeak(t,
+		// This package's init() function statically starts a singleton goroutine that runs forever.
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+	)
+
 	cases := []struct {
 		name                string
 		numAM, numHappyAM   int
@@ -330,6 +336,7 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 
 	return d, ams, func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), amRing))
 	}
 }
 

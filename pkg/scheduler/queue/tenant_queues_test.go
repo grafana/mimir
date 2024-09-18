@@ -27,7 +27,6 @@ func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int)
 		}
 		var path QueuePath
 		var err error
-		// TODO (casie): After deprecating legacy tree queue, clean this up
 		if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 			if qb.prioritizeQueryComponents {
 				path = QueuePath{unknownQueueDimension, string(tenantID)}
@@ -86,7 +85,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
+			qb := newQueueBroker(0, tt.prioritizeQueryComponents, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -233,7 +232,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			maxTenantQueueSize := 100
-			qb := newQueueBroker(maxTenantQueueSize, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
+			qb := newQueueBroker(maxTenantQueueSize, tt.prioritizeQueryComponents, 0)
 			additionalQueueDimensions := map[int][]string{
 				0: nil,
 				1: {"ingester"},
@@ -259,27 +258,22 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			// assert item count of tenant node and its subnodes
 			queuePath := QueuePath{"tenant-1"}
 
-			// TODO (casie): After deprecating legacy tree queue, clean this up
-			if tq, ok := qb.tree.(*TreeQueue); ok {
-				assert.Equal(t, maxTenantQueueSize, tq.getNode(queuePath).ItemCount())
-			} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				var itemCount int
-				// if prioritizeQueryComponents, we need to build paths for each queue dimension
-				// and sum all items
-				if qb.prioritizeQueryComponents {
-					for _, addlQueueDim := range additionalQueueDimensions {
-						var path QueuePath
-						path = append(append(path, addlQueueDim...), "tenant-1")
-						if addlQueueDim == nil {
-							path = qb.makeQueuePathForTests("tenant-1")
-						}
-						itemCount += itq.GetNode(path).ItemCount()
+			var itemCount int
+			// if prioritizeQueryComponents, we need to build paths for each queue dimension
+			// and sum all items
+			if qb.prioritizeQueryComponents {
+				for _, addlQueueDim := range additionalQueueDimensions {
+					var path QueuePath
+					path = append(append(path, addlQueueDim...), "tenant-1")
+					if addlQueueDim == nil {
+						path = qb.makeQueuePathForTests("tenant-1")
 					}
-					assert.Equal(t, maxTenantQueueSize, itemCount)
-
-				} else {
-					assert.Equal(t, maxTenantQueueSize, itq.GetNode(queuePath).ItemCount())
+					itemCount += qb.tree.GetNode(path).ItemCount()
 				}
+				assert.Equal(t, maxTenantQueueSize, itemCount)
+
+			} else {
+				assert.Equal(t, maxTenantQueueSize, qb.tree.GetNode(queuePath).ItemCount())
 			}
 
 			// assert equal distribution of queue items between 4 subnodes
@@ -294,14 +288,8 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 					checkPath = append(QueuePath{"tenant-1"}, v...)
 				}
 
-				// TODO (casie): After deprecating legacy tree queue, clean this up
-				var itemCount int
-				if tq, ok := qb.tree.(*TreeQueue); ok {
-					itemCount = tq.getNode(checkPath).LocalQueueLen()
-				} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-					itemCount = itq.GetNode(checkPath).getLocalQueue().Len()
-				}
-				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), itemCount)
+				dimensionItemCount := qb.tree.GetNode(checkPath).getLocalQueue().Len()
+				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), dimensionItemCount)
 			}
 
 			// assert error received when hitting a tenant's enqueue limit,
@@ -340,7 +328,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
+			qb := newQueueBroker(0, tt.prioritizeQueryComponents, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -423,7 +411,7 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, 0)
+			qb := newQueueBroker(0, tt.prioritizeQueryComponents, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -506,7 +494,7 @@ func TestQueuesConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for testName, testData := range tests {
 				t.Run(testName, func(t *testing.T) {
-					qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, testData.forgetDelay)
+					qb := newQueueBroker(0, tt.prioritizeQueryComponents, testData.forgetDelay)
 					assert.NotNil(t, qb)
 					assert.NoError(t, isConsistent(qb))
 
@@ -567,7 +555,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
-			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, forgetDelay)
+			qb := newQueueBroker(0, tt.prioritizeQueryComponents, forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -680,7 +668,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
-			qb := newQueueBroker(0, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, forgetDelay)
+			qb := newQueueBroker(0, tt.prioritizeQueryComponents, forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -796,11 +784,8 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) e
 		return err
 	}
 
-	// TODO (casie): When deprecating legacy tree queue, clean this up
 	queuePath := qb.makeQueuePathForTests(tenantID)
-	if tq, ok := qb.tree.(*TreeQueue); ok {
-		_, err = tq.getOrAddNode(queuePath)
-	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		_, err = itq.rootNode.getOrAddNode(queuePath, itq)
 	}
 	return err
@@ -811,19 +796,7 @@ func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 	queuePath := qb.makeQueuePathForTests(tenantID)
 
-	// TODO (casie): When deprecating legacy tree queue, clean this up
-	if tq, ok := qb.tree.(*TreeQueue); ok {
-		// Normally, emptying out a tenant queue would handle removal from tenantIDOrder, but
-		// in tests, we sometimes remove a tenant with an existing queue outright, in which case
-		// we need to update tenantIDOrder and tenantNodes manually.
-		for i, t := range qb.tenantQuerierAssignments.tenantIDOrder {
-			if tenantID == t {
-				qb.tenantQuerierAssignments.tenantIDOrder[i] = emptyTenantID
-			}
-		}
-		return tq.deleteNode(queuePath)
-
-	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		return itq.rootNode.deleteNode(queuePath)
 	}
 
@@ -873,24 +846,13 @@ func isConsistent(qb *queueBroker) error {
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
 		path := qb.makeQueuePathForTests(tenantID)
 
-		// TODO (casie): After deprecating legacy tree queue, clean this up
-		if tq, ok := qb.tree.(*TreeQueue); ok {
-			node := tq.getNode(path)
-			if tenantID != "" && node == nil {
-				return fmt.Errorf("tenant %s doesn't have queue in legacy tree", tenantID)
-			}
-			if tenantID == "" && node != nil {
-				return fmt.Errorf("tenant %s shouldn't have queue in legacy tree", tenantID)
-			}
-		} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-			node := itq.rootNode.getNode(path)
-			if tenantID != "" && node == nil {
-				return fmt.Errorf("tenant %s doesn't have queue", tenantID)
-			}
+		node := qb.tree.GetNode(path)
+		if tenantID != "" && node == nil {
+			return fmt.Errorf("tenant %s doesn't have queue", tenantID)
+		}
 
-			if tenantID == "" && node != nil {
-				return fmt.Errorf("tenant %s shouldn't have queue", tenantID)
-			}
+		if tenantID == "" && node != nil {
+			return fmt.Errorf("tenant %s shouldn't have queue", tenantID)
 		}
 
 		if tenantID == "" {
@@ -923,11 +885,7 @@ func isConsistent(qb *queueBroker) error {
 	}
 
 	var tenantQueueCount int
-	// TODO (casie): After deprecating legacy tree queue, clean this up
-	if tq, ok := qb.tree.(*TreeQueue); ok {
-		// tenants may have child nodes, only count the tenant queue
-		tenantQueueCount = len(tq.childQueueMap)
-	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		if !qb.prioritizeQueryComponents {
 			// tree structure is root -> tenants -> query components
 			tenantQueueCount = len(itq.rootNode.queueMap)

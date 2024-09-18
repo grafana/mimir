@@ -1829,6 +1829,8 @@ spec:
           value: ingester-a-only
         - name: GOGC
           value: "off"
+        - name: GOMAXPROCS
+          value: "9"
         - name: GOMEMLIMIT
           value: 1Gi
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
@@ -1971,6 +1973,8 @@ spec:
         env:
         - name: A
           value: all-ingesters
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
         image: grafana/mimir:2.13.0
@@ -2109,6 +2113,8 @@ spec:
         env:
         - name: A
           value: all-ingesters
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
         image: grafana/mimir:2.13.0

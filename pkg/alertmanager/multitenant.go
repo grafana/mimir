@@ -925,6 +925,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 	}
 
 	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, staticHeaders); err != nil {
+		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
@@ -1188,7 +1189,6 @@ func (am *MultitenantAlertmanager) UpdateState(ctx context.Context, part *cluste
 
 // deleteUnusedRemoteUserState deletes state objects in remote storage for users that are no longer configured.
 func (am *MultitenantAlertmanager) deleteUnusedRemoteUserState(ctx context.Context, allUsers []string) {
-
 	users := make(map[string]struct{}, len(allUsers))
 	for _, userID := range allUsers {
 		users[userID] = struct{}{}

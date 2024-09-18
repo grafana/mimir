@@ -51,70 +51,52 @@ func TestBucketIndexBlocksFinder_GetBlocks(t *testing.T) {
 		minT           int64
 		maxT           int64
 		expectedBlocks bucketindex.Blocks
-		expectedMarks  map[ulid.ULID]*bucketindex.BlockDeletionMark
 	}{
 		"no matching block because the range is too low": {
-			minT:          0,
-			maxT:          5,
-			expectedMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
+			minT: 0,
+			maxT: 5,
 		},
 		"no matching block because the range is too high": {
-			minT:          50,
-			maxT:          60,
-			expectedMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{},
+			minT: 50,
+			maxT: 60,
 		},
 		"matching all blocks": {
 			minT:           0,
 			maxT:           60,
 			expectedBlocks: bucketindex.Blocks{block4, block3, block2, block1},
-			expectedMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{
-				block3.ID: mark3,
-			},
 		},
 		"query range starting at a block maxT": {
 			minT:           block3.MaxTime,
 			maxT:           60,
 			expectedBlocks: bucketindex.Blocks{block4},
-			expectedMarks:  map[ulid.ULID]*bucketindex.BlockDeletionMark{},
 		},
 		"query range ending at a block minT": {
 			minT:           block3.MinTime,
 			maxT:           block4.MinTime,
 			expectedBlocks: bucketindex.Blocks{block4, block3},
-			expectedMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{
-				block3.ID: mark3,
-			},
 		},
 		"query range within a single block": {
 			minT:           block3.MinTime + 2,
 			maxT:           block3.MaxTime - 2,
 			expectedBlocks: bucketindex.Blocks{block3},
-			expectedMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{
-				block3.ID: mark3,
-			},
 		},
 		"query range within multiple blocks": {
 			minT:           13,
 			maxT:           16,
 			expectedBlocks: bucketindex.Blocks{block2, block1},
-			expectedMarks:  map[ulid.ULID]*bucketindex.BlockDeletionMark{},
 		},
 		"query range matching exactly a single block": {
 			minT:           block3.MinTime,
 			maxT:           block3.MaxTime - 1,
 			expectedBlocks: bucketindex.Blocks{block3},
-			expectedMarks: map[ulid.ULID]*bucketindex.BlockDeletionMark{
-				block3.ID: mark3,
-			},
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			blocks, deletionMarks, err := finder.GetBlocks(ctx, userID, testData.minT, testData.maxT)
+			blocks, err := finder.GetBlocks(ctx, userID, testData.minT, testData.maxT)
 			require.NoError(t, err)
 			require.ElementsMatch(t, testData.expectedBlocks, blocks)
-			require.Equal(t, testData.expectedMarks, deletionMarks)
 		})
 	}
 }
@@ -151,8 +133,8 @@ func BenchmarkBucketIndexBlocksFinder_GetBlocks(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		blocks, marks, err := finder.GetBlocks(ctx, userID, 100, 200)
-		if err != nil || len(blocks) != 11 || len(marks) != 11 {
+		blocks, err := finder.GetBlocks(ctx, userID, 100, 200)
+		if err != nil || len(blocks) != 11 {
 			b.Fail()
 		}
 	}
@@ -165,10 +147,9 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexDoesNotExist(t *testing.T)
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	finder := prepareBucketIndexBlocksFinder(t, bkt)
 
-	blocks, deletionMarks, err := finder.GetBlocks(ctx, userID, 10, 20)
+	blocks, err := finder.GetBlocks(ctx, userID, 10, 20)
 	require.NoError(t, err)
 	assert.Empty(t, blocks)
-	assert.Empty(t, deletionMarks)
 }
 
 func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsCorrupted(t *testing.T) {
@@ -181,7 +162,7 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsCorrupted(t *testing.T) 
 	// Upload a corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	_, _, err := finder.GetBlocks(ctx, userID, 10, 20)
+	_, err := finder.GetBlocks(ctx, userID, 10, 20)
 	require.Equal(t, bucketindex.ErrIndexCorrupted, err)
 }
 
@@ -200,7 +181,7 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {
 	}
 	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
 
-	_, _, err := finder.GetBlocks(ctx, userID, 10, 20)
+	_, err := finder.GetBlocks(ctx, userID, 10, 20)
 	require.EqualError(t, err, newBucketIndexTooOldError(idx.GetUpdatedAt(), finder.cfg.MaxStalePeriod).Error())
 }
 
