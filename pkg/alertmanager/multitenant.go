@@ -750,6 +750,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 		if errors.Is(err, alertspb.ErrNotFound) {
 			// This is expected if the state was already promoted.
 			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
+			am.multitenantMetrics.grafanaStateSize.DeleteLabelValues(cfg.User)
 			return nil
 		}
 		return err
