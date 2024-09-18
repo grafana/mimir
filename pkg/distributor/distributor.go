@@ -100,8 +100,6 @@ type Distributor struct {
 	ingesterPool  *ring_client.Pool
 	limits        *validation.Overrides
 
-	isServiceStarted *atomic.Bool
-
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
@@ -343,7 +341,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
-		isServiceStarted:      atomic.NewBool(false),
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
@@ -615,8 +612,6 @@ func (d *Distributor) starting(ctx context.Context) error {
 			return err
 		}
 	}
-
-	d.isServiceStarted.Store(true)
 
 	return nil
 }
@@ -1302,7 +1297,7 @@ func (d *Distributor) checkStartedMiddleware(next PushFunc) PushFunc {
 		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
-		if d.isServiceStarted.Load() {
+		if d.State() == services.Running {
 			return next(ctx, pushReq)
 		}
 
