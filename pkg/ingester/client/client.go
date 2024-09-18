@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
@@ -70,6 +71,7 @@ type Config struct {
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name, s2.SnappyCompatName}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 }
 
