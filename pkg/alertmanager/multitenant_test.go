@@ -3221,6 +3221,8 @@ func TestSyncStates(t *testing.T) {
 				prometheus.NewPedanticRegistry(),
 			)
 
+			require.NoError(t, store.SetFullGrafanaState(ctx, test.cfg.User, alertspb.FullStateDesc{}))
+
 			require.NoError(t, am.setConfig(amConfig{
 				AlertConfigDesc: alertspb.AlertConfigDesc{
 					User:      test.cfg.User,
