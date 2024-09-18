@@ -781,8 +781,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
-	middlewares = append(middlewares, d.checkStartedMiddleware) // This middleware doesn't read the request body.
-	middlewares = append(middlewares, d.limitsMiddleware)       // Should run early because it checks limits before other middlewares need to read the request body.
+	middlewares = append(middlewares, d.limitsMiddleware) // Should run first because it checks limits before other middlewares need to read the request body.
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
@@ -1291,26 +1290,16 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	}
 }
 
-// checkStartedMiddleware blocks until the underlying distributor service is started.
-func (d *Distributor) checkStartedMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		if d.State() == services.Running {
-			return next(ctx, pushReq)
-		}
-
-		if err := d.AwaitRunning(ctx); err != nil {
-			return err
-		}
-		return next(ctx, pushReq)
-	}
-}
-
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
+		// Make sure the distributor service and all its dependent services have been
+		// started. The following checks in this middleware depend on the runtime config
+		// service having been started.
+		if s := d.State(); s != services.Running {
+			return newUnavailableError(s)
+		}
+
 		// We don't know request size yet, will check it later.
 		ctx, rs, err := d.startPushRequest(ctx, -1)
 		if err != nil {

@@ -7975,8 +7975,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 		mimirpb.API,
 	))
 
-	// We expect the push request to time out because the distributor service has not
-	// started.
+	// We expect the push request to be rejected with an unavailable error.
 	require.NotNil(t, err)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorContains(t, err, "rpc error: code = Internal desc = distributor is unavailable (current state: New)")
 }
