@@ -184,6 +184,33 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    }
    ```
 
+## Collect and send native histograms with the OpenTelemetry Collector
+
+Use the OpenTelemetry SDK to collect and send native histograms with the OpenTelemetry Collector. You can instrument the collector using either Go or Java.
+
+### Instrument the OpenTelemetry Collector using Go
+
+Use the OpenTelemetry SDK version 1.17.0 or later.
+
+1. Set up the collector to handle your metrics data. This includes setting up your resources, meter provider, meter, instruments, and views. Refer to [Metrics](https://opentelemetry.io/docs/languages/go/instrumentation/#metrics) in the OpenTelemetry SDK documentation for Go.
+1. To aggregate a histogram instrument as an exponential histogram, include the following view:
+
+   ```
+   Aggregation: metric.AggregationBase2ExponentialHistogram{
+			MaxSize:  160,
+			MaxScale: 20,
+		}
+   ```
+
+   For more information, refer to [Registering Views](https://opentelemetry.io/docs/languages/go/instrumentation/#registering-views) in the OpenTelemetry SDK documentation for Go.
+
+### Instrument the OpenTelemetry Collector using Java
+
+Use the OpenTelemetry SDK version 1.35.0 or later.
+
+1. Set up the collector to handle your metrics data. This includes setting up your resources, meter provider, meter, instruments, and views. Refer to [Metrics](https://opentelemetry.io/docs/languages/java/instrumentation/#metrics) in the OpenTelemetry SDK documentation for Java.
+1. To aggregate a histogram instrument as an exponential histogram, include the following view:
+
 ## Migrate from classic histograms
 
 To ease the migration process, you can keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time.
