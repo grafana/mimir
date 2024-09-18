@@ -243,6 +243,22 @@ func TestClient_QueryRange(t *testing.T) {
 		require.Len(t, receivedRequests, 1)
 		assert.Equal(t, "no-store", receivedRequests[0].Header.Get("Cache-Control"))
 	})
+
+	t.Run("with additional headers", func(t *testing.T) {
+		receivedRequests = nil
+
+		headers := http.Header{
+			"header1": []string{"val1", "val2"},
+			"header2": []string{"val3"},
+		}
+
+		_, err := c.QueryRange(ctx, "up", time.Unix(0, 0), time.Unix(1000, 0), 10, WithAdditionalHeaders(headers))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, []string{"val1", "val2"}, receivedRequests[0].Header.Values("header1"))
+		assert.Equal(t, []string{"val3"}, receivedRequests[0].Header.Values("header2"))
+	})
 }
 
 func TestClient_Query(t *testing.T) {
@@ -290,6 +306,22 @@ func TestClient_Query(t *testing.T) {
 
 		require.Len(t, receivedRequests, 1)
 		assert.Equal(t, "no-store", receivedRequests[0].Header.Get("Cache-Control"))
+	})
+
+	t.Run("with additional headers", func(t *testing.T) {
+		receivedRequests = nil
+
+		headers := http.Header{
+			"header1": []string{"val1", "val2"},
+			"header2": []string{"val3"},
+		}
+
+		_, err := c.Query(ctx, "up", time.Unix(0, 0), WithAdditionalHeaders(headers))
+		require.NoError(t, err)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, []string{"val1", "val2"}, receivedRequests[0].Header.Values("header1"))
+		assert.Equal(t, []string{"val3"}, receivedRequests[0].Header.Values("header2"))
 	})
 }
 
