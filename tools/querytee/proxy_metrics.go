@@ -50,7 +50,7 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 			Namespace: queryTeeMetricsNamespace,
 			Name:      "shifted_comparisons_total",
 			Help:      "Total number of responses compared per route name by result.",
-		}, []string{"route"}),
+		}, []string{"route", "result"}),
 		relativeDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace:                   queryTeeMetricsNamespace,
 			Name:                        "backend_response_relative_duration_seconds",
