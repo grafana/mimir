@@ -336,7 +336,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	p.metrics.proportionalDuration.WithLabelValues(p.route.RouteName).Observe(proportionalDurationDifference)
 	p.metrics.responsesComparedTotal.WithLabelValues(p.route.RouteName, string(result)).Inc()
 	if shiftedReq != nil {
-		p.metrics.shiftedComparisonsTotal.WithLabelValues(p.route.RouteName).Inc()
+		p.metrics.shiftedComparisonsTotal.WithLabelValues(p.route.RouteName, string(result)).Inc()
 	}
 }
 
