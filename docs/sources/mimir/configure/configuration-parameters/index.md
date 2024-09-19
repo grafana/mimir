@@ -2092,8 +2092,7 @@ tenant_federation:
 # CLI flag: -ruler.outbound-sync-queue-poll-interval
 [outbound_sync_queue_poll_interval: <duration> | default = 10s]
 
-# (experimental) Interval between sending queued rule sync requests to ruler
-# replicas.
+# (experimental) Interval between applying queued incoming rule sync requests.
 # CLI flag: -ruler.inbound-sync-queue-poll-interval
 [inbound_sync_queue_poll_interval: <duration> | default = 10s]
 
