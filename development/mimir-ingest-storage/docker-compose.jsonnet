@@ -12,6 +12,7 @@ std.manifestYamlDoc({
     self.kafka_1 +
     self.kafka_2 +
     self.kafka_3 +
+    self.jaeger +
     {},
 
   write:: {
@@ -231,6 +232,22 @@ std.manifestYamlDoc({
     },
   },
 
+  jaeger:: {
+    jaeger: {
+      image: 'jaegertracing/all-in-one',
+      ports: ['16686:16686', '14268'],
+    },
+  },
+
+  local jaegerEnv(appName) = {
+    JAEGER_AGENT_HOST: 'jaeger',
+    JAEGER_AGENT_PORT: 6831,
+    JAEGER_SAMPLER_TYPE: 'const',
+    JAEGER_SAMPLER_PARAM: 1,
+    JAEGER_TAGS: 'app=%s' % appName,
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
+  },
+
   // This function builds docker-compose declaration for Mimir service.
   local mimirService(serviceOptions) = {
     local defaultOptions = {
@@ -243,7 +260,7 @@ std.manifestYamlDoc({
         kafka_1: { condition: 'service_healthy' },
         kafka_2: { condition: 'service_healthy' },
       },
-      env: {},
+      env: jaegerEnv(self.target),
       extraArguments: [],
       debug: true,
       debugPort: self.publishedHttpPort + 3000,

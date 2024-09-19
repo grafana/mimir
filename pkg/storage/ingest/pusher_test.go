@@ -225,13 +225,13 @@ func TestPusherConsumer(t *testing.T) {
 	}
 }
 
-var unimportantLogFieldsPattern = regexp.MustCompile(`\scaller=\S+\.go:\d+\s`)
+var unimportantLogFieldsPattern = regexp.MustCompile(`(\s?)caller=\S+\.go:\d+\s`)
 
 func removeUnimportantLogFields(lines []string) []string {
 	// The 'caller' field is not important to these tests (we just care about the message and other information),
 	// and can change as we refactor code, making these tests brittle. So we remove it before making assertions about the log lines.
 	for i, line := range lines {
-		lines[i] = unimportantLogFieldsPattern.ReplaceAllString(line, " ")
+		lines[i] = unimportantLogFieldsPattern.ReplaceAllString(line, "$1")
 	}
 
 	return lines

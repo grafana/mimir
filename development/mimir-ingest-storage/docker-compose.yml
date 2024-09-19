@@ -23,6 +23,11 @@
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
+  "jaeger":
+    "image": "jaegertracing/all-in-one"
+    "ports":
+      - "16686:16686"
+      - "14268"
   "kafka_1":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
@@ -112,7 +117,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=backend"
     "hostname": "mimir-backend-1"
     "image": "mimir"
     "ports":
@@ -136,7 +147,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=backend"
     "hostname": "mimir-backend-2"
     "image": "mimir"
     "ports":
@@ -160,7 +177,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=read"
     "hostname": "mimir-read-1"
     "image": "mimir"
     "ports":
@@ -184,7 +207,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=read"
     "hostname": "mimir-read-2"
     "image": "mimir"
     "ports":
@@ -208,7 +237,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=write"
     "hostname": "mimir-write-zone-a-1"
     "image": "mimir"
     "ports":
@@ -233,7 +268,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=write"
     "hostname": "mimir-write-zone-a-2"
     "image": "mimir"
     "ports":
@@ -258,7 +299,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=write"
     "hostname": "mimir-write-zone-a-3"
     "image": "mimir"
     "ports":
@@ -283,7 +330,13 @@
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
-    "environment": []
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=ingester"
     "hostname": "mimir-write-zone-c-61"
     "image": "mimir"
     "ports":

@@ -149,7 +149,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 
 	for r := range recordsChannel {
 		if r.err != nil {
-			level.Error(c.logger).Log("msg", "failed to parse write request; skipping", "err", r.err)
+			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
 			continue
 		}
 
@@ -337,6 +337,7 @@ func (p *shardingPusher) PushToStorage(ctx context.Context, request *mimirpb.Wri
 		// TODO dimitarvdimitrov support metadata and the rest of the fields; perhaps cut a new request for different values of SkipLabelNameValidation?
 		s.Timeseries = append(s.Timeseries, ts)
 		s.Context = ctx // retain the last context in case we have to flush it when closing shardingPusher
+		p.unfilledShards[shard] = s
 
 		if len(s.Timeseries) < p.batchSize {
 			continue

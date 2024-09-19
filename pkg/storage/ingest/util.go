@@ -84,16 +84,17 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		opts = append(opts, kgo.AllowAutoTopicCreation())
 	}
 
-	tracer := kotel.NewTracer(
-		kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{})),
-	)
-	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(tracer)).Hooks()...))
+	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
 
 	if metrics != nil {
 		opts = append(opts, kgo.WithHooks(metrics))
 	}
 
 	return opts
+}
+
+func recordsTracer() *kotel.Tracer {
+	return kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{})))
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
