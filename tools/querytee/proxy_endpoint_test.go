@@ -628,18 +628,27 @@ func Test_ProxyEndpoint_ShiftedQueriesForComparison(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			// Do the request.
 			endpoint.ServeHTTP(resp, req)
 			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
 			// Wait for the response comparison to complete before checking the logged messages.
 			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
 
+			got, done, err := prometheus.ToTransactionalGatherer(reg).Gather()
+			defer done()
+			require.NoError(t, err, "Failed to gather metrics from registry")
+			comparisons := filterMetrics(got, []string{"cortex_querytee_shifted_comparisons_total"})
+
 			require.Len(t, secondaryReqs, 1)
 			if scenario.shiftBy == 0 || (scenario.route != querymiddleware.QueryRangePathSuffix && scenario.route != querymiddleware.InstantQueryPathSuffix) {
 				require.Len(t, preferredReqs, 1)
+				require.Len(t, comparisons, 0, "Expect no comparison metric")
 				return
 			}
 
 			require.Len(t, preferredReqs, 2)
+			require.Len(t, comparisons, 1, "Expect only one metric after filtering")
+			require.Equal(t, float64(1), comparisons[0].Metric[0].Counter.GetValue())
 
 			compareRequest := func(req querymiddleware.MetricsQueryRequest, shift time.Duration) {
 				require.Equal(t, scenario.start-shift.Milliseconds(), req.GetStart())
