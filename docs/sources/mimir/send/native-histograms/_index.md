@@ -184,7 +184,7 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    }
    ```
 
-## Collect and send native histograms with the OpenTelemetry Collector
+## Collect and send exponential histograms with the OpenTelemetry Collector
 
 Use the OpenTelemetry SDK to collect and send native histograms with the OpenTelemetry Collector. You can instrument the collector using either Go or Java.
 
