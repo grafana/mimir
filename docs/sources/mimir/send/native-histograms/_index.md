@@ -198,7 +198,7 @@ OpenTelemetry supports instrumenting applications with the OpenTelemetry SDK. Mu
 
 ### Instrument the OpenTelemetry Collector using Go
 
-Use the OpenTelemetry SDK version 1.17.0 or later.
+Use the OpenTelemetry SDK version 1.17.0 or later for Go.
 
 1. Set up the collector to handle your metrics data. This includes setting up your resources, meter provider, meter, instruments, and views. Refer to [Metrics](https://opentelemetry.io/docs/languages/go/instrumentation/#metrics) in the OpenTelemetry SDK documentation for Go.
 1. To aggregate a histogram instrument as an exponential histogram, include the following view:
