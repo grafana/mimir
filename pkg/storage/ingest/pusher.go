@@ -387,7 +387,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 
 	for _, ts := range request.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		shard := nonCopiedLabels.Hash() % uint64(p.numShards)
+		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
 
 		// TODO: Add metrics to measure how long are items sitting in the queue before they are flushed.
 		// TODO dimitarvdimitrov support metadata and the rest of the fields; perhaps cut a new request for different values of SkipLabelNameValidation?
