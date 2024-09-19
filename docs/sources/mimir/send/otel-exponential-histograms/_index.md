@@ -6,21 +6,21 @@ keywords:
   - OpenTelemetry
   - instrumentation
 menuTitle: OpenTelemetry exponential histograms
-title: Send exponential histograms to Mimir
+title: Send OpenTelemetry exponential histograms to Mimir
 weight: 200
 ---
 
-# Send exponential histograms to Mimir
+# Send OpenTelemetry exponential histograms to Mimir
 
 You can collect and send exponential histograms to Mimir with the OpenTelemetry Collector. OpenTelemetry [exponential histograms](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) are compatible with Prometheus native histograms. The key difference is that exponential histograms store the `min` and `max`  observation values explicitly, whereas native histograms don't. This means that for exponential histograms, you don't need to estimate these values using the 0.0 and 1.0 quantiles.
 
 The OpenTelemetry Collector supports collecting exponential histograms and other compatible data formats, such as native histograms and DataDog sketches, through its receivers and sending them through its exporters.
 
 {{< admonition type="note" >}}
-The availability of different receivers and exporters depends on your Collector [distribution](https://opentelemetry.io/docs/concepts/distributions/).
+The availability of different receivers and exporters depends on your OpenTelemetry Collector [distribution](https://opentelemetry.io/docs/concepts/distributions/).
 {{< /admonition >}}
 
-You can use the OpenTelemetry (OTLP) protocol to send exponential histograms to Grafana Mimir in their existing format, or you can use the Prometheus remote write protocol to send them as Prometheus native histograms.
+You can use the OpenTelemetry (OTLP) protocol to send exponential histograms to Grafana Mimir in their existing format, or you can use the Prometheus remote write protocol to send them as Prometheus native histograms. Refer to [Send native histograms to Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/).
 
 The OpenTelemetry SDK supports instrumenting applications in multiple languages. Refer to [Language APIs & SDKs](https://opentelemetry.io/docs/languages/). 
 
