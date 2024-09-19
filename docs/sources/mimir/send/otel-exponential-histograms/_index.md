@@ -1,27 +1,34 @@
 ---
 description: Learn how to collect and send exponential histograms with the OpenTelemetry Collector
+keywords:
+  - send metrics
+  - exponential histogram
+  - OpenTelemetry
+  - instrumentation
 menuTitle: OpenTelemetry exponential histograms
-title: Collect and send exponential histograms with the OpenTelemetry Collector
-weight: 100
+title: Send exponential histograms to Mimir
+weight: 200
 ---
 
-# Collect and send exponential histograms with the OpenTelemetry Collector
+# Send exponential histograms to Mimir
 
-OpenTelemetry [exponential histograms](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) are compatible with Prometheus native histograms. The only significant difference is that exponential histograms store the `min` and `max`  observation values explicitly, but native histograms don't, which means you need to estimate the minimum and maximum by using the 0.0 and 1.0 quantile respectively. 
+You can collect and send exponential histograms to Mimir with the OpenTelemetry Collector. OpenTelemetry [exponential histograms](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) are compatible with Prometheus native histograms. The key difference is that exponential histograms store the `min` and `max`  observation values explicitly, whereas native histograms don't. This means that for exponential histograms, you don't need to estimate these values using the 0.0 and 1.0 quantiles.
 
-Use the OpenTelemetry Collector to collect and send exponential histograms. The Collector supports collecting exponential histograms or other compatible data formats (for example native histograms, DataDog sketches, etc) through its receivers. The Collector also supports sending the exponential histograms or compatible data formats such as native histograms through its exporters.
+The OpenTelemetry Collector supports collecting exponential histograms and other compatible data formats, such as native histograms and DataDog sketches, through its receivers and sending them through its exporters.
 
-Note: the availability of different receivers and exporters depends on your Collector [distribution](https://opentelemetry.io/docs/concepts/distributions/).
+{{< admonition type="note" >}}
+The availability of different receivers and exporters depends on your Collector [distribution](https://opentelemetry.io/docs/concepts/distributions/).
+{{< /admonition >}}
 
-Grafana Mimir can receive exponential histograms as is via the OTLP protocol or as Prometheus native histograms over the Prometheus remote write protocol.
+You can use the OpenTelemetry (OTLP) protocol to send exponential histograms to Grafana Mimir in their existing format, or you can use the Prometheus remote write protocol to send them as Prometheus native histograms.
 
-OpenTelemetry supports instrumenting applications with the OpenTelemetry SDK. Multiple languages are supported, for the complete list see [Language APIs & SDKs](https://opentelemetry.io/docs/languages/).
+The OpenTelemetry SDK supports instrumenting applications in multiple languages. Refer to [Language APIs & SDKs](https://opentelemetry.io/docs/languages/). 
 
-## Instrument a Go application with the OpenTelemetry SDK
+## Instrument an application with the OpenTelemetry SDK using Go
 
-Use the OpenTelemetry SDK version 1.17.0 or later for Go.
+Use the OpenTelemetry SDK version 1.17.0 or later.
 
-1. Set up the collector to handle your metrics data. This includes setting up your resources, meter provider, meter, instruments, and views. Refer to [Metrics](https://opentelemetry.io/docs/languages/go/instrumentation/#metrics) in the OpenTelemetry SDK documentation for Go.
+1. Set up the OpenTelemetry Collector to handle your metrics data. This includes setting up your resources, meter provider, meter, instruments, and views. Refer to [Metrics](https://opentelemetry.io/docs/languages/go/instrumentation/#metrics) in the OpenTelemetry SDK documentation for Go.
 1. To aggregate a histogram instrument as an exponential histogram, include the following view:
 
    ```
@@ -34,3 +41,5 @@ Use the OpenTelemetry SDK version 1.17.0 or later for Go.
    For more information, refer to [Registering Views](https://opentelemetry.io/docs/languages/go/instrumentation/#registering-views) in the OpenTelemetry SDK documentation for Go.
 
 ## Migrate from classic histograms
+
+## Bucket boundary calculation
