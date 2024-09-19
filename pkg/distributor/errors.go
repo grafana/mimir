@@ -10,6 +10,7 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 
@@ -357,4 +358,22 @@ func isIngestionClientError(err error) bool {
 	}
 
 	return false
+}
+
+type unavailableError struct {
+	state services.State
+}
+
+var _ Error = unavailableError{}
+
+func newUnavailableError(state services.State) unavailableError {
+	return unavailableError{state: state}
+}
+
+func (e unavailableError) Error() string {
+	return fmt.Sprintf("distributor is unavailable (current state: %s)", e.state.String())
+}
+
+func (e unavailableError) Cause() mimirpb.ErrorCause {
+	return mimirpb.SERVICE_UNAVAILABLE
 }
