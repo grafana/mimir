@@ -15,6 +15,7 @@ jobs:
   sync:
     if: github.repository == 'grafana/mimir'
     needs: test
+    # The following permissions are required to to assume roles from GitHub's OIDC which is used to fetch secrets from Vault.
     permissions:
       contents: read
       id-token: write
@@ -22,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full fetch depth is required to fetch tags. The publishing workflow uses tags to prevent publishing a release branch before it has been formally released, as determined by the presence of a matching tag for the release branch.
           fetch-depth: 0
       - uses: grafana/writers-toolkit/publish-technical-documentation-release@publish-technical-documentation-release/v1
         with:
