@@ -23,8 +23,8 @@ type AggregationGroupFactory func() AggregationGroup
 
 var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
 	parser.AVG:   func() AggregationGroup { return &AvgAggregationGroup{} },
-	parser.COUNT: func() AggregationGroup { return &CountAggregationGroup{} },
-	parser.GROUP: func() AggregationGroup { return &GroupAggregationGroup{} },
+	parser.COUNT: func() AggregationGroup { return NewCountGroupAggregationGroup(true) },
+	parser.GROUP: func() AggregationGroup { return NewCountGroupAggregationGroup(false) },
 	parser.MAX:   func() AggregationGroup { return NewMinMaxAggregationGroup(true) },
 	parser.MIN:   func() AggregationGroup { return NewMinMaxAggregationGroup(false) },
 	parser.SUM:   func() AggregationGroup { return &SumAggregationGroup{} },
