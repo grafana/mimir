@@ -71,7 +71,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name: "enqueue round-robin node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(0),
+				newTenantQuerierAssignments(),
 				&roundRobinState{},
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
@@ -79,17 +79,17 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name: "enqueue tenant-querier node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(0),
-				newTenantQuerierAssignments(0),
+				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(),
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
 			name: "fail to enqueue to a node at depth 1 in tree with max-depth of 2",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(0),
+				newTenantQuerierAssignments(),
 				&roundRobinState{},
-				newTenantQuerierAssignments(0),
+				newTenantQuerierAssignments(),
 			},
 			childPathsToEnqueue: []QueuePath{{"child"}},
 			expectErr:           true,
@@ -182,7 +182,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		},
 		{
 			name:        "dequeue from empty tenant-querier root node",
-			rootAlgo:    newTenantQuerierAssignments(0),
+			rootAlgo:    newTenantQuerierAssignments(),
 			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
 		},
 		{
@@ -193,14 +193,14 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		},
 		{
 			name:          "dequeue from non-empty tenant-querier root node",
-			rootAlgo:      newTenantQuerierAssignments(0),
+			rootAlgo:      newTenantQuerierAssignments(),
 			enqueueToRoot: []any{"something-else-in-root"},
 			expected:      []any{"something-else-in-root"},
 			dequeueArgs:   &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
 		},
 		{
 			name:          "dequeue from non-empty tenant-querier root node with no current querier",
-			rootAlgo:      newTenantQuerierAssignments(0),
+			rootAlgo:      newTenantQuerierAssignments(),
 			enqueueToRoot: []any{"something-in-root"},
 		},
 	}
