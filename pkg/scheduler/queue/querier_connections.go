@@ -113,10 +113,10 @@ func (qc *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQue
 	return false
 }
 
-// forgettableQueriers removes all querier connections which no longer have any querier-worker connections and for whom
+// removeForgettableQueriers removes all querier connections which no longer have any querier-worker connections and for whom
 // querierForgetDelay time has passed since the querier disconnected. It returns a slice of all querier IDs which were
 // removed.
-func (qc *querierConnections) forgettableQueriers(now time.Time) []QuerierID {
+func (qc *querierConnections) removeForgettableQueriers(now time.Time) []QuerierID {
 	// if forget delay is disabled, removal is done immediately on querier disconnect or shutdown; do nothing
 	if qc.querierForgetDelay == 0 {
 		return nil

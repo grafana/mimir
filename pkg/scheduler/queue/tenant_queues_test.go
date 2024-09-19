@@ -837,8 +837,6 @@ func (qb *queueBroker) makeQueuePathForTests(tenantID TenantID) QueuePath {
 
 func isConsistent(qb *queueBroker) error {
 	if len(qb.tenantQuerierAssignments.querierIDsSorted) != len(qb.querierConnections.queriersByID) {
-		fmt.Println(qb.tenantQuerierAssignments.querierIDsSorted)
-		fmt.Println(qb.querierConnections.queriersByID)
 		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
 	}
 

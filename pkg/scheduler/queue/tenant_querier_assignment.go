@@ -163,15 +163,16 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	delete(tqa.tenantsByID, tenantID)
 }
 
-// TODO (casie): Docstring
-// only adds querier to querierIDsSorted. Anywhere else a querier needs to be added should be handled by the component which manages that.
+// addQuerier adds the given querierID to tenantQuerierAssignments' querierIDsSorted. It does not do any checks to
+// validate that a querier connection matching this ID exists. That logic is handled by querierConnections,
+// and coordinated by the queueBroker.
 func (tqa *tenantQuerierAssignments) addQuerier(querierID QuerierID) {
 	tqa.querierIDsSorted = append(tqa.querierIDsSorted, querierID)
 	sort.Sort(tqa.querierIDsSorted)
 }
 
 // removeQueriers deletes an arbitrary number of queriers from the querier connection manager, and returns true if
-// recomputing tenant-querier sharding was necessary.
+// the tenant-querier sharding was recomputed.
 func (tqa *tenantQuerierAssignments) removeQueriers(querierIDs ...QuerierID) (resharded bool) {
 	for _, querierID := range querierIDs {
 		ix := tqa.querierIDsSorted.Search(querierID)

@@ -222,5 +222,5 @@ func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded boo
 // forgetDisconnectedQueriers removes all queriers which have had zero connections for longer than the forget delay.
 // Returns true if tenant-querier reshard was triggered.
 func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
-	return qb.tenantQuerierAssignments.removeQueriers(qb.querierConnections.forgettableQueriers(now)...)
+	return qb.tenantQuerierAssignments.removeQueriers(qb.querierConnections.removeForgettableQueriers(now)...)
 }
