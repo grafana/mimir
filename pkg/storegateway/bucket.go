@@ -1126,8 +1126,6 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	)
 	for _, b := range blocks {
-		b := b
-
 		// Keep track of queried blocks.
 		indexr := indexReaders[b.meta.ULID]
 

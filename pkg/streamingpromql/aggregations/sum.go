@@ -24,79 +24,119 @@ type SumAggregationGroup struct {
 	histogramPointCount     int
 }
 
-func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
-	var err error
-	if len(data.Floats) > 0 && g.floatSums == nil {
-		// First series with float values for this group, populate it.
-		g.floatSums, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-
-		g.floatCompensatingValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-
-		g.floatPresent, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-		g.floatSums = g.floatSums[:steps]
-		g.floatCompensatingValues = g.floatCompensatingValues[:steps]
-		g.floatPresent = g.floatPresent[:steps]
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
+		// Nothing to do
+		return nil
 	}
 
-	if len(data.Histograms) > 0 && g.histogramSums == nil {
-		// First series with histogram values for this group, populate it.
-		g.histogramSums, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
+	err := g.accumulateFloats(data, timeRange, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotationFunc)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+	var err error
+
+	if len(data.Floats) > 0 && g.floatSums == nil {
+		// First series with float values for this group, populate it.
+		g.floatSums, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
-		g.histogramSums = g.histogramSums[:steps]
+
+		g.floatCompensatingValues, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		g.floatPresent, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.floatSums = g.floatSums[:timeRange.StepCount]
+		g.floatCompensatingValues = g.floatCompensatingValues[:timeRange.StepCount]
+		g.floatPresent = g.floatPresent[:timeRange.StepCount]
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - start) / interval
+		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
 		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
 
+	return nil
+}
+
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+	var err error
 	var lastUncopiedHistogram *histogram.FloatHistogram
 
-	for _, p := range data.Histograms {
-		idx := (p.T - start) / interval
+	if len(data.Histograms) > 0 && g.histogramSums == nil {
+		// First series with histogram values for this group, populate it.
+		g.histogramSums, err = types.HistogramSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.histogramSums = g.histogramSums[:timeRange.StepCount]
+	}
 
-		if g.histogramSums[idx] == invalidCombinationOfHistograms {
+	for inputIdx, p := range data.Histograms {
+		outputIdx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+
+		if g.histogramSums[outputIdx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
 			continue
-		} else if g.histogramSums[idx] != nil {
-			g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
-			if err != nil {
-				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
-				g.histogramSums[idx] = invalidCombinationOfHistograms
-				g.histogramPointCount--
+		}
 
-				if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
-					// Unknown error: we couldn't convert the error to an annotation. Give up.
-					return err
-				}
+		if lastUncopiedHistogram == p.H {
+			// Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we're retaining a reference to it.
+			data.Histograms[inputIdx].H = nil
+		}
+
+		if g.histogramSums[outputIdx] == nil {
+			if lastUncopiedHistogram == p.H {
+				// We've already used this histogram for a previous point due to lookback.
+				// Make a copy of it so we don't modify the other point.
+				g.histogramSums[outputIdx] = p.H.Copy()
+				g.histogramPointCount++
+
+				continue
 			}
-		} else if lastUncopiedHistogram == p.H {
-			// We've already used this histogram for a previous point due to lookback.
-			// Make a copy of it so we don't modify the other point.
-			g.histogramSums[idx] = p.H.Copy()
-			g.histogramPointCount++
-		} else {
-			// This is the first time we have seen this histogram.
+
+			// We have not previously used this histogram as the start of an output point.
 			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
-			g.histogramSums[idx] = p.H
+			g.histogramSums[outputIdx] = p.H
 			g.histogramPointCount++
 			lastUncopiedHistogram = p.H
+
+			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused, including if it was used at previous points.
+			data.RemoveReferencesToRetainedHistogram(p.H, inputIdx)
+
+			continue
+		}
+
+		g.histogramSums[outputIdx], err = g.histogramSums[outputIdx].Add(p.H)
+		if err != nil {
+			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
+			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
+			g.histogramPointCount--
+
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+				// Unknown error: we couldn't convert the error to an annotation. Give up.
+				return err
+			}
 		}
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 
@@ -141,7 +181,7 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	return floatPointCount, haveMixedFloatsAndHistograms
 }
 
-func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *SumAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount, hasMixedData := g.reconcileAndCountFloatPoints()
 	var floatPoints []promql.FPoint
 	var err error
@@ -153,7 +193,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 
 		for i, havePoint := range g.floatPresent {
 			if havePoint {
-				t := start + int64(i)*interval
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
 				f := g.floatSums[i] + g.floatCompensatingValues[i]
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
@@ -169,9 +209,8 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 
 		for i, h := range g.histogramSums {
 			if h != nil && h != invalidCombinationOfHistograms {
-				t := start + int64(i)*interval
-				// TODO(jhesketh): histograms should be compacted here
-				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: g.histogramSums[i]})
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
+				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
 			}
 		}
 	}

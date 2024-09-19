@@ -1189,6 +1189,66 @@ func TestCompareSamplesResponse(t *testing.T) {
 			err: errors.New("expected error 'something went wrong' but got 'something else went wrong'"),
 		},
 		{
+			name: "response error is different but equivalent, and matches the same pattern in the equivalence class",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"error": "found duplicate series for the match group {foo=\"bar\"} on the right hand-side of the operation: [{foo=\"bar\", env=\"test\"}, {foo=\"bar\", env=\"prod\"}];many-to-many matching not allowed: matching labels must be unique on one side"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"error": "found duplicate series for the match group {foo=\"blah\"} on the right hand-side of the operation: [{foo=\"blah\", env=\"test\"}, {foo=\"blah\", env=\"prod\"}];many-to-many matching not allowed: matching labels must be unique on one side"
+						}`),
+			err: nil,
+		},
+		{
+			name: "response error is different but equivalent, and matches a different pattern in the equivalence class",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"error": "found duplicate series for the match group {foo=\"blah\"} on the right hand-side of the operation: [{foo=\"blah\", env=\"test\"}, {foo=\"blah\", env=\"prod\"}];many-to-many matching not allowed: matching labels must be unique on one side"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"error": "found duplicate series for the match group {foo=\"bar\"} on the right side of the operation at timestamp 1970-01-01T00:00:00Z: {foo=\"bar\", env=\"test\"} and {foo=\"bar\", env=\"prod\"}"
+						}`),
+			err: nil,
+		},
+		{
+			name: "response errors match equivalence classes, but errors are not from the same equivalence class",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"error": "found duplicate series for the match group {foo=\"bar\"} on the right hand-side of the operation: [{foo=\"bar\", env=\"test\"}, {foo=\"bar\", env=\"prod\"}];many-to-many matching not allowed: matching labels must be unique on one side"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"error": "invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector"
+						}`),
+			err: errors.New(`expected error 'found duplicate series for the match group {foo="bar"} on the right hand-side of the operation: [{foo="bar", env="test"}, {foo="bar", env="prod"}];many-to-many matching not allowed: matching labels must be unique on one side' but got 'invalid parameter "query": invalid expression type "range vector" for range query, must be Scalar or instant Vector'`),
+		},
+		{
+			name: "expected response error matches an equivalence class, but actual response error does not",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"error": "invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"error": "something went wrong"
+						}`),
+			err: errors.New(`expected error 'invalid parameter "query": invalid expression type "range vector" for range query, must be Scalar or instant Vector' but got 'something went wrong'`),
+		},
+		{
+			name: "actual response error matches an equivalence class, but expected response error does not",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"error": "something went wrong"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"error": "invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector"
+						}`),
+			err: errors.New(`expected error 'something went wrong' but got 'invalid parameter "query": invalid expression type "range vector" for range query, must be Scalar or instant Vector'`),
+		},
+		{
 			name: "difference in resultType",
 			expected: json.RawMessage(`{
 							"status": "success",

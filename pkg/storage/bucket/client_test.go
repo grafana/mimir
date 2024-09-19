@@ -81,8 +81,6 @@ func TestNewClient(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Load config
 			cfg := Config{}
@@ -171,7 +169,6 @@ func TestClient_ConfigValidation(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			actualErr := tc.cfg.Validate()
 			assert.ErrorIs(t, actualErr, tc.expectedError)

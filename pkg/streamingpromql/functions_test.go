@@ -12,12 +12,12 @@ import (
 
 func TestRegisterInstantVectorFunctionOperatorFactory(t *testing.T) {
 	// Register an already existing function
-	err := RegisterInstantVectorFunctionOperatorFactory("acos", InstantVectorLabelManipulationFunctionOperatorFactory("acos", functions.DropSeriesName))
+	err := RegisterInstantVectorFunctionOperatorFactory("acos", InstantVectorLabelManipulationFunctionOperatorFactory("acos", functions.DropSeriesName, true))
 	require.Error(t, err)
 	require.Equal(t, "function 'acos' has already been registered", err.Error())
 
 	// Register a new function
-	newFunc := InstantVectorLabelManipulationFunctionOperatorFactory("new_function", functions.DropSeriesName)
+	newFunc := InstantVectorLabelManipulationFunctionOperatorFactory("new_function", functions.DropSeriesName, true)
 	err = RegisterInstantVectorFunctionOperatorFactory("new_function", newFunc)
 	require.NoError(t, err)
 	require.Contains(t, instantVectorFunctionOperatorFactories, "new_function")

@@ -27,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -236,8 +237,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -303,8 +302,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -358,8 +355,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -413,8 +408,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -448,8 +441,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -1260,8 +1251,6 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Parallel()
 
 		for _, consumeFromPosition := range consumeFromPositionOptions {
-			consumeFromPosition := consumeFromPosition
-
 			t.Run(fmt.Sprintf("consume from position: %s", consumeFromPosition), func(t *testing.T) {
 				t.Parallel()
 
@@ -1725,7 +1714,7 @@ func withLogger(logger log.Logger) func(cfg *readerTestCfg) {
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
-		logger:      testutil.NewLogger(t),
+		logger:      mimirtest.NewTestingLogger(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
 		consumer:    consumer,

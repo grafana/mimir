@@ -80,7 +80,7 @@ type BlocksFinder interface {
 
 	// GetBlocks returns known blocks for userID containing samples within the range minT
 	// and maxT (milliseconds, both included). Returned blocks are sorted by MaxTime descending.
-	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, map[ulid.ULID]*bucketindex.BlockDeletionMark, error)
+	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error)
 }
 
 // BlocksStoreClient is the interface that should be implemented by any client used
@@ -226,7 +226,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
 		},
 		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksDelay,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
 	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
@@ -253,12 +253,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	consistency := NewBlocksConsistency(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
-		3*storageCfg.BucketStore.SyncInterval,
-		// To avoid any false positive in the consistency check, we do exclude blocks which have been
-		// recently marked for deletion, until the "ignore delay / 2". This means the consistency checker
-		// exclude such blocks about 50% of the time before querier and store-gateway stops querying them.
-		storageCfg.BucketStore.IgnoreDeletionMarksDelay/2,
-		logger,
+		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
 		reg,
 	)
 
@@ -355,7 +350,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, _ *storage.LabelHin
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -400,7 +395,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, _ *st
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -513,7 +508,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+	knownBlocks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
 		return err
 	}
@@ -548,7 +543,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		touchedStores   = map[string]struct{}{}
 	)
 
-	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks)
+	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
 	defer func() {
 		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
 		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
@@ -753,10 +748,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
 			defer log.Span.Finish()
@@ -1017,10 +1008,6 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			req, err := createLabelNamesRequest(minT, maxT, blockIDs, matchers)
 			if err != nil {
@@ -1100,10 +1087,6 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, matchers...)
 			if err != nil {

@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Update minimal supported version of Go to 1.22. #9134
 * [CHANGE] Store-gateway / querier: enable streaming chunks from store-gateways to queriers by default. #6646
 * [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
 * [CHANGE] Querier: return only samples within the queried start/end time range when executing a remote read request using "SAMPLES" mode. Previously, samples outside of the range could have been returned. Samples outside of the queried time range may still be returned when executing a remote read request using "STREAMED_XOR_CHUNKS" mode. #8463
@@ -28,7 +29,11 @@
 * [CHANGE] Ingester: increase the default inactivity timeout of active series (`-ingester.active-series-metrics-idle-timeout`) from `10m` to `20m`. #8975
 * [CHANGE] Distributor: Remove `-distributor.enable-otlp-metadata-storage` flag, which was deprecated in version 2.12. #9069
 * [CHANGE] Ruler: Removed `-ruler.drain-notification-queue-on-shutdown` option, which is now enabled by default. #9115
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8660 #8671 #8677 #8747 #8850 #8872 #8838 #8911 #8909 #8923 #8924 #8925 #8932 #8933 #8934 #8962 #8986 #8993 #8995 #9017 #9018 #9008 #9120 #9121
+* [CHANGE] Querier: allow wrapping errors with context errors only when the former actually correspond to `context.Canceled` and `context.DeadlineExceeded`. #9175
+* [CHANGE] Query-scheduler: Remove the experimental `-query-scheduler.use-multi-algorithm-query-queue` flag. The new multi-algorithm tree queue is always used for the scheduler. #9210
+* [FEATURE] Alertmanager: Added `-alertmanager.log-parsing-label-matchers` to control logging when parsing label matchers. This flag is intended to be used with `-alertmanager.utf8-strict-mode-enabled` to validate UTF-8 strict mode is working as intended. The default value is `false`. #9173
+* [FEATURE] Alertmanager: Added `-alertmanager.utf8-migration-logging-enabled` to enable logging of tenant configurations that are incompatible with UTF-8 strict mode. The default value is `false`. #9174
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8660 #8671 #8677 #8747 #8850 #8872 #8838 #8911 #8909 #8923 #8924 #8925 #8932 #8933 #8934 #8962 #8986 #8993 #8995 #9008 #9017 #9018 #9019 #9120 #9121 #9136 #9139 #9140 #9145 #9191 #9192 #9194 #9196 #9201 #9212 #9225 #9260 #9272 #9277 #9278 #9280
 * [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738 #8750 #8778 #8808 #8809 #8841 #8842 #8845 #8853 #8886 #8988
   * What it is:
     * When the new ingest storage architecture is enabled, distributors write incoming write requests to a Kafka-compatible backend, and the ingesters asynchronously replay ingested data from Kafka. In this architecture, the write and read path are de-coupled through a Kafka-compatible backend. The write path and Kafka load is a function of the incoming write traffic, the read path load is a function of received queries. Whatever the load on the read path, it doesn't affect the write path.
@@ -41,7 +46,9 @@
     * `-ingester.partition-ring.*`: configures partitions ring backend.
 * [FEATURE] Querier: added support for `limitk()` and `limit_ratio()` experimental PromQL functions. Experimental functions are disabled by default, but can be enabled setting `-querier.promql-experimental-functions-enabled=true` in the query-frontend and querier. #8632
 * [FEATURE] Querier: experimental support for `X-Mimir-Chunk-Info-Logger` header that triggers logging information about TSDB chunks loaded from ingesters and store-gateways in the querier. The header should contain the comma separated list of labels for which their value will be included in the logs. #8599
+* [FEATURE] Query frontend: added new query pruning middleware to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries. #9086
 * [FEATURE] Ruler: added experimental configuration, `-ruler.rule-evaluation-write-enabled`, to disable writing the result of rule evaluation to ingesters. This feature can be used for testing purposes. #9060
+* [FEATURE] Ingester: added experimental configuration `ingester.ignore-ooo-exemplars`. When set to `true` out of order exemplars are no longer reported to the remote write client. #9151
 * [ENHANCEMENT] Compactor: Add `cortex_compactor_compaction_job_duration_seconds` and `cortex_compactor_compaction_job_blocks` histogram metrics to track duration of individual compaction jobs and number of blocks per job. #8371
 * [ENHANCEMENT] Rules: Added per namespace max rules per rule group limit. The maximum number of rules per rule groups for all namespaces continues to be configured by `-ruler.max-rules-per-rule-group`, but now, this can be superseded by the new `-ruler.max-rules-per-rule-group-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8378
 * [ENHANCEMENT] Rules: Added per namespace max rule groups per tenant limit. The maximum number of rule groups per rule tenant for all namespaces continues to be configured by `-ruler.max-rule-groups-per-tenant`, but now, this can be superseded by the new `-ruler.max-rule-groups-per-tenant-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8425
@@ -70,11 +77,16 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
 * [ENHANCEMENT] Expose a new `s3.session-token` configuration option to enable using temporary security credentials. #8952
 * [ENHANCEMENT] Add HA deduplication features to the `mimir-microservices-mode` development environment. #9012
-* [ENHANCEMENT] Make `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled` non-operational flags in preparation for removal. #8984
+* [ENHANCEMENT] Remove experimental `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled`. Mimir now always includes "query components" as a queue dimension. #8984 #9135
 * [ENHANCEMENT] Add a new ingester endpoint to prepare instances to downscale. #8956
 * [ENHANCEMENT] Query-scheduler: Add `query-scheduler.prioritize-query-components` which, when enabled, will primarily prioritize dequeuing fairly across queue components, and secondarily prioritize dequeuing fairly across tenants. When disabled, tenant fairness is primarily prioritized. `query-scheduler.use-multi-algorithm-query-queue` must be enabled in order to use this flag. #9016 #9071
 * [ENHANCEMENT] Update runtime configuration to read gzip-compressed files with `.gz` extension. #9074
 * [ENHANCEMENT] Ingester: add `cortex_lifecycler_read_only` metric which is set to 1 when ingester's lifecycler is set to read-only mode. #9095
+* [ENHANCEMENT] Add a new field, `encode_time_seconds` to query stats log messages, to record the amount of time it takes the query-frontend to encode a response. This does not include any serialization time for downstream components. #9062
+* [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131
+* [ENHANCEMENT] Querier: attach logs emitted during query consistency check to trace span for query. #9213
+* [ENHANCEMENT] Query-scheduler: Experimental `-query-scheduler.prioritize-query-components` flag enables the querier-worker queue priority algorithm to take precedence over tenant rotation when dequeuing requests. #9220
+* [ENHANCEMENT] Add application credential arguments for Openstack Swift storage backend. #9181
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
@@ -97,6 +109,12 @@
 * [BUGFIX] Querier: fix issue where some native histogram-related warnings were not emitted when `rate()` was used over native histograms. #8918
 * [BUGFIX] Ruler: map invalid org-id errors to 400 status code. #8935
 * [BUGFIX] Querier: Fix invalid query results when multiple chunks are being merged. #8992
+* [BUGFIX] Query-frontend: return annotations generated during evaluation of sharded queries. #9138
+* [BUGFIX] Querier: Support optional start and end times on `/prometheus/api/v1/labels`, `/prometheus/api/v1/label/<label>/values`, and `/prometheus/api/v1/series` when `max_query_into_future: 0`. #9129
+* [BUGFIX] Alertmanager: Fix config validation gap around unreferenced templates. #9207
+* [BUGFIX] Alertmanager: Fix goroutine leak when stored config fails to apply and there is no existing tenant alertmanager #9211
+* [BUGFIX] Querier: fix issue where both recently compacted blocks and their source blocks can be skipped during querying if store-gateways are restarting. #9224
+* [BUGFIX] Alertmanager: fix receiver firewall to detect `0.0.0.0` and IPv6 interface-local multicast address as local addresses. #9308
 
 ### Mixin
 
@@ -125,8 +143,12 @@
 * [ENHANCEMENT] Dashboards: add "Out-of-order samples appended" panel to "Mimir / Tenants" dashboard. #8939
 * [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [ENHANCEMENT] Dashboards: add 'Read path' selector to 'Mimir / Queries' dashboard. #8878
+* [ENHANCEMENT] Dashboards: add annotation indicating active series are being reloaded to 'Mimir / Tenants' dashboard. #9257
+* [ENHANCEMENT] Dashboards: limit results on the 'Failed evaluations rate' panel of the 'Mimir / Tenants' dashboard to 50 to avoid crashing the page when there are many failing groups. #9262
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
+* [BUGFIX] Dashboards: avoid over-counting of ingesters metrics when migrating to experimental ingest storage. #9170
+* [BUGFIX] Dashboards: fix `job_prefix` not utilized in `jobSelector`. #9155
 
 ### Jsonnet
 
@@ -134,7 +156,10 @@
   * `ingest_storage_ingester_autoscaling_min_replicas` changed to `ingest_storage_ingester_autoscaling_min_replicas_per_zone`
   * `ingest_storage_ingester_autoscaling_max_replicas` changed to `ingest_storage_ingester_autoscaling_max_replicas_per_zone`
 * [CHANGE] Changed the overrides configmap generation to remove any field with `null` value. #9116
-* [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
+* [CHANGE] `$.replicaTemplate` function now takes replicas and labelSelector parameter. #9248
+* [CHANGE] Renamed `ingest_storage_ingester_autoscaling_replica_template_custom_resource_definition_enabled` to `replica_template_custom_resource_definition_enabled`. #9248
+* [FEATURE] Add support for automatically deleting compactor, store-gateway, ingester and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382 #8736
+* [FEATURE] Automatically set GOMAXPROCS on ingesters. #9273
 * [ENHANCEMENT] Added the following config options to set the number of partition ingester replicas when migrating to experimental ingest storage. #8517
   * `ingest_storage_migration_partition_ingester_zone_a_replicas`
   * `ingest_storage_migration_partition_ingester_zone_b_replicas`
@@ -146,6 +171,8 @@
 * [ENHANCEMENT] Added the config option `ingest_storage_migration_classic_ingesters_no_scale_down_delay` to disable the downscale delay on classic ingesters when migrating to experimental ingest storage. #8775 #8873
 * [ENHANCEMENT] Configure experimental ingest storage on query-frontend too when enabled. #8843
 * [ENHANCEMENT] Allow to override Kafka client ID on a per-component basis. #9026
+* [ENHANCEMENT] Rollout-operator's access to ReplicaTemplate is now configured via config option `rollout_operator_replica_template_access_enabled`. #9252
+* [ENHANCEMENT] Added support for new way of downscaling ingesters, using rollout-operator's resource-mirroring feature and read-only mode of ingesters. This can be enabled by using `ingester_automated_downscale_v2_enabled` config option. This is mutually exclusive with both `ingester_automated_downscale_enabled` (previous downscale mode) and `ingest_storage_ingester_autoscaling_enabled` (autoscaling for ingest-storage).
 * [BUGFIX] Added missing node affinity matchers to write component. #8910
 
 ### Mimirtool
@@ -157,6 +184,7 @@
   * `mimirtool rules diff`
   * `mimirtool rules check`
   * `mimirtool rules prepare`
+* [ENHANCEMENT] Remote read and backfill now supports the experimental native histograms. #9156
 
 ### Mimir Continuous Test
 
@@ -166,6 +194,7 @@
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
 * [ENHANCEMENT] Log successful test runs in addition to failed test runs. #8817
+* [ENHANCEMENT] Series emitted by continuous-test now distribute more uniformly across ingesters. #9218 #9243
 * [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 
 ### Query-tee
@@ -181,6 +210,7 @@
 * [ENHANCEMENT] Don't consider responses to be different during response comparison if both backends' responses contain different series, but all samples are within the recent sample window. #8749 #8894
 * [ENHANCEMENT] When the expected and actual response for a matrix series is different, the full set of samples for that series from both backends will now be logged. #8947
 * [ENHANCEMENT] Wait up to `-server.graceful-shutdown-timeout` for inflight requests to finish when shutting down, rather than immediately terminating inflight requests on shutdown. #8985
+* [ENHANCEMENT] Optionally consider equivalent error messages the same when comparing responses. Enabled by default, disable with `-proxy.require-exact-error-match=true`. #9143
 * [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
 * [BUGFIX] The comparison of the results should not fail when either side contains extra samples from within SkipRecentSamples duration. #8920
 
@@ -189,6 +219,9 @@
 * [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
 * [ENHANCEMENT] Provide more detailed recommendations on how to migrate from classic to native histograms. #8864
 * [ENHANCEMENT] Clarify that `{namespace}` and `{groupName}` path segments in the ruler config API should be URL-escaped. #8969
+* [ENHANCEMENT] Include stalled compactor network drive information in runbooks. #9297
+* [ENHANCEMENT] Document `/ingester/prepare-partition-downscale` and `/ingester/prepare-instance-ring-downscale` endpoints. #9132
+* [ENHANCEMENT] Describe read-only mode of ingesters in component documentation. #9132
 
 ### Tools
 
@@ -205,8 +238,12 @@
 * [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
 * [ENHANCEMENT] `grpcurl-query-ingesters`: print counter reset information for native histograms. #8820
 * [ENHANCEMENT] `grpcurl-query-ingesters`: concurrently query ingesters. #9102
+* [ENHANCEMENT] `grpcurl-query-ingesters`: sort series and chunks in output. #9180
+* [ENHANCEMENT] `grpcurl-query-ingesters`: print full chunk timestamps, not just time component. #9180
 * [ENHANCEMENT] `tsdb-series`: Added `-json` option to generate JSON output for easier post-processing. #8844
 * [ENHANCEMENT] `tsdb-series`: Added `-min-time` and `-max-time` options to filter samples that are used for computing data-points per minute. #8844
+* [ENHANCEMENT] `mimir-rules-action`: Added new input to support matching target namespaces by regex. #9244
+* [ENHANCEMENT] `mimir-rules-action`: Added new inputs to support ignoring namespaces and ignoring namespaces by regex. #9258 #9324
 
 ## 2.13.0
 

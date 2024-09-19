@@ -353,10 +353,6 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		eg.SetLimit(b.config.TSDB.ShipConcurrency)
 	}
 	for tenant, db := range b.tsdbs {
-		// Change scope of for loop variables.
-		tenant := tenant
-		db := db
-
 		eg.Go(func() error {
 			// TODO(codesome): add a metric for compaction and upload failures. An alert on this will be useful.
 			if err := db.compactEverything(ctx); err != nil {

@@ -2043,6 +2043,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-scalars",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_unary_negation",
+              "required": false,
+              "desc": "Enable support for unary negation in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-unary-negation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -3975,6 +3986,17 @@
         },
         {
           "kind": "field",
+          "name": "ignore_ooo_exemplars",
+          "required": false,
+          "desc": "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.ignore-ooo-exemplars",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "native_histograms_ingestion_enabled",
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.",
@@ -4698,6 +4720,17 @@
           "fieldFlag": "distributor.otel-metric-suffixes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "otel_created_timestamp_zero_ingestion_enabled",
+          "required": false,
+          "desc": "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-created-timestamp-zero-ingestion-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -5734,17 +5767,6 @@
         },
         {
           "kind": "field",
-          "name": "additional_query_queue_dimensions_enabled",
-          "required": false,
-          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.additional-query-queue-dimensions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "split_queries_by_interval",
           "required": false,
           "desc": "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
@@ -6344,6 +6366,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.parallelize-shardable-queries",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "prune_queries",
+          "required": false,
+          "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.prune-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -7159,6 +7192,36 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "auth_version",
@@ -9270,6 +9333,17 @@
               "fieldFlag": "blocks-storage.bucket-store.ignore-deletion-marks-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ignore_deletion_mark_while_querying_delay",
+              "required": false,
+              "desc": "Duration after which blocks marked for deletion will still be queried. This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3000000000000,
+              "fieldFlag": "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -13165,6 +13239,36 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "auth_version",
               "required": false,
               "desc": "OpenStack Swift authentication API version. 0 to autodetect.",
@@ -14813,6 +14917,28 @@
           "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_parsing_label_matchers",
+          "required": false,
+          "desc": "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.log-parsing-label-matchers",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "utf8_migration_logging",
+          "required": false,
+          "desc": "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -15334,6 +15460,36 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "auth_version",
@@ -16021,28 +16177,6 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "additional_query_queue_dimensions_enabled",
-          "required": false,
-          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "use_multi_algorithm_query_queue",
-          "required": false,
-          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -17771,6 +17905,36 @@
               "required": false,
               "desc": "",
               "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "application_credential_id",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential id",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_name",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_secret",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential secret",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-secret",
+                  "fieldType": "string"
+                },
                 {
                   "kind": "field",
                   "name": "auth_version",

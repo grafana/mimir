@@ -56,9 +56,11 @@ type stubReplicator struct{}
 func (*stubReplicator) ReplicateStateForUser(context.Context, string, *clusterpb.Part) error {
 	return nil
 }
+
 func (*stubReplicator) GetPositionForUser(string) int {
 	return 0
 }
+
 func (*stubReplicator) ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error) {
 	return nil, nil
 }

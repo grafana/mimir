@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/value.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package types
 
 import (
+	"time"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -26,6 +32,19 @@ type InstantVectorSeriesData struct {
 	// It is therefore important to check for references to the same FloatHistogram in
 	// subsequent points before mutating it.
 	Histograms []promql.HPoint
+}
+
+// RemoveReferencesToRetainedHistogram searches backwards through d.Histograms, starting at lastIndex, removing any
+// points that reference h, stopping once a different FloatHistogram is reached.
+func (d InstantVectorSeriesData) RemoveReferencesToRetainedHistogram(h *histogram.FloatHistogram, lastIndex int) {
+	for i := lastIndex; i >= 0; i-- {
+		if d.Histograms[i].H != h {
+			// We've reached a different histogram. We're done.
+			return
+		}
+
+		d.Histograms[i].H = nil
+	}
 }
 
 type InstantVectorSeriesDataIterator struct {
@@ -101,4 +120,69 @@ type ScalarData struct {
 	// Samples must be sorted in timestamp order, earliest timestamps first.
 	// Samples must not have duplicate timestamps.
 	Samples []promql.FPoint
+}
+
+func HasDuplicateSeries(metadata []SeriesMetadata) bool {
+	// Note that there's a risk here that we incorrectly flag two series as duplicates when in reality they're different
+	// due to hash collisions.
+	// However, the hashes are 64-bit integers, so the likelihood of collisions is very small, and this is the same method
+	// that Prometheus' engine uses, so we'll at least be consistent with that.
+
+	switch len(metadata) {
+	case 0, 1:
+		return false
+	case 2:
+		if metadata[0].Labels.Hash() == metadata[1].Labels.Hash() {
+			return true
+		}
+
+		return false
+
+	default:
+		seen := make(map[uint64]struct{}, len(metadata))
+
+		for _, m := range metadata {
+			hash := m.Labels.Hash()
+
+			if _, alreadySeen := seen[hash]; alreadySeen {
+				return true
+			}
+
+			seen[hash] = struct{}{}
+		}
+
+		return false
+	}
+}
+
+type QueryTimeRange struct {
+	StartT     int64 // Start timestamp, in milliseconds since Unix epoch.
+	EndT       int64 // End timestamp, in milliseconds since Unix epoch.
+	IntervalMs int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+
+	StepCount int // 1 for instant queries.
+}
+
+func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
+	ts := timestamp.FromTime(t)
+
+	return QueryTimeRange{
+		StartT:     ts,
+		EndT:       ts,
+		IntervalMs: 1,
+		StepCount:  1,
+	}
+}
+
+func NewRangeQueryTimeRange(start time.Time, end time.Time, interval time.Duration) QueryTimeRange {
+	startT := timestamp.FromTime(start)
+	endT := timestamp.FromTime(end)
+	intervalMs := interval.Milliseconds()
+
+	return QueryTimeRange{
+		StartT:     startT,
+		EndT:       endT,
+		IntervalMs: intervalMs,
+		StepCount:  int((endT-startT)/intervalMs) + 1,
+	}
 }

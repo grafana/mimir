@@ -68,8 +68,9 @@ func sampleStreamsStrings(ss []SampleStream) []string {
 	return strs
 }
 
-// approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
-func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
+// approximatelyEqualsSamples ensures two responses are approximately equal, up to 6 decimals precision per sample,
+// but only checks the samples and not the warning/info annotations.
+func approximatelyEqualsSamples(t *testing.T, a, b *PrometheusResponse) {
 	// Ensure both queries succeeded.
 	require.Equal(t, statusSuccess, a.Status)
 	require.Equal(t, statusSuccess, b.Status)
@@ -101,6 +102,13 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-12)
 		}
 	}
+}
+
+// approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
+func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
+	approximatelyEqualsSamples(t, a, b)
+	require.ElementsMatch(t, a.Infos, b.Infos, "expected same info annotations")
+	require.ElementsMatch(t, a.Warnings, b.Warnings, "expected same info annotations")
 }
 
 func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
@@ -676,9 +684,6 @@ func TestQuerySharding_Correctness(t *testing.T) {
 	queryable := storageSeriesQueryable(series)
 
 	for testName, testData := range tests {
-		// Change scope to ensure it work fine when test cases are executed concurrently.
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			reqs := []MetricsQueryRequest{
@@ -1702,7 +1707,6 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -123,12 +123,10 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		},
 		[]string{"query_component"},
 	)
-	// additional queue dimensions not used in v1/frontend
 	f.requestQueue, err = queue.NewRequestQueue(
 		log,
 		cfg.MaxOutstandingPerTenant,
-		false,
-		false,
+		false, //prioritizeQueryComponents -- currently no-op
 		cfg.QuerierForgetDelay,
 		f.queueLength,
 		f.discardedRequests,
@@ -239,14 +237,15 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	}
 	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	lastTenantIndex := queue.FirstTenant()
+	lastTenantIdx := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID)
+		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		reqWrapper, idx, err := f.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			return err
 		}
-		lastTenantIndex = idx
+		lastTenantIdx = idx
 
 		req := reqWrapper.(*request)
 
@@ -263,15 +262,15 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		  n_active_tenants * n_expired_requests_at_front_of_queue requests being processed
 		  before an active request was handled for the tenant in question.
 		  If this tenant meanwhile continued to queue requests,
-		  it's possible that it's own queue would perpetually contain only expired requests.
+		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 		if req.originalCtx.Err() != nil {
-			lastTenantIndex = lastTenantIndex.ReuseLastTenant()
+			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 
 		// Handle the stream sending & receiving on a goroutine so we can
-		// monitoring the contexts in a select and cancel things appropriately.
+		// monitor the contexts in a select and cancel things appropriately.
 		resps := make(chan *frontendv1pb.ClientToFrontend, 1)
 		errs := make(chan error, 1)
 		go func() {

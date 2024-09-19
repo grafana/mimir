@@ -540,10 +540,12 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
+	cfg.PrunedQueries = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
+	require.NotZero(t, cfg.PrunedQueries)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
@@ -582,6 +584,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"splitAndCacheMiddleware",               // No time splitting and results cache support.
 				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
+				"pruneMiddleware",                       // No query pruning support.
 			},
 		},
 	}
@@ -912,14 +915,10 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 
 	// Test it against all routes.
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, consistencyLevel := range []string{querierapi.ReadConsistencyEventual, querierapi.ReadConsistencyStrong} {
-				consistencyLevel := consistencyLevel
-
 				t.Run(fmt.Sprintf("consistency level: %s", consistencyLevel), func(t *testing.T) {
 					t.Parallel()
 

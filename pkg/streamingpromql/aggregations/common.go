@@ -14,14 +14,15 @@ import (
 // AggregationGroup accumulates series that have been grouped together and computes the output series data.
 type AggregationGroup interface {
 	// AccumulateSeries takes in a series as part of the group
-	AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error
+	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
-	ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
+	ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
 }
 
 type AggregationGroupFactory func() AggregationGroup
 
 var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
+	parser.AVG: func() AggregationGroup { return &AvgAggregationGroup{} },
 	parser.MAX: func() AggregationGroup { return NewMinMaxAggregationGroup(true) },
 	parser.MIN: func() AggregationGroup { return NewMinMaxAggregationGroup(false) },
 	parser.SUM: func() AggregationGroup { return &SumAggregationGroup{} },

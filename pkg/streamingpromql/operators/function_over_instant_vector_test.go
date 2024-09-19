@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -41,12 +42,14 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}
+
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
-
-		SeriesMetadataFunc: mustBeCalledMetadata,
-		SeriesDataFunc:     mustBeCalledSeriesData,
+		Func: functions.FunctionOverInstantVector{
+			SeriesMetadataFunc: mustBeCalledMetadata,
+			SeriesDataFunc:     mustBeCalledSeriesData,
+		},
 	}
 
 	ctx := context.TODO()
