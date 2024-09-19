@@ -196,7 +196,7 @@ Grafana Mimir can receive exponential histograms as is via the OTLP protocol or 
 
 OpenTelemetry supports instrumenting applications with the OpenTelemetry SDK. Multiple languages are supported, for the complete list see [Language APIs & SDKs](https://opentelemetry.io/docs/languages/).
 
-### Instrument the OpenTelemetry Collector using Go
+### Instrument a Go application with the OpenTelemetry SDK
 
 Use the OpenTelemetry SDK version 1.17.0 or later for Go.
 
