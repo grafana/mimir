@@ -3,13 +3,9 @@
 package ingest
 
 import (
-	"bytes"
 	"container/list"
 	"context"
-	"encoding/binary"
 	"fmt"
-	"hash/crc32"
-	"io"
 	"math"
 	"strconv"
 	"sync"
@@ -20,13 +16,10 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
-	"github.com/klauspost/compress/s2"
-	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kbin"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -918,10 +911,9 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 		r.metrics.fetchWaitDuration.Observe(time.Since(waitStartTime).Seconds())
 		trimUntil := 0
 		f.EachRecord(func(record *kgo.Record) {
-			r.metrics.fetchedBytes.Add(float64(len(record.Value))) // TODO dimitarvdimitrov maybe use the same metric name as franz-go, but make sure we're not conflicting with the actual client; perhaps disable metrics there and just use our own
 			if record.Offset <= r.lastReturnedRecord {
 				trimUntil++
-				return // don't finish the traces multiple times
+				spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
 			}
 			r.tracer.OnFetchRecordUnbuffered(record, true)
 		})
@@ -957,6 +949,20 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 		return newEmptyFetchResult(errUnknownPartitionLeader)
 	}
 
+	req := r.buildFetchRequest(fw, leaderEpoch)
+
+	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return newEmptyFetchResult(nil)
+		}
+		return newEmptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
+	}
+
+	return r.parseFetchResponse(fw.startOffset, resp)
+}
+
+func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) kmsg.FetchRequest {
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
@@ -975,22 +981,59 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 
 	reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
 	req.Topics = append(req.Topics, reqTopic)
+	return req
+}
 
-	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return newEmptyFetchResult(nil)
-		}
-		return newEmptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
-	}
-	rawPartitionResp := resp.Topics[0].Partitions[0]
+func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.FetchResponse) fetchResult {
 	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
 	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
-	// TODO dimitarvdimitrov make this conditional on the kafka backend - for WS we use uncompressed bytes (sumRecordLengths), for kafka we use the size of the response (rawPartitionResp.RecordBatches)
-	r.metrics.fetchesCompressedBytes.Add(float64(len(rawPartitionResp.RecordBatches))) // This doesn't include overhead in the response, but that should be small.
-	partition := processRespPartition(&rawPartitionResp, r.topicName)
-	partition.EachRecord(r.tracer.OnFetchRecordBuffered) // TODO dimitarvdimitrov we might end up buffering the same record multiple times - what happens then?
-	return fetchResult{partition, sumRecordLengths(partition.Records)}
+
+	// Sanity check for the response we get.
+	// If we get something we didn't expect, maybe we're sending the wrong request or there's a bug in the kafka implementation.
+	// Even in case of errors we get the topic partition.
+	err := assertResponseContainsPartition(resp, r.topicID, r.partitionID)
+	if err != nil {
+		return newEmptyFetchResult(err)
+	}
+
+	parseOptions := kgo.ProcessFetchPartitionOptions{
+		KeepControlRecords: false,
+		Offset:             startOffset,
+		IsolationLevel:     kgo.ReadUncommitted(), // we don't produce in transactions, but leaving this here so it's explicit.
+		Topic:              r.topicName,
+		Partition:          r.partitionID,
+	}
+
+	observeMetrics := func(m kgo.FetchBatchMetrics) {
+		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
+		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
+	}
+
+	partition, _ := kgo.ProcessRespPartition(parseOptions, &resp.Topics[0].Partitions[0], observeMetrics)
+	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
+
+	return fetchResult{
+		FetchPartition: partition,
+		fetchedBytes:   sumRecordLengths(partition.Records),
+	}
+}
+
+func assertResponseContainsPartition(resp *kmsg.FetchResponse, topicID kadm.TopicID, partitionID int32) error {
+	if topics := resp.Topics; len(topics) < 1 || topics[0].TopicID != topicID {
+		receivedTopicID := kadm.TopicID{}
+		if len(topics) > 0 {
+			receivedTopicID = topics[0].TopicID
+		}
+		return fmt.Errorf("didn't find expected topic %s in fetch response; received topic %s", topicID, receivedTopicID)
+	}
+	if partitions := resp.Topics[0].Partitions; len(partitions) < 1 || partitions[0].Partition != partitionID {
+		receivedPartitionID := int32(-1)
+		if len(partitions) > 0 {
+			receivedPartitionID = partitions[0].Partition
+		}
+		return fmt.Errorf("didn't find expected partition %d in fetch response; received partition %d", partitionID, receivedPartitionID)
+	}
+	return nil
 }
 
 func sumRecordLengths(records []*kgo.Record) (sum int) {
@@ -1237,299 +1280,6 @@ func logCompletedFetch(logger log.Logger, f fetchResult, fetchStartTime time.Tim
 	)
 }
 
-type readerFrom interface {
-	ReadFrom([]byte) error
-}
-
-var crc32c = crc32.MakeTable(crc32.Castagnoli) // record crc's use Castagnoli table; for consuming/producing
-
-// processRespPartition processes all records in all potentially compressed
-// batches (or message sets).
-func processRespPartition(rp *kmsg.FetchResponseTopicPartition, topic string) kgo.FetchPartition {
-	fp := kgo.FetchPartition{
-		Partition:        rp.Partition,
-		Err:              kerr.ErrorForCode(rp.ErrorCode),
-		HighWatermark:    rp.HighWatermark,
-		LastStableOffset: rp.LastStableOffset,
-		LogStartOffset:   rp.LogStartOffset,
-	}
-
-	// A response could contain any of message v0, message v1, or record
-	// batches, and this is solely dictated by the magic byte (not the
-	// fetch response version). The magic byte is located at byte 17.
-	//
-	// 1 thru 8: int64 offset / first offset
-	// 9 thru 12: int32 length
-	// 13 thru 16: crc (magic 0 or 1), or partition leader epoch (magic 2)
-	// 17: magic
-	//
-	// We decode and validate similarly for messages and record batches, so
-	// we "abstract" away the high level stuff into a check function just
-	// below, and then switch based on the magic for how to process.
-	var (
-		in = rp.RecordBatches
-
-		r           readerFrom
-		kind        string
-		length      int32
-		lengthField *int32
-		crcField    *int32
-		crcTable    *crc32.Table
-		crcAt       int
-
-		check = func() bool {
-			// If we call into check, we know we have a valid
-			// length, so we should be at least able to parse our
-			// top level struct and validate the length and CRC.
-			if err := r.ReadFrom(in[:length]); err != nil {
-				fp.Err = fmt.Errorf("unable to read %s, not enough data", kind)
-				return false
-			}
-			if length := int32(len(in[12:length])); length != *lengthField {
-				fp.Err = fmt.Errorf("encoded length %d does not match read length %d", *lengthField, length)
-				return false
-			}
-			// We have already validated that the slice is at least
-			// 17 bytes, but our CRC may be later (i.e. RecordBatch
-			// starts at byte 21). Ensure there is at least space
-			// for a CRC.
-			if len(in) < crcAt {
-				fp.Err = fmt.Errorf("length %d is too short to allow for a crc", len(in))
-				return false
-			}
-			if crcCalc := int32(crc32.Checksum(in[crcAt:length], crcTable)); crcCalc != *crcField {
-				fp.Err = fmt.Errorf("encoded crc %x does not match calculated crc %x", *crcField, crcCalc)
-				return false
-			}
-			return true
-		}
-	)
-
-	for len(in) > 17 && fp.Err == nil {
-		offset := int64(binary.BigEndian.Uint64(in))
-		length = int32(binary.BigEndian.Uint32(in[8:]))
-		length += 12 // for the int64 offset we skipped and int32 length field itself
-		if len(in) < int(length) {
-			break
-		}
-
-		switch magic := in[16]; magic {
-		case 0:
-			m := new(kmsg.MessageV0)
-			kind = "message v0"
-			lengthField = &m.MessageSize
-			crcField = &m.CRC
-			crcTable = crc32.IEEETable
-			crcAt = 16
-			r = m
-		case 1:
-			m := new(kmsg.MessageV1)
-			kind = "message v1"
-			lengthField = &m.MessageSize
-			crcField = &m.CRC
-			crcTable = crc32.IEEETable
-			crcAt = 16
-			r = m
-		case 2:
-			rb := new(kmsg.RecordBatch)
-			kind = "record batch"
-			lengthField = &rb.Length
-			crcField = &rb.CRC
-			crcTable = crc32c
-			crcAt = 21
-			r = rb
-
-		default:
-			fp.Err = fmt.Errorf("unknown magic %d; message offset is %d and length is %d, skipping and setting to next offset", magic, offset, length)
-			return fp
-		}
-
-		if !check() {
-			break
-		}
-
-		in = in[length:]
-
-		switch t := r.(type) {
-		case *kmsg.MessageV0:
-			panic("unknown message type")
-		case *kmsg.MessageV1:
-			panic("unknown message type")
-		case *kmsg.RecordBatch:
-			_, _ = processRecordBatch(topic, &fp, t)
-		}
-
-	}
-
-	return fp
-}
-
-func processRecordBatch(
-	topic string,
-	fp *kgo.FetchPartition,
-	batch *kmsg.RecordBatch,
-) (int, int) {
-	if batch.Magic != 2 {
-		fp.Err = fmt.Errorf("unknown batch magic %d", batch.Magic)
-		return 0, 0
-	}
-
-	rawRecords := batch.Records
-	if compression := byte(batch.Attributes & 0x0007); compression != 0 {
-		var err error
-		if rawRecords, err = decompress(rawRecords, compression); err != nil {
-			return 0, 0 // truncated batch
-		}
-	}
-
-	uncompressedBytes := len(rawRecords)
-
-	numRecords := int(batch.NumRecords)
-	krecords := readRawRecords(numRecords, rawRecords)
-
-	// KAFKA-5443: compacted topics preserve the last offset in a batch,
-	// even if the last record is removed, meaning that using offsets from
-	// records alone may not get us to the next offset we need to ask for.
-	//
-	// We only perform this logic if we did not consume a truncated batch.
-	// If we consume a truncated batch, then what was truncated could have
-	// been an offset we are interested in consuming. Even if our fetch did
-	// not advance this partition at all, we will eventually fetch from the
-	// partition and not have a truncated response, at which point we will
-	// either advance offsets or will set to nextAskOffset.
-
-	for i := range krecords {
-		record := recordToRecord(
-			topic,
-			fp.Partition,
-			batch,
-			&krecords[i],
-		)
-		fp.Records = append(fp.Records, record)
-	}
-
-	return len(krecords), uncompressedBytes
-}
-
-// recordToRecord converts a kmsg.RecordBatch's Record to a kgo Record.
-func recordToRecord(
-	topic string,
-	partition int32,
-	batch *kmsg.RecordBatch,
-	record *kmsg.Record,
-) *kgo.Record {
-	h := make([]kgo.RecordHeader, 0, len(record.Headers))
-	for _, kv := range record.Headers {
-		h = append(h, kgo.RecordHeader{
-			Key:   kv.Key,
-			Value: kv.Value,
-		})
-	}
-
-	r := &kgo.Record{
-		Key:       record.Key,
-		Value:     record.Value,
-		Headers:   h,
-		Topic:     topic,
-		Partition: partition,
-		// Attrs:         kgo.RecordAttrs{uint8(batch.Attributes)},
-		ProducerID:    batch.ProducerID,
-		ProducerEpoch: batch.ProducerEpoch,
-		LeaderEpoch:   batch.PartitionLeaderEpoch,
-		Offset:        batch.FirstOffset + int64(record.OffsetDelta),
-	}
-	if r.Attrs.TimestampType() == 0 {
-		r.Timestamp = timeFromMillis(batch.FirstTimestamp + record.TimestampDelta64)
-	} else {
-		r.Timestamp = timeFromMillis(batch.MaxTimestamp)
-	}
-	return r
-}
-
-func timeFromMillis(millis int64) time.Time {
-	return time.Unix(0, millis*1e6)
-}
-
-// readRawRecords reads n records from in and returns them, returning early if
-// there were partial records.
-func readRawRecords(n int, in []byte) []kmsg.Record {
-	rs := make([]kmsg.Record, n)
-	for i := 0; i < n; i++ {
-		length, used := kbin.Varint(in)
-		total := used + int(length)
-		if used == 0 || length < 0 || len(in) < total {
-			return rs[:i]
-		}
-		if err := (&rs[i]).ReadFrom(in[:total]); err != nil {
-			return rs[:i]
-		}
-		in = in[total:]
-	}
-	return rs
-}
-
-type codecType int8
-
-const (
-	codecNone codecType = iota
-	codecGzip           // TODO dimitarvdimitrov add support
-	codecSnappy
-	codecLZ4
-	codecZstd // TODO dimitarvdimitrov add support
-)
-
-func decompress(src []byte, codec byte) ([]byte, error) {
-	switch codecType(codec) {
-	case codecNone:
-		return src, nil
-	case codecSnappy:
-		if len(src) > 16 && bytes.HasPrefix(src, xerialPfx) {
-			return xerialDecode(src)
-		}
-		return s2.Decode(nil, src)
-	case codecLZ4:
-		unlz4 := lz4.NewReader(nil) // TODO dimitarvdimitrov this is pooled in franz-go now, consider exposing the funcs there
-		unlz4.Reset(bytes.NewReader(src))
-		out := new(bytes.Buffer)
-		if _, err := io.Copy(out, unlz4); err != nil {
-			return nil, err
-		}
-		return out.Bytes(), nil
-	default:
-		return nil, errors.New("unknown compression codec")
-	}
-}
-
-var xerialPfx = []byte{130, 83, 78, 65, 80, 80, 89, 0}
-
-var errMalformedXerial = errors.New("malformed xerial framing")
-
-func xerialDecode(src []byte) ([]byte, error) {
-	// bytes 0-8: xerial header
-	// bytes 8-16: xerial version
-	// everything after: uint32 chunk size, snappy chunk
-	// we come into this function knowing src is at least 16
-	src = src[16:]
-	var dst, chunk []byte
-	var err error
-	for len(src) > 0 {
-		if len(src) < 4 {
-			return nil, errMalformedXerial
-		}
-		size := int32(binary.BigEndian.Uint32(src))
-		src = src[4:]
-		if size < 0 || len(src) < int(size) {
-			return nil, errMalformedXerial
-		}
-		if chunk, err = s2.Decode(chunk[:cap(chunk)], src[:size]); err != nil {
-			return nil, err
-		}
-		src = src[size:]
-		dst = append(dst, chunk...)
-	}
-	return dst, nil
-}
-
 type partitionCommitter struct {
 	services.Service
 
@@ -1666,8 +1416,6 @@ type readerMetrics struct {
 	recordsPerFetch                  prometheus.Histogram
 	fetchesErrors                    prometheus.Counter
 	fetchesTotal                     prometheus.Counter
-	fetchedBytes                     prometheus.Counter
-	fetchesCompressedBytes           prometheus.Counter
 	fetchWaitDuration                prometheus.Histogram
 	fetchedDiscardedRecords          prometheus.Counter
 	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
@@ -1718,14 +1466,6 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			Name:                        "cortex_ingest_storage_reader_records_batch_wait_duration_seconds",
 			Help:                        "How long a consumer spent waiting for a batch of records from the Kafka client. If fetching is faster than processing, then this will be close to 0.",
 			NativeHistogramBucketFactor: 1.1,
-		}),
-		fetchedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_fetched_bytes_total",
-			Help: "Total number of record bytes fetched from Kafka by the consumer.",
-		}),
-		fetchesCompressedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_fetches_compressed_bytes_total",
-			Help: "Total number of compressed bytes fetched from Kafka by the consumer.",
 		}),
 		fetchedDiscardedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetched_discarded_records_total",
