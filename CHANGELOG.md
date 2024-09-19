@@ -86,6 +86,7 @@
 * [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131
 * [ENHANCEMENT] Querier: attach logs emitted during query consistency check to trace span for query. #9213
 * [ENHANCEMENT] Query-scheduler: Experimental `-query-scheduler.prioritize-query-components` flag enables the querier-worker queue priority algorithm to take precedence over tenant rotation when dequeuing requests. #9220
+* [ENHANCEMENT] Add application credential arguments for Openstack Swift storage backend. #9181
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
@@ -219,6 +220,8 @@
 * [ENHANCEMENT] Provide more detailed recommendations on how to migrate from classic to native histograms. #8864
 * [ENHANCEMENT] Clarify that `{namespace}` and `{groupName}` path segments in the ruler config API should be URL-escaped. #8969
 * [ENHANCEMENT] Include stalled compactor network drive information in runbooks. #9297
+* [ENHANCEMENT] Document `/ingester/prepare-partition-downscale` and `/ingester/prepare-instance-ring-downscale` endpoints. #9132
+* [ENHANCEMENT] Describe read-only mode of ingesters in component documentation. #9132
 
 ### Tools
 
@@ -240,6 +243,7 @@
 * [ENHANCEMENT] `tsdb-series`: Added `-json` option to generate JSON output for easier post-processing. #8844
 * [ENHANCEMENT] `tsdb-series`: Added `-min-time` and `-max-time` options to filter samples that are used for computing data-points per minute. #8844
 * [ENHANCEMENT] `mimir-rules-action`: Added new input to support matching target namespaces by regex. #9244
+* [ENHANCEMENT] `mimir-rules-action`: Added new inputs to support ignoring namespaces and ignoring namespaces by regex. #9258 #9324
 
 ## 2.13.0
 

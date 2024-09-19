@@ -7194,6 +7194,36 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "auth_version",
               "required": false,
               "desc": "OpenStack Swift authentication API version. 0 to autodetect.",
@@ -13209,6 +13239,36 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "auth_version",
               "required": false,
               "desc": "OpenStack Swift authentication API version. 0 to autodetect.",
@@ -15400,6 +15460,36 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "application_credential_id",
+              "required": false,
+              "desc": "OpenStack Swift application credential id",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_name",
+              "required": false,
+              "desc": "OpenStack Swift application credential name",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-name",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "application_credential_secret",
+              "required": false,
+              "desc": "OpenStack Swift application credential secret",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.swift.application-credential-secret",
+              "fieldType": "string"
+            },
             {
               "kind": "field",
               "name": "auth_version",
@@ -17815,6 +17905,36 @@
               "required": false,
               "desc": "",
               "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "application_credential_id",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential id",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_name",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential name",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-name",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "application_credential_secret",
+                  "required": false,
+                  "desc": "OpenStack Swift application credential secret",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.swift.application-credential-secret",
+                  "fieldType": "string"
+                },
                 {
                   "kind": "field",
                   "name": "auth_version",
