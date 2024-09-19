@@ -401,7 +401,6 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
 
 		// TODO: Add metrics to measure how long are items sitting in the queue before they are flushed.
-		// TODO dimitarvdimitrov support metadata and the rest of the fields; perhaps cut a new request for different values of SkipLabelNameValidation?
 		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
 			// TODO: Technically, we should determine at this point what type of error it is and abort the whole push if it's a server error.
 			// We'll do that in the next PR as otherwise it's too many changes right now.
