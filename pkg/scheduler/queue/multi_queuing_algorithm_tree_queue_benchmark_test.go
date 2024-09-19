@@ -379,13 +379,13 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		tqaFlipped := newTenantQuerierAssignments()
 		tqaQuerierWorkerPrioritization := newTenantQuerierAssignments()
 
-		nonFlippedRoundRobinTree, err := NewTree(tqaNonFlipped, &roundRobinState{}, &roundRobinState{})
+		nonFlippedRoundRobinTree, err := NewTree(tqaNonFlipped, &roundRobinState{})
 		require.NoError(t, err)
 
-		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqaFlipped, &roundRobinState{})
+		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqaFlipped)
 		require.NoError(t, err)
 
-		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization, &roundRobinState{})
+		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
 		require.NoError(t, err)
 
 		treeScenarios := []struct {
