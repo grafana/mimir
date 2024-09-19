@@ -1355,6 +1355,8 @@ Usage of ./cmd/mimir/mimir:
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string
     	The Kafka topic name.
+  -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
+    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
   -ingest-storage.kafka.write-clients int

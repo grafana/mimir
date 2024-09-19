@@ -6632,6 +6632,16 @@
               "fieldDefaultValue": 128,
               "fieldFlag": "ingest-storage.kafka.records-per-fetch",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "use_compressed_bytes_as_fetch_max_bytes",
+              "required": false,
+              "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes",
+              "fieldType": "boolean"
             }
           ],
           "fieldValue": null,
