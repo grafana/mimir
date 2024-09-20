@@ -195,15 +195,15 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", partition, "cycle_end", cycleEnd)
 			continue
 		}
+		if err := lag.Err; err != nil {
+			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", partition, "cycle_end", cycleEnd)
+			continue
+		}
 
 		b.blockBuilderMetrics.consumerLagRecords.WithLabelValues(fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
 
 		if lag.Lag <= 0 {
-			if err := lag.Err; err != nil {
-				level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", partition, "cycle_end", cycleEnd)
-			} else {
-				level.Info(b.logger).Log("msg", "nothing to consume in partition", "partition", partition, "offset", lag.Commit.At, "end_offset", lag.End.Offset, "lag", lag.Lag)
-			}
+			level.Info(b.logger).Log("msg", "nothing to consume in partition", "partition", partition, "offset", lag.Commit.At, "end_offset", lag.End.Offset, "lag", lag.Lag)
 			continue
 		}
 
@@ -332,9 +332,10 @@ func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.L
 	defer func(t time.Time, startState partitionState) {
 		dur := time.Since(t)
 
-		// Don't propagate any errors derived from the canceled context.
+		// Don't propagate any errors derived from the cancelled context.
 		if errors.Is(retErr, context.Canceled) {
 			retErr = nil
+			return
 		}
 
 		if retErr != nil {
@@ -431,7 +432,7 @@ consumerLoop:
 
 	// No records were processed for this cycle.
 	if lastRec == nil {
-		level.Info(logger).Log("msg", "nothing to commit due to first record fetched is from next cycle", "first_rec_offset", firstRec.Offset)
+		level.Info(logger).Log("msg", "nothing to commit due to first record has a timestamp greater than this section end", "first_rec_offset", firstRec.Offset, "first_rec_ts", firstRec.Timestamp)
 		return state, nil
 	}
 
