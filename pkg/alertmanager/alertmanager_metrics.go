@@ -337,8 +337,8 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data := m.regs.BuildMetricFamiliesPerTenant()
 
-	data.SendSumOfCountersPerTenant(out, m.alertsReceived, "alertmanager_alerts_received_total")
-	data.SendSumOfCountersPerTenant(out, m.alertsInvalid, "alertmanager_alerts_invalid_total")
+	data.SendSumOfCountersPerTenant(out, m.alertsReceived, "alertmanager_alerts_received_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.alertsInvalid, "alertmanager_alerts_invalid_total", dskit_metrics.WithSkipZeroValueMetrics)
 
 	data.SendSumOfCountersPerTenant(out, m.numNotifications, "alertmanager_notifications_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", dskit_metrics.WithLabels("integration", "reason"), dskit_metrics.WithSkipZeroValueMetrics)
@@ -371,10 +371,10 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendMaxOfGaugesPerTenant(out, m.configHashValue, "alertmanager_config_hash")
 
-	data.SendSumOfCountersPerTenant(out, m.partialMerges, "alertmanager_partial_state_merges_total")
-	data.SendSumOfCountersPerTenant(out, m.partialMergesFailed, "alertmanager_partial_state_merges_failed_total")
-	data.SendSumOfCountersPerTenant(out, m.replicationTotal, "alertmanager_state_replication_total")
-	data.SendSumOfCountersPerTenant(out, m.replicationFailed, "alertmanager_state_replication_failed_total")
+	data.SendSumOfCountersPerTenant(out, m.partialMerges, "alertmanager_partial_state_merges_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.partialMergesFailed, "alertmanager_partial_state_merges_failed_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.replicationTotal, "alertmanager_state_replication_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.replicationFailed, "alertmanager_state_replication_failed_total", dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCounters(out, m.fetchReplicaStateTotal, "alertmanager_state_fetch_replica_state_total")
 	data.SendSumOfCounters(out, m.fetchReplicaStateFailed, "alertmanager_state_fetch_replica_state_failed_total")
 	data.SendSumOfCounters(out, m.initialSyncTotal, "alertmanager_state_initial_sync_total")
