@@ -963,12 +963,9 @@ How to **investigate**:
   2. Consider removing some deployments from `gossip-ring` selector label, to reduce the number of matching pods below 1000.
      This is a temporarily workaround, and you should revert it once you upgrade Kubernetes to a version with the bug fixed.
 
-     If you're using jsonnet, you can do:
+     An example of how you can do it with jsonnet:
 
      ```
-     # Repeat it for any deployment you want to remove from memberlist seed nodes,
-     # but make sure you keep a good number of Mimir pods with the label, so that
-     # there's no risk of having no running seed nodes when a Mimir pod starts.
      querier_deployment+:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
