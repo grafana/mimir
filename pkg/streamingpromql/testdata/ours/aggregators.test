@@ -317,10 +317,13 @@ eval range from 0m to 4m step 1m avg(series)
 
 clear
 
-# Make sure count doesn't emit a 0 when there are no values
+# Make sure count and group don't emit a 0 when there are no values
 load 1m
 	series{label="a"} _ 9
 	series{label="b"} _ 9
 
 eval range from 0m to 1m step 1m count(series)
   {} _ 2
+
+eval range from 0m to 1m step 1m group(series)
+  {} _ 1
