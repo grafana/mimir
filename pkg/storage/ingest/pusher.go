@@ -290,7 +290,8 @@ type parallelStoragePusher struct {
 	metrics *pusherConsumerMetrics
 	logger  log.Logger
 
-	pushers        map[string]map[mimirpb.WriteRequest_SourceEnum]*parallelStorageShards
+	// pushers is map["$tenant|$source"]*parallelStorageShards
+	pushers        map[string]*parallelStorageShards
 	upstreamPusher Pusher
 	numShards      int
 	batchSize      int
@@ -300,7 +301,7 @@ type parallelStoragePusher struct {
 func newParallelStoragePusher(metrics *pusherConsumerMetrics, pusher Pusher, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
-		pushers:        make(map[string]map[mimirpb.WriteRequest_SourceEnum]*parallelStorageShards),
+		pushers:        make(map[string]*parallelStorageShards),
 		upstreamPusher: pusher,
 		numShards:      numShards,
 		batchSize:      batchSize,
@@ -322,10 +323,8 @@ func (c parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.Wr
 // Close implements the PusherCloser interface.
 func (c parallelStoragePusher) Close() []error {
 	var errs multierror.MultiError
-	for _, sources := range c.pushers {
-		for _, p := range sources {
-			errs.Add(p.Stop())
-		}
+	for _, p := range c.pushers {
+		errs.Add(p.Stop())
 	}
 	clear(c.pushers)
 	return errs
@@ -334,16 +333,15 @@ func (c parallelStoragePusher) Close() []error {
 // shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
 // We create a shard for each tenantID to parallelize the writes.
 func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) *parallelStorageShards {
-	if p := c.pushers[userID][requestSource]; p != nil {
+	// Construct the string inline so that it doesn't escape to the heap. Go doesn't escape strings that are used to only look up map keys.
+	// We can use "|" because that cannot be part of a tenantID in Mimir.
+	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
 		return p
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
 	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
-	if c.pushers[userID] == nil {
-		c.pushers[userID] = make(map[mimirpb.WriteRequest_SourceEnum]*parallelStorageShards)
-	}
-	c.pushers[userID][requestSource] = p
+	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
 }
 
