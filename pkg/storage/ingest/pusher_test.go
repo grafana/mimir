@@ -673,6 +673,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 
 	// Ensure the queue is empty and no deadlock occurred
 	require.Len(t, queue.ch, 0)
+	require.Len(t, queue.errCh, 0)
 	require.Len(t, queue.currentBatch.Timeseries, 0)
 }
 
