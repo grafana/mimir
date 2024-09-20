@@ -608,6 +608,27 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 	c.addSample(&mimirpb.Sample{TimestampMs: startTs}, labels)
 }
 
+// handleHistogramStartTime similar to the method above but for native histograms..
+func (c *MimirConverter) handleHistogramStartTime(startTs, sampleTs int64, ts *mimirpb.TimeSeries, settings Settings) {
+	if !settings.EnableCreatedTimestampZeroIngestion {
+		return
+	}
+	// We want to ignore the write in three cases.
+	// - We've seen samples with the start timestamp set to epoch meaning it wasn't set by the sender so we skip those.
+	// - If StartTimestamp equals Timestamp ist means we don't know at which time the metric restarted according to the spec.
+	// - StartTimestamp can never be greater than the sample timestamp.
+	if startTs <= 0 || startTs == sampleTs || startTs > sampleTs {
+		return
+	}
+
+	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
+	if sampleTs-startTs > validIntervalForStartTimestamps {
+		return
+	}
+
+	ts.Histograms = append(ts.Histograms, mimirpb.Histogram{Timestamp: startTs})
+}
+
 // addResourceTargetInfo converts the resource to the target info metric.
 func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *MimirConverter) {
 	if settings.DisableTargetInfo || timestamp == 0 {
