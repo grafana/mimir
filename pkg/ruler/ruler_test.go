@@ -1010,7 +1010,8 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 				rulerCfg := defaultRulerConfig(t)
 				rulerCfg.PollInterval = time.Hour
-				rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+				rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+				rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 				rulerCfg.Ring.NumTokens = 128
 				rulerCfg.Ring.Common.InstanceID = rulerAddr
 				rulerCfg.Ring.Common.InstanceAddr = rulerAddr
@@ -1158,7 +1159,8 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 
 		rulerCfg := defaultRulerConfig(t)
 		rulerCfg.PollInterval = time.Hour
-		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+		rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+		rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 		rulerCfg.Ring.NumTokens = 128
 		rulerCfg.Ring.Common.InstanceID = rulerAddr
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
@@ -1304,7 +1306,8 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 		rulerCfg := defaultRulerConfig(t)
 		rulerCfg.PollInterval = time.Hour
-		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+		rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+		rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 		rulerCfg.Ring.NumTokens = 128
 		rulerCfg.Ring.Common.InstanceID = rulerAddr
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
@@ -1401,7 +1404,8 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 	// once explicitly triggered by the change via API.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
-	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 	cfg.Ring.Common.InstanceAddr = "ruler-1"
 
 	reg := prometheus.NewPedanticRegistry()
