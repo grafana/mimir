@@ -48,6 +48,9 @@ data:
         insecure: true
         secret_access_key: ${MINIO_ROOT_PASSWORD}
     auth:
+      admin:
+        pass_access_policy_name: true
+        pass_token_name: true
       type: enterprise
     blocks_storage:
       backend: s3
@@ -102,6 +105,7 @@ data:
         heartbeat_timeout: 4m
     frontend:
       cache_results: true
+      log_query_request_headers: X-Access-Policy-Name,X-Token-Name
       parallelize_shardable_queries: true
       query_sharding_target_series_per_shard: 2500
       results_cache:
