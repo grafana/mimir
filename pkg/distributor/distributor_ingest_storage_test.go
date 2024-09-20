@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -452,7 +453,15 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 
 			// Ensure series has been correctly sharded to partitions.
 			actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
-			assert.Equal(t, testData.expectedMetricsByPartition, actualSeriesByPartition)
+			if !assert.Equal(t, testData.expectedMetricsByPartition, actualSeriesByPartition, "please report this failure in https://github.com/grafana/mimir/issues/9299") {
+				// This test is sometimes flaky. Add a log line to help debug it.
+				// Inspect the offsets of partitions in Kafka. There may be records, but we couldn't fetch them in the 1s timeout above.
+				kafkaClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaCluster.ListenAddrs()...))
+				assert.NoError(t, err)
+				offsets, err := kadm.NewClient(kafkaClient).ListEndOffsets(context.Background(), kafkaTopic)
+				assert.NoError(t, err)
+				t.Logf("Kafka topic %s end offsets: %#v", kafkaTopic, offsets)
+			}
 
 			// Ensure series have been correctly sharded to ingesters.
 			for _, ingester := range ingesters {
