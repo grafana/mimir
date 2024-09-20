@@ -541,6 +541,9 @@ func (q *batchingQueue) AddToBatch(ctx context.Context, source mimirpb.WriteRequ
 
 // AddMetadataToBatch adds metadata to the current batch.
 func (q *batchingQueue) AddMetadataToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, metadata *mimirpb.MetricMetadata) error {
+	if q.currentBatch.startedAt.IsZero() {
+		q.currentBatch.startedAt = time.Now()
+	}
 	q.currentBatch.Metadata = append(q.currentBatch.Metadata, metadata)
 	q.currentBatch.Context = ctx
 	q.currentBatch.Source = source
