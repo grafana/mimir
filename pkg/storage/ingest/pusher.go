@@ -184,11 +184,11 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 }
 
 func (c pusherConsumer) newStorageWriter() PusherCloser {
-	if c.kafkaConfig.IngestionShards == 0 {
+	if c.kafkaConfig.IngestionConcurrency == 0 {
 		return newSequentialStoragePusher(c.metrics, c.pusher)
 	}
 
-	return newParallelStoragePusher(c.metrics, c.pusher, c.kafkaConfig.IngestionShards, c.kafkaConfig.IngestionBatchSize, c.logger)
+	return newParallelStoragePusher(c.metrics, c.pusher, c.kafkaConfig.IngestionConcurrency, c.kafkaConfig.IngestionConcurrencyBatchSize, c.logger)
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {

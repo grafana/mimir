@@ -6680,22 +6680,22 @@
             },
             {
               "kind": "field",
-              "name": "ingestion_shards",
+              "name": "ingestion_concurrency",
               "required": false,
               "desc": "The number of concurrent ingestion streams to the TSDB head. 0 to disable.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
-              "fieldFlag": "ingest-storage.kafka.ingestion-shards",
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency",
               "fieldType": "int"
             },
             {
               "kind": "field",
-              "name": "ingestion_batch_size",
+              "name": "ingestion_concurrency_batch_size",
               "required": false,
-              "desc": "The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-shards is greater than 0.",
+              "desc": "The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-concurrency is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 128,
-              "fieldFlag": "ingest-storage.kafka.ingestion-batch-size",
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-batch-size",
               "fieldType": "int"
             }
           ],

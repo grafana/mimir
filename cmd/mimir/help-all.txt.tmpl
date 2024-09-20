@@ -1365,10 +1365,10 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency int
     	The number of concurrent fetch requests that the ingester sends to Kafka when catching up during startup. (default 1)
-  -ingest-storage.kafka.ingestion-batch-size int
-    	The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-shards is greater than 0. (default 128)
-  -ingest-storage.kafka.ingestion-shards int
+  -ingest-storage.kafka.ingestion-concurrency int
     	The number of concurrent ingestion streams to the TSDB head. 0 to disable.
+  -ingest-storage.kafka.ingestion-concurrency-batch-size int
+    	The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-concurrency is greater than 0. (default 128)
   -ingest-storage.kafka.last-produced-offset-poll-interval duration
     	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
   -ingest-storage.kafka.last-produced-offset-retry-timeout duration
