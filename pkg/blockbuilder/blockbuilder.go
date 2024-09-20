@@ -288,40 +288,41 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 	}
 }
 
+// consumePartition consumes records from the given partition until the cycleEnd timestamp.
+// If the partition is lagging behind, it takes care of calling consuming it in sections.
 func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state partitionState, cycleEnd time.Time) (err error) {
 	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
-	sectionCycleEnd := cycleEnd
-	if sectionCycleEnd.Sub(state.CommitRecTimestamp) > 3*b.cfg.ConsumeInterval/2 {
+	// Section is a portion of the partition to process in a single pass. One cycle may process multiple sections if the partition is lagging.
+	sectionEnd := cycleEnd
+	if sectionEnd.Sub(state.CommitRecTimestamp) > time.Duration(1.5*float64(b.cfg.ConsumeInterval)) {
 		// We are lagging behind by more than 1.5*interval or there is no commit. We need to consume the partition in sections.
 		// We iterate through all the ConsumeInterval intervals, starting from the first one after the last commit until the cycleEnd,
 		// i.e. [T, T+interval), [T+interval, T+2*interval), ... [T+S*interval, cycleEnd)
 		// where T is the CommitRecTimestamp, the timestamp of the record, whose offset we committed previously.
 		// When there is no kafka commit, we play safe and assume LastSeenOffset, and LastBlockEnd were 0 to not discard any samples unnecessarily.
-		sectionCycleEnd, _ = nextCycleEnd(
+		sectionEnd, _ = nextCycleEnd(
 			state.CommitRecTimestamp,
 			b.cfg.ConsumeInterval,
 			b.cfg.ConsumeIntervalBuffer,
 		)
-		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd, "cycle_end", cycleEnd, "commit_rec_ts", state.CommitRecTimestamp)
+		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "lag", state.Lag, "section_cycle_end", sectionEnd, "cycle_end", cycleEnd, "commit_rec_ts", state.CommitRecTimestamp)
 	}
-	for !sectionCycleEnd.After(cycleEnd) {
-		partitionLogger := log.With(b.logger, "partition", partition, "lag", state.Lag, "section_cycle_end", sectionCycleEnd)
-		state, err = b.consumePartitionCycle(ctx, partitionLogger, builder, partition, state, sectionCycleEnd)
+	for !sectionEnd.After(cycleEnd) {
+		partitionLogger := log.With(b.logger, "partition", partition, "lag", state.Lag, "section_cycle_end", sectionEnd)
+		state, err = b.consumePartitionSection(ctx, partitionLogger, builder, partition, state, sectionEnd)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", partition, err)
 		}
-		sectionCycleEnd = sectionCycleEnd.Add(b.cfg.ConsumeInterval)
+		sectionEnd = sectionEnd.Add(b.cfg.ConsumeInterval)
 	}
 
 	return nil
 }
 
-// consumePartition consumes records from the given partition until the cycleEnd timestamp.
-// If the partition is lagging behind, the caller needs to take care of calling consumePartition in sections.
-func (b *BlockBuilder) consumePartitionCycle(ctx context.Context, logger log.Logger, builder *TSDBBuilder, partition int32, state partitionState, cycleEnd time.Time) (_ partitionState, retErr error) {
-	blockEnd := cycleEnd.Truncate(b.cfg.ConsumeInterval)
+func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.Logger, builder *TSDBBuilder, partition int32, state partitionState, sectionEnd time.Time) (_ partitionState, retErr error) {
+	blockEnd := sectionEnd.Truncate(b.cfg.ConsumeInterval)
 
 	var numBlocks int
 	defer func(t time.Time, startState partitionState) {
@@ -385,9 +386,9 @@ consumerLoop:
 				firstRec = rec
 			}
 
-			// Stop consuming after we reached the cycleEnd marker.
+			// Stop consuming after we reached the sectionEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
-			if rec.Timestamp.After(cycleEnd) {
+			if rec.Timestamp.After(sectionEnd) {
 				break consumerLoop
 			}
 
