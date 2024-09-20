@@ -37,13 +37,13 @@ func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesD
 
 	for _, p := range data.Floats {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.floatValues[idx] += 1
+		g.floatValues[idx]++
 		g.floatPresent[idx] = true
 	}
 
 	for _, p := range data.Histograms {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.floatValues[idx] += 1
+		g.floatValues[idx]++
 		g.floatPresent[idx] = true
 	}
 
