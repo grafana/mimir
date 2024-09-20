@@ -36,7 +36,7 @@ type Aggregation struct {
 
 	Annotations *annotations.Annotations
 
-	metricNames        *types.MetricNames
+	metricNames        *MetricNames
 	currentSeriesIndex int
 
 	expressionPosition posrange.PositionRange
@@ -79,7 +79,7 @@ func NewAggregation(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations,
-		metricNames:              &types.MetricNames{},
+		metricNames:              &MetricNames{},
 		expressionPosition:       expressionPosition,
 		aggregationGroupFactory:  opGroupFactory,
 	}
