@@ -1555,6 +1555,26 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:6)`,
 			},
 		},
+		"rate() over metric without counter suffix with single float or histogram in range": {
+			data: `
+				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
+			`,
+			expr:                       "rate(series[45s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
+			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
+		},
+		"rate() over one point in range": {
+			data: `
+				series 1
+			`,
+			expr:                       "rate(series[1m])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
+			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
+		},
 
 		"sum_over_time() over series with both floats and histograms": {
 			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
@@ -1627,26 +1647,6 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:74)`,
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:99)`,
 			},
-		},
-		"no rate annotation when sample ends with histogram": {
-			data: `
-				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
-			`,
-			expr:                       "rate(series[45s])",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
-			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
-		},
-		"no rate annotation when only 1 point in range vector": {
-			data: `
-				series 1
-			`,
-			expr:                       "rate(series[1m])",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
-			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
 		},
 	}
 
