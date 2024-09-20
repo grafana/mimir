@@ -13,11 +13,32 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type CountAggregationGroup struct {
-	values []float64
+// count represents whether this aggregation is `count` (true), or `group` (false)
+func NewCountGroupAggregationGroup(count bool) *CountGroupAggregationGroup {
+	g := &CountGroupAggregationGroup{}
+	if count {
+		g.accumulatePoint = g.countAccumulatePoint
+	} else {
+		g.accumulatePoint = g.groupAccumulatePoint
+	}
+	return g
 }
 
-func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+type CountGroupAggregationGroup struct {
+	values []float64
+
+	accumulatePoint func(idx int64)
+}
+
+func (g *CountGroupAggregationGroup) countAccumulatePoint(idx int64) {
+	g.values[idx]++
+}
+
+func (g *CountGroupAggregationGroup) groupAccumulatePoint(idx int64) {
+	g.values[idx] = 1
+}
+
+func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
 	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.values == nil {
 		var err error
 		// First series with values for this group, populate it.
@@ -34,19 +55,19 @@ func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesD
 
 	for _, p := range data.Floats {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.values[idx]++
+		g.accumulatePoint(idx)
 	}
 
 	for _, p := range data.Histograms {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.values[idx]++
+		g.accumulatePoint(idx)
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 
-func (g *CountAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *CountGroupAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, fv := range g.values {
 		if fv > 0 {

@@ -470,9 +470,8 @@ load 10s
 # 	{test="three samples"} 1
 # 	{test="uneven samples"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 1m group(foo)
-# 	{} 1
+eval instant at 1m group(foo)
+	{} 1
 
 # Tests for avg.
 clear
