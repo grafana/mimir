@@ -50,7 +50,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
 		"rate(metric{}[5m:1m])":                        "PromQL expression type *parser.SubqueryExpr for range vectors",
 		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
-		"count(metric{})":                              "aggregation operation with 'count'",
+		"quantile(0.95, metric{})":                     "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -1786,7 +1786,7 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
 		// Aggregations
-		for _, aggFunc := range []string{"sum", "avg", "min", "max"} {
+		for _, aggFunc := range []string{"avg", "count", "min", "max", "sum"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
