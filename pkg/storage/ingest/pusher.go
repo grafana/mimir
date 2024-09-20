@@ -70,8 +70,8 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 
 	return &pusherConsumerMetrics{
 		numTimeSeriesPerFlush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_pusher_num_timeseries_per_flush",
-			Help:                        "Number of time series per flush",
+			Name:                        "cortex_ingester_pusher_num_timeseries_per_shard_flush",
+			Help:                        "Number of time series pushed in each batch to an ingestion shard. A lower number than ingestion-batch-size indicates that shards are not filling up and may not be parallelizing ingestion as efficiently.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -189,11 +189,11 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 }
 
 func (c pusherConsumer) newStorageWriter() PusherCloser {
-	if c.kafkaConfig.ReplayShards == 0 {
+	if c.kafkaConfig.IngestionConcurrency == 0 {
 		return newSequentialStoragePusher(c.metrics, c.pusher)
 	}
 
-	return newParallelStoragePusher(c.metrics, c.pusher, c.kafkaConfig.ReplayShards, c.kafkaConfig.BatchSize, c.logger)
+	return newParallelStoragePusher(c.metrics, c.pusher, c.kafkaConfig.IngestionConcurrency, c.kafkaConfig.IngestionConcurrencyBatchSize, c.logger)
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {

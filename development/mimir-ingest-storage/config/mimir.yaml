@@ -15,8 +15,8 @@ ingest_storage:
     address: kafka_1:9092
     topic:   mimir-ingest
     last_produced_offset_poll_interval: 500ms
-    replay_concurrency: 3
-    replay_shards: 8
+    fetch_concurrency: 3
+    ingestion_concurrency: 8
 
 ingester:
   track_ingester_owned_series: false # suppress log messages in c-61 about empty ring; doesn't affect testing
