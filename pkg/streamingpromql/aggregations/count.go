@@ -14,14 +14,14 @@ import (
 )
 
 type CountAggregationGroup struct {
-	floatValues []float64
+	values []float64
 }
 
 func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
-	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.floatValues == nil {
+	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.values == nil {
 		var err error
 		// First series with values for this group, populate it.
-		g.floatValues, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		g.values, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -29,17 +29,17 @@ func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesD
 		if err != nil {
 			return err
 		}
-		g.floatValues = g.floatValues[:timeRange.StepCount]
+		g.values = g.values[:timeRange.StepCount]
 	}
 
 	for _, p := range data.Floats {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.floatValues[idx]++
+		g.values[idx]++
 	}
 
 	for _, p := range data.Histograms {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.floatValues[idx]++
+		g.values[idx]++
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
@@ -48,7 +48,7 @@ func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesD
 
 func (g *CountAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
-	for _, fv := range g.floatValues {
+	for _, fv := range g.values {
 		if fv > 0 {
 			floatPointCount++
 		}
@@ -61,7 +61,7 @@ func (g *CountAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRan
 			return types.InstantVectorSeriesData{}, false, err
 		}
 
-		for i, fv := range g.floatValues {
+		for i, fv := range g.values {
 			if fv > 0 {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: fv})
@@ -69,7 +69,7 @@ func (g *CountAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRan
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
+	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
 }
