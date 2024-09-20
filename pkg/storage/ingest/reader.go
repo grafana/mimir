@@ -972,12 +972,10 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 
 	doubleFetchedBytes := 0
 	for i, record := range f.Records {
-		logger := spanlogger.FromContext(record.Context, log.NewNopLogger()) // noop fallback because a log on every request is still too much
 		if i < firstReturnedRecordIndex {
 			doubleFetchedBytes += len(record.Value)
-			logger.DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
+			spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
 		}
-		logger.DebugLog("msg", "received record", "offset", record.Offset)
 		r.tracer.OnFetchRecordUnbuffered(record, true)
 	}
 	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
