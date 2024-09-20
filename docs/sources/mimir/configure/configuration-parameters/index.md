@@ -3851,18 +3851,10 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # The number of concurrent fetch requests that the ingester sends to kafka
+  # The number of concurrent fetch requests that the ingester sends to Kafka
   # when catching up during startup.
-  # CLI flag: -ingest-storage.kafka.replay-concurrency
-  [replay_concurrency: <int> | default = 1]
-
-  # The number of concurrent appends to the TSDB head. 0 to disable.
-  # CLI flag: -ingest-storage.kafka.replay-shards
-  [replay_shards: <int> | default = 0]
-
-  # The number of timeseries to batch together before ingesting into TSDB.
-  # CLI flag: -ingest-storage.kafka.batch-size
-  [batch_size: <int> | default = 128]
+  # CLI flag: -ingest-storage.kafka.fetch-concurrency
+  [fetch_concurrency: <int> | default = 1]
 
   # The number of records to fetch from Kafka in a single request.
   # CLI flag: -ingest-storage.kafka.records-per-fetch
@@ -3874,6 +3866,15 @@ kafka:
   # differently.
   # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+  # The number of concurrent ingestion streams to the TSDB head. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.ingestion-shards
+  [ingestion_shards: <int> | default = 0]
+
+  # The number of timeseries to batch together before ingesting into TSDB. This
+  # is only used when ingestion-shards is greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-batch-size
+  [ingestion_batch_size: <int> | default = 128]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to
