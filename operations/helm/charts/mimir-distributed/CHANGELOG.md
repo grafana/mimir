@@ -48,6 +48,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for running continuous-test with GEM #8837
 * [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [ENHANCEMENT] Ingester: set GOMAXPROCS to help with golang scheduling overhead when running on machines with a lot of cores. #9283
+* [ENHANCEMENT] GEM: enable logging of access-policy-name and token-name that run query in query-frontend. #9348
 * [ENHANCEMENT] Update rollout-operator to `v0.19.1` (Helm chart version `v0.18.0`). #9388
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
