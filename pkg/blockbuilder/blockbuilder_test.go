@@ -592,6 +592,88 @@ func TestNextCycleEnd(t *testing.T) {
 	}
 }
 
+func TestPartitionStateFromLag(t *testing.T) {
+	testTime := time.UnixMilli(time.Now().UnixMilli())
+
+	commitRecTs := testTime.Add(-time.Hour)
+	lastRecOffset := int64(30)
+	blockEndTs := testTime.Add(-10 * time.Minute)
+
+	testKafkaOffset := kadm.Offset{
+		Topic:       testTopic,
+		Partition:   0,
+		At:          30,
+		LeaderEpoch: -1,
+		Metadata:    marshallCommitMeta(commitRecTs.UnixMilli(), lastRecOffset, blockEndTs.UnixMilli()),
+	}
+
+	testCases := []struct {
+		name           string
+		lag            kadm.GroupMemberLag
+		fallbackMillis int64
+		wantState      partitionState
+	}{
+		{
+			name: "no commit, no lag",
+			lag: kadm.GroupMemberLag{
+				Topic:     testTopic,
+				Partition: 0,
+				Commit:    kadm.Offset{},
+				Lag:       0,
+			},
+			fallbackMillis: testTime.UnixMilli(),
+			wantState: partitionState{
+				Lag:                   0,
+				Commit:                kadm.Offset{},
+				CommitRecordTimestamp: testTime,
+				LastSeenOffset:        0,
+				LastBlockEnd:          time.UnixMilli(0),
+			},
+		},
+		{
+			name: "no commit, some lag",
+			lag: kadm.GroupMemberLag{
+				Topic:     testTopic,
+				Partition: 0,
+				Commit:    kadm.Offset{},
+				Lag:       10,
+			},
+			fallbackMillis: testTime.UnixMilli(),
+			wantState: partitionState{
+				Lag:                   10,
+				Commit:                kadm.Offset{},
+				CommitRecordTimestamp: testTime,
+				LastSeenOffset:        0,
+				LastBlockEnd:          time.UnixMilli(0),
+			},
+		},
+		{
+			name: "with commit",
+			lag: kadm.GroupMemberLag{
+				Topic:     testTopic,
+				Partition: 0,
+				Commit:    testKafkaOffset,
+				Lag:       10,
+			},
+			fallbackMillis: testTime.UnixMilli(),
+			wantState: partitionState{
+				Lag:                   10,
+				Commit:                testKafkaOffset,
+				CommitRecordTimestamp: commitRecTs,
+				LastSeenOffset:        lastRecOffset,
+				LastBlockEnd:          blockEndTs,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := partitionStateFromLag(log.NewNopLogger(), tc.lag, tc.fallbackMillis)
+			require.Equal(t, tc.wantState, state)
+		})
+	}
+}
+
 func mustTimeParse(t *testing.T, layout, v string) time.Time {
 	ts, err := time.Parse(layout, v)
 	require.NoError(t, err)
