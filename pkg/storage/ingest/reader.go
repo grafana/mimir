@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -802,7 +801,7 @@ type fetchResult struct {
 }
 
 func (fr fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
-	var logger log.Logger = spanlogger.FromContext(fr.ctx, log.NewLogfmtLogger(os.Stderr))
+	var logger log.Logger = spanlogger.FromContext(fr.ctx, log.NewNopLogger())
 
 	msg := "fetched records"
 	if fr.Err != nil {
@@ -836,9 +835,6 @@ func (fr fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
 }
 
 func (fr fetchResult) logOrderedFetch() {
-	if fr.ctx == nil {
-		return
-	}
 	spanlogger.FromContext(fr.ctx, log.NewNopLogger()).DebugLog("msg", "fetch result is enqueued for consuming")
 }
 
@@ -1145,7 +1141,6 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			newRecordsProducedBackoff.Reset()
 
 			// Propagate the span context to consuming the records.
-			f.ctx = ctx
 			select {
 			case w.result <- f:
 			case <-ctx.Done():
