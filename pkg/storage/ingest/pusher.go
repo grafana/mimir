@@ -31,7 +31,8 @@ import (
 // If we're still flushing batch `N`, batch `N+1` is enqueued for flushing, and we've just finished batching batch `N+2`,
 // then we're going too fast - in the time to flush `N` we've created `N+2` and `N+1`.
 // A buffer of 1 doesn't let us go too far ahead with batching, but still doesn't require synchronisation between batching and flushing.
-const batchingQueueCapacity = 1
+// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
+const batchingQueueCapacity = 5
 
 type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error

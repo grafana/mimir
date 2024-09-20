@@ -638,6 +638,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 		})
 	}
 }
+
 func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	capacity := 2
 	batchSize := 3
