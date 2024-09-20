@@ -1791,8 +1791,11 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 		}
+		// Multiple range-vector times are used to check lookbacks that only select single points, multiple points, and boundaries.
 		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[1m])`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
 	}
 
 	timeRanges := []struct {
