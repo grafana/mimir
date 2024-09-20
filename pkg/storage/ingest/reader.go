@@ -798,9 +798,11 @@ type fetchResult struct {
 	kgo.FetchPartition
 	ctx          context.Context
 	fetchedBytes int
+
+	waitingToBePickedUpFromOrderedFetchesSpan opentracing.Span
 }
 
-func (fr fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
+func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
 	var logger log.Logger = spanlogger.FromContext(fr.ctx, log.NewNopLogger())
 
 	msg := "fetched records"
@@ -834,8 +836,12 @@ func (fr fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
 	)
 }
 
-func (fr fetchResult) logOrderedFetch() {
-	spanlogger.FromContext(fr.ctx, log.NewNopLogger()).DebugLog("msg", "fetch result is enqueued for consuming")
+func (fr *fetchResult) startWaitingForConsumption() {
+	fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.waitingForConsumption")
+}
+
+func (fr *fetchResult) finishWaitingForConsumption() {
+	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
 func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
@@ -1206,10 +1212,11 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
 			bufferedResult = result
-			bufferedResult.logOrderedFetch()
+			bufferedResult.startWaitingForConsumption()
 			readyBufferedResults = r.orderedFetches
 
 		case readyBufferedResults <- bufferedResult:
+			bufferedResult.finishWaitingForConsumption()
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
 		}
