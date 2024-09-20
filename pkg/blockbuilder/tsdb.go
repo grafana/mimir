@@ -321,8 +321,6 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		doneDBs   = make(map[*userTSDB]bool)
 	)
 
-	compactStart := time.Now()
-
 	b.tsdbsMu.Lock()
 	defer func() {
 		b.tsdbsMu.Unlock()
@@ -360,12 +358,17 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	for tenant, db := range b.tsdbs {
 		eg.Go(func() (err error) {
 			defer func(t time.Time) {
+				if errors.Is(err, context.Canceled) {
+					// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
+					return
+				}
 				partitionStr := fmt.Sprintf("%d", tenant.partitionID)
 				if err != nil {
 					b.metrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
+					return
 				}
 				b.metrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
-			}(compactStart)
+			}(time.Now())
 
 			if err := db.compactEverything(ctx); err != nil {
 				return err
