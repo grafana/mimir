@@ -98,11 +98,6 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
 
-	// Immediately unassign (remove) all partitions from the client. We control the order and the pace of fetching within the cycles.
-	b.kafkaClient.RemoveConsumePartitions(map[string][]int32{
-		b.cfg.Kafka.Topic: b.assignedPartitionIDs,
-	})
-
 	return nil
 }
 
