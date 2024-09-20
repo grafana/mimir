@@ -66,8 +66,8 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 // where the sample was not put in the TSDB because it was discarded or was already processed before.
 // lastBlockMax: max time of the block in the previous block building cycle.
 // blockMax: max time of the block in the current block building cycle. This blockMax is exclusive of the last sample by design in TSDB.
-// recordProcessedBefore: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
-func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordProcessedBefore bool) (_ bool, err error) {
+// recordAlreadyProcessed: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
+func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
 	req := mimirpb.PreallocWriteRequest{
@@ -123,7 +123,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 				allSamplesProcessed = false
 				continue
 			}
-			if recordProcessedBefore && s.TimestampMs < lastBlockMax {
+			if recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -154,7 +154,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 				allSamplesProcessed = false
 				continue
 			}
-			if recordProcessedBefore && h.Timestamp < lastBlockMax {
+			if recordAlreadyProcessed && h.Timestamp < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}

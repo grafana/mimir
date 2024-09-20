@@ -383,8 +383,7 @@ consumerLoop:
 		numRecs := fetches.NumRecords()
 		remaining -= int64(numRecs)
 
-		recIter := fetches.RecordIter()
-		for !recIter.Done() {
+		for recIter := fetches.RecordIter(); !recIter.Done(); {
 			rec := recIter.Next()
 
 			if firstRec == nil {
@@ -397,8 +396,8 @@ consumerLoop:
 				break consumerLoop
 			}
 
-			recProcessedBefore := rec.Offset <= state.LastSeenOffset
-			allSamplesProcessed, err := builder.Process(ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(), recProcessedBefore)
+			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
+			allSamplesProcessed, err := builder.Process(ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(), recordAlreadyProcessed)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
 				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
