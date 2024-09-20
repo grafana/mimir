@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 
@@ -111,6 +112,13 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		return false, tmplErr
 	}
 
+	var tlsConfig *tls.Config
+	if wn.settings.TLSConfig != nil {
+		if tlsConfig, err = wn.settings.TLSConfig.ToCryptoTLSConfig(); err != nil {
+			return false, err
+		}
+	}
+
 	cmd := &receivers.SendWebhookSettings{
 		URL:        parsedURL,
 		User:       wn.settings.User,
@@ -118,6 +126,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		Body:       string(body),
 		HTTPMethod: wn.settings.HTTPMethod,
 		HTTPHeader: headers,
+		TLSConfig:  tlsConfig,
 	}
 
 	if err := wn.ns.SendWebhook(ctx, cmd); err != nil {
