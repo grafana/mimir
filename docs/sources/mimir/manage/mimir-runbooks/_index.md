@@ -956,13 +956,12 @@ How to **investigate**:
      kubectl --context "$CONTEXT" --namespace "$NAMESPACE" apply -f /tmp/service-endpoints.yaml
 
      # Delete a random querier pod to trigger K8S service endpoints reconciliation.
-    POD=$(kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --output="jsonpath={.items[0].metadata.name}")
-    kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod "$POD"
+     POD=$(kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --output="jsonpath={.items[0].metadata.name}")
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod "$POD"
      ```
 
-  2. Consider changing the gossip-ring selector label from some deployments, up until the number of matching pods
-     goes below 1000. This should be a temporary workaround, and you should revert it once you upgrade Kubernetes to
-     a version with the bug fixed.
+  2. Consider removing some deployments from `gossip-ring` selector label, to reduce the number of matching pods below 1000.
+     This is a temporarily workaround, and you should revert it once you upgrade Kubernetes to a version with the bug fixed.
 
      If you're using jsonnet, you can do:
 
