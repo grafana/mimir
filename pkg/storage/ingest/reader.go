@@ -898,7 +898,7 @@ func newConcurrentFetchers(
 		startOffsets:         startOffsetsReader,
 		trackCompressedBytes: trackCompressedBytes,
 		tracer:               recordsTracer(),
-		orderedFetches:       make(chan fetchResult, 1),
+		orderedFetches:       make(chan fetchResult),
 	}
 
 	var err error
