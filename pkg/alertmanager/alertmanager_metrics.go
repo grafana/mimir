@@ -346,7 +346,7 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numNotificationSuppressedTotal, "alertmanager_notifications_suppressed_total", dskit_metrics.WithLabels("reason"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfHistograms(out, m.notificationLatencySeconds, "alertmanager_notification_latency_seconds")
-	data.SendSumOfGaugesPerTenantWithLabels(out, m.markerAlerts, "alertmanager_alerts", "state")
+	data.SendSumOfGaugesPerTenant(out, m.markerAlerts, "alertmanager_alerts", dskit_metrics.WithLabels("state"))
 
 	data.SendSumOfSummaries(out, m.nflogGCDuration, "alertmanager_nflog_gc_duration_seconds")
 	data.SendSumOfSummaries(out, m.nflogSnapshotDuration, "alertmanager_nflog_snapshot_duration_seconds")
@@ -367,7 +367,7 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.silencesQueryErrorsTotal, "alertmanager_silences_query_errors_total")
 	data.SendSumOfHistograms(out, m.silencesQueryDuration, "alertmanager_silences_query_duration_seconds")
 	data.SendSumOfCounters(out, m.silencesPropagatedMessagesTotal, "alertmanager_silences_gossip_messages_propagated_total")
-	data.SendSumOfGaugesPerTenantWithLabels(out, m.silences, "alertmanager_silences", "state")
+	data.SendSumOfGaugesPerTenant(out, m.silences, "alertmanager_silences", dskit_metrics.WithLabels("state"))
 
 	data.SendMaxOfGaugesPerTenant(out, m.configHashValue, "alertmanager_config_hash")
 
