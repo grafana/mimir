@@ -876,7 +876,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 
 	// Add items to the queue
 	for i := 0; i < batchSize*(capacity+1); i++ {
-		require.NoError(t, queue.AddToBatch(ctx, series))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series))
 	}
 
 	// Close the queue to signal no more items will be added
