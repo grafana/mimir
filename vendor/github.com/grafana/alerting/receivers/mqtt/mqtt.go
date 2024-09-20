@@ -24,6 +24,8 @@ type client interface {
 type message struct {
 	topic   string
 	payload []byte
+	retain  bool
+	qos     int
 }
 
 type Notifier struct {
@@ -59,7 +61,7 @@ type mqttMessage struct {
 }
 
 func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	n.log.Debug("Sending an MQTT message")
+	n.log.Debug("Sending an MQTT message", "topic", n.settings.Topic, "qos", n.settings.QoS, "retain", n.settings.Retain)
 
 	msg, err := n.buildMessage(ctx, as...)
 	if err != nil {
@@ -68,10 +70,12 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	}
 
 	var tlsCfg *tls.Config
-	if n.settings.InsecureSkipVerify {
-		tlsCfg = &tls.Config{
-			InsecureSkipVerify: true,
-		}
+	if n.settings.TLSConfig != nil {
+		tlsCfg, err = n.settings.TLSConfig.ToCryptoTLSConfig()
+	}
+	if err != nil {
+		n.log.Error("Failed to build TLS config", "error", err.Error())
+		return false, fmt.Errorf("failed to build TLS config: %s", err.Error())
 	}
 
 	err = n.client.Connect(ctx, n.settings.BrokerURL, n.settings.ClientID, n.settings.Username, n.settings.Password, tlsCfg)
@@ -86,11 +90,19 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		}
 	}()
 
+	qos, err := n.settings.QoS.Int64()
+	if err != nil {
+		n.log.Error("Failed to parse QoS", "error", err.Error())
+		return false, fmt.Errorf("Failed to parse QoS: %s", err.Error())
+	}
+
 	err = n.client.Publish(
 		ctx,
 		message{
 			topic:   n.settings.Topic,
 			payload: []byte(msg),
+			retain:  n.settings.Retain,
+			qos:     int(qos),
 		},
 	)
 
