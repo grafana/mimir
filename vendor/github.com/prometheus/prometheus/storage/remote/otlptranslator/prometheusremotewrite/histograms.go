@@ -43,6 +43,9 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		}
 
 		pt := dataPoints.At(x)
+		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestampNs := pt.StartTimestamp()
+		startTimestampMs := convertTimeStamp(startTimestampNs)
 
 		histogram, ws, err := exponentialToNativeHistogram(pt)
 		annots.Merge(ws)
@@ -60,6 +63,8 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			promName,
 		)
 		ts, _ := c.getOrCreateTimeSeries(lbls)
+
+		c.handleHistogramStartTime(startTimestampMs, timestamp, ts, settings)
 		ts.Histograms = append(ts.Histograms, histogram)
 
 		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)
