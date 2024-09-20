@@ -960,8 +960,8 @@ How to **investigate**:
      kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --no-headers | head -1 | awk '{print $1}' | xargs -I {} kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod {}
      ```
 
-  2. Consider to change the gossip-ring selector label from some deployments, up until the number of matching pods
-     goes below 1000. This should be a temporarily workaround, and you should revert it once you upgrade Kubernetes to
+  2. Consider changing the gossip-ring selector label from some deployments, up until the number of matching pods
+     goes below 1000. This should be a temporary workaround, and you should revert it once you upgrade Kubernetes to
      a version with the bug fixed.
 
      If you're using jsonnet, you can do:
