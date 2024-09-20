@@ -509,7 +509,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 
 		if meta.Stats.NumSamples == 0 {
 			// No need to upload empty block.
-			level.Info(b.logger).Log("skip uploading empty block", "tenant", tenantID, "block", bid)
+			level.Info(b.logger).Log("msg", "skip uploading empty block", "tenant", tenantID, "block", bid)
 			return nil
 		}
 
