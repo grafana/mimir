@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -1761,8 +1762,8 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
 	// These will be used for binary operations, so we can add up to 3 series.
-	labelCombinations := combinations(labels, 2)
-	labelCombinations = append(labelCombinations, combinations(labels, 3)...)
+	labelCombinations := testutils.Combinations(labels, 2)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labels, 3)...)
 
 	expressions := []string{}
 
@@ -1780,7 +1781,7 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	}
 
 	// For aggregations, also add combinations of 4 labels. (e.g., "a,b,c,d", "c,d,e,f" etc)
-	labelCombinations = append(labelCombinations, combinations(labels, 4)...)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labels, 4)...)
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
@@ -1827,7 +1828,7 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 
 				// We currently omit checking the annotations due to a difference between the engines.
 				// This can be re-enabled once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-				RequireEqualResults(t, expr, expectedResults, mimirResults, false)
+				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults, false)
 			})
 		}
 	}
