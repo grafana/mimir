@@ -326,6 +326,8 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 }
 
 func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.Logger, builder *TSDBBuilder, partition int32, state partitionState, sectionEnd time.Time) (_ partitionState, retErr error) {
+	// Oppose to the section's range (and cycle's range), that include the ConsumeIntervalBuffer, the block's range doesn't.
+	// Thus, truncate the timestamp with ConsumptionInterval here to round the block's range.
 	blockEnd := sectionEnd.Truncate(b.cfg.ConsumeInterval)
 
 	var numBlocks int
