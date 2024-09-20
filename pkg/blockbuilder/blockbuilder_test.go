@@ -86,7 +86,7 @@ func TestBlockBuilder_consumerLagRecords(t *testing.T) {
 		return assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
 			# TYPE cortex_blockbuilder_consumer_lag_records gauge
-			cortex_blockbuilder_consumer_lag_records{partition="0",topic="test"} 1
+			cortex_blockbuilder_consumer_lag_records{partition="0"} 1
 		`), "cortex_blockbuilder_consumer_lag_records"))
 	}, 5*time.Second, 100*time.Millisecond)
 }
@@ -220,8 +220,8 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
 		# TYPE cortex_blockbuilder_consumer_lag_records gauge
-		cortex_blockbuilder_consumer_lag_records{partition="0",topic="test"} 0
-		cortex_blockbuilder_consumer_lag_records{partition="1",topic="test"} 0
+		cortex_blockbuilder_consumer_lag_records{partition="0"} 0
+		cortex_blockbuilder_consumer_lag_records{partition="1"} 0
 	`), "cortex_blockbuilder_consumer_lag_records"))
 }
 

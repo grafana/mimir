@@ -192,7 +192,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			continue
 		}
 
-		b.blockBuilderMetrics.consumerLagRecords.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
+		b.blockBuilderMetrics.consumerLagRecords.WithLabelValues(fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
 
 		if lag.Lag <= 0 {
 			if err := lag.Err; err != nil {
@@ -257,7 +257,7 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 	if err != nil {
 		// If there is an error in unmarshalling the metadata, treat it as if
 		// we have no commit. There is no reason to stop the cycle for this.
-		level.Warn(logger).Log("msg", "error unmarshalling commit metadata", "err", err, "partition", lag.Partition, "offset", lag.Commit.At, "metadata", lag.Commit.Metadata)
+		level.Error(logger).Log("msg", "error unmarshalling commit metadata", "err", err, "partition", lag.Partition, "offset", lag.Commit.At, "metadata", lag.Commit.Metadata)
 	}
 
 	if commitRecTs == 0 {
@@ -265,10 +265,19 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 		// records because it is non-trivial to peek at the first record in a partition to determine
 		// the range of replay required. Without knowing the range, we might end up trying to consume
 		// a lot of records in a single partition consumption call and end up in an OOM loop.
+		level.Info(logger).Log("msg", "no commit record timestamp in commit metadata; needs to fall back", "partition", lag.Partition, "offset", lag.Commit.At, "metadata", lag.Commit.Metadata, "fallback_millis", fallbackMillis)
 		commitRecTs = fallbackMillis
 	}
 
-	level.Debug(logger).Log("msg", "creating partition state", "partition", lag.Partition, "lag", lag.Lag, "commit_rec_ts", commitRecTs, "last_seen_offset", lastSeenOffset, "last_block_end_ts", lastBlockEndTs)
+	level.Debug(logger).Log(
+		"msg", "creating partition state",
+		"partition", lag.Partition,
+		"lag", lag.Lag,
+		"commit_rec_ts", commitRecTs,
+		"commit_rec_offset", lag.Commit.At,
+		"last_seen_offset", lastSeenOffset,
+		"last_block_end_ts", lastBlockEndTs,
+	)
 
 	return partitionState{
 		Lag:                lag.Lag,
@@ -361,7 +370,7 @@ consumerLoop:
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
-				b.blockBuilderMetrics.fetchErrors.Inc()
+				b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
 			}
 		})
 
