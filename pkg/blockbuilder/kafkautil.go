@@ -101,12 +101,15 @@ func unmarshallCommitMeta(s string) (commitRecTs, lastRecOffset, blockEndTs int6
 	)
 	_, err = fmt.Sscanf(s, "%d,%s", &version, &metaStr)
 	if err != nil {
-		return
+		return 0, 0, 0, fmt.Errorf("invalid commit metadata format: parse meta version: %w", err)
 	}
 
 	if version != kafkaCommitMetaV1 {
 		return 0, 0, 0, fmt.Errorf("unsupported commit meta version %d", version)
 	}
 	_, err = fmt.Sscanf(metaStr, "%d,%d,%d", &commitRecTs, &lastRecOffset, &blockEndTs)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid commit metadata format: %w", err)
+	}
 	return
 }
