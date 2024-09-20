@@ -27,7 +27,7 @@ import (
 // batchingQueueCapacity controls how many batches can be enqueued for flushing.
 // We don't want to push any batches in parallel and instead want to prepare the next one while the current one finishes, hence the buffer of 1.
 // For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
-// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 1.
+// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
 // If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
 const batchingQueueCapacity = 5
 
