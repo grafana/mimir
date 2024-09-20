@@ -815,7 +815,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               (
                 sum by(%(alert_aggregation_labels)s) (
                   kube_endpoint_address{endpoint="gossip-ring"}
-                  unless on (ip)
+                  unless on (%(alert_aggregation_labels)s, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
                 sum by(%(alert_aggregation_labels)s) (
@@ -844,7 +844,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               (
                 sum by(%(alert_aggregation_labels)s) (
                   kube_endpoint_address{endpoint="gossip-ring"}
-                  unless on (ip)
+                  unless on (%(alert_aggregation_labels)s, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
                 sum by(%(alert_aggregation_labels)s) (

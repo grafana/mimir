@@ -560,7 +560,7 @@ spec:
               (
                 sum by(cluster, namespace) (
                   kube_endpoint_address{endpoint="gossip-ring"}
-                  unless on (ip)
+                  unless on (cluster, namespace, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
                 sum by(cluster, namespace) (
@@ -582,7 +582,7 @@ spec:
               (
                 sum by(cluster, namespace) (
                   kube_endpoint_address{endpoint="gossip-ring"}
-                  unless on (ip)
+                  unless on (cluster, namespace, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
                 sum by(cluster, namespace) (
