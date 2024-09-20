@@ -135,8 +135,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.FetchConcurrency, prefix+".fetch-concurrency", 1, "The number of concurrent fetch requests that the ingester sends to Kafka when catching up during startup.")
 	f.IntVar(&cfg.RecordsPerFetch, prefix+".records-per-fetch", 128, "The number of records to fetch from Kafka in a single request.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
-	f.IntVar(&cfg.IngestionShards, prefix+".ingestion-shards", 0, "The number of concurrent ingestion streams to the TSDB head. 0 to disable.")
-	f.IntVar(&cfg.IngestionBatchSize, prefix+".ingestion-batch-size", 128, "The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-shards is greater than 0.")
+	f.IntVar(&cfg.IngestionShards, prefix+".ingestion-concurrency", 0, "The number of concurrent ingestion streams to the TSDB head. 0 to disable.")
+	f.IntVar(&cfg.IngestionBatchSize, prefix+".ingestion-concurrency-batch-size", 128, "The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-concurrency is greater than 0.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
