@@ -972,10 +972,12 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 
 	doubleFetchedBytes := 0
 	for i, record := range f.Records {
+		logger := spanlogger.FromContext(record.Context, log.NewNopLogger()) // noop fallback because a log on every request is still too much
 		if i < firstReturnedRecordIndex {
 			doubleFetchedBytes += len(record.Value)
-			spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
+			logger.DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
 		}
+		logger.DebugLog("msg", "received record", "offset", record.Offset)
 		r.tracer.OnFetchRecordUnbuffered(record, true)
 	}
 	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
@@ -1059,6 +1061,9 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
+	partition.EachRecord(func(r *kgo.Record) {
+		spanlogger.FromContext(r.Context, log.NewNopLogger()).DebugLog("msg", "received record")
+	})
 
 	fetchedBytes := len(rawPartitionResp.RecordBatches)
 	if !r.trackCompressedBytes {
@@ -1115,7 +1120,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
-		wantSpan, ctx := opentracing.StartSpanFromContext(ctx, "concurrentFetcher.fetch")
+		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
@@ -1125,7 +1130,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 
 			f := r.fetchSingle(ctx, w)
 			if f.Err != nil {
-				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, spanlogger.FromContext(ctx, logger))
+				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, wantSpan)
 			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
