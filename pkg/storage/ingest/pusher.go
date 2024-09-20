@@ -65,8 +65,8 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 
 	return &pusherConsumerMetrics{
 		numTimeSeriesPerFlush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_pusher_num_timeseries_per_flush",
-			Help:                        "Number of time series per flush",
+			Name:                        "cortex_ingester_pusher_num_timeseries_per_shard_flush",
+			Help:                        "Number of time series pushed in each batch to an ingestion shard. A lower number than ingestion-batch-size indicates that shards are not filling up and may not be parallelizing ingestion as efficiently.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
