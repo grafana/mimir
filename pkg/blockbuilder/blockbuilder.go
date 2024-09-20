@@ -480,7 +480,21 @@ consumerLoop:
 func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group string, state partitionState) error {
 	offsets := make(kadm.Offsets)
 	offsets.Add(state.Commit)
-	if err := kadm.NewClient(b.kafkaClient).CommitAllOffsets(ctx, group, offsets); err != nil {
+
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 10,
+	})
+	for boff.Ongoing() {
+		err := kadm.NewClient(b.kafkaClient).CommitAllOffsets(ctx, group, offsets)
+		if err == nil {
+			break
+		}
+		level.Warn(logger).Log("msg", "failed to commit offsets; will retry", "err", err, "offset", state.Commit.At)
+		boff.Wait()
+	}
+	if err := boff.ErrCause(); err != nil {
 		return fmt.Errorf("commit with partition %d, offset %d: %w", state.Commit.Partition, state.Commit.At, err)
 	}
 
@@ -512,8 +526,20 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
 		}
 
-		// Upload block with custom metadata.
-		if err := block.Upload(ctx, b.logger, buc, blockDir, meta); err != nil {
+		boff := backoff.New(ctx, backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: time.Second,
+			MaxRetries: 10,
+		})
+		for boff.Ongoing() {
+			err := block.Upload(ctx, b.logger, buc, blockDir, meta)
+			if err == nil {
+				break
+			}
+			level.Warn(b.logger).Log("msg", "failed to upload block; will retry", "err", err, "block", bid, "tenant", tenantID)
+			boff.Wait()
+		}
+		if err := boff.ErrCause(); err != nil {
 			return fmt.Errorf("upload block %s (tenant %s): %w", bid, tenantID, err)
 		}
 	}

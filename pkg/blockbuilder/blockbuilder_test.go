@@ -386,6 +386,71 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 	runTest("phase 2", cycleEndStartup.Add(cfg.ConsumeInterval), append(expSamplesPhase1, expSamplesPhase2...))
 }
 
+func TestBlockBuilder_RetryOnTransientErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+
+	// Producing some records
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+
+	var producedSamples []mimirpb.Sample
+	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-1 * time.Hour).Add(29 * time.Minute)
+	for kafkaRecTime.Before(cycleEndStartup) {
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+		producedSamples = append(producedSamples, samples...)
+
+		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
+	}
+	require.NotEmpty(t, producedSamples)
+
+	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
+	kafkaCommits := atomic.NewInt32(0)
+	kafkaCommitAttempts := atomic.NewInt32(0)
+	kafkaCluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+
+		// Fail every first attempt to commit an offset to check the block-builder can handle it.
+		if kafkaCommitAttempts.Add(1) == 1 {
+			return nil, fmt.Errorf("test failure on commit"), true
+		}
+
+		kafkaCommits.Add(1)
+		return nil, nil, false
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+
+	bb, err := New(cfg, test.NewTestingLogger(t), reg, overrides)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// We expect at least several cycles because of how the pushed records were structured.
+	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 1 }, 50*time.Second, 100*time.Millisecond, "expected kafka commits")
+
+	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
+	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	compareQuery(t,
+		db,
+		producedSamples,
+		nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
 func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, ts time.Time, tenantID string, sampleTs ...time.Time) []mimirpb.Sample {
 	var samples []mimirpb.Sample
 	for _, ts := range sampleTs {
