@@ -1208,7 +1208,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			actual: json.RawMessage(`{
 							"status": "error",
-							"error": "found duplicate series for the match group {foo=\"bar\"} on the right side of the operation at timestamp 1970-01-01T00:00:00Z: {foo=\"bar\", env=\"test\"} and {foo=\"bar\", env=\"prod\"}"
+							"error": "found duplicate series for the match group {foo=\"bar\"} on the right side of the operation at timestamp 1970-01-01T00:00:00.123Z: {foo=\"bar\", env=\"test\"} and {foo=\"bar\", env=\"prod\"}"
 						}`),
 			err: nil,
 		},
