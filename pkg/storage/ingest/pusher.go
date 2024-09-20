@@ -24,7 +24,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const shardForSeriesBuffer = 2000 // TODO dimitarvdimitrov 2000 is arbitrary; the idea is that we don't block the goroutine calling PushToStorage while we're flushing. A linked list with a sync.Cond or something different would also work
+// batchingQueueCapacity controls how many batches can be enqueued for flushing.
+// We don't want to push any batches in parallel and instead want to prepare the next one while the current one finishes, hence the buffer of 1.
+// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
+// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
+// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
+const batchingQueueCapacity = 5
 
 type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
@@ -332,7 +337,7 @@ func (c parallelStoragePusher) shardsFor(userID string) *parallelStorageShards {
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
-	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, shardForSeriesBuffer, c.upstreamPusher, hashLabels)
+	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
 	c.pushers[userID] = p
 	return p
 }
@@ -462,7 +467,7 @@ type batchingQueue struct {
 func newBatchingQueue(capacity int, batchSize int) *batchingQueue {
 	return &batchingQueue{
 		ch:           make(chan flushableWriteRequest, capacity),
-		errCh:        make(chan error, capacity),
+		errCh:        make(chan error, capacity+1), // We check errs before pushing to the channel, so we need to have a buffer of at least capacity+1 so that the consumer can push all of its errors and not rely on the producer to unblock it.
 		done:         make(chan struct{}),
 		currentBatch: flushableWriteRequest{WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}},
 		batchSize:    batchSize,
