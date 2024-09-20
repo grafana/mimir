@@ -54,11 +54,13 @@ type pusherConsumer struct {
 }
 
 type pusherConsumerMetrics struct {
-	numTimeSeriesPerFlush prometheus.Histogram
-	processingTimeSeconds prometheus.Observer
-	clientErrRequests     prometheus.Counter
-	serverErrRequests     prometheus.Counter
-	totalRequests         prometheus.Counter
+	numTimeSeriesPerFlush      prometheus.Histogram
+	ingestionShardBatchAge     prometheus.Histogram
+	batchProcessingTimeSeconds prometheus.Histogram
+	processingTimeSeconds      prometheus.Observer
+	clientErrRequests          prometheus.Counter
+	serverErrRequests          prometheus.Counter
+	totalRequests              prometheus.Counter
 }
 
 // newPusherConsumerMetrics creates a new pusherConsumerMetrics instance.
@@ -76,12 +78,23 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 		}),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
-			Help:                            "Time taken to process a single record (write request).",
+			Help:                            "Time taken to process a batch of fetched records (Write requests).",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
 		}),
+		ingestionShardBatchAge: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_ingestion_shard_batch_age_seconds",
+			Help:                        "Age of the batch when it is being ingested by an ingestion shard. This is the time since adding the first sample to the batch. A high value indicated that the batching queue is not processing fast enough or that the batches are not filling up fast enough.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		batchProcessingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_ingestion_shard_batch_processing_time_seconds",
+			Help:                        "Time to process a batch of samples in an ingestion shard.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -105,6 +118,10 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 // Consume implements the recordConsumer interface.
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
 func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
+	defer func(processingStart time.Time) {
+		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+	}(time.Now())
+
 	type parsedRecord struct {
 		*mimirpb.WriteRequest
 		// ctx holds the tracing baggage for this record/request.
@@ -200,14 +217,10 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "pusherConsumer.pushToStorage")
 	defer spanLog.Finish()
 
-	processingStart := time.Now()
-
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
 	ctx = user.InjectOrgID(ctx, tenantID)
 	err := writer.PushToStorage(ctx, req)
 
-	// TODO dimitarvdimitrov processing time is flawed because it's only counting enqueuing time, not processing time.
-	c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	c.metrics.totalRequests.Inc()
 
 	isServerErr := c.handlePushErr(ctx, tenantID, err, spanLog)
@@ -340,7 +353,7 @@ func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.Wr
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
-	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
+	p := newParallelStorageShards(c.metrics, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
 }
@@ -350,7 +363,7 @@ type labelsHashFunc func(labels.Labels) uint64
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
 type parallelStorageShards struct {
-	numTimeSeriesPerFlush prometheus.Histogram
+	metrics *pusherConsumerMetrics
 
 	pusher     Pusher
 	hashLabels labelsHashFunc
@@ -364,20 +377,22 @@ type parallelStorageShards struct {
 }
 
 type flushableWriteRequest struct {
+	// startedAt is the time when the first item was added to this request (timeseries or metadata).
+	startedAt time.Time
 	*mimirpb.WriteRequest
 	context.Context
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(numTimeSeriesPerFlush prometheus.Histogram, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
+func newParallelStorageShards(metrics *pusherConsumerMetrics, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
 	p := &parallelStorageShards{
-		numShards:             numShards,
-		pusher:                pusher,
-		hashLabels:            hashLabels,
-		capacity:              capacity,
-		numTimeSeriesPerFlush: numTimeSeriesPerFlush,
-		batchSize:             batchSize,
-		wg:                    &sync.WaitGroup{},
+		numShards:  numShards,
+		pusher:     pusher,
+		hashLabels: hashLabels,
+		capacity:   capacity,
+		metrics:    metrics,
+		batchSize:  batchSize,
+		wg:         &sync.WaitGroup{},
 	}
 
 	p.start()
@@ -398,7 +413,6 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
 		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
 
-		// TODO: Add metrics to measure how long are items sitting in the queue before they are flushed.
 		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
 			// TODO: Technically, we should determine at this point what type of error it is and abort the whole push if it's a server error.
 			// We'll do that in the next PR as otherwise it's too many changes right now.
@@ -463,8 +477,13 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 	defer queue.Done()
 
 	for wr := range queue.Channel() {
-		p.numTimeSeriesPerFlush.Observe(float64(len(wr.WriteRequest.Timeseries)))
+		p.metrics.ingestionShardBatchAge.Observe(time.Since(wr.startedAt).Seconds())
+		p.metrics.numTimeSeriesPerFlush.Observe(float64(len(wr.WriteRequest.Timeseries)))
+		processingStart := time.Now()
+
 		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
+
+		p.metrics.batchProcessingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		if err != nil {
 			queue.ErrorChannel() <- err
 		}
@@ -496,6 +515,9 @@ func newBatchingQueue(capacity int, batchSize int) *batchingQueue {
 // AddToBatch adds a time series to the current batch. If the batch size is reached, the batch is pushed to the Channel().
 // If an error occurs while pushing the batch, it returns the error and ensures the batch is pushed.
 func (q *batchingQueue) AddToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, ts mimirpb.PreallocTimeseries) error {
+	if q.currentBatch.startedAt.IsZero() {
+		q.currentBatch.startedAt = time.Now()
+	}
 	q.currentBatch.Timeseries = append(q.currentBatch.Timeseries, ts)
 	q.currentBatch.Context = ctx
 	q.currentBatch.Source = source

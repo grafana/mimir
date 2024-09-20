@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -395,8 +394,6 @@ func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRe
 }
 
 func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
-	noopHistogram := promauto.With(prometheus.NewRegistry()).NewHistogram(prometheus.HistogramOpts{Name: "noop", NativeHistogramBucketFactor: 1.1})
-
 	testCases := map[string]struct {
 		shardCount        int
 		batchSize         int
@@ -669,7 +666,8 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			pusher := &mockPusher{}
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
-			shardingP := newParallelStorageShards(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
+			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			shardingP := newParallelStorageShards(metrics, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
 			for i, req := range tc.expectedUpstreamPushes {
 				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
