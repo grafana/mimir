@@ -806,6 +806,64 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: 'One or more %(product)s instances in %(alert_aggregation_variables)s consistently sees a lower than expected number of gossip members.' % $._config,
           },
         },
+        {
+          // Alert if the list of endpoints returned by the gossip-ring service (used as memberlist seed nodes)
+          // is out-of-sync. This is a warning alert with 10% out-of-sync threshold.
+          alert: $.alertName('GossipMembersEndpointsOutOfSync'),
+          expr:
+            |||
+              (
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                  unless on (%(alert_aggregation_labels)s, ip)
+                  label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
+                /
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                )
+                * 100 > 10
+              )
+
+              # Filter by Mimir only.
+              and (count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0)
+            ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s gossip-ring service endpoints list in %(alert_aggregation_variables)s is out of sync.' % $._config,
+          },
+        },
+        {
+          // Alert if the list of endpoints returned by the gossip-ring service (used as memberlist seed nodes)
+          // is out-of-sync. This is a critical alert with 50% out-of-sync threshold.
+          alert: $.alertName('GossipMembersEndpointsOutOfSync'),
+          expr:
+            |||
+              (
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                  unless on (%(alert_aggregation_labels)s, ip)
+                  label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
+                /
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                )
+                * 100 > 50
+              )
+
+              # Filter by Mimir only.
+              and (count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0)
+            ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s gossip-ring service endpoints list in %(alert_aggregation_variables)s is out of sync.' % $._config,
+          },
+        },
       ],
     },
     {
