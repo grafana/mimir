@@ -946,7 +946,7 @@ How to **investigate**:
 
   1. Stop the bleed re-creating the service endpoints list
 
-     ```
+     ```sh
      CONTEXT="TODO"
      NAMESPACE="TODO"
      SERVICE="gossip-ring"
@@ -956,7 +956,8 @@ How to **investigate**:
      kubectl --context "$CONTEXT" --namespace "$NAMESPACE" apply -f /tmp/service-endpoints.yaml
 
      # Delete a random querier pod to trigger K8S service endpoints reconciliation.
-     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --no-headers | head -1 | awk '{print $1}' | xargs -I {} kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod {}
+    POD=$(kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --output="jsonpath={.items[0].metadata.name}")
+    kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod "$POD"
      ```
 
   2. Consider changing the gossip-ring selector label from some deployments, up until the number of matching pods
