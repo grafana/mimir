@@ -24,7 +24,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const shardForSeriesBuffer = 2000 // TODO dimitarvdimitrov 2000 is arbitrary; the idea is that we don't block the goroutine calling PushToStorage while we're flushing. A linked list with a sync.Cond or something different would also work
+// batchingQueueCapacity controls how many batches can be enqueued for flushing.
+// We want to batch and flush in parallel. There's no point in batching faster than we can flush.
+// A buffer of 1 would allow to balance the time for batching and flushing 50/50.
+// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
+// If we're still flushing batch `N`, batch `N+1` is enqueued for flushing, and we've just finished batching batch `N+2`,
+// then we're going too fast - in the time to flush `N` we've created `N+2` and `N+1`.
+// A buffer of 1 doesn't let us go too far ahead with batching, but still doesn't require synchronisation between batching and flushing.
+const batchingQueueCapacity = 1
 
 type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
@@ -332,7 +339,7 @@ func (c parallelStoragePusher) shardsFor(userID string) *parallelStorageShards {
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
-	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, shardForSeriesBuffer, c.upstreamPusher, hashLabels)
+	p := newParallelStorageShards(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
 	c.pushers[userID] = p
 	return p
 }
