@@ -455,7 +455,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 				failureThreshold := 2
 				var initialDelay time.Duration
 				if initialDelayEnabled {
-					initialDelay = 200 * time.Millisecond
+					initialDelay = time.Hour
 				}
 				cfg.PushCircuitBreaker = CircuitBreakerConfig{
 					Enabled:                    true,
