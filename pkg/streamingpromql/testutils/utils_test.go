@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package streamingpromql
+package testutils
 
 import (
 	"testing"
@@ -59,12 +59,12 @@ func TestCombinations(t *testing.T) {
 		t.Run(tName, func(t *testing.T) {
 			if test.panics {
 				f := func() {
-					combinations(test.input, test.length)
+					Combinations(test.input, test.length)
 				}
 				require.Panics(t, f)
 				return
 			}
-			output := combinations(test.input, test.length)
+			output := Combinations(test.input, test.length)
 			require.Equal(t, test.expected, output)
 		})
 	}
