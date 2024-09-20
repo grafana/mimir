@@ -558,12 +558,12 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersendpointsoutofsync
             expr: |
               (
-                sum by(cluster, namespace) (
+                count by(cluster, namespace) (
                   kube_endpoint_address{endpoint="gossip-ring"}
                   unless on (cluster, namespace, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
-                sum by(cluster, namespace) (
+                count by(cluster, namespace) (
                   kube_endpoint_address{endpoint="gossip-ring"}
                 )
                 * 100 > 10
@@ -580,12 +580,12 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersendpointsoutofsync
             expr: |
               (
-                sum by(cluster, namespace) (
+                count by(cluster, namespace) (
                   kube_endpoint_address{endpoint="gossip-ring"}
                   unless on (cluster, namespace, ip)
                   label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
                 /
-                sum by(cluster, namespace) (
+                count by(cluster, namespace) (
                   kube_endpoint_address{endpoint="gossip-ring"}
                 )
                 * 100 > 50
