@@ -495,11 +495,12 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 		blockDir := path.Join(dbDir, bid)
 		meta, err := block.ReadMetaFromDir(blockDir)
 		if err != nil {
-			return err
+			return fmt.Errorf("read block meta for block %s (tenant %s): %w", bid, tenantID, err)
 		}
 
 		if meta.Stats.NumSamples == 0 {
 			// No need to upload empty block.
+			level.Info(b.logger).Log("skip uploading empty block", "tenant", tenantID, "block", bid)
 			return nil
 		}
 
@@ -513,7 +514,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 
 		// Upload block with custom metadata.
 		if err := block.Upload(ctx, b.logger, buc, blockDir, meta); err != nil {
-			return err
+			return fmt.Errorf("upload block %s (tenant %s): %w", bid, tenantID, err)
 		}
 	}
 	return nil
