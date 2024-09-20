@@ -1146,7 +1146,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			errBackoff.Reset()
 			newRecordsProducedBackoff.Reset()
 
-			// Propagate the span context to consuming the records.
+			f.startWaitingForConsumption()
 			select {
 			case w.result <- f:
 			case <-ctx.Done():
@@ -1212,7 +1212,6 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
 			bufferedResult = result
-			bufferedResult.startWaitingForConsumption()
 			readyBufferedResults = r.orderedFetches
 
 		case readyBufferedResults <- bufferedResult:
