@@ -469,7 +469,7 @@ type batchingQueue struct {
 func newBatchingQueue(capacity int, batchSize int) *batchingQueue {
 	return &batchingQueue{
 		ch:           make(chan flushableWriteRequest, capacity),
-		errCh:        make(chan error, capacity+1),
+		errCh:        make(chan error, capacity+1), // We check errs before pushing to the channel, so we need to have a buffer of at least capacity+1 so that the consumer can push all of its errors and not rely on the producer to unblock it.
 		done:         make(chan struct{}),
 		currentBatch: flushableWriteRequest{WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}},
 		batchSize:    batchSize,
