@@ -3,8 +3,9 @@
 package operators
 
 import (
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // MetricNames captures and stores the metric names of each series for later use in an operator.
