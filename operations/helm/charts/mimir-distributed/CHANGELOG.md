@@ -47,6 +47,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #8741
 * [ENHANCEMENT] Add support for running continuous-test with GEM #8837
 * [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
+* [ENHANCEMENT] Ingester: set GOMAXPROCS to help with golang scheduling overhead when running on machines with a lot of cores. #9283
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731

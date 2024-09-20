@@ -29,17 +29,14 @@ import (
 // buildTreeTestsStruct returns all _allowed_ combinations of config flags for testing.
 func buildTreeTestsStruct() []struct {
 	name                      string
-	useMultiAlgoTreeQueue     bool
 	prioritizeQueryComponents bool
 } {
 	return []struct {
 		name                      string
-		useMultiAlgoTreeQueue     bool
 		prioritizeQueryComponents bool
 	}{
-		{"legacy tree queue with prioritize query components disabled", false, false},
-		{"integrated tree queue with prioritize query components disabled", true, false},
-		{"integrated tree queue with prioritize query components enabled", true, true},
+		{"prioritize query components disabled", false},
+		{"prioritize query components enabled", true},
 	}
 }
 

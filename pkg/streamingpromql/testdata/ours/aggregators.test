@@ -314,3 +314,16 @@ load 1m
 
 eval range from 0m to 4m step 1m avg(series)
   {} {{schema:4 count:9 sum:13.5 buckets:[2.5 5 1.5]}} {{schema:4 count:12 sum:17 buckets:[3.5 7 1.5]}} {{schema:4 count:14.5 sum:19.5 buckets:[4 9 1.5]}} {{schema:4 count:17.5 sum:23 buckets:[4.5 11.5 1.5]}} {{schema:4 count:20.5 sum:26.5 buckets:[5.5 13.5 1.5]}}
+
+clear
+
+# Make sure count and group don't emit a 0 when there are no values
+load 1m
+	series{label="a"} _ 9
+	series{label="b"} _ 9
+
+eval range from 0m to 1m step 1m count(series)
+  {} _ 2
+
+eval range from 0m to 1m step 1m group(series)
+  {} _ 1

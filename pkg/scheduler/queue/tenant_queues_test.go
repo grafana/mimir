@@ -394,7 +394,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 			}
 
 			// After disconnecting querier-2, it's expected to own no queue.
-			qb.tenantQuerierAssignments.removeQuerier("querier-2")
+			qb.tenantQuerierAssignments.removeQueriers("querier-2")
 			req, tenant, _, err = qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
 				QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-2"},
 				lastTenantIndex:   TenantIndex{qTwolastTenantIndex},
@@ -512,7 +512,7 @@ func TestQueuesConsistency(t *testing.T) {
 							assert.Nil(t, err)
 						case 1:
 							querierID := generateQuerier(r)
-							_, tenantIndex, _ := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndexes[querierID], querierID)
+							tenantIndex := getNextTenantForQuerier(qb, lastTenantIndexes[querierID], querierID)
 							lastTenantIndexes[querierID] = tenantIndex
 						case 2:
 							qb.removeTenantQueue(generateTenant(r))
@@ -596,7 +596,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			qb.notifyQuerierShutdown("querier-1")
 
 			// We expect querier-1 has been removed.
-			assert.NotContains(t, qb.tenantQuerierAssignments.queriersByID, "querier-1")
+			assert.NotContains(t, qb.querierConnections.queriersByID, "querier-1")
 			assert.NoError(t, isConsistent(qb))
 
 			// We expect querier-1 tenants have been shuffled to other queriers.
@@ -620,7 +620,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 
 			// We expect querier-1 has NOT been removed.
-			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
+			assert.Contains(t, qb.querierConnections.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
 
 			// We expect the querier-1 tenants have not been shuffled to other queriers.
@@ -633,7 +633,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
 			qb.forgetDisconnectedQueriers(now.Add(90 * time.Second))
 
-			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
+			assert.Contains(t, qb.querierConnections.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
 
 			for _, tenantID := range querier1Tenants {
@@ -645,7 +645,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			// Try to forget disconnected queriers. This time querier-1 forget delay has passed.
 			qb.forgetDisconnectedQueriers(now.Add(105 * time.Second))
 
-			assert.NotContains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
+			assert.NotContains(t, qb.querierConnections.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
 
 			// We expect querier-1 tenants have been shuffled to other queriers.
@@ -708,7 +708,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 
 			// We expect querier-1 has NOT been removed.
-			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
+			assert.Contains(t, qb.querierConnections.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
 
 			// We expect the querier-1 tenants have not been shuffled to other queriers.
@@ -725,7 +725,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			qb.addQuerierWorkerConn(querier1Conn1)
 			qb.addQuerierWorkerConn(querier1Conn2)
 
-			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
+			assert.Contains(t, qb.querierConnections.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
 
 			// We expect the querier-1 tenants have not been shuffled to other queriers.
@@ -738,7 +738,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			// Try to forget disconnected queriers far in the future, but there's no disconnected querier.
 			qb.forgetDisconnectedQueriers(now.Add(200 * time.Second))
 
-			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
+			assert.Contains(t, qb.querierConnections.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))
 
 			for _, tenantID := range querier1Tenants {
@@ -836,7 +836,7 @@ func (qb *queueBroker) makeQueuePathForTests(tenantID TenantID) QueuePath {
 }
 
 func isConsistent(qb *queueBroker) error {
-	if len(qb.tenantQuerierAssignments.querierIDsSorted) != len(qb.tenantQuerierAssignments.queriersByID) {
+	if len(qb.tenantQuerierAssignments.querierIDsSorted) != len(qb.querierConnections.queriersByID) {
 		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
 	}
 
@@ -915,4 +915,35 @@ func (n *Node) nodeCount() int {
 		count += child.nodeCount()
 	}
 	return count
+}
+
+// The next tenant for the querier is obtained by rotating through the global tenant order
+// starting just after the last tenant the querier received a request for, until a tenant
+// is found that is assigned to the given querier according to the querier shuffle sharding.
+// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
+func getNextTenantForQuerier(qb *queueBroker, lastTenantIndex int, querierID QuerierID) int {
+	if !qb.querierConnections.querierIsAvailable(querierID) {
+		return lastTenantIndex
+	}
+	tenantOrderIndex := lastTenantIndex
+	for iters := 0; iters < len(qb.tenantQuerierAssignments.tenantIDOrder); iters++ {
+		tenantOrderIndex++
+		if tenantOrderIndex >= len(qb.tenantQuerierAssignments.tenantIDOrder) {
+			tenantOrderIndex = 0
+		}
+		tenantID := qb.tenantQuerierAssignments.tenantIDOrder[tenantOrderIndex]
+		if tenantID == emptyTenantID {
+			continue
+		}
+
+		tenantQuerierSet := qb.tenantQuerierAssignments.tenantQuerierIDs[tenantID]
+		if tenantQuerierSet == nil {
+			// tenant can use all queriers
+			return tenantOrderIndex
+		} else if _, ok := tenantQuerierSet[querierID]; ok {
+			// tenant is assigned this querier
+			return tenantOrderIndex
+		}
+	}
+	return lastTenantIndex
 }

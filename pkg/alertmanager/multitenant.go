@@ -183,12 +183,19 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
+	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 }
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
+
+	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "alertmanager_grafana_state_size_bytes",
+		Help:      "Size of the grafana alertmanager state.",
+	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "cortex",
@@ -737,6 +744,19 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
 func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
+	// fetching grafana state first so we can register its size independently of it being promoted or not
+	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			// This is expected if the state was already promoted.
+			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
+			am.multitenantMetrics.grafanaStateSize.DeleteLabelValues(cfg.User)
+			return nil
+		}
+		return err
+	}
+	am.multitenantMetrics.grafanaStateSize.WithLabelValues(cfg.User).Set(float64(s.State.Size()))
+
 	am.alertmanagersMtx.Lock()
 	userAM, ok := am.alertmanagers[cfg.User]
 	am.alertmanagersMtx.Unlock()
@@ -757,16 +777,6 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 
 	// Promote the Grafana Alertmanager state and update the usingGrafanaState flag.
 	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
-	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
-	if err != nil {
-		if errors.Is(err, alertspb.ErrNotFound) {
-			// This is expected if the state was already promoted.
-			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
-			return nil
-		}
-		return err
-	}
-
 	// Translate Grafana state keys to Mimir state keys.
 	for i, p := range s.State.Parts {
 		switch p.Key {

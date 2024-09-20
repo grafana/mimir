@@ -2093,6 +2093,15 @@ tenant_federation:
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
+# (experimental) Interval between sending queued rule sync requests to ruler
+# replicas.
+# CLI flag: -ruler.outbound-sync-queue-poll-interval
+[outbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) Interval between applying queued incoming rule sync requests.
+# CLI flag: -ruler.inbound-sync-queue-poll-interval
+[inbound_sync_queue_poll_interval: <duration> | default = 10s]
+
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency
@@ -5265,6 +5274,18 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 &nbsp;
 
 ```yaml
+# OpenStack Swift application credential id
+# CLI flag: -<prefix>.swift.application-credential-id
+[application_credential_id: <string> | default = ""]
+
+# OpenStack Swift application credential name
+# CLI flag: -<prefix>.swift.application-credential-name
+[application_credential_name: <string> | default = ""]
+
+# OpenStack Swift application credential secret
+# CLI flag: -<prefix>.swift.application-credential-secret
+[application_credential_secret: <string> | default = ""]
+
 # OpenStack Swift authentication API version. 0 to autodetect.
 # CLI flag: -<prefix>.swift.auth-version
 [auth_version: <int> | default = 0]

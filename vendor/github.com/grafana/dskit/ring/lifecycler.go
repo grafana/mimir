@@ -724,8 +724,8 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		}
 
 		tokens := Tokens(instanceDesc.Tokens)
-		level.Info(i.logger).Log("msg", "existing instance found in ring", "state", instanceDesc.State, "tokens",
-			len(tokens), "ring", i.RingName)
+		ro, rots := instanceDesc.GetReadOnlyState()
+		level.Info(i.logger).Log("msg", "existing instance found in ring", "state", instanceDesc.State, "tokens", len(tokens), "ring", i.RingName, "readOnly", ro, "readOnlyStateUpdate", rots)
 
 		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its
 		// ring state as LEAVING. Make sure to switch to the ACTIVE state.

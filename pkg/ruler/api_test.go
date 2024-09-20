@@ -1167,7 +1167,8 @@ rules:
 			// Configure the ruler to only sync the rules based on notifications upon API changes.
 			rulerCfg := tt.cfg
 			rulerCfg.PollInterval = time.Hour
-			rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+			rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+			rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
 
 			reg := prometheus.NewPedanticRegistry()
 			r := prepareRuler(t, rulerCfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
@@ -1210,7 +1211,8 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
-	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 
 	// Keep this inside the test, not as global var, otherwise running tests with -count higher than 1 fails,
 	// as newMockRuleStore modifies the underlying map.
@@ -1278,7 +1280,8 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
-	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 
 	// Keep this inside the test, not as global var, otherwise running tests with -count higher than 1 fails,
 	// as newMockRuleStore modifies the underlying map.

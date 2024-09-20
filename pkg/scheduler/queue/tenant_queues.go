@@ -28,12 +28,14 @@ type tenantRequest struct {
 	req      QueryRequest
 }
 
-// queueBroker encapsulates access to tenant queues for pending requests
-// and maintains consistency with the tenant-querier assignments
+// queueBroker encapsulates access to the Tree queue for pending requests, and brokers logic dependencies between
+// querier connections and tenant-querier assignments (e.g., assigning newly-connected queriers to tenants, or
+// reshuffling queriers when a querier has disconnected).
 type queueBroker struct {
 	tree Tree
 
 	tenantQuerierAssignments *tenantQuerierAssignments
+	querierConnections       *querierConnections
 
 	maxTenantQueueSize        int
 	prioritizeQueryComponents bool
@@ -44,7 +46,8 @@ func newQueueBroker(
 	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
-	tqas := newTenantQuerierAssignments(forgetDelay)
+	qc := newQuerierConnections(forgetDelay)
+	tqas := newTenantQuerierAssignments()
 	var tree Tree
 	var err error
 	var algos []QueuingAlgorithm
@@ -70,6 +73,7 @@ func newQueueBroker(
 	}
 	qb := &queueBroker{
 		tree:                      tree,
+		querierConnections:        qc,
 		tenantQuerierAssignments:  tqas,
 		maxTenantQueueSize:        maxTenantQueueSize,
 		prioritizeQueryComponents: prioritizeQueryComponents,
@@ -148,7 +152,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	error,
 ) {
 	// check if querier is registered and is not shutting down
-	if q := qb.tenantQuerierAssignments.queriersByID[dequeueReq.QuerierID]; q == nil || q.shuttingDown {
+	if !qb.querierConnections.querierIsAvailable(dequeueReq.QuerierID) {
 		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
 	}
 
@@ -190,17 +194,33 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 // but there is no reason to make consumers know that they need to call through to the tenantQuerierAssignments.
 
 func (qb *queueBroker) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
-	return qb.tenantQuerierAssignments.addQuerierWorkerConn(conn)
+	// if conn is for a new querier, we need to recompute tenant querier relationship; otherwise, we don't reshard
+	if addQuerier := qb.querierConnections.addQuerierWorkerConn(conn); addQuerier {
+		qb.tenantQuerierAssignments.addQuerier(conn.QuerierID)
+		return qb.tenantQuerierAssignments.recomputeTenantQueriers()
+	}
+	return false
 }
 
 func (qb *queueBroker) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
-	return qb.tenantQuerierAssignments.removeQuerierWorkerConn(conn, now)
+	// if we're removing the last active connection for the querier, the querier may need to be removed
+	if removedQuerier := qb.querierConnections.removeQuerierWorkerConn(conn, now); removedQuerier {
+		return qb.tenantQuerierAssignments.removeQueriers(conn.QuerierID)
+	}
+	return false
 }
 
+// notifyQuerierShutdown handles a graceful shutdown notification from a querier.
+// Returns true if tenant-querier reshard was triggered.
 func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
-	return qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
+	if removedQuerier := qb.querierConnections.shutdownQuerier(querierID); removedQuerier {
+		return qb.tenantQuerierAssignments.removeQueriers(querierID)
+	}
+	return false
 }
 
+// forgetDisconnectedQueriers removes all queriers which have had zero connections for longer than the forget delay.
+// Returns true if tenant-querier reshard was triggered.
 func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
-	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
+	return qb.tenantQuerierAssignments.removeQueriers(qb.querierConnections.removeForgettableQueriers(now)...)
 }
