@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -592,6 +593,66 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			upstreamPushErrs: []error{assert.AnError, nil, nil, nil},
 			expectedCloseErr: nil,
 		},
+
+		"push with metadata and exemplars": {
+			shardCount: 1,
+			batchSize:  3,
+			requests: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseriesWithExemplar("series_1_10")},
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							MetricFamilyName: "series_1_10",
+							Type:             mimirpb.COUNTER,
+							Help:             "A test counter",
+							Unit:             "bytes",
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseriesWithExemplar("series_2_10")},
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							MetricFamilyName: "series_2_10",
+							Type:             mimirpb.GAUGE,
+							Help:             "A test gauge",
+							Unit:             "seconds",
+						},
+					},
+				},
+			},
+			expectedErrs: []error{nil, nil},
+
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						mockPreallocTimeseriesWithExemplar("series_1_10"),
+						mockPreallocTimeseriesWithExemplar("series_2_10"),
+					},
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							MetricFamilyName: "series_1_10",
+							Type:             mimirpb.COUNTER,
+							Help:             "A test counter",
+							Unit:             "bytes",
+						},
+					},
+				},
+				{
+					Metadata: []*mimirpb.MetricMetadata{
+						{
+							MetricFamilyName: "series_2_10",
+							Type:             mimirpb.GAUGE,
+							Help:             "A test gauge",
+							Unit:             "seconds",
+						},
+					},
+					Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
+				},
+			},
+			upstreamPushErrs: []error{nil, nil},
+			expectedCloseErr: nil,
+		},
 	}
 
 	for name, tc := range testCases {
@@ -639,6 +700,159 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 	}
 }
 
+func TestParallelStoragePusher(t *testing.T) {
+	type tenantWriteRequest struct {
+		tenantID string
+		*mimirpb.WriteRequest
+	}
+
+	testCases := map[string]struct {
+		requests               []tenantWriteRequest
+		expectedUpstreamPushes map[string]map[mimirpb.WriteRequest_SourceEnum]int
+	}{
+		"separate tenants and sources": {
+			requests: []tenantWriteRequest{
+				{
+					tenantID: "tenant1",
+					WriteRequest: &mimirpb.WriteRequest{
+						Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseriesWithExemplar("series_1")},
+						Source:     mimirpb.API,
+					},
+				},
+				{
+					tenantID: "tenant1",
+					WriteRequest: &mimirpb.WriteRequest{
+						Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseriesWithExemplar("series_2")},
+						Source:     mimirpb.RULE,
+					},
+				},
+				{
+					tenantID: "tenant2",
+					WriteRequest: &mimirpb.WriteRequest{
+						Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseriesWithExemplar("series_3")},
+						Source:     mimirpb.API,
+					},
+				},
+				{
+					tenantID: "tenant2",
+					WriteRequest: &mimirpb.WriteRequest{
+						Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseriesWithExemplar("series_4")},
+						Source:     mimirpb.RULE,
+					},
+				},
+			},
+			expectedUpstreamPushes: map[string]map[mimirpb.WriteRequest_SourceEnum]int{
+				"tenant1": {
+					mimirpb.API:  1,
+					mimirpb.RULE: 1,
+				},
+				"tenant2": {
+					mimirpb.API:  1,
+					mimirpb.RULE: 1,
+				},
+			},
+		},
+		"metadata-only requests": {
+			requests: []tenantWriteRequest{
+				{
+					tenantID: "tenant1",
+					WriteRequest: &mimirpb.WriteRequest{
+						Metadata: []*mimirpb.MetricMetadata{
+							{
+								MetricFamilyName: "metric1",
+								Type:             mimirpb.COUNTER,
+								Help:             "A test counter",
+								Unit:             "bytes",
+							},
+						},
+						Source: mimirpb.API,
+					},
+				},
+				{
+					tenantID: "tenant1",
+					WriteRequest: &mimirpb.WriteRequest{
+						Metadata: []*mimirpb.MetricMetadata{
+							{
+								MetricFamilyName: "metric2",
+								Type:             mimirpb.GAUGE,
+								Help:             "A test gauge",
+								Unit:             "seconds",
+							},
+						},
+						Source: mimirpb.RULE,
+					},
+				},
+				{
+					tenantID: "tenant2",
+					WriteRequest: &mimirpb.WriteRequest{
+						Metadata: []*mimirpb.MetricMetadata{
+							{
+								MetricFamilyName: "metric3",
+								Type:             mimirpb.HISTOGRAM,
+								Help:             "A test histogram",
+								Unit:             "bytes",
+							},
+						},
+						Source: mimirpb.API,
+					},
+				},
+			},
+			expectedUpstreamPushes: map[string]map[mimirpb.WriteRequest_SourceEnum]int{
+				"tenant1": {
+					mimirpb.API:  1,
+					mimirpb.RULE: 1,
+				},
+				"tenant2": {
+					mimirpb.API: 1,
+				},
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			pusher := &mockPusher{}
+			logger := log.NewNopLogger()
+
+			receivedPushes := make(map[string]map[mimirpb.WriteRequest_SourceEnum]int)
+			var receivedPushesMu sync.Mutex
+
+			pusher.On("PushToStorage", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				tenantID, err := tenant.TenantID(args.Get(0).(context.Context))
+				require.NoError(t, err)
+				req := args.Get(1).(*mimirpb.WriteRequest)
+
+				receivedPushesMu.Lock()
+				defer receivedPushesMu.Unlock()
+
+				if receivedPushes[tenantID] == nil {
+					receivedPushes[tenantID] = make(map[mimirpb.WriteRequest_SourceEnum]int)
+				}
+				receivedPushes[tenantID][req.Source]++
+			}).Return(nil)
+
+			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			psp := newParallelStoragePusher(metrics, pusher, 1, 1, logger)
+
+			// Process requests
+			for _, req := range tc.requests {
+				ctx := user.InjectOrgID(context.Background(), req.tenantID)
+				err := psp.PushToStorage(ctx, req.WriteRequest)
+				require.NoError(t, err)
+			}
+
+			// Close the pusher to flush any remaining data
+			errs := psp.Close()
+			require.Empty(t, errs)
+
+			// Verify the received pushes
+			assert.Equal(t, tc.expectedUpstreamPushes, receivedPushes, "Mismatch in upstream pushes")
+
+			pusher.AssertExpectations(t)
+		})
+	}
+}
+
 func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	capacity := 2
 	batchSize := 3
@@ -662,7 +876,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 
 	// Add items to the queue
 	for i := 0; i < batchSize*(capacity+1); i++ {
-		require.NoError(t, queue.AddToBatch(ctx, series))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series))
 	}
 
 	// Close the queue to signal no more items will be added
@@ -700,7 +914,7 @@ func TestBatchingQueue(t *testing.T) {
 		queue := setupQueue(t, capacity, batchSize, series)
 
 		series3 := mockPreallocTimeseries("series_3")
-		require.NoError(t, queue.AddToBatch(context.Background(), series3))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, series3))
 
 		select {
 		case batch := <-queue.Channel():
@@ -754,7 +968,7 @@ func TestBatchingQueue(t *testing.T) {
 		// Add items to the queue until it's full.
 		for i := 0; i < capacity*batchSize; i++ {
 			s := mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
-			require.NoError(t, queue.AddToBatch(context.Background(), s))
+			require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
 		}
 
 		// We should have 5 items in the queue channel and 0 items in the currentBatch.
@@ -771,12 +985,67 @@ func TestBatchingQueue(t *testing.T) {
 
 		// Add three more items to fill up the queue again, this shouldn't block.
 		s := mockPreallocTimeseries("series_100")
-		require.NoError(t, queue.AddToBatch(context.Background(), s))
-		require.NoError(t, queue.AddToBatch(context.Background(), s))
-		require.NoError(t, queue.AddToBatch(context.Background(), s))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
 
 		require.Len(t, queue.ch, 5)
 		require.Len(t, queue.currentBatch.Timeseries, 0)
+	})
+
+	t.Run("metadata and exemplars are preserved in batches", func(t *testing.T) {
+		const (
+			capacity  = 2
+			batchSize = 2 // 1 for metadata, 1 for a series
+			timestamp = 1234567890
+		)
+		queue := setupQueue(t, capacity, batchSize, nil)
+
+		// Create a WriteRequest with metadata and a series with exemplars
+		timeSeries := mockPreallocTimeseries("series_1")
+		timeSeries.Exemplars = append(timeSeries.Exemplars, mimirpb.Exemplar{
+			Value:       42.0,
+			TimestampMs: timestamp,
+			Labels:      []mimirpb.LabelAdapter{{Name: "trace_id", Value: "abc123"}},
+		},
+		)
+
+		md := &mimirpb.MetricMetadata{
+			Type:             mimirpb.COUNTER,
+			MetricFamilyName: "test_counter",
+			Help:             "A test counter",
+			Unit:             "bytes",
+		}
+
+		// Add timeseries with exemplars to the queue
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, timeSeries))
+
+		// Add metadata to the queue
+		require.NoError(t, queue.AddMetadataToBatch(context.Background(), mimirpb.API, md))
+
+		// Read the batch from the queue
+		select {
+		case batch, notExhausted := <-queue.Channel():
+			require.True(t, notExhausted)
+			require.Len(t, batch.WriteRequest.Timeseries, 1)
+			require.Len(t, batch.WriteRequest.Metadata, 1)
+
+			// Check that the first series in the batch has the correct exemplars
+			require.Len(t, batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars, 1)
+			require.Equal(t, 42.0, batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Value)
+			require.Equal(t, int64(timestamp), batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].TimestampMs)
+			require.Equal(t, "trace_id", batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Labels[0].Name)
+			require.Equal(t, "abc123", batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Labels[0].Value)
+
+			// Check that the metadata in the batch is correct
+			require.Equal(t, mimirpb.COUNTER, batch.WriteRequest.Metadata[0].Type)
+			require.Equal(t, "test_counter", batch.WriteRequest.Metadata[0].MetricFamilyName)
+			require.Equal(t, "A test counter", batch.WriteRequest.Metadata[0].Help)
+			require.Equal(t, "bytes", batch.WriteRequest.Metadata[0].Unit)
+
+		case <-time.After(time.Second):
+			t.Fatal("expected batch to be flushed")
+		}
 	})
 }
 
@@ -791,14 +1060,14 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		ctx := context.Background()
 
 		// Push 1 series so that the next push will complete the batch.
-		require.NoError(t, queue.AddToBatch(ctx, series2))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
 
 		// Push an error to fill the error channel.
 		queue.ErrorChannel() <- fmt.Errorf("mock error 1")
 		queue.ErrorChannel() <- fmt.Errorf("mock error 2")
 
 		// AddToBatch should return an error now.
-		err := queue.AddToBatch(ctx, series2)
+		err := queue.AddToBatch(ctx, mimirpb.API, series2)
 		assert.Equal(t, "2 errors: mock error 1; mock error 2", err.Error())
 		// Also the batch was pushed.
 		select {
@@ -810,8 +1079,8 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		}
 
 		// AddToBatch should work again.
-		require.NoError(t, queue.AddToBatch(ctx, series2))
-		require.NoError(t, queue.AddToBatch(ctx, series2))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
 	})
 
 	t.Run("Any errors pushed after last AddToBatch call are received on Close", func(t *testing.T) {
@@ -819,7 +1088,7 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		ctx := context.Background()
 
 		// Add a batch to a batch but make sure nothing is pushed.,
-		require.NoError(t, queue.AddToBatch(ctx, series1))
+		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series1))
 
 		select {
 		case <-queue.Channel():
@@ -853,7 +1122,7 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 	queue := newBatchingQueue(capacity, batchSize)
 
 	for _, s := range series {
-		require.NoError(t, queue.AddToBatch(context.Background(), s))
+		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
 	}
 
 	return queue
