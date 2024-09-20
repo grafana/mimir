@@ -952,7 +952,6 @@ How to **investigate**:
      SERVICE="gossip-ring"
 
      # Re-apply the list of bad endpoints as is.
-     rm -f /tmp/service-endpoints.yaml
      kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get endpoints "$SERVICE" -o yaml > /tmp/service-endpoints.yaml
      kubectl --context "$CONTEXT" --namespace "$NAMESPACE" apply -f /tmp/service-endpoints.yaml
 
