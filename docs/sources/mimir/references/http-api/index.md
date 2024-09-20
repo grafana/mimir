@@ -862,7 +862,7 @@ The `type` parameter is optional. If set, only the specified type of rule is ret
 
 The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly.
 
-The `exclude_alerts` parameter is optional. If set, only rules are returned, active alerts are excluded.
+The `exclude_alerts` parameter is optional. If set, it only returns rules and excludes active alerts.
 
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
