@@ -68,6 +68,9 @@ The following features are currently experimental:
   - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
   - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
   - `-ruler.rule-evaluation-write-enabled`
+  - Allow control over rule sync intervals.
+    - `ruler.outbound-sync-queue-poll-interval`
+    - `ruler.inbound-sync-queue-poll-interval`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`

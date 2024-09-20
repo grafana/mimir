@@ -2669,6 +2669,8 @@ Usage of ./cmd/mimir/mimir:
     	This grace period controls which alerts the ruler restores after a restart. Alerts with "for" duration lower than this grace period are not restored after a ruler restart. This means that if the alerts have been firing before the ruler restarted, they will now go to pending state and then to firing again after their "for" duration expires. Alerts with "for" duration greater than or equal to this grace period that have been pending before the ruler restart will remain in pending state for at least this grace period. Alerts with "for" duration greater than or equal to this grace period that have been firing before the ruler restart will continue to be firing after the restart. (default 2m0s)
   -ruler.for-outage-tolerance duration
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
+  -ruler.inbound-sync-queue-poll-interval duration
+    	[experimental] Interval between applying queued incoming rule sync requests. (default 10s)
   -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
     	[experimental] Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
   -ruler.max-independent-rule-evaluation-concurrency int
@@ -2687,6 +2689,8 @@ Usage of ./cmd/mimir/mimir:
     	Capacity of the queue for notifications to be sent to the Alertmanager. (default 10000)
   -ruler.notification-timeout duration
     	HTTP timeout duration when sending notifications to the Alertmanager. (default 10s)
+  -ruler.outbound-sync-queue-poll-interval duration
+    	[experimental] Interval between sending queued rule sync requests to ruler replicas. (default 10s)
   -ruler.poll-interval duration
     	How frequently the configured rule groups are re-synced from the object storage. (default 10m0s)
   -ruler.protected-namespaces comma-separated-list-of-strings

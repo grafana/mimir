@@ -22,10 +22,12 @@ type AggregationGroup interface {
 type AggregationGroupFactory func() AggregationGroup
 
 var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
-	parser.AVG: func() AggregationGroup { return &AvgAggregationGroup{} },
-	parser.MAX: func() AggregationGroup { return NewMinMaxAggregationGroup(true) },
-	parser.MIN: func() AggregationGroup { return NewMinMaxAggregationGroup(false) },
-	parser.SUM: func() AggregationGroup { return &SumAggregationGroup{} },
+	parser.AVG:   func() AggregationGroup { return &AvgAggregationGroup{} },
+	parser.COUNT: func() AggregationGroup { return NewCountGroupAggregationGroup(true) },
+	parser.GROUP: func() AggregationGroup { return NewCountGroupAggregationGroup(false) },
+	parser.MAX:   func() AggregationGroup { return NewMinMaxAggregationGroup(true) },
+	parser.MIN:   func() AggregationGroup { return NewMinMaxAggregationGroup(false) },
+	parser.SUM:   func() AggregationGroup { return &SumAggregationGroup{} },
 }
 
 // Sentinel value used to indicate a sample has seen an invalid combination of histograms and should be ignored.

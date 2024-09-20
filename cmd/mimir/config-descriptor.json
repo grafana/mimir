@@ -12686,6 +12686,28 @@
         },
         {
           "kind": "field",
+          "name": "outbound_sync_queue_poll_interval",
+          "required": false,
+          "desc": "Interval between sending queued rule sync requests to ruler replicas.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "ruler.outbound-sync-queue-poll-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "inbound_sync_queue_poll_interval",
+          "required": false,
+          "desc": "Interval between applying queued incoming rule sync requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "ruler.inbound-sync-queue-poll-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_independent_rule_evaluation_concurrency",
           "required": false,
           "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",

@@ -132,14 +132,14 @@ var errorEquivalenceClasses = [][]*regexp.Regexp{
 		// Prometheus' engine:
 		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) hand-side of the operation: \[.*\];many-to-many matching not allowed: matching labels must be unique on one side`),
 		// MQE:
-		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) side of the operation at timestamp \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z: \{.*\} and \{.*\}`),
+		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) side of the operation at timestamp \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d+)?Z: \{.*\} and \{.*\}`),
 	},
 	{
 		// Same as above, but for left (one-to-one) / one (one-to-many/many-to-one) side.
 		// Prometheus' engine:
 		regexp.MustCompile(`multiple matches for labels: many-to-one matching must be explicit \(group_left/group_right\)`),
 		// MQE:
-		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) side of the operation at timestamp \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z: \{.*\} and \{.*\}`),
+		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) side of the operation at timestamp \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(.\d+)?Z: \{.*\} and \{.*\}`),
 	},
 }
 
