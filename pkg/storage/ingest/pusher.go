@@ -469,7 +469,7 @@ type batchingQueue struct {
 func newBatchingQueue(capacity int, batchSize int) *batchingQueue {
 	return &batchingQueue{
 		ch:           make(chan flushableWriteRequest, capacity),
-		errCh:        make(chan error, capacity),
+		errCh:        make(chan error, capacity+1),
 		done:         make(chan struct{}),
 		currentBatch: flushableWriteRequest{WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}},
 		batchSize:    batchSize,

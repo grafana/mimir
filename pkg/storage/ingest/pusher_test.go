@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -636,6 +637,42 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			pusher.AssertExpectations(t)
 		})
 	}
+}
+func TestBatchingQueue_NoDeadlock(t *testing.T) {
+	capacity := 2
+	batchSize := 3
+	queue := newBatchingQueue(capacity, batchSize)
+
+	ctx := context.Background()
+	series := mockPreallocTimeseries("series_1")
+
+	// Start a goroutine to process the queue
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer queue.Done()
+		for range queue.Channel() {
+			// Simulate processing time
+			time.Sleep(50 * time.Millisecond)
+			queue.ErrorChannel() <- fmt.Errorf("mock error")
+		}
+	}()
+
+	// Add items to the queue
+	for i := 0; i < batchSize*(capacity+1); i++ {
+		require.NoError(t, queue.AddToBatch(ctx, series))
+	}
+
+	// Close the queue to signal no more items will be added
+	err := queue.Close()
+	require.ErrorContains(t, err, "mock error")
+
+	wg.Wait()
+
+	// Ensure the queue is empty and no deadlock occurred
+	require.Len(t, queue.ch, 0)
+	require.Len(t, queue.currentBatch.Timeseries, 0)
 }
 
 func TestBatchingQueue(t *testing.T) {
