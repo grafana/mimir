@@ -14,8 +14,7 @@ import (
 )
 
 type CountAggregationGroup struct {
-	floatValues  []float64
-	floatPresent []bool
+	floatValues []float64
 }
 
 func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
@@ -27,24 +26,20 @@ func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesD
 			return err
 		}
 
-		g.floatPresent, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
 		g.floatValues = g.floatValues[:timeRange.StepCount]
-		g.floatPresent = g.floatPresent[:timeRange.StepCount]
 	}
 
 	for _, p := range data.Floats {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
 		g.floatValues[idx]++
-		g.floatPresent[idx] = true
 	}
 
 	for _, p := range data.Histograms {
 		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
 		g.floatValues[idx]++
-		g.floatPresent[idx] = true
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
@@ -53,8 +48,8 @@ func (g *CountAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesD
 
 func (g *CountAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
-	for _, p := range g.floatPresent {
-		if p {
+	for _, fv := range g.floatValues {
+		if fv > 0 {
 			floatPointCount++
 		}
 	}
@@ -66,17 +61,15 @@ func (g *CountAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRan
 			return types.InstantVectorSeriesData{}, false, err
 		}
 
-		for i, havePoint := range g.floatPresent {
-			if havePoint {
+		for i, fv := range g.floatValues {
+			if fv > 0 {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
-				f := g.floatValues[i]
-				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
+				floatPoints = append(floatPoints, promql.FPoint{T: t, F: fv})
 			}
 		}
 	}
 
 	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
 }
