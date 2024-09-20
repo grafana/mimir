@@ -455,7 +455,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
@@ -526,7 +526,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 				# TYPE cortex_ingester_active_native_histogram_series gauge
 				cortex_ingester_active_native_histogram_series{user="test"} 1
@@ -606,7 +606,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -716,7 +716,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -818,7 +818,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -944,7 +944,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -1071,7 +1071,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -1179,7 +1179,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -1300,7 +1300,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -1416,7 +1416,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -1544,7 +1544,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -1712,7 +1712,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -2060,7 +2060,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -2204,7 +2204,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_native_histogram_series{user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -2335,7 +2335,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
@@ -2393,7 +2393,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
@@ -2452,7 +2452,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 3
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
@@ -2509,7 +2509,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
@@ -2571,7 +2571,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
@@ -2633,7 +2633,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
@@ -2688,7 +2688,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
 				# TYPE cortex_ingester_active_native_histogram_buckets gauge
 				cortex_ingester_active_native_histogram_buckets{user="test"} 8
@@ -2764,7 +2764,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
 				# TYPE cortex_ingester_ingested_exemplars_total counter
 				cortex_ingester_ingested_exemplars_total 1
@@ -2824,7 +2824,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
+				cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
 				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_min_timestamp_seconds 1575043.969
@@ -2969,7 +2969,7 @@ func TestIngester_Push(t *testing.T) {
 			expectedMetrics: `
 			    # HELP cortex_ingester_active_series Number of currently active series per user.
 			    # TYPE cortex_ingester_active_series gauge
-			    cortex_ingester_active_series{user="test"} 1
+			    cortex_ingester_active_series{attrib="",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
 				cortex_ingester_ingested_samples_total{user="test"} 1
@@ -3406,8 +3406,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 		cortex_ingester_memory_series_removed_total{user="test-2"} 0
 		# HELP cortex_ingester_active_series Number of currently active series per user.
 		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="test-1"} 2
-		cortex_ingester_active_series{user="test-2"} 2
+		cortex_ingester_active_series{attrib="",user="test-1"} 2
+		cortex_ingester_active_series{attrib="",user="test-2"} 2
 		# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 		# TYPE cortex_ingester_active_native_histogram_series gauge
 		cortex_ingester_active_native_histogram_series{user="test-1"} 1
@@ -7214,7 +7214,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 		# HELP cortex_ingester_active_series Number of currently active series per user.
 		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="1"} 1
+		cortex_ingester_active_series{attrib="",user="1"} 1
 
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
@@ -7276,7 +7276,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 		# HELP cortex_ingester_active_series Number of currently active series per user.
 		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="1"} 1
+		cortex_ingester_active_series{attrib="",user="1"} 1
 
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
@@ -8877,8 +8877,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
@@ -8924,8 +8924,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
@@ -8976,8 +8976,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
@@ -9023,7 +9023,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
@@ -9243,8 +9243,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
@@ -9291,7 +9291,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
@@ -9328,8 +9328,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
@@ -9377,8 +9377,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
@@ -9420,7 +9420,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
@@ -9457,8 +9457,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
@@ -9503,7 +9503,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 4
@@ -9558,7 +9558,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
@@ -9605,8 +9605,8 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{attrib="",user="other_test_user"} 8
+					cortex_ingester_active_series{attrib="",user="test_user"} 8
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
 					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4

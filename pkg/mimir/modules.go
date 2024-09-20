@@ -79,6 +79,7 @@ const (
 	OverridesExporter               string = "overrides-exporter"
 	Server                          string = "server"
 	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
+	CostAttributionCleanupService   string = "cost-attribution-cleanup-service"
 	Distributor                     string = "distributor"
 	DistributorService              string = "distributor-service"
 	Ingester                        string = "ingester"

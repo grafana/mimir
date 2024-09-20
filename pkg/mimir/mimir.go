@@ -702,14 +702,15 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                             *api.API
-	Server                          *server.Server
-	IngesterRing                    *ring.Ring
-	IngesterPartitionRingWatcher    *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing   *ring.PartitionInstanceRing
-	TenantLimits                    validation.TenantLimits
-	Overrides                       *validation.Overrides
-	ActiveGroupsCleanup             *util.ActiveGroupsCleanupService
+	API                           *api.API
+	Server                        *server.Server
+	IngesterRing                  *ring.Ring
+	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
+	TenantLimits                  validation.TenantLimits
+	Overrides                     *validation.Overrides
+	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
+
 	Distributor                     *distributor.Distributor
 	Ingester                        *ingester.Ingester
 	Flusher                         *flusher.Flusher

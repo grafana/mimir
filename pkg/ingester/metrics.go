@@ -303,7 +303,7 @@ func newIngesterMetrics(
 		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
-		}, []string{"user"}),
+		}, []string{"user", "attrib"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
@@ -409,7 +409,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
-	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {

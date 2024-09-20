@@ -3986,6 +3986,28 @@
         },
         {
           "kind": "field",
+          "name": "cost_attribution_label",
+          "required": false,
+          "desc": "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'cost' label with cost label's value. Currently applies to the following metrics: cortex_discarded_samples_total",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.cost-attribution-label",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_per_user",
+          "required": false,
+          "desc": "Maximum number of cost attributions per user. 0 to disable the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 200,
+          "fieldFlag": "validation.max-cost-attribution-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_fetched_chunks_per_query",
           "required": false,
           "desc": "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.",

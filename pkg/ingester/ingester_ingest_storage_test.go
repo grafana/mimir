@@ -193,7 +193,7 @@ func TestIngester_Start(t *testing.T) {
 			return testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="%s"} 1
+				cortex_ingester_active_series{attrib="",user="%s"} 1
 
 				# HELP cortex_ingester_owned_series Number of currently owned series per user.
 				# TYPE cortex_ingester_owned_series gauge

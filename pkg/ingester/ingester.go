@@ -786,9 +786,17 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+				costAttribLabel := i.limits.CostAttributionLabel(userID)
+				if costAttribLabel != "" {
+					labelAttributions := userDB.activeSeries.ActiveByAttributionValue()
+					for label, count := range labelAttributions {
+						i.metrics.activeSeriesPerUser.WithLabelValues(userID, label).Set(float64(count))
+					}
+				} else {
+					i.metrics.activeSeriesPerUser.WithLabelValues(userID, "").Set(float64(allActive))
+				}
 			} else {
-				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+				i.metrics.activeSeriesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
 			}
 			if allActiveHistograms > 0 {
 				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
@@ -944,6 +952,7 @@ type extendedAppender interface {
 type pushStats struct {
 	succeededSamplesCount       int
 	failedSamplesCount          int
+	failedSamplesAttribution    map[string]int
 	succeededExemplarsCount     int
 	failedExemplarsCount        int
 	sampleOutOfBoundsCount      int
@@ -1152,7 +1161,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-		stats pushStats
+
+		stats = pushStats{
+			failedSamplesAttribution: make(map[string]int),
+		}
 
 		firstPartialErr error
 		// updateFirstPartial is a function that, in case of a softError, stores that error
@@ -1277,9 +1289,15 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
-
 	// Return true if handled as soft error, and we can ingest more series.
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+
+		// get the cost attribution value for the series
+		costAttrib := validation.AttributionValue(i.limits, userID, labels)
+		if costAttrib != "" {
+			stats.failedSamplesAttribution[costAttrib]++
+		}
+
 		stats.failedSamplesCount++
 
 		// Check if the error is a soft error we can proceed on. If so, we keep track
@@ -1384,6 +1402,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
 	for _, ts := range timeseries {
+		// The cost attribution value for the series
+		costAttrib := validation.AttributionValue(i.limits, userID, ts.Labels)
+
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -1399,7 +1420,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-
+				if costAttrib != "" {
+					stats.failedSamplesAttribution[costAttrib] += len(ts.Samples) + len(ts.Histograms)
+				}
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
 					firstTimestamp = ts.Samples[0].TimestampMs
@@ -1420,7 +1443,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleOutOfBoundsCount += len(ts.Samples)
-
+				if costAttrib != "" {
+					stats.failedSamplesAttribution[costAttrib] += len(ts.Samples)
+				}
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
@@ -2629,8 +2654,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
-		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
+		userID: userID,
+		activeSeries: activeseries.NewActiveSeries(
+			asmodel.NewMatchers(matchersConfig),
+			i.cfg.ActiveSeriesMetrics.IdleTimeout,
+			userID,
+			i.limits.CostAttributionLabel(userID),
+		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

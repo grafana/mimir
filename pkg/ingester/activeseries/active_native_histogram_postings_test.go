@@ -26,7 +26,8 @@ func TestNativeHistogramPostings_Expand(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -62,7 +63,7 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -106,7 +107,8 @@ func TestNativeHistogramPostings_SeekSkipsNonNative(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		buckets := i * 10
@@ -145,7 +147,8 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		buckets := i * 10
@@ -181,7 +184,7 @@ func TestNativeHistogramPostings_SeekToEnd(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {

@@ -355,7 +355,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
 			Help: "The total number of received samples, excluding rejected and deduped samples.",
-		}, []string{"user"}),
+		}, []string{"user", "attrib"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
 			Help: "The total number of received exemplars, excluding rejected and deduped exemplars.",
@@ -643,7 +643,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
 	d.receivedRequests.DeleteLabelValues(userID)
-	d.receivedSamples.DeleteLabelValues(userID)
+	d.receivedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingRequests.DeleteLabelValues(userID)
@@ -1432,7 +1432,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(req, userID)
+	d.updateReceivedMetrics(req, userID, d.limits.CostAttributionLabel(userID))
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -1663,15 +1663,25 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, costAttributionLabel string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
+	costAttribution := make(map[string]int)
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
+		if costAttributionLabel != "" {
+			attribution := mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel)
+			costAttribution[attribution]++
+		}
 	}
 	receivedMetadata = len(req.Metadata)
-
-	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	if costAttributionLabel != "" {
+		for lv, count := range costAttribution {
+			d.receivedSamples.WithLabelValues(userID, lv).Add(float64(count))
+		}
+	} else {
+		d.receivedSamples.WithLabelValues(userID, "").Add(float64(receivedSamples))
+	}
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
