@@ -970,13 +970,11 @@ How to **investigate**:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
 
-
 ### MimirKubernetesServiceEndpointsApproachingLimit
 
 This alert fires if a Kubernetes service used by Mimir for service discovery is approaching the endpoints limit.
 
 See [MimirKubernetesServiceEndpointsOverLimit](#MimirKubernetesServiceEndpointsOverLimit).
-
 
 ### MimirKubernetesServiceEndpointsOverLimit
 
@@ -992,7 +990,6 @@ How to **fix** it:
 
 - Increase Kubernetes `--max-endpoints-per-slice kube-controller-manager` to 1000, if it's currently running with a lower value. Configure the limit in the alert to reflect the new setting.
 - Reduce the number of replicas of the affected service and vertically scale it up.
-
 
 ### EtcdAllocatingTooMuchMemory
 
