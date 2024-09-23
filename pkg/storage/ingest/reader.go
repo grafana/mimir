@@ -857,7 +857,7 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 // mergedWith merges fr with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
 func (fr *fetchResult) mergedWith(other fetchResult) fetchResult {
 	other.logMerged()
-	fr.Records = append(fr.Records, other.Records...)
+	fr.Records = append(other.Records, fr.Records...)
 	// We ignore HighWatermark, LogStartOffset, LastStableOffset because this result should be more up to date.
 	fr.fetchedBytes += other.fetchedBytes
 	return *fr
