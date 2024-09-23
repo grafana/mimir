@@ -1136,15 +1136,6 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 		MaxRetries: 0, // retry forever
 	})
 
-	// more aggressive backoff when we're waiting for records to be produced.
-	// It's likely there's already some records produced by the time we get back the response and send another request.
-	// TODO dimitarvdimitrov remove; kafka is already doing this for us with the max wait time.
-	newRecordsProducedBackoff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 10 * time.Millisecond,
-		MaxBackoff: time.Second,
-		MaxRetries: 0, // retry forever
-	})
-
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
 		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
@@ -1159,7 +1150,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			f := r.fetchSingle(ctx, w)
 			f = f.mergedWith(previousResult)
 			if f.Err != nil {
-				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, attemptSpan)
+				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
 			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
@@ -1173,7 +1164,6 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
 			// We don't want to slow down until we hit a larger error.
 			errBackoff.Reset()
-			newRecordsProducedBackoff.Reset()
 
 			previousResult = fetchResult{}
 			select {
@@ -1276,7 +1266,7 @@ type metadataRefresher interface {
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(err error, fw fetchWant, shortBackoff, longBackoff waiter, partitionStartOffset *genericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
+func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionStartOffset *genericOffsetReader[int64], refresher metadataRefresher, logger log.Logger) fetchWant {
 	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
 	// So we force a metadata refresh here to be sure.
 	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).
@@ -1312,7 +1302,6 @@ func handleKafkaFetchErr(err error, fw fetchWant, shortBackoff, longBackoff wait
 			// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
 			// Wait for a short time to allow the broker to catch up or for new records to be produced.
 			level.Debug(logger).Log("msg", "offset out of range; waiting for new records to be produced")
-			shortBackoff.Wait()
 		}
 	case errors.Is(err, kerr.TopicAuthorizationFailed):
 		longBackoff.Wait()

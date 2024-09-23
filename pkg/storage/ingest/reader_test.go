@@ -1980,8 +1980,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 		fw  fetchWant
 
 		expectedFw              fetchWant
-		expectedShortBackoff    bool
-		expectedLongBackoff     bool
+		expectedBackoff         bool
 		expectedMetadataRefresh bool
 	}{
 		"no error": {
@@ -2031,7 +2030,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff: true,
+			expectedBackoff: true,
 		},
 		"NotLeaderForPartition": {
 			err: kerr.NotLeaderForPartition,
@@ -2044,7 +2043,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff:     true,
+			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
 		"ReplicaNotAvailable": {
@@ -2058,7 +2057,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff:     true,
+			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
 		"UnknownLeaderEpoch": {
@@ -2072,7 +2071,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff:     true,
+			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
 		"FencedLeaderEpoch": {
@@ -2086,7 +2085,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff:     true,
+			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
 		"LeaderNotAvailable": {
@@ -2100,7 +2099,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff:     true,
+			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
 		"errUnknownPartitionLeader": {
@@ -2114,18 +2113,15 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				startOffset: 11,
 				endOffset:   15,
 			},
-			expectedLongBackoff:     true,
+			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
 	}
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			require.False(t, testCase.expectedShortBackoff && testCase.expectedLongBackoff, "set either long or short backoff")
-			waitedShort := false
-			shortBackOff := waiterFunc(func() { waitedShort = true })
-			waitedLong := false
-			longBackOff := waiterFunc(func() { waitedLong = true })
+			waitedBackoff := false
+			backoff := waiterFunc(func() { waitedBackoff = true })
 			refreshed := false
 			refresher := refresherFunc(func() { refreshed = true })
 
@@ -2137,10 +2133,9 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), offsetR))
 			})
 
-			actualFw := handleKafkaFetchErr(testCase.err, testCase.fw, shortBackOff, longBackOff, offsetR, refresher, logger)
+			actualFw := handleKafkaFetchErr(testCase.err, testCase.fw, backoff, offsetR, refresher, logger)
 			assert.Equal(t, testCase.expectedFw, actualFw)
-			assert.Equal(t, testCase.expectedShortBackoff, waitedShort)
-			assert.Equal(t, testCase.expectedLongBackoff, waitedLong)
+			assert.Equal(t, testCase.expectedBackoff, waitedBackoff)
 			assert.Equal(t, testCase.expectedMetadataRefresh, refreshed)
 		})
 	}
