@@ -1465,6 +1465,24 @@ func TestAnnotations(t *testing.T) {
 			expr: `sum(metric{type="histogram"})`,
 		},
 
+		"avg() with float and native histogram at same step": {
+			data:                       mixedFloatHistogramData,
+			expr:                       "avg by (series) (metric)",
+			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+		},
+		"avg() with floats and native histograms for different output series at the same step": {
+			data: mixedFloatHistogramData,
+			expr: "avg by (type) (metric)",
+		},
+		"avg() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `avg(metric{type="float"})`,
+		},
+		"avg() with only native histograms": {
+			data: mixedFloatHistogramData,
+			expr: `avg(metric{type="histogram"})`,
+		},
+
 		"rate() over metric without counter suffix containing only floats": {
 			data:                    mixedFloatHistogramData,
 			expr:                    `rate(metric{type="float"}[1m])`,
