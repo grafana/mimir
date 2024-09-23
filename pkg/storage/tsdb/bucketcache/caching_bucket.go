@@ -159,6 +159,38 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
+func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
+	_, cfg := cb.cfg.findGetConfig(name)
+	if cfg != nil {
+		contentKey := cachingKeyContent(cb.bucketID, name)
+		attrsKey := cachingKeyAttributes(cb.bucketID, name)
+		existsKey := cachingKeyExists(cb.bucketID, name)
+
+		// Cache might be down or key might not exist. Ignore errors since invalidation is best-effort.
+		_ = cfg.cache.Delete(ctx, contentKey)
+		_ = cfg.cache.Delete(ctx, attrsKey)
+		_ = cfg.cache.Delete(ctx, existsKey)
+	}
+}
+
+func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+	err := cb.Bucket.Upload(ctx, name, r)
+	if err == nil {
+		cb.invalidate(ctx, name)
+	}
+
+	return err
+}
+
+func (cb *CachingBucket) Delete(ctx context.Context, name string) error {
+	err := cb.Bucket.Delete(ctx, name)
+	if err == nil {
+		cb.invalidate(ctx, name)
+	}
+
+	return err
+}
+
 func (cb *CachingBucket) Name() string {
 	return "caching: " + cb.Bucket.Name()
 }

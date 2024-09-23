@@ -909,6 +909,55 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 	}
 }
 
+func TestMutationInvalidatesCache(t *testing.T) {
+	inmem := objstore.NewInMemBucket()
+
+	// We reuse cache between tests (!)
+	c := cache.NewMockCache()
+	ctx := context.Background()
+
+	const cfgName = "test"
+	cfg := NewCachingBucketConfig()
+	cfg.CacheGet(cfgName, c, matchAll, 1024^2, time.Minute, time.Minute, time.Minute)
+	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
+	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
+
+	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	require.NoError(t, err)
+
+	t.Run("invalidated on upload", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 14, true, false, cfgName)
+
+		// Do an upload via the CachingBucket and ensure the first read after does not come from cache.
+		require.NoError(t, cb.Upload(ctx, "/object-1", strings.NewReader("test content 12")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 15, true, false, cfgName)
+	})
+
+	t.Run("invalidated on delete", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 14, true, false, cfgName)
+
+		// Delete via the CachingBucket and ensure the first read after does not come from cache but non-existence is cached.
+		require.NoError(t, cb.Delete(ctx, "/object-1"))
+		verifyGet(ctx, t, cb, "/object-1", nil, true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", false, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", -1, true, false, cfgName)
+	})
+}
+
 func BenchmarkCachingKey(b *testing.B) {
 	tests := map[string]struct {
 		run func(bucketID string)
