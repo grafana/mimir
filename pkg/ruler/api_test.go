@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -903,6 +904,135 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		})
 
 	}
+}
+
+func TestRuler_PrometheusRulesPagination(t *testing.T) {
+	const (
+		userID   = "user1"
+		interval = time.Minute
+	)
+
+	ruleGroups := rulespb.RuleGroupList{}
+	for ns := 0; ns < 3; ns++ {
+		for group := 0; group < 3; group++ {
+			g := &rulespb.RuleGroupDesc{
+				Name:      fmt.Sprintf("test-group-%d", group),
+				Namespace: fmt.Sprintf("test-namespace-%d", ns),
+				User:      userID,
+				Rules: []*rulespb.RuleDesc{
+					createAlertingRule("testalertingrule", "up < 1"),
+				},
+				Interval: interval,
+			}
+			ruleGroups = append(ruleGroups, g)
+		}
+	}
+
+	cfg := defaultRulerConfig(t)
+	cfg.TenantFederation.Enabled = true
+
+	storageRules := map[string]rulespb.RuleGroupList{
+		userID: ruleGroups,
+	}
+
+	r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrAutomaticMapping(), withLimits(validation.MockDefaultOverrides()), withStart())
+
+	// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+	// has been synched.
+	test.Poll(t, 5*time.Second, len(ruleGroups), func() interface{} {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		rls, _ := r.Rules(ctx, &RulesRequest{})
+		return len(rls.Groups)
+	})
+
+	a := NewAPI(r, r.directStore, log.NewNopLogger())
+
+	getRulesResponse := func(groupSize int, nextToken string) response {
+		queryParams := "?" + url.Values{
+			"max_groups": []string{strconv.Itoa(groupSize)},
+			"next_token": []string{nextToken},
+		}.Encode()
+		req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules"+queryParams, nil, userID)
+		w := httptest.NewRecorder()
+		a.PrometheusRules(w, req)
+
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		r := response{}
+		err := json.Unmarshal(body, &r)
+		require.NoError(t, err)
+
+		return r
+	}
+
+	getRulesFromResponse := func(resp response) RuleDiscovery {
+		jsonRules, err := json.Marshal(resp.Data)
+		require.NoError(t, err)
+		returnedRules := RuleDiscovery{}
+		require.NoError(t, json.Unmarshal(jsonRules, &returnedRules))
+
+		return returnedRules
+	}
+
+	// No page size limit
+	resp := getRulesResponse(0, "")
+	require.Equal(t, "success", resp.Status)
+	rd := getRulesFromResponse(resp)
+	require.Len(t, rd.RuleGroups, len(ruleGroups))
+	require.Empty(t, rd.NextToken)
+
+	// We have 9 groups, keep fetching rules with a group page size of 2. The final
+	// page should have size 1 and an empty nextToken. Also check the groups returned
+	// in order
+	var nextToken string
+	returnedRuleGroups := make([]*RuleGroup, 0, len(ruleGroups))
+	for i := 0; i < 4; i++ {
+		resp := getRulesResponse(2, nextToken)
+		require.Equal(t, "success", resp.Status)
+
+		rd := getRulesFromResponse(resp)
+		require.Len(t, rd.RuleGroups, 2)
+		require.NotEmpty(t, rd.NextToken)
+
+		returnedRuleGroups = append(returnedRuleGroups, rd.RuleGroups[0], rd.RuleGroups[1])
+		nextToken = rd.NextToken
+	}
+	resp = getRulesResponse(2, nextToken)
+	require.Equal(t, "success", resp.Status)
+
+	rd = getRulesFromResponse(resp)
+	require.Len(t, rd.RuleGroups, 1)
+	require.Empty(t, rd.NextToken)
+	returnedRuleGroups = append(returnedRuleGroups, rd.RuleGroups[0])
+
+	// Check the returned rules match the rules written
+	require.Equal(t, len(ruleGroups), len(returnedRuleGroups))
+	for i := 0; i < len(ruleGroups); i++ {
+		require.Equal(t, ruleGroups[i].Namespace, returnedRuleGroups[i].File)
+		require.Equal(t, ruleGroups[i].Name, returnedRuleGroups[i].Name)
+		require.Equal(t, len(ruleGroups[i].Rules), len(returnedRuleGroups[i].Rules))
+		for j := 0; j < len(ruleGroups[i].Rules); j++ {
+			jsonRule, err := json.Marshal(returnedRuleGroups[i].Rules[j])
+			require.NoError(t, err)
+			rule := alertingRule{}
+			require.NoError(t, json.Unmarshal(jsonRule, &rule))
+			require.Equal(t, ruleGroups[i].Rules[j].Alert, rule.Name)
+		}
+	}
+
+	// Invalid max groups value
+	resp = getRulesResponse(-1, "")
+	require.Equal(t, "error", resp.Status)
+	require.Equal(t, v1.ErrBadData, resp.ErrorType)
+	require.Equal(t, "invalid max groups value", resp.Error)
+
+	// Bad token should return no groups
+	resp = getRulesResponse(0, "bad-token")
+	require.Equal(t, "success", resp.Status)
+
+	rd = getRulesFromResponse(resp)
+	require.Len(t, rd.RuleGroups, 0)
 }
 
 func TestRuler_PrometheusAlerts(t *testing.T) {
