@@ -819,6 +819,11 @@ func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) 
 	default:
 		logger = level.Error(logger)
 	}
+	firstTimestamp, lastTimestamp := "", ""
+	if gotRecords > 0 {
+		firstTimestamp = fr.Records[0].Timestamp.String()
+		lastTimestamp = fr.Records[gotRecords-1].Timestamp.String()
+	}
 	logger.Log(
 		"msg", msg,
 		"duration", time.Since(fetchStartTime),
@@ -830,6 +835,8 @@ func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) 
 		"asked_bytes", w.MaxBytes(),
 		"got_bytes", fr.fetchedBytes,
 		"diff_bytes", int(w.MaxBytes())-fr.fetchedBytes,
+		"first_timestamp", firstTimestamp,
+		"last_timestamp", lastTimestamp,
 		"hwm", fr.HighWatermark,
 		"lso", fr.LogStartOffset,
 		"err", fr.Err,
