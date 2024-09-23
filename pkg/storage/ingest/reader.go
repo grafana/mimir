@@ -1172,7 +1172,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			case <-ctx.Done():
 				attemptSpan.Finish()
 			default:
-				if w.endOffset >= w.startOffset {
+				if w.startOffset >= w.endOffset {
 					// we've fetched all we were asked for;
 					// the whole batch is ready, and we definitely have to wait to send on the channel now
 					f.startWaitingForConsumption()
