@@ -7,7 +7,7 @@ go 1.22.0
 toolchain go1.22.5
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.0
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.1
 	github.com/alecthomas/units v0.0.0-20240626203959-61d1e3462e30
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20240905221822-931a021fb06b
+	github.com/grafana/dskit v0.0.0-20240920183844-560bb26f205e
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
@@ -68,7 +68,7 @@ require (
 	github.com/grafana/alerting v0.0.0-20240906191856-cdc634f213ea
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hashicorp/vault/api v1.14.0
+	github.com/hashicorp/vault/api v1.15.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
@@ -79,12 +79,12 @@ require (
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240821035758-b77dd13e2bfa
 	github.com/twmb/franz-go/pkg/kmsg v1.8.0
-	github.com/twmb/franz-go/plugin/kotel v1.4.1
+	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
-	go.opentelemetry.io/collector/pdata v1.12.0
-	go.opentelemetry.io/otel v1.29.0
-	go.opentelemetry.io/otel/trace v1.29.0
+	go.opentelemetry.io/collector/pdata v1.15.0
+	go.opentelemetry.io/otel v1.30.0
+	go.opentelemetry.io/otel/trace v1.30.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	google.golang.org/api v0.196.0
@@ -104,7 +104,6 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
 	github.com/at-wat/mqtt-go v0.19.4 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
-	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -134,6 +133,8 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.30.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.30.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
@@ -215,9 +216,9 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.6 // indirect
 	github.com/hashicorp/memberlist v0.5.0 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
-	github.com/hashicorp/vault/api/auth/approle v0.5.0
-	github.com/hashicorp/vault/api/auth/kubernetes v0.5.0
-	github.com/hashicorp/vault/api/auth/userpass v0.5.0
+	github.com/hashicorp/vault/api/auth/approle v0.8.0
+	github.com/hashicorp/vault/api/auth/kubernetes v0.8.0
+	github.com/hashicorp/vault/api/auth/userpass v0.8.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jessevdk/go-flags v1.5.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -264,7 +265,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.105.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
-	go.opentelemetry.io/otel/metric v1.29.0 // indirect
+	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/oauth2 v0.22.0 // indirect
@@ -280,7 +281,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240917104844-e4312d119ad6
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240920170818-87bc81f0005c
 
 // client_golang v1.20.3 has some data races in histogram exemplars.
 // Stick to v1.19.1 until they are fixed.

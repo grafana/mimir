@@ -5,6 +5,8 @@ package continuoustest
 import (
 	"compress/gzip"
 	"context"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -310,111 +312,107 @@ func TestClient_QueryHeaders(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	cfg := ClientConfig{}
-	flagext.DefaultValues(&cfg)
-	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
-	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+	basicAuth := func(user, pass string) string {
+		return fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
+	}
 
-	c, err := NewClient(cfg, log.NewNopLogger())
-	require.NoError(t, err)
+	testCases := map[string]struct {
+		cfgMutator func(*ClientConfig)
 
-	ctx := context.Background()
+		// There may be other headers on the resulting request, but we'll only check these:
+		expectedHeaders      map[string]string
+		expectedEmptyHeaders []string
+	}{
+		"default tenant header is used without auth": {
+			expectedHeaders: map[string]string{
+				"X-Scope-OrgID": "anonymous",
+			},
+			expectedEmptyHeaders: []string{"Authorization"},
+		},
+		"tenant header is not used when basic auth is used": {
+			cfgMutator: func(cfg *ClientConfig) {
+				cfg.BasicAuthUser = "mimir-user"
+				cfg.BasicAuthPassword = "guest"
+			},
+			expectedHeaders: map[string]string{
+				"Authorization": basicAuth("mimir-user", "guest"),
+			},
+			expectedEmptyHeaders: []string{"X-Scope-OrgID"},
+		},
+		"tenant header is not used when bearer token used": {
+			cfgMutator: func(cfg *ClientConfig) {
+				cfg.BearerToken = "mimir-token"
+			},
+			expectedHeaders: map[string]string{
+				"Authorization": "Bearer mimir-token",
+			},
+			expectedEmptyHeaders: []string{"X-Scope-OrgID"},
+		},
+		"tenant header can be used as well as basic auth": {
+			cfgMutator: func(cfg *ClientConfig) {
+				cfg.BasicAuthUser = "mimir-user"
+				cfg.BasicAuthPassword = "guest"
+				cfg.TenantID = "tenant1"
+			},
+			expectedHeaders: map[string]string{
+				"X-Scope-OrgID": "tenant1",
+				"Authorization": basicAuth("mimir-user", "guest"),
+			},
+		},
+		"tenant header can be used as well as bearer token": {
+			cfgMutator: func(cfg *ClientConfig) {
+				cfg.BearerToken = "mimir-token"
+				cfg.TenantID = "tenant1"
+			},
+			expectedHeaders: map[string]string{
+				"X-Scope-OrgID": "tenant1",
+				"Authorization": "Bearer mimir-token",
+			},
+		},
+		"default user agent": {
+			expectedHeaders: map[string]string{
+				"User-Agent": "mimir-continuous-test",
+			},
+		},
+		"non-default user agent": {
+			cfgMutator: func(cfg *ClientConfig) {
+				cfg.UserAgent = "other-user-agent"
+			},
+			expectedHeaders: map[string]string{
+				"User-Agent": "other-user-agent",
+			},
+		},
+	}
 
-	t.Run("default tenant header is used without auth", func(t *testing.T) {
-		receivedRequests = nil
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			receivedRequests = nil
 
-		_, err := c.Query(ctx, "up", time.Unix(0, 0))
-		require.NoError(t, err)
+			cfg := ClientConfig{}
+			flagext.DefaultValues(&cfg)
+			require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+			require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+			if tc.cfgMutator != nil {
+				tc.cfgMutator(&cfg)
+			}
 
-		require.Len(t, receivedRequests, 1)
-		assert.Equal(t, "anonymous", receivedRequests[0].Header.Get("X-Scope-OrgID"))
-		assert.Empty(t, receivedRequests[0].Header.Get("Authorization"))
-	})
+			c, err := NewClient(cfg, log.NewNopLogger())
+			require.NoError(t, err)
 
-	t.Run("tenant header is not used when basic auth is used", func(t *testing.T) {
-		cfg = ClientConfig{}
-		flagext.DefaultValues(&cfg)
-		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
-		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BasicAuthUser = "mimir-user"
-		cfg.BasicAuthPassword = "guest"
+			ctx := context.Background()
 
-		c, err := NewClient(cfg, log.NewNopLogger())
-		require.NoError(t, err)
-		ctx := context.Background()
-		receivedRequests = nil
+			_, err = c.Query(ctx, "up", time.Unix(0, 0))
+			require.NoError(t, err)
 
-		_, err = c.Query(ctx, "up", time.Unix(0, 0))
-		require.NoError(t, err)
-
-		require.Len(t, receivedRequests, 1)
-		assert.Empty(t, receivedRequests[0].Header.Get("X-Scope-OrgID"))
-		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
-	})
-
-	t.Run("tenant header is not used when bearer token used", func(t *testing.T) {
-		cfg = ClientConfig{}
-		flagext.DefaultValues(&cfg)
-		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
-		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BearerToken = "mimir-token"
-
-		c, err := NewClient(cfg, log.NewNopLogger())
-		require.NoError(t, err)
-		ctx := context.Background()
-		receivedRequests = nil
-
-		_, err = c.Query(ctx, "up", time.Unix(0, 0))
-		require.NoError(t, err)
-
-		require.Len(t, receivedRequests, 1)
-		assert.Empty(t, receivedRequests[0].Header.Get("X-Scope-OrgID"))
-		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
-	})
-
-	t.Run("tenant header can be used as well as basic auth", func(t *testing.T) {
-		cfg = ClientConfig{}
-		flagext.DefaultValues(&cfg)
-		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
-		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BasicAuthUser = "mimir-user"
-		cfg.BasicAuthPassword = "guest"
-		cfg.TenantID = "tenant1"
-
-		c, err := NewClient(cfg, log.NewNopLogger())
-		require.NoError(t, err)
-		ctx := context.Background()
-		receivedRequests = nil
-
-		_, err = c.Query(ctx, "up", time.Unix(0, 0))
-		require.NoError(t, err)
-
-		require.Len(t, receivedRequests, 1)
-		assert.Equal(t, "tenant1", receivedRequests[0].Header.Get("X-Scope-OrgID"))
-		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
-	})
-
-	t.Run("tenant header can be used as well as bearer token", func(t *testing.T) {
-		cfg = ClientConfig{}
-		flagext.DefaultValues(&cfg)
-		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
-		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BearerToken = "mimir-token"
-		cfg.TenantID = "tenant1"
-
-		c, err := NewClient(cfg, log.NewNopLogger())
-		require.NoError(t, err)
-		ctx := context.Background()
-		receivedRequests = nil
-
-		_, err = c.Query(ctx, "up", time.Unix(0, 0))
-		require.NoError(t, err)
-
-		require.Len(t, receivedRequests, 1)
-		assert.Equal(t, "tenant1", receivedRequests[0].Header.Get("X-Scope-OrgID"))
-		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
-	})
-
+			require.Len(t, receivedRequests, 1)
+			for k, v := range tc.expectedHeaders {
+				require.Equal(t, v, receivedRequests[0].Header.Get(k))
+			}
+			for _, k := range tc.expectedEmptyHeaders {
+				require.Empty(t, receivedRequests[0].Header.Get(k))
+			}
+		})
+	}
 }
 
 // ClientMock mocks MimirClient.
