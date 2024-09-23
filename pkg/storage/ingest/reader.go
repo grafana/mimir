@@ -119,7 +119,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		metrics:                               newReaderMetrics(partitionID, reg),
 		consumedOffsetWatcher:                 newPartitionOffsetWatcher(),
-		concurrentFetchersMinBytesMaxWaitTime: defaultMinBytesWaitTime,
+		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMinBytesMaxWait,
 		logger:                                log.With(logger, "partition", partitionID),
 		reg:                                   reg,
 	}
