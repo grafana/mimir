@@ -40,7 +40,7 @@ const (
 
 	// defaultMinBytesWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
 	// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
-	defaultMinBytesWaitTime = 10 * time.Second
+	defaultMinBytesWaitTime = 3 * time.Second
 )
 
 var (
