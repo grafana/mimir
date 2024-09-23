@@ -70,14 +70,14 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		idx := timeRange.PointIdx(p.T)
 		g.accumulatePoint(idx, p.F)
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
 	// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		idx := timeRange.PointIdx(p.T)
 		g.accumulatePoint(idx, 0)
 	}
 

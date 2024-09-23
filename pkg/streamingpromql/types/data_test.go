@@ -4,9 +4,11 @@ package types
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 )
@@ -227,6 +229,76 @@ func TestHasDuplicateSeries(t *testing.T) {
 			actualHasDuplicate := HasDuplicateSeries(testCase.input)
 
 			require.Equal(t, testCase.hasDuplicate, actualHasDuplicate)
+		})
+	}
+}
+
+func TestQueryTimeRange(t *testing.T) {
+	type testCase struct {
+		start         time.Time
+		end           time.Time
+		interval      time.Duration
+		expectedStart int64
+		expectedEnd   int64
+		expectedIntMs int64
+		expectedSteps int
+		testTimes     []time.Time
+		expectedIdxs  []int64
+	}
+
+	startTime := time.Now()
+	testCases := map[string]testCase{
+		"Instant Query": {
+			start:         startTime,
+			end:           startTime,
+			interval:      0,
+			expectedStart: timestamp.FromTime(startTime),
+			expectedEnd:   timestamp.FromTime(startTime),
+			expectedIntMs: 1,
+			expectedSteps: 1,
+			testTimes:     []time.Time{startTime},
+			expectedIdxs:  []int64{0},
+		},
+		"Range Query with 15-minute Interval": {
+			start:         startTime,
+			end:           startTime.Add(time.Hour),
+			interval:      time.Minute * 15,
+			expectedStart: timestamp.FromTime(startTime),
+			expectedEnd:   timestamp.FromTime(startTime.Add(time.Hour)),
+			expectedIntMs: (time.Minute * 15).Milliseconds(),
+			expectedSteps: 5,
+			testTimes: []time.Time{
+				startTime,
+				startTime.Add(time.Minute * 15),
+				startTime.Add(time.Minute * 30),
+				startTime.Add(time.Minute * 45),
+				startTime.Add(time.Hour),
+			},
+			expectedIdxs: []int64{0, 1, 2, 3, 4},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var qtr QueryTimeRange
+
+			if tc.interval == 0 {
+				qtr = NewInstantQueryTimeRange(tc.start)
+			} else {
+				qtr = NewRangeQueryTimeRange(tc.start, tc.end, tc.interval)
+			}
+
+			require.Equal(t, tc.expectedStart, qtr.StartT, "StartT matches")
+			require.Equal(t, tc.expectedEnd, qtr.EndT, "EndT matches")
+			require.Equal(t, tc.expectedIntMs, qtr.IntervalMs, "IntervalMs matches")
+			require.Equal(t, tc.expectedSteps, qtr.StepCount, "StepCount matches")
+
+			for i, tt := range tc.testTimes {
+				ts := timestamp.FromTime(tt)
+				pointIdx := qtr.PointIdx(ts)
+				expectedIdx := tc.expectedIdxs[i]
+				require.Equal(t, expectedIdx, pointIdx, "PointIdx matches for time %v", tt)
+			}
 		})
 	}
 }

@@ -68,7 +68,7 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		idx := timeRange.PointIdx(p.T)
 		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
@@ -90,7 +90,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 	}
 
 	for inputIdx, p := range data.Histograms {
-		outputIdx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		outputIdx := timeRange.PointIdx(p.T)
 
 		if g.histogramSums[outputIdx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.

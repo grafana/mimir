@@ -54,13 +54,11 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.accumulatePoint(idx)
+		g.accumulatePoint(timeRange.PointIdx(p.T))
 	}
 
 	for _, p := range data.Histograms {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
-		g.accumulatePoint(idx)
+		g.accumulatePoint(timeRange.PointIdx(p.T))
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)

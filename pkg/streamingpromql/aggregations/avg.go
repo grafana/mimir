@@ -87,7 +87,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		idx := timeRange.PointIdx(p.T)
 		g.groupSeriesCounts[idx]++
 		if !g.floatPresent[idx] {
 			// The first point is just taken as the value
@@ -168,7 +168,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 	var lastUncopiedHistogram *histogram.FloatHistogram
 
 	for inputIdx, p := range data.Histograms {
-		outputIdx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		outputIdx := timeRange.PointIdx(p.T)
 		g.groupSeriesCounts[outputIdx]++
 
 		if g.histograms[outputIdx] == invalidCombinationOfHistograms {

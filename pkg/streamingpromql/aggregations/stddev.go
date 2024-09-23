@@ -51,7 +51,7 @@ func (g *StddevAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	for _, p := range data.Floats {
-		idx := (p.T - timeRange.StartT) / timeRange.IntervalMs
+		idx := timeRange.PointIdx(p.T)
 
 		g.groupSeriesCounts[idx]++
 		delta := p.F - g.floatMeans[idx]
