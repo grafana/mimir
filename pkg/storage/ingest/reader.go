@@ -736,7 +736,7 @@ func fetchWantFrom(offset int64, recordsPerFetch int) fetchWant {
 	return fetchWant{
 		startOffset: offset,
 		endOffset:   offset + int64(recordsPerFetch),
-		result:      make(chan fetchResult, 1), // buffer of 1 so we can do secondary attempt requests in the background
+		result:      make(chan fetchResult),
 	}
 }
 
@@ -848,7 +848,26 @@ func (fr *fetchResult) startWaitingForConsumption() {
 }
 
 func (fr *fetchResult) finishWaitingForConsumption() {
+	if fr.waitingToBePickedUpFromOrderedFetchesSpan == nil {
+		fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.noWaitingForConsumption")
+	}
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
+}
+
+// mergedWith merges fr with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
+func (fr *fetchResult) mergedWith(other fetchResult) fetchResult {
+	other.logMerged()
+	fr.Records = append(fr.Records, other.Records...)
+	// We ignore HighWatermark, LogStartOffset, LastStableOffset because this result should be more up to date.
+	fr.fetchedBytes += other.fetchedBytes
+	return *fr
+}
+
+func (fr *fetchResult) logMerged() {
+	if fr.ctx == nil {
+		return // maybe fr is just the zero value
+	}
+	level.Debug(spanlogger.FromContext(fr.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
 }
 
 func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
@@ -1119,6 +1138,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 
 	// more aggressive backoff when we're waiting for records to be produced.
 	// It's likely there's already some records produced by the time we get back the response and send another request.
+	// TODO dimitarvdimitrov remove; kafka is already doing this for us with the max wait time.
 	newRecordsProducedBackoff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 10 * time.Millisecond,
 		MaxBackoff: time.Second,
@@ -1131,11 +1151,13 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
+		var previousResult fetchResult
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
 			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, wantSpan, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
+			f = f.mergedWith(previousResult)
 			if f.Err != nil {
 				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, attemptSpan)
 			}
@@ -1153,12 +1175,26 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			errBackoff.Reset()
 			newRecordsProducedBackoff.Reset()
 
-			f.startWaitingForConsumption()
+			previousResult = fetchResult{}
 			select {
 			case w.result <- f:
+				attemptSpan.Finish()
 			case <-ctx.Done():
+				attemptSpan.Finish()
+			default:
+				if w.endOffset >= w.startOffset {
+					// we've fetched all we were asked for;
+					// the whole batch is ready, and we definitely have to wait to send on the channel now
+					f.startWaitingForConsumption()
+					select {
+					case <-ctx.Done():
+					case w.result <- f:
+					}
+					attemptSpan.Finish()
+				}
+
+				previousResult = f
 			}
-			attemptSpan.Finish()
 		}
 		wantSpan.Finish()
 		close(w.result)
