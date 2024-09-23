@@ -26,7 +26,7 @@ type StddevAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+func (g *StddevAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
 	var err error
 
 	// Native histograms are ignored for stddev
