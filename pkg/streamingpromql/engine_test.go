@@ -1776,7 +1776,7 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	`
 
 	// Labels for generating combinations
-	labels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}
+	labels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"}
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
 	// These will be used for binary operations, so we can add up to 3 series.
