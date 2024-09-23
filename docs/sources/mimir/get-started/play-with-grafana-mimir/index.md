@@ -203,7 +203,7 @@ tooling offered by Grafana.
    1. Type `count(up == 0)` in the **Metrics browser** query field. This currently shows `no data` since all instances are running.
 1. Scroll down to **Set evaluation behavior**:
    1. Select `New folder` and type `example-folder` in the **Folder name** field.
-   1. Select `New evaluation group` and type `example-group` in the **Group name** field. Set evaluation interval to `30s`.
+   1. Select `New evaluation group` and type `example-group` in the **Group name** field. Set the evaluation interval to `30s`.
 1. Scroll down to **Configure labels and notifications**:
    1. Select the `Contract point` dropdown and choose `grafana-default-email`.
 1. Click the **Save rule and exit** button.
