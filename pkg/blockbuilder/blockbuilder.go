@@ -465,7 +465,7 @@ consumerLoop:
 		LastSeenOffset:        lastSeenOffset,
 		LastBlockEnd:          lastBlockEnd,
 	}
-	if err := b.commitState(ctx, logger, b.cfg.Kafka.ConsumerGroup, newState); err != nil {
+	if err := b.commitState(ctx, logger, b.cfg.ConsumerGroup, newState); err != nil {
 		return state, err
 	}
 
