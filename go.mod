@@ -82,7 +82,7 @@ require (
 	github.com/twmb/franz-go/plugin/kotel v1.4.1
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
-	go.opentelemetry.io/collector/pdata v1.12.0
+	go.opentelemetry.io/collector/pdata v1.15.0
 	go.opentelemetry.io/otel v1.29.0
 	go.opentelemetry.io/otel/trace v1.29.0
 	go.uber.org/multierr v1.11.0
