@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -799,10 +798,12 @@ type fetchResult struct {
 	kgo.FetchPartition
 	ctx          context.Context
 	fetchedBytes int
+
+	waitingToBePickedUpFromOrderedFetchesSpan opentracing.Span
 }
 
-func (fr fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
-	var logger log.Logger = spanlogger.FromContext(fr.ctx, log.NewLogfmtLogger(os.Stderr))
+func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
+	var logger log.Logger = spanlogger.FromContext(fr.ctx, log.NewNopLogger())
 
 	msg := "fetched records"
 	if fr.Err != nil {
@@ -835,11 +836,12 @@ func (fr fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
 	)
 }
 
-func (fr fetchResult) logOrderedFetch() {
-	if fr.ctx == nil {
-		return
-	}
-	spanlogger.FromContext(fr.ctx, log.NewNopLogger()).DebugLog("msg", "fetch result is enqueued for consuming")
+func (fr *fetchResult) startWaitingForConsumption() {
+	fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.waitingForConsumption")
+}
+
+func (fr *fetchResult) finishWaitingForConsumption() {
+	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
 func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
@@ -1059,6 +1061,9 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
+	partition.EachRecord(func(r *kgo.Record) {
+		spanlogger.FromContext(r.Context, log.NewNopLogger()).DebugLog("msg", "received record")
+	})
 
 	fetchedBytes := len(rawPartitionResp.RecordBatches)
 	if !r.trackCompressedBytes {
@@ -1115,17 +1120,17 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
-		wantSpan, ctx := opentracing.StartSpanFromContext(ctx, "concurrentFetcher.fetch")
+		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			attemptSpan, ctx := opentracing.StartSpanFromContext(ctx, "concurrentFetcher.fetch.attempt")
+			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, wantSpan, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
 			if f.Err != nil {
-				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, spanlogger.FromContext(ctx, logger))
+				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, attemptSpan)
 			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
@@ -1141,8 +1146,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			errBackoff.Reset()
 			newRecordsProducedBackoff.Reset()
 
-			// Propagate the span context to consuming the records.
-			f.ctx = ctx
+			f.startWaitingForConsumption()
 			select {
 			case w.result <- f:
 			case <-ctx.Done():
@@ -1208,10 +1212,10 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
 			bufferedResult = result
-			bufferedResult.logOrderedFetch()
 			readyBufferedResults = r.orderedFetches
 
 		case readyBufferedResults <- bufferedResult:
+			bufferedResult.finishWaitingForConsumption()
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
 		}
