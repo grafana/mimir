@@ -1149,6 +1149,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 
 			f := r.fetchSingle(ctx, w)
 			f = f.mergedWith(previousResult)
+			previousResult = f
 			if f.Err != nil {
 				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
 			}
@@ -1165,26 +1166,23 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			// We don't want to slow down until we hit a larger error.
 			errBackoff.Reset()
 
-			previousResult = fetchResult{}
 			select {
 			case w.result <- f:
-				attemptSpan.Finish()
+				previousResult = fetchResult{}
 			case <-ctx.Done():
-				attemptSpan.Finish()
 			default:
 				if w.startOffset >= w.endOffset {
 					// we've fetched all we were asked for;
 					// the whole batch is ready, and we definitely have to wait to send on the channel now
 					f.startWaitingForConsumption()
 					select {
-					case <-ctx.Done():
 					case w.result <- f:
+						previousResult = fetchResult{}
+					case <-ctx.Done():
 					}
-					attemptSpan.Finish()
 				}
-
-				previousResult = f
 			}
+			attemptSpan.Finish()
 		}
 		wantSpan.Finish()
 		close(w.result)
