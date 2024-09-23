@@ -171,6 +171,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		RuleName:  req.URL.Query()["rule_name"],
 		RuleGroup: req.URL.Query()["rule_group"],
 		File:      req.URL.Query()["file"],
+		Match:     req.URL.Query()["match"],
 	}
 
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
@@ -184,6 +185,11 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 			respondInvalidRequest(logger, w, fmt.Sprintf("not supported value %q", ruleTypeFilter))
 			return
 		}
+	}
+
+	if _, err := parseMatchersParam(rulesReq.Match); err != nil {
+		respondInvalidRequest(logger, w, fmt.Sprintf("invalid match parameter %q", strings.Join(rulesReq.Match, "&")))
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
