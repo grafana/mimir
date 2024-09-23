@@ -15,12 +15,6 @@ const (
 	Ingester     QueryComponent = "ingester"
 )
 
-// cannot import constants from frontend/v2 due to import cycle
-// these are attached to the request's AdditionalQueueDimensions by the frontend.
-const ingesterQueueDimension = "ingester"
-const storeGatewayQueueDimension = "store-gateway"
-const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
-
 // queryComponentFlags interprets annotations by the frontend for the expected query component,
 // and flags whether a query request is expected to be served by the ingesters, store-gateways, or both.
 func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway bool) {

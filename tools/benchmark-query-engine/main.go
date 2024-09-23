@@ -271,8 +271,8 @@ func (a *app) allTestCaseNames() []string {
 	names := make([]string, 0, 2*len(cases))
 
 	for _, c := range cases {
-		names = append(names, benchmarkName+"/"+c.Name()+"/Mimir")
-		names = append(names, benchmarkName+"/"+c.Name()+"/Prometheus")
+		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Mimir")
+		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Prometheus")
 	}
 
 	return names

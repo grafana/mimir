@@ -1330,29 +1330,25 @@ eval instant at 5m exp(exp_root_log)
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
-# Unsupported by streaming engine.
-# eval instant at 5m exp(exp_root_log - 10)
-# 	{l="y"} 22026.465794806718
-# 	{l="x"} 1
+eval instant at 5m exp(exp_root_log - 10)
+	{l="y"} 22026.465794806718
+	{l="x"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 5m exp(exp_root_log - 20)
-# 	{l="x"} 4.5399929762484854e-05
-# 	{l="y"} 1
+eval instant at 5m exp(exp_root_log - 20)
+	{l="x"} 4.5399929762484854e-05
+	{l="y"} 1
 
 eval instant at 5m ln(exp_root_log)
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
-# Unsupported by streaming engine.
-# eval instant at 5m ln(exp_root_log - 10)
-# 	{l="y"} 2.302585092994046
-# 	{l="x"} -Inf
+eval instant at 5m ln(exp_root_log - 10)
+	{l="y"} 2.302585092994046
+	{l="x"} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 5m ln(exp_root_log - 20)
-# 	{l="y"} -Inf
-# 	{l="x"} NaN
+eval instant at 5m ln(exp_root_log - 20)
+	{l="y"} -Inf
+	{l="x"} NaN
 
 eval instant at 5m exp(ln(exp_root_log))
 	{l="y"} 20
@@ -1366,29 +1362,25 @@ eval instant at 5m log2(exp_root_log)
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
-# Unsupported by streaming engine.
-# eval instant at 5m log2(exp_root_log - 10)
-# 	{l="y"} 3.3219280948873626
-# 	{l="x"} -Inf
+eval instant at 5m log2(exp_root_log - 10)
+	{l="y"} 3.3219280948873626
+	{l="x"} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 5m log2(exp_root_log - 20)
-# 	{l="x"} NaN
-# 	{l="y"} -Inf
+eval instant at 5m log2(exp_root_log - 20)
+	{l="x"} NaN
+	{l="y"} -Inf
 
 eval instant at 5m log10(exp_root_log)
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 
-# Unsupported by streaming engine.
-# eval instant at 5m log10(exp_root_log - 10)
-# 	{l="y"} 1
-# 	{l="x"} -Inf
+eval instant at 5m log10(exp_root_log - 10)
+	{l="y"} 1
+	{l="x"} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 5m log10(exp_root_log - 20)
-# 	{l="x"} NaN
-# 	{l="y"} -Inf
+eval instant at 5m log10(exp_root_log - 20)
+	{l="x"} NaN
+	{l="y"} -Inf
 
 clear
 

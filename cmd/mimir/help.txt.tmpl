@@ -43,6 +43,12 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -alertmanager-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -alertmanager-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -alertmanager-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -209,6 +215,12 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -blocks-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -blocks-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -blocks-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -281,6 +293,12 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -common.storage.s3.sts-endpoint string
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
+  -common.storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -common.storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -common.storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -665,6 +683,12 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -ruler-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -ruler-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -ruler-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int
@@ -805,6 +829,8 @@ Usage of ./cmd/mimir/mimir:
     	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
     	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
+  -tests.client.user-agent string
+    	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration

@@ -7,10 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v3"
 )
 
 type Provenance string
@@ -65,15 +66,16 @@ func (r *Route) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // AsAMRoute returns an Alertmanager route from a Grafana route. The ObjectMatchers are converted to Matchers.
 func (r *Route) AsAMRoute() *config.Route {
 	amRoute := &config.Route{
-		Receiver:          r.Receiver,
-		GroupByStr:        r.GroupByStr,
-		GroupBy:           r.GroupBy,
-		GroupByAll:        r.GroupByAll,
-		Match:             r.Match,
-		MatchRE:           r.MatchRE,
-		Matchers:          append(r.Matchers, r.ObjectMatchers...),
-		MuteTimeIntervals: r.MuteTimeIntervals,
-		Continue:          r.Continue,
+		Receiver:            r.Receiver,
+		GroupByStr:          r.GroupByStr,
+		GroupBy:             r.GroupBy,
+		GroupByAll:          r.GroupByAll,
+		Match:               r.Match,
+		MatchRE:             r.MatchRE,
+		Matchers:            append(r.Matchers, r.ObjectMatchers...),
+		MuteTimeIntervals:   r.MuteTimeIntervals,
+		ActiveTimeIntervals: r.ActiveTimeIntervals,
+		Continue:            r.Continue,
 
 		GroupWait:      r.GroupWait,
 		GroupInterval:  r.GroupInterval,
@@ -91,15 +93,16 @@ func (r *Route) AsAMRoute() *config.Route {
 // AsGrafanaRoute returns a Grafana route from an Alertmanager route.
 func AsGrafanaRoute(r *config.Route) *Route {
 	gRoute := &Route{
-		Receiver:          r.Receiver,
-		GroupByStr:        r.GroupByStr,
-		GroupBy:           r.GroupBy,
-		GroupByAll:        r.GroupByAll,
-		Match:             r.Match,
-		MatchRE:           r.MatchRE,
-		Matchers:          r.Matchers,
-		MuteTimeIntervals: r.MuteTimeIntervals,
-		Continue:          r.Continue,
+		Receiver:            r.Receiver,
+		GroupByStr:          r.GroupByStr,
+		GroupBy:             r.GroupBy,
+		GroupByAll:          r.GroupByAll,
+		Match:               r.Match,
+		MatchRE:             r.MatchRE,
+		Matchers:            r.Matchers,
+		MuteTimeIntervals:   r.MuteTimeIntervals,
+		ActiveTimeIntervals: r.ActiveTimeIntervals,
+		Continue:            r.Continue,
 
 		GroupWait:      r.GroupWait,
 		GroupInterval:  r.GroupInterval,
@@ -174,19 +177,23 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func checkTimeInterval(r *Route, timeIntervals map[string]struct{}) error {
+	for _, mt := range r.MuteTimeIntervals {
+		if _, ok := timeIntervals[mt]; !ok {
+			return fmt.Errorf("undefined mute time interval %q used in route", mt)
+		}
+	}
+	for _, mt := range r.ActiveTimeIntervals {
+		if _, ok := timeIntervals[mt]; !ok {
+			return fmt.Errorf("undefined active time interval %q used in route", mt)
+		}
+	}
+
 	for _, sr := range r.Routes {
 		if err := checkTimeInterval(sr, timeIntervals); err != nil {
 			return err
 		}
 	}
-	if len(r.MuteTimeIntervals) == 0 {
-		return nil
-	}
-	for _, mt := range r.MuteTimeIntervals {
-		if _, ok := timeIntervals[mt]; !ok {
-			return fmt.Errorf("undefined time interval %q used in route", mt)
-		}
-	}
+
 	return nil
 }
 

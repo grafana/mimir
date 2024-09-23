@@ -27,10 +27,7 @@ import (
 
 type Aggregation struct {
 	Inner                    types.InstantVectorOperator
-	Start                    int64 // Milliseconds since Unix epoch
-	End                      int64 // Milliseconds since Unix epoch
-	Interval                 int64 // In milliseconds
-	Steps                    int
+	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
@@ -53,9 +50,7 @@ type Aggregation struct {
 
 func NewAggregation(
 	inner types.InstantVectorOperator,
-	startT int64,
-	endT int64,
-	intervalMs int64,
+	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
 	op parser.ItemType,
@@ -79,10 +74,7 @@ func NewAggregation(
 
 	a := &Aggregation{
 		Inner:                    inner,
-		Start:                    startT,
-		End:                      endT,
-		Interval:                 intervalMs,
-		Steps:                    stepCount(startT, endT, intervalMs),
+		TimeRange:                timeRange,
 		Grouping:                 grouping,
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
@@ -270,7 +262,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.TimeRange, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -300,7 +292,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
+		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
 			return err
 		}
 		thisSeriesGroup.remainingSeriesCount--

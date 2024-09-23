@@ -1537,6 +1537,11 @@ mimir_query_engine:
   # applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
+
+  # (experimental) Enable support for unary negation in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-unary-negation
+  [enable_unary_negation: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1623,14 +1628,6 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Non-operational: Enqueue query requests with additional queue
-# dimensions to split tenant request queues into subqueues. This enables
-# separate requests to proceed from a tenant's subqueues even when other
-# subqueues are blocked on slow query requests. Must be set on both
-# query-frontend and scheduler to take effect. (default false)
-# CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
-[additional_query_queue_dimensions_enabled: <boolean> | default = false]
-
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -1677,6 +1674,12 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# (experimental) True to enable pruning dead code (eg. expressions that cannot
+# produce any results) and simplifying expressions (eg. expressions that can be
+# evaluated immediately) in queries.
+# CLI flag: -query-frontend.prune-queries
+[prune_queries: <boolean> | default = false]
+
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -1713,20 +1716,6 @@ The `query_scheduler` block configures the query-scheduler.
 # 429.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-# (experimental) Non-operational: Enqueue query requests with additional queue
-# dimensions to split tenant request queues into subqueues. This enables
-# separate requests to proceed from a tenant's subqueues even when other
-# subqueues are blocked on slow query requests. Must be set on both
-# query-frontend and scheduler to take effect. (default false)
-# CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
-[additional_query_queue_dimensions_enabled: <boolean> | default = false]
-
-# (experimental) Use an experimental version of the query queue which has the
-# same behavior as the existing queue, but integrates tenant selection into the
-# tree model.
-# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
-[use_multi_algorithm_query_queue: <boolean> | default = false]
 
 # (experimental) When enabled, the query scheduler primarily prioritizes
 # dequeuing fairly from queue components and secondarily prioritizes dequeuing
@@ -2103,6 +2092,15 @@ tenant_federation:
   # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
+
+# (experimental) Interval between sending queued rule sync requests to ruler
+# replicas.
+# CLI flag: -ruler.outbound-sync-queue-poll-interval
+[outbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) Interval between applying queued incoming rule sync requests.
+# CLI flag: -ruler.inbound-sync-queue-poll-interval
+[inbound_sync_queue_poll_interval: <duration> | default = 10s]
 
 # (experimental) Number of rules rules that don't have dependencies that we
 # allow to be evaluated concurrently across all tenants. 0 to disable.
@@ -2497,6 +2495,17 @@ alertmanager_client:
 # configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
+
+# (experimental) Enable logging when parsing label matchers. This flag is
+# intended to be used with -alertmanager.utf8-strict-mode-enabled to validate
+# UTF-8 strict mode is working as intended.
+# CLI flag: -alertmanager.log-parsing-label-matchers
+[log_parsing_label_matchers: <boolean> | default = false]
+
+# (experimental) Enable logging of tenant configurations that are incompatible
+# with UTF-8 strict mode.
+# CLI flag: -alertmanager.utf8-migration-logging-enabled
+[utf8_migration_logging: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -4077,6 +4086,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-delay
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
+  # (experimental) Duration after which blocks marked for deletion will still be
+  # queried. This ensures queriers still query blocks that are meant to be
+  # deleted but do not have a replacement yet.
+  # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay
+  [ignore_deletion_mark_while_querying_delay: <duration> | default = 50m]
+
   bucket_index:
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
@@ -5259,6 +5274,18 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 &nbsp;
 
 ```yaml
+# OpenStack Swift application credential id
+# CLI flag: -<prefix>.swift.application-credential-id
+[application_credential_id: <string> | default = ""]
+
+# OpenStack Swift application credential name
+# CLI flag: -<prefix>.swift.application-credential-name
+[application_credential_name: <string> | default = ""]
+
+# OpenStack Swift application credential secret
+# CLI flag: -<prefix>.swift.application-credential-secret
+[application_credential_secret: <string> | default = ""]
+
 # OpenStack Swift authentication API version. 0 to autodetect.
 # CLI flag: -<prefix>.swift.auth-version
 [auth_version: <int> | default = 0]

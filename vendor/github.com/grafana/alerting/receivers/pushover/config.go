@@ -69,7 +69,14 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	}
 
 	settings.Retry, _ = rawSettings.Retry.Int64()
+	if settings.Retry < 30 && (settings.AlertingPriority == 2 || settings.OkPriority == 2) {
+		return settings, errors.New("retry must be at least 30 seconds when priority is set to Emergency")
+	}
+
 	settings.Expire, _ = rawSettings.Expire.Int64()
+	if settings.Expire > 10800 {
+		return settings, errors.New("expire must be at most 10800 seconds")
+	}
 
 	settings.Device = rawSettings.Device
 	settings.AlertingSound = rawSettings.AlertingSound

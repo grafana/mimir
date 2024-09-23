@@ -375,7 +375,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		tqa := newTenantQuerierAssignments(0)
+		tqa := newTenantQuerierAssignments()
 
 		nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
 		require.NoError(t, err)
@@ -423,7 +423,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				queue, err := NewRequestQueue(
 					log.NewNopLogger(),
 					maxOutStandingPerTenant,
-					true,
 					prioritizeQueryComponents,
 					querierForgetDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -483,7 +482,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				// ensure everything was dequeued
-				path, val := tree.tree.Dequeue()
+				path, val := tree.tree.Dequeue(&DequeueArgs{querierID: tqa.currentQuerier})
 				assert.Nil(t, val)
 				assert.Equal(t, path, QueuePath{})
 			})

@@ -125,8 +125,12 @@ The query results comparison can be enabled setting the flag `-proxy.compare-res
 
 When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
 
+By default, query-tee considers equivalent error messages as matching, even if they are not exactly the same.
+This ensures that comparison does not fail for known situations where error messages are non-deterministic.
+Set `-proxy.compare-exact-error-matching=true` to require that error messages match exactly.
+
 {{< admonition type="note" >}}
-Query-tee compares Floating point sample values with a tolerance that you can configure with the `-proxy.value-comparison-tolerance` option.
+Query-tee compares floating point sample values with a tolerance that you can configure with the `-proxy.value-comparison-tolerance` option.
 
 The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
 {{< /admonition >}}

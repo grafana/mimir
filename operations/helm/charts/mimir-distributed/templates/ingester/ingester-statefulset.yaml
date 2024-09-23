@@ -186,6 +186,13 @@ spec:
           {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ingester }}
           {{- if or .Values.global.extraEnv .Values.ingester.env $jaeger_queue_size }}
           env:
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
+            {{/* copy logic from operations/mimir/ingester.libsonnet */}}
+            - name: "GOMAXPROCS"
+              value: {{ addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString | toYaml }}
+            {{- end }}
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
             {{- end }}

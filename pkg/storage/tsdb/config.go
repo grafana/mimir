@@ -98,6 +98,14 @@ const (
 	// partitioner aggregates together two bucket GET object requests.
 	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
 
+	// NewBlockDiscoveryDelayMultiplier is the factor used (multiplied with BucketStoreConfig.SyncInterval) to determine
+	// when querying a newly uploaded block is required.
+	// For example, if BucketStoreConfig.SyncInterval is 15 minutes, then a querier will require that it can query all
+	// blocks uploaded at least 45 minutes ago, and not fail queries when a store-gateway does not respond to queries for
+	// newer blocks (those uploaded in the last 45 minutes).
+	// This gives store-gateways time to discover and load newly created blocks.
+	NewBlockDiscoveryDelayMultiplier = 3
+
 	headChunksEndTimeVarianceHelp = "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance."
 	headStripeSizeHelp            = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
 	headChunksWriteQueueSizeHelp  = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
@@ -106,8 +114,11 @@ const (
 
 	DefaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
-	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
-	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
+	bucketIndexFlagPrefix = "blocks-storage.bucket-store.bucket-index."
+
+	syncIntervalFlag                           = "blocks-storage.bucket-store.sync-interval"
+	ignoreDeletionMarksInStoreGatewayDelayFlag = "blocks-storage.bucket-store.ignore-deletion-marks-delay"
+	ignoreDeletionMarksWhileQueryingDelayFlag  = "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay"
 )
 
 // Validation errors
@@ -122,6 +133,8 @@ var (
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
+	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
+	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -385,19 +398,20 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                   string              `yaml:"sync_dir"`
-	SyncInterval              time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent             int                 `yaml:"max_concurrent" category:"advanced"`
-	MaxConcurrentQueueTimeout time.Duration       `yaml:"max_concurrent_queue_timeout" category:"advanced"`
-	TenantSyncConcurrency     int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency      int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency       int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	IndexCache                IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache               ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache             MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay  time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	BucketIndex               BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin        time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                                string              `yaml:"sync_dir"`
+	SyncInterval                           time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent                          int                 `yaml:"max_concurrent" category:"advanced"`
+	MaxConcurrentQueueTimeout              time.Duration       `yaml:"max_concurrent_queue_timeout" category:"advanced"`
+	TenantSyncConcurrency                  int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency                   int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency                    int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	IndexCache                             IndexCacheConfig    `yaml:"index_cache"`
+	ChunksCache                            ChunksCacheConfig   `yaml:"chunks_cache"`
+	MetadataCache                          MetadataCacheConfig `yaml:"metadata_cache"`
+	IgnoreDeletionMarksInStoreGatewayDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	IgnoreDeletionMarksWhileQueryingDelay  time.Duration       `yaml:"ignore_deletion_mark_while_querying_delay" category:"experimental"`
+	BucketIndex                            BucketIndexConfig   `yaml:"bucket_index"`
+	IgnoreBlocksWithin                     time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -428,15 +442,17 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
-	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
+	f.DurationVar(&cfg.SyncInterval, syncIntervalFlag, 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 200, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.DurationVar(&cfg.MaxConcurrentQueueTimeout, "blocks-storage.bucket-store.max-concurrent-queue-timeout", 5*time.Second, "Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 1, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 4, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
-	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
+	f.DurationVar(&cfg.IgnoreDeletionMarksInStoreGatewayDelay, ignoreDeletionMarksInStoreGatewayDelayFlag, time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
+	f.DurationVar(&cfg.IgnoreDeletionMarksWhileQueryingDelay, ignoreDeletionMarksWhileQueryingDelayFlag, 50*time.Minute, "Duration after which blocks marked for deletion will still be queried. "+
+		"This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
@@ -448,6 +464,16 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
+	}
+	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
+		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have
+		// already unloaded, which will cause consistency check failures.
+		return errInvalidIgnoreDeletionMarksDelayConfig
+	}
+	if cfg.IgnoreDeletionMarksWhileQueryingDelay <= NewBlockDiscoveryDelayMultiplier*cfg.SyncInterval {
+		// If we ignore deletion marks for less time while querying, we may skip querying both newly compacted blocks
+		// and their source blocks, and so missing querying some series.
+		return errIgnoreDeletionMarksDelayTooShort
 	}
 	if err := cfg.IndexCache.Validate(); err != nil {
 		return errors.Wrap(err, "index-cache configuration")

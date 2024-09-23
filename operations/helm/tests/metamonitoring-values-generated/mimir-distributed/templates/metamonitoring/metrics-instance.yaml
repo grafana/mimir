@@ -26,6 +26,13 @@ spec:
             key: "metrics"
         headers:
           X-Scope-OrgID: tenant-1
+      - url: https://amp.example.com/remote_write
+        sigv4:
+          accessKey: abcd
+          profile: abcd
+          region: us-east-1
+          roleARN: arn:aws:iam::1234
+          secretKey: abcd
 
   # Supply an empty namespace selector to look in all namespaces. Remove
   # this to only look in the same namespace as the MetricsInstance CR

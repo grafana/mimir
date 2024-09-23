@@ -147,6 +147,15 @@ eval range from 0 to 4m step 1m sum by (env) (rate(incr_histogram[5m]))
 
 clear
 
+# Test rate() with explicit counter reset information.
+load 1m
+  metric {{sum:3 count:4 buckets:[1 2 1] counter_reset_hint:reset}} {{sum:63 count:124 buckets:[100 4 20] counter_reset_hint:not_reset}}
+
+eval instant at 1m rate(metric[1m])
+  {} {{sum:1 count:2 buckets:[1.65 0.03333333333333333 0.31666666666666665] counter_reset_hint:gauge}}
+
+clear
+
 # Test mixing exponential and custom buckets.
 load 6m
   metric{series="exponential"}         {{sum:4 count:5 buckets:[1 3 1]}}  _                                                                 {{sum:4 count:5 buckets:[1 3 1]}}                                 {{sum:4 count:5 buckets:[1 3 1]}}  _

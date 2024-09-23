@@ -108,7 +108,7 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v5.1.0
+      image: grafana/doc-validator:v5.2.0
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

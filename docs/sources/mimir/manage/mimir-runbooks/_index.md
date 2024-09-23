@@ -624,6 +624,10 @@ How to **investigate**:
         ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
         ```
     - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor#compaction-algorithm" >}}).
+  - Compactor network disk unresponsive:
+    - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
+    - **What it means**: The compactor process has frozen because it's blocked on kernel-mode flushes to an unresponsive network block storage device.
+    - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor" >}}) and set it to view the last 7 days.
 
@@ -915,6 +919,56 @@ How to **investigate**:
     - `memberlist_tcp_transport_packets_received_errors_total`
     - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
 - Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:<line>`.
+
+### MimirGossipMembersEndpointsOutOfSync
+
+This alert fires when the list of endpoints returned by the `gossip-ring` service is out-of-sync.
+
+How it **works**:
+
+- The Kubernetes service `gossip-ring` is used by Mimir to find memberlist seed nodes to join at startup. The service
+  DNS returns all Mimir pods by default, which means any Mimir pod can be used as a seed node (this is the safest option).
+- Due to Kubernetes bugs (for example, [this one](https://github.com/kubernetes/kubernetes/issues/127370)) the pod IPs
+  returned by the service DNS address may go out-of-sync, up to a point where none of the returned IPs belongs to any
+  live pod. If that happens, then new Mimir pods can't join memberlist at startup.
+
+How to **investigate**:
+
+- Check the number of endpoints matching the `gossip-ring` service:
+  ```
+  kubectl --namespace <namespace> get endpoints gossip-ring
+  ```
+- If the number of endpoints is 1000 then it means you reached the Kubernetes limit, the endpoints get truncated and
+  you could be hit by [this bug](https://github.com/kubernetes/kubernetes/issues/127370). Having more than 1000 pods
+  matched by the `gossip-ring` service and then getting endpoints truncated to 1000 is not an issue per-se, but it's
+  an issue if you're running a version of Kubernetes affected by the mentioned bug.
+- If you've been affected by the Kubernetes bug:
+
+  1. Stop the bleed re-creating the service endpoints list
+
+     ```sh
+     CONTEXT="TODO"
+     NAMESPACE="TODO"
+     SERVICE="gossip-ring"
+
+     # Re-apply the list of bad endpoints as is.
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get endpoints "$SERVICE" -o yaml > /tmp/service-endpoints.yaml
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" apply -f /tmp/service-endpoints.yaml
+
+     # Delete a random querier pod to trigger K8S service endpoints reconciliation.
+     POD=$(kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --output="jsonpath={.items[0].metadata.name}")
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod "$POD"
+     ```
+
+  2. Consider removing some deployments from `gossip-ring` selector label, to reduce the number of matching pods below 1000.
+     This is a temporarily workaround, and you should revert it once you upgrade Kubernetes to a version with the bug fixed.
+
+     An example of how you can do it with jsonnet:
+
+     ```
+     querier_deployment+:
+       $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
+     ```
 
 ### EtcdAllocatingTooMuchMemory
 

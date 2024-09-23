@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 
 	"github.com/go-kit/log"
@@ -147,7 +146,7 @@ func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.
 	}
 
 	cfgDesc := alertspb.ToProto(cfg.AlertmanagerConfig, cfg.TemplateFiles, userID)
-	if err := validateUserConfig(logger, cfgDesc, am.limits, userID); err != nil {
+	if err := validateUserConfig(logger, cfgDesc, am.limits, userID, am.cfg.UTF8MigrationLogging); err != nil {
 		level.Warn(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		http.Error(w, fmt.Sprintf("%s: %s", errValidatingConfig, err.Error()), http.StatusBadRequest)
 		return
@@ -185,8 +184,10 @@ func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *ht
 }
 
 // Partially copied from: https://github.com/prometheus/alertmanager/blob/8e861c646bf67599a1704fc843c6a94d519ce312/cli/check_config.go#L65-L96
-func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string) error {
-	validateMatchersInConfigDesc(logger, "api", cfg)
+func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string, utf8MigrationLogging bool) error {
+	if utf8MigrationLogging {
+		validateMatchersInConfigDesc(logger, "api", cfg)
+	}
 
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
@@ -244,6 +245,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 	}
 	defer os.RemoveAll(userTempDir)
 
+	templateFiles := make([]string, 0, len(cfg.Templates))
 	for _, tmpl := range cfg.Templates {
 		templateFilepath, err := safeTemplateFilepath(userTempDir, tmpl.Filename)
 		if err != nil {
@@ -255,11 +257,8 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 			level.Error(logger).Log("msg", "unable to store template file", "err", err, "user", cfg.User)
 			return fmt.Errorf("unable to store template file '%s'", tmpl.Filename)
 		}
-	}
 
-	templateFiles := make([]string, len(amCfg.Templates))
-	for i, t := range amCfg.Templates {
-		templateFiles[i] = filepath.Join(userTempDir, t)
+		templateFiles = append(templateFiles, templateFilepath)
 	}
 
 	_, err = template.FromGlobs(templateFiles, WithCustomFunctions(user))

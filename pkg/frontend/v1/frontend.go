@@ -123,12 +123,10 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		},
 		[]string{"query_component"},
 	)
-	// additional queue dimensions not used in v1/frontend
 	f.requestQueue, err = queue.NewRequestQueue(
 		log,
 		cfg.MaxOutstandingPerTenant,
-		false,
-		false,
+		false, //prioritizeQueryComponents -- currently no-op
 		cfg.QuerierForgetDelay,
 		f.queueLength,
 		f.discardedRequests,

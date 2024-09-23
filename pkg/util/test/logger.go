@@ -3,6 +3,7 @@
 package test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -10,7 +11,8 @@ import (
 )
 
 type testingLogger struct {
-	t testing.TB
+	t   testing.TB
+	mtx sync.Mutex
 }
 
 func NewTestingLogger(t testing.TB) log.Logger {
@@ -22,6 +24,10 @@ func NewTestingLogger(t testing.TB) log.Logger {
 func (l *testingLogger) Log(keyvals ...interface{}) error {
 	// Prepend log with timestamp.
 	keyvals = append([]interface{}{time.Now().String()}, keyvals...)
+
+	l.mtx.Lock()
 	l.t.Log(keyvals...)
+	l.mtx.Unlock()
+
 	return nil
 }

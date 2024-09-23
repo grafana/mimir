@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
@@ -26,8 +25,6 @@ type InstantVectorSelector struct {
 	Selector                 *Selector
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
-	numSteps int
-
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
 }
@@ -39,9 +36,6 @@ func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	// Compute value we need on every call to NextSeries() once, here.
-	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
-
 	return v.Selector.SeriesMetadata(ctx)
 }
 
@@ -70,7 +64,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	lastHistogramT := int64(math.MinInt64)
 	var lastHistogram *histogram.FloatHistogram
 
-	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
+	for stepT := v.Selector.TimeRange.StartT; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMs {
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram
@@ -100,28 +94,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// if they are going to mutate it, so this is safe to do.
 				t, h = atT, lastHistogram
 			} else {
-				// v.memoizedIterator.AtFloatHistogram() does not allow us to supply an existing histogram and instead creates one
-				// and returns it.
-				// The problem is that histograms with the same schema returned from chunkenc.floatHistogramIterator share the same
-				// underlying Span slices.
-				// This causes a problem when a NH schema is modified (for example, during a Sum) then the other NHs with the same
-				// spans are also modified. As such, we need to create a new Span for each NH.
-				// We can guarantee new spans by providing a NH to chunkIterator.AtFloatHistogram(). This is because the
-				// chunkIterator copies the values into the NH.
-				// This doesn't have an overhead for us because memoizedIterator.AtFloatHistogram creates a NH when none is supplied.
-
-				// The original line:
-				//   t, h = v.memoizedIterator.AtFloatHistogram()
-				// may be restorable if Prometheus accepts creating new Span slices for each native histogram.
-				// This creates an overhead for Prometheus since they don't currently experience any problems sharing spans
-				// because they copy NHs before performing any operations.
-				// TODO(jhesketh): change this back if https://github.com/prometheus/prometheus/pull/14771 merges
-
-				t = v.memoizedIterator.AtT()
-				h = &histogram.FloatHistogram{}
-				v.chunkIterator.AtFloatHistogram(h)
-				lastHistogramT = t
-				lastHistogram = h
+				t, h = v.memoizedIterator.AtFloatHistogram()
 			}
 
 		default:
@@ -143,10 +116,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					// it if they are going to mutate it, but consuming operators don't check the underlying bucket slices, so without
 					// this, we can end up with incorrect query results.
 					h = lastHistogram
-				} else {
-					applyWorkaroundForSharedSpanSlices(h)
-					lastHistogramT = t
-					lastHistogram = h
 				}
 			}
 		}
@@ -163,16 +132,18 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// Only create the slice once we know the series is a histogram or not.
 				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 				var err error
-				if data.Histograms, err = types.HPointSlicePool.Get(v.numSteps, v.MemoryConsumptionTracker); err != nil {
+				if data.Histograms, err = types.HPointSlicePool.Get(v.Selector.TimeRange.StepCount, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
+			lastHistogramT = t
+			lastHistogram = h
 		} else {
 			if len(data.Floats) == 0 {
 				// Only create the slice once we know the series is a histogram or not
 				var err error
-				if data.Floats, err = types.FPointSlicePool.Get(v.numSteps, v.MemoryConsumptionTracker); err != nil {
+				if data.Floats, err = types.FPointSlicePool.Get(v.Selector.TimeRange.StepCount, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
@@ -189,15 +160,4 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (v *InstantVectorSelector) Close() {
 	v.Selector.Close()
-}
-
-// v.memoizedIterator.PeekPrev() does not allow us to supply an existing histogram and instead creates one and returns it.
-// The problem is that histograms with the same schema returned from chunkenc.floatHistogramIterator share the same
-// underlying Span slices.
-// This causes a problem when a NH schema is modified (for example, during a Sum) then the other NHs with the same
-// spans are also modified. As such, we need to create new Span slices for each NH.
-// TODO(jhesketh): remove this if https://github.com/prometheus/prometheus/pull/14771 merges
-func applyWorkaroundForSharedSpanSlices(h *histogram.FloatHistogram) {
-	h.PositiveSpans = slices.Clone(h.PositiveSpans)
-	h.NegativeSpans = slices.Clone(h.NegativeSpans)
 }

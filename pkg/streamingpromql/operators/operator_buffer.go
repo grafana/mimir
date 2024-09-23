@@ -9,7 +9,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// InstantVectorOperatorBuffer buffers series data until it is needed by BinaryOperation.
+// InstantVectorOperatorBuffer buffers series data until it is needed by an operator.
 //
 // For example, if this buffer is being used for a binary operation and the source operator produces series in order A, B, C,
 // but their corresponding output series from the binary operation are in order B, A, C, InstantVectorOperatorBuffer

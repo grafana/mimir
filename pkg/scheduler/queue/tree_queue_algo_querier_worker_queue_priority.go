@@ -67,12 +67,12 @@ func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
 	}
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int) {
-	qa.currentQuerierWorker = workerID
+func (qa *QuerierWorkerQueuePriorityAlgo) setup(dequeueArgs *DequeueArgs) {
+	qa.currentQuerierWorker = dequeueArgs.workerID
 	if len(qa.nodeOrder) == 0 {
 		qa.currentNodeOrderIndex = 0
 	} else {
-		qa.currentNodeOrderIndex = workerID % len(qa.nodeOrder)
+		qa.currentNodeOrderIndex = qa.currentQuerierWorker % len(qa.nodeOrder)
 	}
 }
 
@@ -84,10 +84,6 @@ func (qa *QuerierWorkerQueuePriorityAlgo) wrapCurrentNodeOrderIndex(increment bo
 	if qa.currentNodeOrderIndex >= len(qa.nodeOrder) {
 		qa.currentNodeOrderIndex = 0
 	}
-}
-
-func (qa *QuerierWorkerQueuePriorityAlgo) checkedAllNodes(n *Node) bool {
-	return n.childrenChecked == len(n.queueMap)
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
@@ -115,13 +111,12 @@ func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 	qa.nodeCounts[child.Name()]++
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) (*Node, bool) {
+func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) *Node {
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
-	checkedAllNodes := qa.checkedAllNodes(node)
 	if childNode, ok := node.queueMap[currentNodeName]; ok {
-		return childNode, checkedAllNodes
+		return childNode
 	}
-	return nil, checkedAllNodes
+	return nil
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeuedFrom *Node) {

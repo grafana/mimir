@@ -9,7 +9,6 @@ import (
 	"context"
 	"math"
 	"os"
-	"slices"
 	"testing"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
@@ -33,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -68,14 +67,14 @@ func BenchmarkQuery(b *testing.B) {
 				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
 				mimirResult, mimirClose := c.Run(ctx, b, start, end, interval, mimirEngine, q)
 
-				requireEqualResults(b, c.Expr, prometheusResult, mimirResult)
+				testutils.RequireEqualResults(b, c.Expr, prometheusResult, mimirResult, true)
 
 				prometheusClose()
 				mimirClose()
 			}
 
 			for name, engine := range engines {
-				b.Run(name, func(b *testing.B) {
+				b.Run("engine="+name, func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
 						res, cleanup := c.Run(ctx, b, start, end, interval, engine, q)
 
@@ -109,7 +108,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			requireEqualResults(t, c.Expr, prometheusResult, mimirResult)
+			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, true)
 
 			prometheusClose()
 			mimirClose()
@@ -173,72 +172,6 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.Equal(t, int64(0), series.Histograms[0].T)
 	require.Equal(t, 12.0, series.Histograms[0].H.Count)
 	require.Equal(t, 18.4, series.Histograms[0].H.Sum)
-}
-
-// Why do we do this rather than require.Equal(t, expected, actual)?
-// It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-func requireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) {
-	require.Equal(t, expected.Err, actual.Err)
-	require.Equal(t, expected.Value.Type(), actual.Value.Type())
-
-	expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
-	actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
-	require.ElementsMatch(t, expectedWarnings, actualWarnings)
-	require.ElementsMatch(t, expectedInfos, actualInfos)
-
-	switch expected.Value.Type() {
-	case parser.ValueTypeVector:
-		expectedVector, err := expected.Vector()
-		require.NoError(t, err)
-		actualVector, err := actual.Vector()
-		require.NoError(t, err)
-
-		// Instant queries don't guarantee any particular sort order, so sort results here so that we can easily compare them.
-		sortVector(expectedVector)
-		sortVector(actualVector)
-
-		require.Len(t, actualVector, len(expectedVector))
-
-		for i, expectedSample := range expectedVector {
-			actualSample := actualVector[i]
-
-			require.Equal(t, expectedSample.Metric, actualSample.Metric)
-			require.Equal(t, expectedSample.T, actualSample.T)
-			require.Equal(t, expectedSample.H, actualSample.H)
-			if expectedSample.F == 0 {
-				require.Equal(t, expectedSample.F, actualSample.F)
-			} else {
-				require.InEpsilon(t, expectedSample.F, actualSample.F, 1e-10)
-			}
-		}
-	case parser.ValueTypeMatrix:
-		expectedMatrix, err := expected.Matrix()
-		require.NoError(t, err)
-		actualMatrix, err := actual.Matrix()
-		require.NoError(t, err)
-
-		require.Len(t, actualMatrix, len(expectedMatrix))
-
-		for i, expectedSeries := range expectedMatrix {
-			actualSeries := actualMatrix[i]
-
-			require.Equal(t, expectedSeries.Metric, actualSeries.Metric)
-			require.Equal(t, expectedSeries.Histograms, actualSeries.Histograms)
-
-			for j, expectedPoint := range expectedSeries.Floats {
-				actualPoint := actualSeries.Floats[j]
-
-				require.Equal(t, expectedPoint.T, actualPoint.T)
-				if expectedPoint.F == 0 {
-					require.Equal(t, expectedPoint.F, actualPoint.F)
-				} else {
-					require.InEpsilonf(t, expectedPoint.F, actualPoint.F, 1e-10, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
-				}
-			}
-		}
-	default:
-		require.Fail(t, "unexpected value type", "type: %v", expected.Value.Type())
-	}
 }
 
 func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable {
@@ -316,10 +249,4 @@ type alwaysQueryIngestersConfigProvider struct{}
 
 func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Duration {
 	return time.Duration(math.MaxInt64)
-}
-
-func sortVector(v promql.Vector) {
-	slices.SortFunc(v, func(a, b promql.Sample) int {
-		return labels.Compare(a.Metric, b.Metric)
-	})
 }

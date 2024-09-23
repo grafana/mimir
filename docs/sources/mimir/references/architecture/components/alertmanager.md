@@ -183,7 +183,9 @@ Grafana Mimir provides a number of tools to help you identify whether any existi
 
 To identify affected tenant configurations, take the following steps:
 
-1. Make sure Mimir is running version 2.12 or later with debug-level logging enabled.
+1. Make sure Mimir is running version 2.12 or later.
+
+1. Enable [`utf8-migration-logging-enabled`]({{< relref "./../../../configure/configuration-parameters#alertmanager" >}}) and set [`log_level`]({{< relref "./../../../configure/configuration-parameters#server" >}}) to `debug`. You must restart Mimir for the changes to take effect.
 
 1. To identify any tenant configurations that are incompatible with UTF-8 (meaning the tenant configuration fails to load and the [fallback configuration](#fallback-configuration) is used instead), search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. Each log line includes the invalid matcher from the tenant configuration and the ID of the affected tenant. For example:
 
@@ -225,4 +227,4 @@ It's rare to find cases of disagreement in a tenant configuration, as most tenan
 
 1. Any incompatible tenant configurations will fail to load. To identify if any tenant configurations are failing to load, search the Mimir server logs for lines containing `error applying config`, or query the `cortex_alertmanager_config_last_reload_successful` gauge for `0`.
 
-1. You can disable debug-level logging.
+1. You can disable [`utf8-migration-logging-enabled`]({{< relref "./../../../configure/configuration-parameters#alertmanager" >}}) and set [`log_level`]({{< relref "./../../../configure/configuration-parameters#server" >}}) back to its previous value.

@@ -22,6 +22,11 @@ rollout_operator:
 ingester:
   zoneAwareReplication:
     enabled: false
+  resources:
+    requests:
+      # request the same as jsonnet, so that the derived GOMAXPROCS are the same
+      cpu: 4
+      memory: 15Gi
 store_gateway:
   zoneAwareReplication:
     enabled: false

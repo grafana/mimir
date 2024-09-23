@@ -4,7 +4,9 @@ receivers:
   otlp: # Allow sending data via OTLP protocol
     protocols:
       grpc:
+        endpoint: 0.0.0.0:4317
       http:
+        endpoint: 0.0.0.0:4318
 
   # Data sources: metrics
   prometheus: # Scrape self

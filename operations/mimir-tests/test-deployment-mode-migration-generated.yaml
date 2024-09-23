@@ -1800,6 +1800,8 @@ spec:
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
         image: grafana/mimir:2.13.0
@@ -1922,6 +1924,8 @@ spec:
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
         image: grafana/mimir:2.13.0
@@ -2044,6 +2048,8 @@ spec:
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
         image: grafana/mimir:2.13.0

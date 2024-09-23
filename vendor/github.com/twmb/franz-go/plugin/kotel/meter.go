@@ -33,6 +33,8 @@ type Meter struct {
 	provider    metric.MeterProvider
 	meter       metric.Meter
 	instruments instruments
+
+	mergeConnectsMeter bool
 }
 
 // MeterOpt interface used for setting optional config properties.
@@ -50,6 +52,20 @@ func MeterProvider(provider metric.MeterProvider) MeterOpt {
 			m.provider = provider
 		}
 	})
+}
+
+// WithMergedConnectsMeter merges the `messaging.kafka.connect_errors.count`
+// counter into the `messaging.kafka.connects.count` counter, adding an
+// attribute "outcome" with the values "success" or "failure". This option
+// shall be used when a single metric with different dimensions is preferred
+// over two separate metrics that produce data at alternating intervals.
+// For example, it becomes possible to alert on the metric no longer
+// producing data.
+func WithMergedConnectsMeter() MeterOpt {
+	return meterOptFunc(func(m *Meter) {
+		m.mergeConnectsMeter = true
+	})
+
 }
 
 func (o meterOptFunc) apply(m *Meter) {
@@ -105,13 +121,17 @@ func (m *Meter) newInstruments() instruments {
 		log.Printf("failed to create connects instrument, %v", err)
 	}
 
-	connectErrs, err := m.meter.Int64Counter(
-		"messaging.kafka.connect_errors.count",
-		metric.WithUnit(dimensionless),
-		metric.WithDescription("Total number of connection errors, by broker"),
-	)
-	if err != nil {
-		log.Printf("failed to create connectErrs instrument, %v", err)
+	var connectErrs metric.Int64Counter
+	if !m.mergeConnectsMeter {
+		var err error
+		connectErrs, err = m.meter.Int64Counter(
+			"messaging.kafka.connect_errors.count",
+			metric.WithUnit(dimensionless),
+			metric.WithDescription("Total number of connection errors, by broker"),
+		)
+		if err != nil {
+			log.Printf("failed to create connectErrs instrument, %v", err)
+		}
 	}
 
 	disconnects, err := m.meter.Int64Counter(
@@ -232,6 +252,30 @@ func strnode(node int32) string {
 
 func (m *Meter) OnBrokerConnect(meta kgo.BrokerMetadata, _ time.Duration, _ net.Conn, err error) {
 	node := strnode(meta.NodeID)
+
+	if m.mergeConnectsMeter {
+		if err != nil {
+			m.instruments.connects.Add(
+				context.Background(),
+				1,
+				metric.WithAttributeSet(attribute.NewSet(
+					attribute.String("node_id", node),
+					attribute.String("outcome", "failure"),
+				)),
+			)
+			return
+		}
+		m.instruments.connects.Add(
+			context.Background(),
+			1,
+			metric.WithAttributeSet(attribute.NewSet(
+				attribute.String("node_id", node),
+				attribute.String("outcome", "success"),
+			)),
+		)
+		return
+	}
+
 	attributes := attribute.NewSet(attribute.String("node_id", node))
 	if err != nil {
 		m.instruments.connectErrs.Add(

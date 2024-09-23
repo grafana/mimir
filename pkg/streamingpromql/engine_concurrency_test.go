@@ -36,6 +36,10 @@ func TestConcurrentQueries(t *testing.T) {
 			native_histogram{group="a", instance="2"} {{schema:5 sum:8 count:7 buckets:[1 5 1]}}+{{schema:5 sum:10 count:7 buckets:[1 2 3 1]}}x9
 			native_histogram{group="b", instance="1"} {{schema:5 sum:10 count:7 buckets:[1 2 3 1]}}+{{schema:5 sum:8 count:7 buckets:[1 5 1]}}x9
 			native_histogram{group="b", instance="2"} {{schema:3 sum:4 count:4 buckets:[4]}}
+			float{group="a", instance="1"} 1+2x9
+			float{group="a", instance="2"} 3+2.5x9
+			float{group="b", instance="1"} 1 2 4 2 7 1 2 3 4
+			float{group="b", instance="2"} 1 9 2 8 11 12 13 14 15
 	`
 
 	startT := timestamp.Time(0)
@@ -62,6 +66,12 @@ func TestConcurrentQueries(t *testing.T) {
 			step:  time.Minute,
 		},
 		{
+			expr:  `sum(rate(native_histogram[5m]))`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
 			expr:  `count_over_time(native_histogram[5m])`,
 			start: startT,
 			end:   startT.Add(10 * time.Minute),
@@ -75,6 +85,50 @@ func TestConcurrentQueries(t *testing.T) {
 		},
 		{
 			expr:  `avg_over_time(native_histogram[5m])`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `rate(float[5m])`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			// Sum of floats into single group
+			expr:  `sum(float)`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			// Sum of floats into many groups
+			expr:  `sum by (group) (float)`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `sum(rate(float[5m]))`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `count_over_time(float[5m])`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `sum_over_time(float[5m])`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `avg_over_time(float[5m])`,
 			start: startT,
 			end:   startT.Add(10 * time.Minute),
 			step:  time.Minute,

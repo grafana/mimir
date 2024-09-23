@@ -21,9 +21,12 @@ var (
 // to a standard golang context error, and if it is, wraps the former with the latter.
 // If the given error isn't a gRPC error, or it doesn't correspond to a standard golang
 // context error, the original error is returned.
-func WrapGRPCErrorWithContextError(err error) error {
+func WrapGRPCErrorWithContextError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
+	}
+	if ctx.Err() == nil {
+		return err
 	}
 	if stat, ok := grpcutil.ErrorToStatus(err); ok {
 		switch stat.Code() {

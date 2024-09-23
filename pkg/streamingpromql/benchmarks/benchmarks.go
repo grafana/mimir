@@ -148,6 +148,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "nh_X / a_X",
 		},
+		{
+			Expr: "2 * a_X",
+		},
+		{
+			Expr: "nh_X / 2",
+		},
 		// Test the case where one side of a binary operation has many more series than the other.
 		{
 			Expr: `a_100{l=~"[13579]."} - b_100`,
@@ -204,6 +210,27 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "sum by (l)(nh_X)",
+		},
+		{
+			Expr: "avg(a_X)",
+		},
+		{
+			Expr: "avg without (l)(h_X)",
+		},
+		{
+			Expr: "avg without (le)(h_X)",
+		},
+		{
+			Expr: "avg(nh_X)",
+		},
+		{
+			Expr: "avg by (l)(h_X)",
+		},
+		{
+			Expr: "avg by (le)(h_X)",
+		},
+		{
+			Expr: "avg by (l)(nh_X)",
 		},
 		//{
 		//	Expr: "count_values('value', h_X)",

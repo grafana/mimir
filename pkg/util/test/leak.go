@@ -8,15 +8,15 @@ import (
 	"go.uber.org/goleak"
 )
 
-func VerifyNoLeak(t testing.TB) {
+func VerifyNoLeak(t testing.TB, extraOpts ...goleak.Option) {
 	// Run it as a cleanup function so that "last added, first called" ordering execution is guaranteed.
 	t.Cleanup(func() {
-		goleak.VerifyNone(t, goLeakOptions()...)
+		goleak.VerifyNone(t, append(goLeakOptions(), extraOpts...)...)
 	})
 }
 
-func VerifyNoLeakTestMain(m *testing.M) {
-	goleak.VerifyTestMain(m, goLeakOptions()...)
+func VerifyNoLeakTestMain(m *testing.M, extraOpts ...goleak.Option) {
+	goleak.VerifyTestMain(m, append(goLeakOptions(), extraOpts...)...)
 }
 
 func goLeakOptions() []goleak.Option {

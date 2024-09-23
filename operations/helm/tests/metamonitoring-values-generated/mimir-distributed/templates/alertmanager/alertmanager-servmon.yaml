@@ -32,6 +32,7 @@ spec:
           sourceLabels: [job]
           replacement: "citestns/alertmanager"
           targetLabel: job
-        - replacement: "metamonitoring-values"
+        - action: replace
+          replacement: "metamonitoring-values"
           targetLabel: cluster
       scheme: http

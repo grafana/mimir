@@ -103,9 +103,10 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 	}
 
 	samplesComparator := querytee.NewSamplesComparator(querytee.SampleComparisonOptions{
-		Tolerance:         cfg.ProxyConfig.ValueComparisonTolerance,
-		UseRelativeError:  cfg.ProxyConfig.UseRelativeError,
-		SkipRecentSamples: cfg.ProxyConfig.SkipRecentSamples,
+		Tolerance:              cfg.ProxyConfig.ValueComparisonTolerance,
+		UseRelativeError:       cfg.ProxyConfig.UseRelativeError,
+		SkipRecentSamples:      cfg.ProxyConfig.SkipRecentSamples,
+		RequireExactErrorMatch: cfg.ProxyConfig.RequireExactErrorMatch,
 	})
 
 	var instantQueryTransformers []querytee.RequestTransformer

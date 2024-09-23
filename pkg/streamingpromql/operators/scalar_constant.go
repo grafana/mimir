@@ -13,9 +13,7 @@ import (
 
 type ScalarConstant struct {
 	Value                    float64
-	Start                    int64 // Milliseconds since Unix epoch
-	End                      int64 // Milliseconds since Unix epoch
-	Interval                 int64 // In milliseconds
+	TimeRange                types.QueryTimeRange
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
@@ -25,34 +23,29 @@ var _ types.ScalarOperator = &ScalarConstant{}
 
 func NewScalarConstant(
 	value float64,
-	start int64,
-	end int64,
-	interval int64,
+	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *ScalarConstant {
 	return &ScalarConstant{
 		Value:                    value,
-		Start:                    start,
-		End:                      end,
-		Interval:                 interval,
+		TimeRange:                timeRange,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
 }
 
 func (s *ScalarConstant) GetValues(_ context.Context) (types.ScalarData, error) {
-	numSteps := stepCount(s.Start, s.End, s.Interval)
-	samples, err := types.FPointSlicePool.Get(numSteps, s.MemoryConsumptionTracker)
+	samples, err := types.FPointSlicePool.Get(s.TimeRange.StepCount, s.MemoryConsumptionTracker)
 
 	if err != nil {
 		return types.ScalarData{}, err
 	}
 
-	samples = samples[:numSteps]
+	samples = samples[:s.TimeRange.StepCount]
 
-	for step := 0; step < numSteps; step++ {
-		samples[step].T = s.Start + int64(step)*s.Interval
+	for step := 0; step < s.TimeRange.StepCount; step++ {
+		samples[step].T = s.TimeRange.StartT + int64(step)*s.TimeRange.IntervalMs
 		samples[step].F = s.Value
 	}
 

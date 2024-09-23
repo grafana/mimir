@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
@@ -235,7 +236,7 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			aggregator, err := NewAggregation(nil, 0, 0, 1, testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
+			aggregator, err := NewAggregation(nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
 			require.NoError(t, err)
 			bytesFunc, labelsFunc := aggregator.seriesToGroupFuncs()
 

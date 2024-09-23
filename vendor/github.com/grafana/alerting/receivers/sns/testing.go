@@ -17,3 +17,9 @@ const FullValidConfigForTesting = `{
 		"role_arn": "arn:aws:iam:us-east-1:0123456789:role/my-role"
 	}
 }`
+
+// FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets
+const FullValidSecretsForTesting = `{
+	"sigv4.access_key": "secret-access-key",
+	"sigv4.secret_key": "secret-secret-key"
+}`

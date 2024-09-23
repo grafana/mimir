@@ -82,36 +82,6 @@ func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
 // or a frontend/v1 request when running with the RequestQueue embedded in the v1 frontend.
 type QueryRequest interface{}
 
-// QuerierWorkerConn is a connection from the querier-worker to the request queue.
-//
-// WorkerID is unique only per querier; querier-1 and querier-2 will both have a WorkerID=0.
-// WorkerID is derived internally in order to distribute worker connections across queue dimensions.
-// Unregistered querier-worker connections are assigned a sentinel unregisteredWorkerID.
-//
-// QuerierWorkerConn is also used when passing querierWorkerOperation messages to update querier connection statuses.
-// The querierWorkerOperations can be specific to a querier, but not a particular worker connection (notifyShutdown),
-// or may apply to all queriers instead of any particular querier (forgetDisconnected).
-// In these cases the relevant ID fields are ignored and should be left as their unregistered or zero values.
-type QuerierWorkerConn struct {
-	ctx       context.Context
-	QuerierID QuerierID
-	WorkerID  int
-}
-
-const unregisteredWorkerID = -1
-
-func NewUnregisteredQuerierWorkerConn(ctx context.Context, querierID QuerierID) *QuerierWorkerConn {
-	return &QuerierWorkerConn{
-		ctx:       ctx,
-		QuerierID: querierID,
-		WorkerID:  unregisteredWorkerID,
-	}
-}
-
-func (qwc *QuerierWorkerConn) IsRegistered() bool {
-	return qwc.WorkerID != unregisteredWorkerID
-}
-
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
 // Dequeuing selects the next request from an appropriate queue given the state of the system.
 // Two layers of QueueAlgorithms are used by the RequestQueue to select the next queue to dequeue a request from:
@@ -240,8 +210,7 @@ type requestToEnqueue struct {
 func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
-	useMultiAlgoQueue bool,
-	_ bool,
+	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
@@ -277,7 +246,7 @@ func NewRequestQueue(
 		waitingDequeueRequestsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, useMultiAlgoQueue, false, forgetDelay),
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, prioritizeQueryComponents, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -419,16 +388,8 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // a) a query request which was successfully dequeued for the querier, or
 // b) an ErrQuerierShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(dequeueReq *QuerierWorkerDequeueRequest) (done bool) {
-	// TODO: This is a temporary solution to set the current querier-worker for the QuerierWorkerQueuePriorityAlgo.
-	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		for _, algoState := range itq.algosByDepth {
-			if qwpAlgo, ok := algoState.(*QuerierWorkerQueuePriorityAlgo); ok {
-				qwpAlgo.SetCurrentQuerierWorker(dequeueReq.WorkerID)
-			}
-		}
-	}
 
-	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(dequeueReq.lastTenantIndex.last, dequeueReq.QuerierID)
+	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(dequeueReq)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate AwaitRequestForQuerier with an error now...
 		dequeueReq.sendError(err)
@@ -676,7 +637,7 @@ func NewQuerierWorkerDequeueRequest(querierWorkerConn *QuerierWorkerConn, lastTe
 }
 
 // querierWorkerDequeueResponse is the response for a QuerierWorkerDequeueRequest,
-// to be written to the dequeue requests 's receiver channel.
+// to be written to the dequeue request's receiver channel.
 // Errors are embedded in this response rather than written to a separate error channel
 // so that lastTenantIndex can still be returned back to the querier connection.
 type querierWorkerDequeueResponse struct {

@@ -13,9 +13,8 @@ eval instant at 15m metric{env="1"}
 	metric{env="1"} 120
 
 # Drops __name__ for unary operators
-# Unsupported by streaming engine.
-# eval instant at 15m -metric
-# 	{env="1"} -120
+eval instant at 15m -metric
+	{env="1"} -120
 
 # Drops __name__ for binary operators
 eval instant at 15m metric + another_metric
@@ -32,9 +31,8 @@ eval instant at 15m metric + another_metric
 # 	{env="1"} 1
 
 # Drops __name__ for vector-scalar operations
-# Unsupported by streaming engine.
-# eval instant at 15m metric * 2
-# 	{env="1"} 240
+eval instant at 15m metric * 2
+	{env="1"} 240
 
 # Drops __name__ for instant-vector functions
 # Unsupported by streaming engine.

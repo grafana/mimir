@@ -132,9 +132,11 @@ type Config struct {
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 
+	OutboundSyncQueuePollInterval time.Duration `yaml:"outbound_sync_queue_poll_interval" category:"experimental"`
+	InboundSyncQueuePollInterval  time.Duration `yaml:"inbound_sync_queue_poll_interval" category:"experimental"`
+
 	// Allow to override timers for testing purposes.
-	RingCheckPeriod             time.Duration `yaml:"-"`
-	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
+	RingCheckPeriod time.Duration `yaml:"-"`
 
 	MaxIndependentRuleEvaluationConcurrency                   int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
 	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
@@ -201,14 +203,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
 
-	cfg.RingCheckPeriod = 5 * time.Second
-}
+	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
+	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
 
-func (cfg *Config) syncQueuePollFrequency() time.Duration {
-	if cfg.rulerSyncQueuePollFrequency > 0 {
-		return cfg.rulerSyncQueuePollFrequency
-	}
-	return defaultRulerSyncPollFrequency
+	cfg.RingCheckPeriod = 5 * time.Second
 }
 
 type rulerMetrics struct {
@@ -365,8 +363,8 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		logger:            logger,
 		limits:            limits,
 		clientsPool:       clientPool,
-		outboundSyncQueue: newRulerSyncQueue(cfg.syncQueuePollFrequency()),
-		inboundSyncQueue:  newRulerSyncQueue(cfg.syncQueuePollFrequency()),
+		outboundSyncQueue: newRulerSyncQueue(cfg.OutboundSyncQueuePollInterval),
+		inboundSyncQueue:  newRulerSyncQueue(cfg.InboundSyncQueuePollInterval),
 		allowedTenants:    util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
 		metrics:           newRulerMetrics(reg),
 	}

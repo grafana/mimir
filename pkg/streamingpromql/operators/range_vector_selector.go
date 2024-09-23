@@ -22,10 +22,8 @@ type RangeVectorSelector struct {
 	Selector *Selector
 
 	rangeMilliseconds int64
-	numSteps          int
-
-	chunkIterator chunkenc.Iterator
-	nextT         int64
+	chunkIterator     chunkenc.Iterator
+	nextT             int64
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
@@ -37,13 +35,12 @@ func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
 func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
-	m.numSteps = stepCount(m.Selector.Start, m.Selector.End, m.Selector.Interval)
 
 	return m.Selector.SeriesMetadata(ctx)
 }
 
 func (m *RangeVectorSelector) StepCount() int {
-	return m.numSteps
+	return m.Selector.TimeRange.StepCount
 }
 
 func (m *RangeVectorSelector) Range() time.Duration {
@@ -57,12 +54,12 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 		return err
 	}
 
-	m.nextT = m.Selector.Start
+	m.nextT = m.Selector.TimeRange.StartT
 	return nil
 }
 
 func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (types.RangeVectorStepData, error) {
-	if m.nextT > m.Selector.End {
+	if m.nextT > m.Selector.TimeRange.EndT {
 		return types.RangeVectorStepData{}, types.EOS
 	}
 
@@ -84,7 +81,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, hi
 		return types.RangeVectorStepData{}, err
 	}
 
-	m.nextT += m.Selector.Interval
+	m.nextT += m.Selector.TimeRange.IntervalMs
 
 	return types.RangeVectorStepData{
 		StepT:      stepT,

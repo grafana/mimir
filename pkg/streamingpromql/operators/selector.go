@@ -18,10 +18,8 @@ import (
 
 type Selector struct {
 	Queryable storage.Queryable
-	Start     int64  // Milliseconds since Unix epoch
-	End       int64  // Milliseconds since Unix epoch
+	TimeRange types.QueryTimeRange
 	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
-	Interval  int64  // In milliseconds
 	Offset    int64  // In milliseconds
 	Matchers  []*labels.Matcher
 
@@ -48,8 +46,8 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 		return nil, errors.New("invalid Selector configuration: both LookbackDelta and Range are non-zero")
 	}
 
-	startTimestamp := s.Start
-	endTimestamp := s.End
+	startTimestamp := s.TimeRange.StartT
+	endTimestamp := s.TimeRange.EndT
 
 	if s.Timestamp != nil {
 		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
@@ -65,7 +63,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
 		End:   endTimestamp,
-		Step:  s.Interval,
+		Step:  s.TimeRange.IntervalMs,
 		Range: rangeMilliseconds,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
