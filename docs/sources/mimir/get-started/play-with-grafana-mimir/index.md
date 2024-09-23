@@ -200,7 +200,7 @@ tooling offered by Grafana.
 1. Configure the alert rule:
    1. Type `MimirNotRunning` in the **Rule name** field.
    1. Choose **Mimir** in the **Select data source** field.
-   1. Type `count(up == 0)` in the **Metrics browser** query field. This will currently show `no data` since all instances are running.
+   1. Type `count(up == 0)` in the **Metrics browser** query field. This currently shows `no data` since all instances are running.
 1. Scroll down to **Set evaluation behavior**:
    1. Select `New folder` and type `example-folder` in the **Folder name** field.
    1. Select `New evaluation group` and type `example-group` in the **Group name** field. Set evaluation interval to `30s`.
