@@ -120,6 +120,8 @@
 ### Mixin
 
 * [CHANGE] Dashboards: set default auto-refresh rate to 5m. #8758
+* [FEATURE] Alerts: add `MimirGossipMembersEndpointsOutOfSync` alert. #9347
+* [FEATURE] Alerts: add `MimirKubernetesServiceEndpointsApproachingLimit` and `MimirKubernetesServiceEndpointsOverLimit` alerts. Please configure `_config.kubernetes_endpoints_limit` in the mixin to the actual endpoints limit configured in your Kubernetes cluster. The mixin default is 1000, which is the upperbound configurabled in Kubernetes. #9381
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502 #8791
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757 #8791
@@ -146,7 +148,6 @@
 * [ENHANCEMENT] Dashboards: add 'Read path' selector to 'Mimir / Queries' dashboard. #8878
 * [ENHANCEMENT] Dashboards: add annotation indicating active series are being reloaded to 'Mimir / Tenants' dashboard. #9257
 * [ENHANCEMENT] Dashboards: limit results on the 'Failed evaluations rate' panel of the 'Mimir / Tenants' dashboard to 50 to avoid crashing the page when there are many failing groups. #9262
-* [FEATURE] Alerts: add `MimirGossipMembersEndpointsOutOfSync` alert. #9347
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 * [BUGFIX] Dashboards: avoid over-counting of ingesters metrics when migrating to experimental ingest storage. #9170

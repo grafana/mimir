@@ -704,5 +704,8 @@
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
     show_ingest_storage_panels: false,
+
+    // The configured Kubernetes endpoints limit.
+    kubernetes_endpoints_limit: 1000,
   },
 }

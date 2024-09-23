@@ -614,6 +614,40 @@ groups:
           for: 15m
           labels:
             severity: critical
+    - name: kubernetes_alerts
+      rules:
+        - alert: MimirKubernetesServiceEndpointsApproachingLimit
+          annotations:
+            message: |
+                Kubernetes service {{ $labels.endpoint }} in {{ $labels.cluster }}/{{ $labels.namespace }} is approaching the maximum number of endpoints (limit set to 1000).
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkubernetesserviceendpointsapproachinglimit
+          expr: |
+            (
+              count by(cluster, namespace, endpoint) (kube_endpoint_address{endpoint=~"memcached|memcached-frontend|memcached-index-queries|memcached-metadata|redis|redis-frontend|redis-index-queries|redis-metadata|query-scheduler|ruler-query-scheduler|query-scheduler-discovery|query-frontend-discovery|ruler-query-frontend"})
+              > 900
+            )
+
+            # Filter by Mimir only.
+            and on (cluster, namespace) (count by(cluster, namespace) (cortex_build_info) > 0)
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirKubernetesServiceEndpointsOverLimit
+          annotations:
+            message: |
+                Kubernetes service {{ $labels.endpoint }} in {{ $labels.cluster }}/{{ $labels.namespace }} reached the maximum number of endpoints (limit set to 1000).
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkubernetesserviceendpointsoverlimit
+          expr: |
+            (
+              count by(cluster, namespace, endpoint) (kube_endpoint_address{endpoint=~"memcached|memcached-frontend|memcached-index-queries|memcached-metadata|redis|redis-frontend|redis-index-queries|redis-metadata|query-scheduler|ruler-query-scheduler|query-scheduler-discovery|query-frontend-discovery|ruler-query-frontend"})
+              >= 1000
+            )
+
+            # Filter by Mimir only.
+            and on (cluster, namespace) (count by(cluster, namespace) (cortex_build_info) > 0)
+          for: 15m
+          labels:
+            severity: critical
     - name: alertmanager_alerts
       rules:
         - alert: MimirAlertmanagerSyncConfigsFailing

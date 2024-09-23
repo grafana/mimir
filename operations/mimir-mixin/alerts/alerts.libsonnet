@@ -909,6 +909,89 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
       ],
     },
+    {
+      // List of K8S services resolved via DNS to do service discovery. Service DNS reported in this list
+      // are expected to return ALL matching pod IPs and not just a subset of them, otherwise Mimir may not
+      // work as expected.
+      local kubernetesEndpointsUsedForServiceDiscovery = [
+        // Used to find all memcached replicas of a given type.
+        'memcached',
+        'memcached-frontend',
+        'memcached-index-queries',
+        'memcached-metadata',
+
+        // Used to find Redis memcached replicas of a given type.
+        'redis',
+        'redis-frontend',
+        'redis-index-queries',
+        'redis-metadata',
+
+        // Used by querier and query-frontend to discover query-scheduler pods
+        // when -query-scheduler.service-discovery-mode=dns.
+        'query-scheduler',
+        'ruler-query-scheduler',
+
+        // Used by query-frontend to discover query-scheduler pods.
+        'query-scheduler-discovery',
+
+        // Used by querier to discover query-frontend pods when query-scheduler is not enabled.
+        'query-frontend-discovery',
+
+        // Used by ruler-querier to discover query-frontend pods.
+        'ruler-query-frontend',
+      ],
+
+      name: 'kubernetes_alerts',
+      rules: [
+        {
+          alert: $.alertName('KubernetesServiceEndpointsApproachingLimit'),
+          expr: |||
+            (
+              count by(%(alert_aggregation_labels)s, endpoint) (kube_endpoint_address{endpoint=~"%(endpoints)s"})
+              > %(threshold)d
+            )
+
+            # Filter by Mimir only.
+            and on (%(alert_aggregation_labels)s) (count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0)
+          ||| % $._config {
+            endpoints: std.join('|', kubernetesEndpointsUsedForServiceDiscovery),
+            threshold: std.floor($._config.kubernetes_endpoints_limit * 0.9),
+          },
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Kubernetes service {{ $labels.endpoint }} in %(alert_aggregation_variables)s is approaching the maximum number of endpoints (limit set to %(kubernetes_endpoints_limit)d).
+            ||| % $._config,
+          },
+        },
+        {
+          alert: $.alertName('KubernetesServiceEndpointsOverLimit'),
+          expr: |||
+            (
+              count by(%(alert_aggregation_labels)s, endpoint) (kube_endpoint_address{endpoint=~"%(endpoints)s"})
+              >= %(kubernetes_endpoints_limit)d
+            )
+
+            # Filter by Mimir only.
+            and on (%(alert_aggregation_labels)s) (count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0)
+          ||| % $._config {
+            endpoints: std.join('|', kubernetesEndpointsUsedForServiceDiscovery),
+          },
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Kubernetes service {{ $labels.endpoint }} in %(alert_aggregation_variables)s reached the maximum number of endpoints (limit set to %(kubernetes_endpoints_limit)d).
+            ||| % $._config,
+          },
+        },
+      ],
+    },
   ],
 
   groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),

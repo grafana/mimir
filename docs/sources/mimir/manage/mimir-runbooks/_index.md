@@ -970,6 +970,30 @@ How to **investigate**:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
 
+
+### MimirKubernetesServiceEndpointsApproachingLimit
+
+This alert fires if a Kubernetes service used by Mimir for service discovery is approaching the endpoints limit.
+
+See [MimirKubernetesServiceEndpointsOverLimit](#MimirKubernetesServiceEndpointsOverLimit).
+
+
+### MimirKubernetesServiceEndpointsOverLimit
+
+This alert fires if a Kubernetes service used by Mimir for service discovery has reached the endpoints limit.
+
+How it **works**:
+
+- By default, the Kubernetes control plane creates and manages service endpoints to have no more than 100 endpoints each ([doc](https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/)). You can configure this limit with the `--max-endpoints-per-slice kube-controller-manager` flag, up to a maximum of 1000.
+- Once a Kubernetes service endpoints list reached the limit, the endpoints are truncated to the limit.
+- Mimir uses some Kubernetes services for DNS-based service discovery. If the endpoints of one of such services is getting truncated, Mimir is unable to discover all pods.
+
+How to **fix** it:
+
+- Increase Kubernetes `--max-endpoints-per-slice kube-controller-manager` to 1000, if it's currently running with a lower value. Configure the limit in the alert to reflect the new setting.
+- Reduce the number of replicas of the affected service and vertically scale it up.
+
+
 ### EtcdAllocatingTooMuchMemory
 
 This can be triggered if there are too many HA dedupe keys in etcd. We saw this when one of our clusters hit 20K tenants that were using HA dedupe config. Raise the etcd limits via:
