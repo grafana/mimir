@@ -287,9 +287,6 @@ github.com/beorn7/perks/quantile
 # github.com/bits-and-blooms/bitset v1.13.0
 ## explicit; go 1.16
 github.com/bits-and-blooms/bitset
-# github.com/cenkalti/backoff/v3 v3.2.2
-## explicit; go 1.12
-github.com/cenkalti/backoff/v3
 # github.com/cenkalti/backoff/v4 v4.3.0
 ## explicit; go 1.18
 github.com/cenkalti/backoff/v4
@@ -742,7 +739,7 @@ github.com/hashicorp/memberlist
 # github.com/hashicorp/serf v0.10.1
 ## explicit; go 1.12
 github.com/hashicorp/serf/coordinate
-# github.com/hashicorp/vault/api v1.14.0
+# github.com/hashicorp/vault/api v1.15.0
 ## explicit; go 1.21
 github.com/hashicorp/vault/api
 # github.com/hashicorp/vault/api/auth/approle v0.5.0
@@ -751,8 +748,8 @@ github.com/hashicorp/vault/api/auth/approle
 # github.com/hashicorp/vault/api/auth/kubernetes v0.5.0
 ## explicit; go 1.16
 github.com/hashicorp/vault/api/auth/kubernetes
-# github.com/hashicorp/vault/api/auth/userpass v0.5.0
-## explicit; go 1.16
+# github.com/hashicorp/vault/api/auth/userpass v0.8.0
+## explicit; go 1.21
 github.com/hashicorp/vault/api/auth/userpass
 # github.com/huandu/xstrings v1.3.2
 ## explicit; go 1.12
