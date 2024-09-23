@@ -1786,7 +1786,11 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
 		// Aggregations
-		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "stddev", "sum"} {
+		// TODO(jhesketh): Add stddev back ing.
+		// stddev is excluded until https://github.com/prometheus/prometheus/pull/14941 is merged
+		// fixing an inconsistency in the promql engine where if a native histogram is the first sample
+		// loaded, it is incorrectly treaded as a 0 float point.
+		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
