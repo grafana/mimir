@@ -4,6 +4,13 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Alertmanager: the following metrics are not exported for a given `user` when the metric value is zero: #9359
+  * `cortex_alertmanager_alerts_received_total`
+  * `cortex_alertmanager_alerts_invalid_total`
+  * `cortex_alertmanager_partial_state_merges_total`
+  * `cortex_alertmanager_partial_state_merges_failed_total`
+  * `cortex_alertmanager_state_replication_total`
+  * `cortex_alertmanager_state_replication_failed_total`
 * [CHANGE] Update minimal supported version of Go to 1.22. #9134
 * [CHANGE] Store-gateway / querier: enable streaming chunks from store-gateways to queriers by default. #6646
 * [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
