@@ -1125,12 +1125,12 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 		wantSpan.SetTag("end_offset", w.endOffset)
 
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			attemptSpan, ctx := opentracing.StartSpanFromContext(ctx, "concurrentFetcher.fetch.attempt")
+			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, wantSpan, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
 			if f.Err != nil {
-				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, wantSpan)
+				w = handleKafkaFetchErr(f.Err, w, errBackoff, newRecordsProducedBackoff, r.startOffsets, r.client, attemptSpan)
 			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
