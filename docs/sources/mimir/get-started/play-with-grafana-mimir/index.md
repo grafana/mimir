@@ -62,7 +62,7 @@ In this tutorial, you'll:
 {{< admonition type="tip" >}}
 Alternatively, you can try out this example in our interactive learning environment: [Play with Mimir](https://killercoda.com/grafana-labs/course/mimir/play-with-mimir).
 
-It's a fully configured environment with all the dependencies already installed.
+It's a fully configured environment with all dependencies already installed.
 
 {{< /admonition >}}
 
