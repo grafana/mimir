@@ -105,7 +105,7 @@ type Distributor struct {
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
-
+	costAttributionsvr     *util.CostAttributionCleanupService
 	// For handling HA replicas.
 	HATracker *haTracker
 
@@ -306,7 +306,10 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides,
+	activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionClenaupService *util.CostAttributionCleanupService,
+	ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing,
+	canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -341,6 +344,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
 		HATracker:             haTracker,
+		costAttributionsvr:    costAttributionClenaupService,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -356,6 +360,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_received_samples_total",
 			Help: "The total number of received samples, excluding rejected and deduped samples.",
 		}, []string{"user", "attrib"}),
+
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
 			Help: "The total number of received exemplars, excluding rejected and deduped exemplars.",
@@ -643,7 +648,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
 	d.receivedRequests.DeleteLabelValues(userID)
-	d.receivedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingRequests.DeleteLabelValues(userID)
@@ -660,6 +664,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
+	d.receivedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
@@ -676,6 +681,11 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
 	d.sampleValidationMetrics.deleteUserMetricsForGroup(userID, group)
+}
+
+func (d *Distributor) RemoveAttributionMetricsForUser(userID, attribution string) {
+	d.receivedSamples.DeleteLabelValues(userID, attribution)
+	//TODO @ying: Remove attribution metrics
 }
 
 // Called after distributor is asked to stop via StopAsync.
@@ -1670,7 +1680,7 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 		if costAttributionLabel != "" {
-			attribution := mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel)
+			attribution := d.costAttributionsvr.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel), mtime.Now())
 			costAttribution[attribution]++
 		}
 	}

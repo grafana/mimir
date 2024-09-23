@@ -1133,6 +1133,8 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
+  -cost-attribution-eviction-interval duration
+    	[experimental] Interval at which to evict inactive cost attributions. (default 10m0s)
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -1677,6 +1679,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
   -log.rate-limit-logs-per-second float
     	[experimental] Maximum number of messages per second to be logged. (default 10000)
+  -max-cost-attribution-per-user int
+    	[experimental] Maximum number of cost attributions allowed per user. (default 200)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -3065,8 +3069,6 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
-  -validation.max-cost-attribution-per-user int
-    	[experimental] Maximum number of cost attributions per user. 0 to disable the limit. (default 200)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

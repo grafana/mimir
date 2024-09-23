@@ -79,7 +79,7 @@ const (
 	OverridesExporter               string = "overrides-exporter"
 	Server                          string = "server"
 	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
-	CostAttributionCleanupService   string = "cost-attribution-cleanup-service"
+	CostAttributionService          string = "cost-attribution-service"
 	Distributor                     string = "distributor"
 	DistributorService              string = "distributor-service"
 	Ingester                        string = "ingester"
@@ -461,13 +461,19 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
+		t.ActiveGroupsCleanup, t.CostAttributionCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing,
+		canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
 
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Distributor)
+	}
+
+	if t.CostAttributionCleanup != nil {
+		t.CostAttributionCleanup.Register(t.Distributor)
 	}
 
 	return t.Distributor, nil
@@ -643,6 +649,11 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 	return t.ActiveGroupsCleanup, nil
 }
 
+func (t *Mimir) initCostAttributionService() (services.Service, error) {
+	t.CostAttributionCleanup = util.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, t.Cfg.MaxCostAttributionPerUser, util_log.Logger)
+	return t.CostAttributionCleanup, nil
+}
+
 func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
@@ -654,7 +665,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -663,6 +674,9 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
 
+	if t.CostAttributionCleanup != nil {
+		t.CostAttributionCleanup.Register(t.Ingester)
+	}
 	return t.Ingester, nil
 }
 
@@ -1126,6 +1140,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
+	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
@@ -1164,9 +1179,9 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                       {RuntimeConfig},
 		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, CostAttributionService, Vault},
 		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, CostAttributionService, Vault},
 		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                         {Overrides, API},
 		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},

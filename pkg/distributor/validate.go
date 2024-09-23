@@ -370,7 +370,6 @@ func removeNonASCIIChars(in string) (out string) {
 // The returned error may retain the provided series labels.
 func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
-
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
 		return errors.New(noMetricNameMsgFormat)

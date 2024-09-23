@@ -310,6 +310,8 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
+	costAttribution *util.CostAttributionCleanupService
+
 	tsdbMetrics *tsdbMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
@@ -378,7 +380,12 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(
+	cfg Config, limits *validation.Overrides,
+	ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher,
+	activeGroupsCleanupService *util.ActiveGroupsCleanupService,
+	costAttributionCleanupService *util.CostAttributionCleanupService,
+	registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -386,7 +393,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-
+	i.costAttribution = costAttributionCleanupService
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
@@ -1281,6 +1288,11 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
+	if stats.failedSamplesAttribution != nil && len(stats.failedSamplesAttribution) > 0 {
+		for label, count := range stats.failedSamplesAttribution {
+			discarded.samplesPerAttribution.WithLabelValues(userID, label).Add(float64(count))
+		}
+	}
 }
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
@@ -1293,8 +1305,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
 
 		// get the cost attribution value for the series
-		costAttrib := validation.AttributionValue(i.limits, userID, labels)
-		if costAttrib != "" {
+		costLabel := i.limits.CostAttributionLabel(userID)
+		if costLabel != "" {
+			costAttrib := i.costAttribution.UpdateAttributionTimestamp(userID, validation.AttributionValue(costLabel, userID, labels), time.Now())
 			stats.failedSamplesAttribution[costAttrib]++
 		}
 
@@ -1403,7 +1416,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var nonCopiedLabels labels.Labels
 	for _, ts := range timeseries {
 		// The cost attribution value for the series
-		costAttrib := validation.AttributionValue(i.limits, userID, ts.Labels)
+		costLabel := i.limits.CostAttributionLabel(userID)
+		var costAttrib string
+		// when cost attribution label is set
+		if costLabel != "" {
+			costAttrib = i.costAttribution.UpdateAttributionTimestamp(userID, validation.AttributionValue(costLabel, userID, ts.Labels), time.Now())
+		}
 
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -1420,7 +1438,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-				if costAttrib != "" {
+				if costLabel != "" {
 					stats.failedSamplesAttribution[costAttrib] += len(ts.Samples) + len(ts.Histograms)
 				}
 				var firstTimestamp int64
@@ -1443,7 +1461,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleOutOfBoundsCount += len(ts.Samples)
-				if costAttrib != "" {
+				if costLabel != "" {
 					stats.failedSamplesAttribution[costAttrib] += len(ts.Samples)
 				}
 				firstTimestamp := ts.Samples[0].TimestampMs
@@ -2660,6 +2678,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.cfg.ActiveSeriesMetrics.IdleTimeout,
 			userID,
 			i.limits.CostAttributionLabel(userID),
+			i.costAttribution,
 		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -3417,6 +3436,10 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 func (i *Ingester) RemoveGroupMetricsForUser(userID, group string) {
 	i.metrics.deletePerGroupMetricsForUser(userID, group)
+}
+
+func (i *Ingester) RemoveAttributionMetricsForUser(userID, attribution string) {
+	i.metrics.deletePerAttributionMetricsForUser(userID, attribution)
 }
 
 // TransferOut implements ring.FlushTransferer.

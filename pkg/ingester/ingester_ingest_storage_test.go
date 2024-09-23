@@ -650,7 +650,7 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
 	})
 
-	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, reg, util_test.NewTestingLogger(t))
+	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, nil, reg, util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 
 	return ingester, kafkaCluster, prw

@@ -59,6 +59,28 @@
     },
     {
       "kind": "field",
+      "name": "max_cost_attribution_per_user",
+      "required": false,
+      "desc": "Maximum number of cost attributions allowed per user.",
+      "fieldValue": null,
+      "fieldDefaultValue": 200,
+      "fieldFlag": "max-cost-attribution-per-user",
+      "fieldType": "int",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_eviction_interval",
+      "required": false,
+      "desc": "Interval at which to evict inactive cost attributions.",
+      "fieldValue": null,
+      "fieldDefaultValue": 600000000000,
+      "fieldFlag": "cost-attribution-eviction-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
       "name": "enable_go_runtime_metrics",
       "required": false,
       "desc": "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.",
@@ -3993,17 +4015,6 @@
           "fieldDefaultValue": "",
           "fieldFlag": "validation.cost-attribution-label",
           "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "max_cost_attribution_per_user",
-          "required": false,
-          "desc": "Maximum number of cost attributions per user. 0 to disable the limit.",
-          "fieldValue": null,
-          "fieldDefaultValue": 200,
-          "fieldFlag": "validation.max-cost-attribution-per-user",
-          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {

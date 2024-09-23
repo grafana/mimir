@@ -96,7 +96,7 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 		return services.StopAndAwaitTerminated(context.Background(), ingestersRing)
 	})
 
-	ing, err := ingester.New(ingesterCfg, overrides, ingestersRing, nil, nil, nil, log.NewNopLogger())
+	ing, err := ingester.New(ingesterCfg, overrides, ingestersRing, nil, nil, nil, nil, log.NewNopLogger())
 	if err != nil {
 		cleanup()
 		return nil, "", nil, fmt.Errorf("could not create ingester: %w", err)
