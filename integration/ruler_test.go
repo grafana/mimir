@@ -1208,6 +1208,10 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 		// have run with eventual consistency because they are independent.
 		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_ingest_storage_strong_consistency_requests_total"))
 		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingest_storage_strong_consistency_requests_total"))
+
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
+		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, distributor, ingester, querier, ruler)
 	})
 
 	t.Run("evaluation of dependent rules should require strong consistency", func(t *testing.T) {
@@ -1242,6 +1246,10 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
 		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
 		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "false"))))
+
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
+		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, distributor, ingester, querier, ruler)
 	})
 }
 
