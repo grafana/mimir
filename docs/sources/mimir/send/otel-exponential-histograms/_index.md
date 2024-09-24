@@ -112,3 +112,11 @@ To ease the migration process, you can keep the custom bucket definition of an e
 1. Clean up recording rules and alerts by deleting the explicit bucket histogram version of the rule or alert.
 
 ## Bucket boundary calculation
+
+Bucket boundaries for exponential histograms are calculated similarly to those for native histograms. The only difference is that for exponential histograms, bucket offsets are shifted by one.
+
+For example:
+
+
+
+For more information, refer to [bucket boundary calculation](https://grafana.com/docs/mimir/next/send/native-histograms/#bucket-boundary-calculation) in the documentation for native histograms.
