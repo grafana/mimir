@@ -159,14 +159,16 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
+// invalidate invalidates content, attributes, and existence caches for the given
+// object. Note that this is best-effort and errors invalidating the cache are ignored.
 func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
 	_, cfg := cb.cfg.findGetConfig(name)
-	if cfg != nil {
+	if cfg != nil && cfg.invalidateOnMutation {
 		contentKey := cachingKeyContent(cb.bucketID, name)
 		attrsKey := cachingKeyAttributes(cb.bucketID, name)
 		existsKey := cachingKeyExists(cb.bucketID, name)
 
-		// Cache might be down or key might not exist. Ignore errors since invalidation is best-effort.
+		// Cache might be down or key might not exist.
 		_ = cfg.cache.Delete(ctx, contentKey)
 		_ = cfg.cache.Delete(ctx, attrsKey)
 		_ = cfg.cache.Delete(ctx, existsKey)

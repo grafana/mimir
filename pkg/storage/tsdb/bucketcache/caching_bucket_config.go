@@ -60,8 +60,9 @@ type existsConfig struct {
 
 type getConfig struct {
 	existsConfig
-	contentTTL       time.Duration
-	maxCacheableSize int
+	contentTTL           time.Duration
+	maxCacheableSize     int
+	invalidateOnMutation bool
 }
 
 type getRangeConfig struct {
@@ -104,15 +105,16 @@ func (cfg *CachingBucketConfig) CacheIter(configName string, cache cache.Cache, 
 }
 
 // CacheGet configures caching of "Get" operation for matching files. Content of the object is cached, as well as whether object exists or not.
-func (cfg *CachingBucketConfig) CacheGet(configName string, cache cache.Cache, matcher func(string) bool, maxCacheableSize int, contentTTL, existsTTL, doesntExistTTL time.Duration) {
+func (cfg *CachingBucketConfig) CacheGet(configName string, cache cache.Cache, matcher func(string) bool, maxCacheableSize int, contentTTL, existsTTL, doesntExistTTL time.Duration, invalidateOnMutation bool) {
 	cfg.get[configName] = &getConfig{
 		existsConfig: existsConfig{
 			operationConfig: newOperationConfig(cache, matcher),
 			existsTTL:       existsTTL,
 			doesntExistTTL:  doesntExistTTL,
 		},
-		contentTTL:       contentTTL,
-		maxCacheableSize: maxCacheableSize,
+		contentTTL:           contentTTL,
+		maxCacheableSize:     maxCacheableSize,
+		invalidateOnMutation: invalidateOnMutation,
 	}
 }
 

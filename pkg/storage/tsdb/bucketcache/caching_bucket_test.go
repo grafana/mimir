@@ -604,7 +604,7 @@ func TestGet(t *testing.T) {
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "metafile"
-	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
+	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute, false)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
@@ -682,7 +682,7 @@ func TestGetTooBigObject(t *testing.T) {
 	const filename = "/object-1"
 	const cfgName = "metafile"
 	// Only allow 5 bytes to be cached.
-	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
+	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute, false)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
@@ -706,7 +706,7 @@ func TestGetPartialRead(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	const filename = "/object-1"
 	const cfgName = "metafile"
-	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
+	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute, false)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
@@ -918,7 +918,7 @@ func TestMutationInvalidatesCache(t *testing.T) {
 
 	const cfgName = "test"
 	cfg := NewCachingBucketConfig()
-	cfg.CacheGet(cfgName, c, matchAll, 1024^2, time.Minute, time.Minute, time.Minute)
+	cfg.CacheGet(cfgName, c, matchAll, 1024, time.Minute, time.Minute, time.Minute, true)
 	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
 	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
 
