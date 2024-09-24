@@ -103,12 +103,7 @@ For more information about creating a view, refer to [Views](https://opentelemet
 
    For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending exponential histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
 
-1. After configuring exponential histogram collection, choose one of the following ways to stop collecting explicit bucket histograms.
-
-   - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation. In Java, also use the `nativeOnly()` option. Refer to the examples in [Instrument application with Prometheus client libraries](#instrument-application-with-prometheus-client-libraries).
-   - Drop the explicit bucket histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping.
-   - Stop scraping the explicit bucket histogram version of metrics. This option applies to all metrics of a scrape target.
-
+1. After configuring exponential histogram collection, remove the explicit bucket histogram definition, as well as any views that expose explicit buckets.
 1. Clean up recording rules and alerts by deleting the explicit bucket histogram version of the rule or alert.
 
 ## Bucket boundary calculation
