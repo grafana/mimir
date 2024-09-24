@@ -56,7 +56,6 @@ To ease the migration process, you can keep the custom bucket definition of an e
 	}, sdkmetric.Stream{
 		Name: "request_latency_exp",
 		Aggregation: sdkmetric.AggregationBase2ExponentialHistogram{MaxSize: 160, NoMinMax: true, MaxScale: 20},
-		//Aggregation: sdkmetric.DefaultAggregationSelector(sdkmetric.InstrumentKindHistogram),
 	})
   ```
 
@@ -115,8 +114,10 @@ To ease the migration process, you can keep the custom bucket definition of an e
 
 Bucket boundaries for exponential histograms are calculated similarly to those for native histograms. The only difference is that for exponential histograms, bucket offsets are shifted by one.
 
-For example:
+Thus:
 
+<!--- LaTeX equation source: {\left( 2^{2^{-schema}} \right)}^{index} < v \leq {\left( 2^{2^{-schema}}\right)}^{index+1} -->
 
+![Positive bucket definition](otel-pos-bucket-def.svg)
 
 For more information, refer to [bucket boundary calculation](https://grafana.com/docs/mimir/next/send/native-histograms/#bucket-boundary-calculation) in the documentation for native histograms.
