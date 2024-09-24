@@ -1094,7 +1094,7 @@ spec:
       - args:
         - --server-tls.enabled=true
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.17.0
+        image: grafana/rollout-operator:v0.19.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
