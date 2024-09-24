@@ -456,10 +456,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	assertServiceMetricsPrefixes(t, QueryFrontend, queryFrontend)
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
 
-	// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
-	// because it's how we detect whether a Mimir cluster is running with ingest storage.
 	if flags["-ingest-storage.enabled"] == "true" {
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
 		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, queryScheduler, distributor, ingester, querier)
+	} else {
+		assertServiceMetricsMatching(t, "cortex_distributor_replication_factor", distributor)
 	}
 }
 

@@ -113,6 +113,21 @@ func assertServiceMetricsNotMatching(t *testing.T, metricName string, services .
 	}
 }
 
+func assertServiceMetricsMatching(t *testing.T, metricName string, services ...*e2emimir.MimirService) {
+	for _, service := range services {
+		if service == nil {
+			continue
+		}
+
+		metrics, err := service.Metrics()
+		require.NoError(t, err)
+
+		if !isRawMetricsContainingMetricName(metricName, metrics) {
+			assert.Failf(t, "the service %s exported metrics don't include the metric name %s but it should export it", service.Name(), metricName)
+		}
+	}
+}
+
 func isRawMetricsContainingMetricName(metricName string, metrics string) bool {
 	metricNameRegex := regexp.MustCompile("^[^ \\{]+")
 
