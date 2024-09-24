@@ -177,6 +177,7 @@
 * [ENHANCEMENT] Allow to override Kafka client ID on a per-component basis. #9026
 * [ENHANCEMENT] Rollout-operator's access to ReplicaTemplate is now configured via config option `rollout_operator_replica_template_access_enabled`. #9252
 * [ENHANCEMENT] Added support for new way of downscaling ingesters, using rollout-operator's resource-mirroring feature and read-only mode of ingesters. This can be enabled by using `ingester_automated_downscale_v2_enabled` config option. This is mutually exclusive with both `ingester_automated_downscale_enabled` (previous downscale mode) and `ingest_storage_ingester_autoscaling_enabled` (autoscaling for ingest-storage).
+* [ENHANCEMENT] Update rollout-operator to `v0.19.1`. #9388
 * [BUGFIX] Added missing node affinity matchers to write component. #8910
 
 ### Mimirtool
