@@ -383,8 +383,13 @@ consumerLoop:
 			}
 		})
 
-		numRecs := fetches.NumRecords()
-		remaining -= int64(numRecs)
+		// If the partition had gaps in its offsets there is a potential edge-case here.
+		// In theory, the initial remaining value (i.e. the lag) can over-count how many records are available in partition
+		// to consume. Theoretically, if this is an inactive partition that doesn't receive new records, in the case of the gaps,
+		// the consumerLoop loop can end up into an infinite loop.
+		// TODO(v): Instead of counting the number of remaining records, we may rework it to use the partition end's offset
+		// from the time of lag calculation as the guard for the loop.
+		remaining -= int64(fetches.NumRecords())
 
 		for recIter := fetches.RecordIter(); !recIter.Done(); {
 			rec := recIter.Next()
