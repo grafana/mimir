@@ -614,33 +614,14 @@ func TestPartitionStateFromLag(t *testing.T) {
 		wantState      partitionState
 	}{
 		{
-			name: "no commit, no lag",
+			name: "no commit",
 			lag: kadm.GroupMemberLag{
 				Topic:     testTopic,
 				Partition: 0,
 				Commit:    kadm.Offset{},
-				Lag:       0,
 			},
 			fallbackMillis: testTime.UnixMilli(),
 			wantState: partitionState{
-				Lag:                   0,
-				Commit:                kadm.Offset{},
-				CommitRecordTimestamp: testTime,
-				LastSeenOffset:        0,
-				LastBlockEnd:          time.UnixMilli(0),
-			},
-		},
-		{
-			name: "no commit, some lag",
-			lag: kadm.GroupMemberLag{
-				Topic:     testTopic,
-				Partition: 0,
-				Commit:    kadm.Offset{},
-				Lag:       10,
-			},
-			fallbackMillis: testTime.UnixMilli(),
-			wantState: partitionState{
-				Lag:                   10,
 				Commit:                kadm.Offset{},
 				CommitRecordTimestamp: testTime,
 				LastSeenOffset:        0,
@@ -653,11 +634,9 @@ func TestPartitionStateFromLag(t *testing.T) {
 				Topic:     testTopic,
 				Partition: 0,
 				Commit:    testKafkaOffset,
-				Lag:       10,
 			},
 			fallbackMillis: testTime.UnixMilli(),
 			wantState: partitionState{
-				Lag:                   10,
 				Commit:                testKafkaOffset,
 				CommitRecordTimestamp: commitRecTs,
 				LastSeenOffset:        lastRecOffset,
