@@ -927,13 +927,10 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 					e2e.Equals(float64(numUsers*expectedReplication)),
 					"cortex_alertmanager_config_last_reload_successful"))
 
-				// we stopped exporting zero silences
-				// https://github.com/grafana/mimir/pull/9359
-				if expectedSilences > 0 {
-					require.NoError(t, ams.WaitSumMetrics(
-						e2e.Equals(float64(expectedSilences*expectedReplication)),
-						"cortex_alertmanager_silences"))
-				}
+				require.NoError(t, ams.WaitSumMetrics(
+					e2e.Equals(float64(expectedSilences*expectedReplication)),
+					e2e.SkipMissingMetrics,
+					"cortex_alertmanager_silences"))
 			}
 
 			// Start up the first instance and use it to create some silences.
