@@ -927,10 +927,10 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 					e2e.Equals(float64(numUsers*expectedReplication)),
 					"cortex_alertmanager_config_last_reload_successful"))
 
-				require.NoError(t, ams.WaitSumMetrics(
+				require.NoError(t, ams.WaitSumMetricsWithOptions(
 					e2e.Equals(float64(expectedSilences*expectedReplication)),
-					e2e.SkipMissingMetrics,
-					"cortex_alertmanager_silences"))
+					[]string{"cortex_alertmanager_silences"},
+					e2e.SkipMissingMetrics))
 			}
 
 			// Start up the first instance and use it to create some silences.
