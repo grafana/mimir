@@ -157,7 +157,6 @@ func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
 	n := &Node{
 		name:             name,
 		localQueue:       nil,
-		queuePosition:    localQueueIndex,
 		height:           height,
 		queuingAlgorithm: da,
 	}

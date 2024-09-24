@@ -750,7 +750,7 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	item = makeItemForChildQueue(root, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
 
-	require.Equal(t, []string{"0", "1", "2"}, root.queueOrder)
+	require.Equal(t, []string{"1", "2", "0"}, root.queueOrder)
 
 	// dequeue first item
 	dequeuedPath, _ := tree.Dequeue(nil)
@@ -760,7 +760,7 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	dequeuedPath, _ = tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"1"}, dequeuedPath)
 	require.Nil(t, root.getNode(QueuePath{"1"}))
-	require.Equal(t, []string{"0", "2"}, root.queueOrder)
+	require.Equal(t, []string{"2", "0"}, root.queueOrder)
 
 	// dequeue third item
 	dequeuedPath, _ = tree.Dequeue(nil)
@@ -772,7 +772,7 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	item = makeItemForChildQueue(root, QueuePath{"1"}, cache)
 	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"1"}, item))
 	require.NotNil(t, root.getNode(QueuePath{"1"}))
-	require.Equal(t, []string{"0", "2", "1"}, root.queueOrder)
+	require.Equal(t, []string{"2", "1", "0"}, root.queueOrder)
 
 	// dequeue fourth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:0

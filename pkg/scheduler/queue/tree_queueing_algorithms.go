@@ -47,19 +47,18 @@ type roundRobinState struct {
 func (rrs *roundRobinState) setup(_ *DequeueArgs) {
 }
 
-// addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective
-// of the parent's queuePosition. Thus, If queuePosition is localQueueIndex, the new child is added to the end of
-// queueOrder. Otherwise, the new child is added at queuePosition - 1, and queuePosition is incremented to keep
-// it pointed to the same child.
+// addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective of the parent's
+// queuePosition. The new child is added at queuePosition - 1, and queuePosition is incremented to keep it pointed
+// to the same child.
 func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 	// add childNode to n.queueMap
 	parent.queueMap[child.Name()] = child
 
-	// add childNode to n.queueOrder before the next-to-dequeue position, update n.queuePosition to current element
-	if parent.queuePosition <= localQueueIndex {
-		parent.queueOrder = append(parent.queueOrder, child.Name())
-	} else {
-		parent.queueOrder = append(parent.queueOrder[:parent.queuePosition], append([]string{child.Name()}, parent.queueOrder[parent.queuePosition:]...)...)
+	parent.queueOrder = append(parent.queueOrder[:parent.queuePosition], append([]string{child.Name()}, parent.queueOrder[parent.queuePosition:]...)...)
+
+	// if we added to a previously empty queueOrder, we want to keep the queuePosition at 0; otherwise, update
+	// n.queuePosition to point to the same element it was pointed at before.
+	if len(parent.queueOrder) > 1 {
 		parent.queuePosition++ // keep position pointed at same element
 	}
 }
@@ -67,13 +66,12 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 // dequeueSelectNode returns the node at the node's queuePosition. queuePosition represents the position of
 // the next node to dequeue from, and is incremented in dequeueUpdateState.
 func (rrs *roundRobinState) dequeueSelectNode(node *Node) *Node {
-	if node.queuePosition == localQueueIndex {
+	if node.isLeaf() || len(node.queueOrder) == 0 {
 		return node
 	}
-
 	currentNodeName := node.queueOrder[node.queuePosition]
-	if node, ok := node.queueMap[currentNodeName]; ok {
-		return node
+	if child, ok := node.queueMap[currentNodeName]; ok {
+		return child
 	}
 	return nil
 }
@@ -81,9 +79,10 @@ func (rrs *roundRobinState) dequeueSelectNode(node *Node) *Node {
 // dequeueUpdateState does the following:
 //   - deletes the dequeued-from child node if it is empty after the dequeue operation
 //   - increments queuePosition if no child was deleted
-func (rrs *roundRobinState) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
-	// if the child node is nil, we haven't done anything to the tree; return early
-	if dequeuedFrom == nil {
+func (rrs *roundRobinState) dequeueUpdateState(nodeToUpdate *Node, dequeuedFrom *Node) {
+	// if the child node is nil, we haven't done anything to the tree; if the nodeToUpdate is
+	// a leaf node, there's nothing to update; in both cases, return early
+	if dequeuedFrom == nil || nodeToUpdate.isLeaf() {
 		return
 	}
 
@@ -96,17 +95,18 @@ func (rrs *roundRobinState) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
 	// from queueOrder sets our position to the next element already.
 	if childIsEmpty {
 		childName := dequeuedFrom.Name()
-		delete(node.queueMap, childName)
-		for idx, name := range node.queueOrder {
+		delete(nodeToUpdate.queueMap, childName)
+		for idx, name := range nodeToUpdate.queueOrder {
 			if name == childName {
-				node.queueOrder = append(node.queueOrder[:idx], node.queueOrder[idx+1:]...)
+				nodeToUpdate.queueOrder = append(nodeToUpdate.queueOrder[:idx], nodeToUpdate.queueOrder[idx+1:]...)
 			}
 		}
 
 	} else {
-		node.queuePosition++
+		nodeToUpdate.queuePosition++
 	}
-	if node.queuePosition >= len(node.queueOrder) {
-		node.queuePosition = localQueueIndex
+
+	if nodeToUpdate.queuePosition >= len(nodeToUpdate.queueOrder) {
+		nodeToUpdate.queuePosition = 0
 	}
 }
