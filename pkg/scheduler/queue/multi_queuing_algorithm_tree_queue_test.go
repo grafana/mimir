@@ -191,7 +191,7 @@ func Test_Dequeue_SingleAlgo(t *testing.T) {
 		{
 			name:        "dequeue from empty tenant-querier root node",
 			rootAlgo:    []QueuingAlgorithm{newTenantQuerierAssignments()},
-			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
+			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: newQuerierTenantIndex},
 		},
 		{
 			name:        "dequeue from non-empty leaf node",
@@ -207,7 +207,7 @@ func Test_Dequeue_SingleAlgo(t *testing.T) {
 			name:        "dequeue from non-empty tenant-querier root node",
 			rootAlgo:    []QueuingAlgorithm{newTenantQuerierAssignments()},
 			enqueueObjs: []enqueueObj{{"tqa-child-object", QueuePath{"tqa-child"}}},
-			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
+			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: newQuerierTenantIndex},
 		},
 		{
 			name:        "dequeue from non-empty tenant-querier root node with no current querier",

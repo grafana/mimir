@@ -12,6 +12,9 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+// Newly-connected queriers should start from this index in tenantQuerierAssignments.tenantIDOrder.
+const newQuerierTenantIndex = -1
+
 type queueTenant struct {
 	tenantID    TenantID
 	maxQueriers int
@@ -92,7 +95,6 @@ func newTenantQuerierAssignments() *tenantQuerierAssignments {
 		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
 		tenantNodes:      map[string][]*Node{},
 		currentQuerier:   "",
-		tenantOrderIndex: localQueueIndex,
 	}
 }
 
@@ -249,20 +251,19 @@ func (tqa *tenantQuerierAssignments) setup(dequeueArgs *DequeueArgs) {
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
 func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) *Node {
+	if node.isLeaf() || len(node.queueMap) == 0 {
+		return node
+	}
+
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == "" {
 		return nil
 	}
 
-	// advance queue position for dequeue
+	// tenantOrderIndex is set to the _last_ tenant we dequeued from; advance queue position for dequeue
 	tqa.tenantOrderIndex++
 	if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
-		tqa.tenantOrderIndex = localQueueIndex
-	}
-
-	// no children or local queue reached
-	if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
-		return node
+		tqa.tenantOrderIndex = 0
 	}
 
 	checkIndex := tqa.tenantOrderIndex
