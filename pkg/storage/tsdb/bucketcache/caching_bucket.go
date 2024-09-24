@@ -159,6 +159,47 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
+// invalidate invalidates content, existence, and attribute caches for the given object.
+// Note that this is best-effort and errors invalidating the cache are ignored.
+func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
+	_, getCfg := cb.cfg.findGetConfig(name)
+	if getCfg != nil && getCfg.invalidateOnMutation {
+		// Get config includes an embedded Exists config and the Get() method
+		// caches if an object exists or doesn't. Because of that, we invalidate
+		// the exists key here with the same configuration and at the same time
+		// as the object content.
+		contentKey := cachingKeyContent(cb.bucketID, name)
+		existsKey := cachingKeyExists(cb.bucketID, name)
+
+		_ = getCfg.cache.Delete(ctx, contentKey)
+		_ = getCfg.cache.Delete(ctx, existsKey)
+	}
+
+	_, attrCfg := cb.cfg.findAttributesConfig(name)
+	if attrCfg != nil && attrCfg.invalidateOnMutation {
+		attrKey := cachingKeyAttributes(cb.bucketID, name)
+		_ = attrCfg.cache.Delete(ctx, attrKey)
+	}
+}
+
+func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+	err := cb.Bucket.Upload(ctx, name, r)
+	if err == nil {
+		cb.invalidate(ctx, name)
+	}
+
+	return err
+}
+
+func (cb *CachingBucket) Delete(ctx context.Context, name string) error {
+	err := cb.Bucket.Delete(ctx, name)
+	if err == nil {
+		cb.invalidate(ctx, name)
+	}
+
+	return err
+}
+
 func (cb *CachingBucket) Name() string {
 	return "caching: " + cb.Bucket.Name()
 }
