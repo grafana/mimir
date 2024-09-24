@@ -770,7 +770,7 @@ func TestAttributes(t *testing.T) {
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
-	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute)
+	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute, false)
 
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	assert.NoError(t, err)
@@ -920,7 +920,7 @@ func TestMutationInvalidatesCache(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGet(cfgName, c, matchAll, 1024, time.Minute, time.Minute, time.Minute, true)
 	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
-	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
+	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute, true)
 
 	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
 	require.NoError(t, err)

@@ -159,19 +159,26 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
-// invalidate invalidates content, attributes, and existence caches for the given
-// object. Note that this is best-effort and errors invalidating the cache are ignored.
+// invalidate invalidates content, existence, and attribute caches for the given object.
+// Note that this is best-effort and errors invalidating the cache are ignored.
 func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
-	_, cfg := cb.cfg.findGetConfig(name)
-	if cfg != nil && cfg.invalidateOnMutation {
+	_, getCfg := cb.cfg.findGetConfig(name)
+	if getCfg != nil && getCfg.invalidateOnMutation {
+		// Get config includes an embedded Exists config and the Get() method
+		// caches if an object exists or doesn't. Because of that, we invalidate
+		// the exists key here with the same configuration and at the same time
+		// as the object content.
 		contentKey := cachingKeyContent(cb.bucketID, name)
-		attrsKey := cachingKeyAttributes(cb.bucketID, name)
 		existsKey := cachingKeyExists(cb.bucketID, name)
 
-		// Cache might be down or key might not exist.
-		_ = cfg.cache.Delete(ctx, contentKey)
-		_ = cfg.cache.Delete(ctx, attrsKey)
-		_ = cfg.cache.Delete(ctx, existsKey)
+		_ = getCfg.cache.Delete(ctx, contentKey)
+		_ = getCfg.cache.Delete(ctx, existsKey)
+	}
+
+	_, attrCfg := cb.cfg.findAttributesConfig(name)
+	if attrCfg != nil && attrCfg.invalidateOnMutation {
+		attrKey := cachingKeyAttributes(cb.bucketID, name)
+		_ = attrCfg.cache.Delete(ctx, attrKey)
 	}
 }
 

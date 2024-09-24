@@ -78,7 +78,8 @@ type getRangeConfig struct {
 
 type attributesConfig struct {
 	operationConfig
-	ttl time.Duration
+	ttl                  time.Duration
+	invalidateOnMutation bool
 }
 
 func newOperationConfig(cache cache.Cache, matcher func(string) bool) operationConfig {
@@ -146,10 +147,11 @@ func (cfg *CachingBucketConfig) CacheGetRange(configName string, cache cache.Cac
 }
 
 // CacheAttributes configures caching of "Attributes" operation for matching files.
-func (cfg *CachingBucketConfig) CacheAttributes(configName string, cache cache.Cache, matcher func(name string) bool, ttl time.Duration) {
+func (cfg *CachingBucketConfig) CacheAttributes(configName string, cache cache.Cache, matcher func(name string) bool, ttl time.Duration, invalidateOnMutation bool) {
 	cfg.attributes[configName] = &attributesConfig{
-		operationConfig: newOperationConfig(cache, matcher),
-		ttl:             ttl,
+		operationConfig:      newOperationConfig(cache, matcher),
+		ttl:                  ttl,
+		invalidateOnMutation: invalidateOnMutation,
 	}
 }
 
