@@ -306,10 +306,10 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 			b.cfg.ConsumeInterval,
 			b.cfg.ConsumeIntervalBuffer,
 		)
-		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "lag", state.Lag, "section_cycle_end", sectionEnd, "cycle_end", cycleEnd, "commit_rec_ts", state.CommitRecordTimestamp)
+		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "lag", state.Lag, "section_end", sectionEnd, "cycle_end", cycleEnd, "commit_rec_ts", state.CommitRecordTimestamp)
 	}
 	for !sectionEnd.After(cycleEnd) {
-		partitionLogger := log.With(b.logger, "partition", partition, "lag", state.Lag, "section_cycle_end", sectionEnd)
+		partitionLogger := log.With(b.logger, "partition", partition, "lag", state.Lag, "section_end", sectionEnd)
 		state, err = b.consumePartitionSection(ctx, partitionLogger, builder, partition, state, sectionEnd)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", partition, err)
@@ -327,16 +327,15 @@ func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.L
 
 	var numBlocks int
 	defer func(t time.Time, startState partitionState) {
-		dur := time.Since(t)
-
-		// Don't propagate any errors derived from the cancelled context.
+		// No need to log or track time of the unfinished section. Just bail out.
 		if errors.Is(retErr, context.Canceled) {
-			retErr = nil
 			return
 		}
 
+		dur := time.Since(t)
+
 		if retErr != nil {
-			level.Error(logger).Log("msg", "partition consumption failed", "duration", dur, "curr_lag", state.Lag, "err", retErr)
+			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur, "curr_lag", state.Lag)
 			return
 		}
 
@@ -349,6 +348,8 @@ func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.L
 
 	// We always rewind the partition's offset to the commit offset by reassigning the partition to the client (this triggers partition assignment).
 	// This is so the cycle started exactly at the commit offset, and not at what was (potentially over-) consumed previously.
+	// In the end, we remove the partition from the client (refer to the defer below) to guarantee the client always consumes
+	// from one partition at a time. I.e. when this partition is consumed, we start consuming the next one.
 	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		b.cfg.Kafka.Topic: {
 			partition: kgo.NewOffset().At(state.Commit.At),
@@ -369,6 +370,11 @@ consumerLoop:
 		if err := context.Cause(ctx); err != nil {
 			return partitionState{}, err
 		}
+
+		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
+		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
+		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
+		// the iterations against the partitionState, so it retried the polling up until the expected end of the partition's reached.
 		fetches := b.kafkaClient.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
@@ -405,9 +411,11 @@ consumerLoop:
 					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
 					// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
 					commitRec = &kgo.Record{
-						Topic:       state.Commit.Topic,
-						Partition:   state.Commit.Partition,
-						Offset:      state.Commit.At - 1, // Previous commit's offset-1 means we expect the next cycle to start from the commit's offset.
+						Topic:     state.Commit.Topic,
+						Partition: state.Commit.Partition,
+						// This offset points at the previous commit's offset-1, meaning on commit, we will store the offset-1+1 (minus-one-plus-one),
+						// which is the offset of the previous commit itself (details https://github.com/grafana/mimir/pull/9199#discussion_r1772979364).
+						Offset:      state.Commit.At - 1,
 						Timestamp:   state.CommitRecordTimestamp,
 						LeaderEpoch: state.Commit.LeaderEpoch,
 					}
@@ -478,7 +486,7 @@ func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group
 
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: time.Second,
+		MaxBackoff: time.Minute, // If there is a network hiccup, we prefer to wait longer retrying, than fail the whole section.
 		MaxRetries: 10,
 	})
 	for boff.Ongoing() {
@@ -523,7 +531,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 
 		boff := backoff.New(ctx, backoff.Config{
 			MinBackoff: 100 * time.Millisecond,
-			MaxBackoff: time.Second,
+			MaxBackoff: time.Minute, // If there is a network hiccup, we prefer to wait longer retrying, than fail the whole section.
 			MaxRetries: 10,
 		})
 		for boff.Ongoing() {
