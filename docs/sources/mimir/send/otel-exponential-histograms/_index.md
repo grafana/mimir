@@ -38,8 +38,77 @@ Use the OpenTelemetry SDK version 1.17.0 or later.
 		}
    ```
 
-   For more information, refer to [Registering Views](https://opentelemetry.io/docs/languages/go/instrumentation/#registering-views) in the OpenTelemetry SDK documentation for Go.
+   For more information about views, refer to [Registering Views](https://opentelemetry.io/docs/languages/go/instrumentation/#registering-views) in the OpenTelemetry SDK documentation for Go. For information about view configuration parameters, refer to [Base2 Exponential Bucket Histogram Aggregation](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/sdk.md#base2-exponential-bucket-histogram-aggregation) in the OpenTelemetry Metrics SDK on GitHub.
 
-## Migrate from classic histograms
+## Migrate from explicit bucket histograms
+
+To ease the migration process, you can keep the custom bucket definition of an explicit bucket histogram and add a view for the exponential histogram.
+
+1. Start with an existing histogram that uses explicit buckets.
+1. Create a view for the exponential histogram. Assign this view a unique name and include the exponential aggregation. This creates a metric with the assigned name and exponential buckets.
+
+  The following example shows how to create a metric called `request_latency_exp` that uses exponential buckets.
+
+  ```
+  v := sdkmetric.NewView(sdkmetric.Instrument{
+		Name: "request_latency",
+		Kind: sdkmetric.InstrumentKindHistogram,
+	}, sdkmetric.Stream{
+		Name: "request_latency_exp",
+		Aggregation: sdkmetric.AggregationBase2ExponentialHistogram{MaxSize: 160, NoMinMax: true, MaxScale: 20},
+		//Aggregation: sdkmetric.DefaultAggregationSelector(sdkmetric.InstrumentKindHistogram),
+	})
+  ```
+
+  For more information about creating a view, refer to [Views](https://opentelemetry.io/docs/specs/otel/metrics/sdk/#view) in the OpenTelemetry Metrics SDK.
+1. Modify dashboards to use the exponential histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
+
+   Use one of the following strategies to update dashboards.
+
+   - (Recommended) Add new dashboards with the new exponential histogram queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. You can publish the new dashboard when sufficient time has passed to serve users with the new data.
+   - Add a dashboard variable to your dashboard to enable switching between explicit bucket histograms and exponential histograms. There isn't support for selectively enabling and disabling queries in Grafana ([issue 79848](https://github.com/grafana/grafana/issues/79848)). As a workaround, add the dashboard variable `latency_metrics`, for example, and assign it a value of either `-1` or `1`. Then, add the following two queries to the panel:
+
+     ```
+     <classic_query> < ($latency_metrics * +Inf)
+     ```
+
+     ```
+     <native_query> < ($latency_metrics * -Inf)
+     ```
+
+     Where `classic_query` is the original query and `native_query` is the same query using exponential histogram query syntax. This technique is employed in Mimir's dashboards. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Mimir repository.
+
+     This solution allows users to switch between the explicit bucket histogram and the exponential histogram without going to a different dashboard.
+
+   - Replace the existing explicit bucket queries with modified queries. For example, replace:
+
+     ```
+     <explicit_bucket_query>
+     ```
+
+     with
+
+     ```
+     <exponential_query> or <explicit_bucket_query>
+     ```
+
+     Where `explicit_bucket_query` is the original query and `exponential_query` is the same query using exponential histogram query syntax.
+
+     {{< admonition type="warning" >}}
+     Using the PromQL operator `or` can lead to unexpected results. For example, if a query uses a range of seven days, such as `sum(rate(http_request_duration_seconds[7d]))`, then this query returns a value as soon as there are two exponential histograms samples present before the end time specified in the query. In this case, the seven day rate is calculated from a couple of minutes, rather than seven days, worth of data. This results in an inaccuracy in the graph around the time you started scraping exponential histograms.
+     {{< /admonition >}}
+
+1. Start adding new recording rules and alerts to use exponential histograms. Don't remove the old recording rules and alerts at this time.
+1. It's important to keep scraping both explicit bucket and exponential histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both data types until you can verify the new rules and alerts.
+
+   For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending exponential histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
+
+1. After configuring exponential histogram collection, choose one of the following ways to stop collecting explicit bucket histograms.
+
+   - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation. In Java, also use the `nativeOnly()` option. Refer to the examples in [Instrument application with Prometheus client libraries](#instrument-application-with-prometheus-client-libraries).
+   - Drop the explicit bucket histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping.
+   - Stop scraping the explicit bucket histogram version of metrics. This option applies to all metrics of a scrape target.
+
+1. Clean up recording rules and alerts by deleting the explicit bucket histogram version of the rule or alert.
 
 ## Bucket boundary calculation
