@@ -163,7 +163,7 @@ func TestRuler_ListRules(t *testing.T) {
 			store.setMissingRuleGroups(tc.missingRules)
 
 			r := prepareRuler(t, cfg, store, withStart())
-			a := NewAPI(r, r.directStore, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewNopLogger())
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules").Methods("GET").HandlerFunc(a.ListRules)
@@ -936,7 +936,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				return len(rls.Groups)
 			})
 
-			a := NewAPI(r, r.directStore, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewNopLogger())
 
 			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules"+tc.queryParams, nil, userID)
 			w := httptest.NewRecorder()
@@ -993,7 +993,7 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 		return len(rls.Groups)
 	})
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/alerts", nil, "user1")
 	w := httptest.NewRecorder()
@@ -1172,7 +1172,7 @@ rules:
 
 			reg := prometheus.NewPedanticRegistry()
 			r := prepareRuler(t, rulerCfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-			a := NewAPI(r, r.directStore, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewNopLogger())
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
@@ -1207,6 +1207,92 @@ rules:
 	}
 }
 
+func TestAPI_CreateRuleGroupWithCaching(t *testing.T) {
+	// Configure the ruler to only sync the rules based on notifications upon API changes.
+	cfg := defaultRulerConfig(t)
+	cfg.PollInterval = time.Hour
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+
+	const successResponse = `{"status":"success","data":null,"errorType":"","error":""}`
+
+	ruleGroupVersion1 := `name: group1
+interval: 15s
+rules:
+    - record: up_rule
+      expr: up
+    - alert: up_alert
+      expr: up < 1
+`
+	ruleGroupVersion2 := `name: group1
+interval: 15s
+rules:
+    - record: up_rule
+      expr: up
+    - alert: up_alert
+      expr: up <= 1
+`
+
+	mockCache, store := newInMemoryRuleStore(t)
+
+	reg := prometheus.NewPedanticRegistry()
+	// Set rule group limits since this performs a list call to count the current number of rule groups
+	// and we're testing if the API layer is correctly telling the rule store not to serve cached results.
+	r := prepareRuler(t, cfg, store, withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 2
+		defaults.RulerMaxRulesPerRuleGroup = 2
+	})))
+	a := NewAPI(r, r.store, log.NewNopLogger())
+
+	router := mux.NewRouter()
+	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
+
+	// Pre-condition check: the ruler should have run the initial rules sync.
+	verifySyncRulesMetric(t, reg, 1, 0)
+
+	// Store the initial version of the rule group
+	req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace1", strings.NewReader(ruleGroupVersion1), "user1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, successResponse, w.Body.String())
+	// Invalidation of exists and content
+	assert.Equal(t, 2, mockCache.CountDeleteCalls())
+
+	verifySyncRulesMetric(t, reg, 1, 1)
+
+	// Fetch it back and ensure the content is what we expect even though content can be cached
+	req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, ruleGroupVersion1, w.Body.String())
+	// Iter from initial sync, get, iter from sync
+	assert.Equal(t, 3, mockCache.CountFetchCalls())
+
+	// Store a new version of the group that is slightly different
+	req = requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace1", strings.NewReader(ruleGroupVersion2), "user1")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, successResponse, w.Body.String())
+	// Invalidating exists and content again
+	assert.Equal(t, 4, mockCache.CountDeleteCalls())
+
+	verifySyncRulesMetric(t, reg, 1, 2)
+
+	// Fetch it back and ensure content is updated to the new version meaning the cache was invalidated
+	req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, ruleGroupVersion2, w.Body.String())
+	// Iter from initial sync, get, iter from sync, another get, iter from sync
+	assert.Equal(t, 5, mockCache.CountFetchCalls())
+
+}
+
 func TestAPI_DeleteNamespace(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
@@ -1237,7 +1323,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
@@ -1294,7 +1380,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
@@ -1336,7 +1422,7 @@ func TestRuler_LimitsPerGroup(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -1389,7 +1475,7 @@ func TestRuler_RulerGroupLimits(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -1449,7 +1535,7 @@ func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 0
 	})))
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
 		name   string
@@ -1551,7 +1637,7 @@ func TestAPIRoutesCorrectlyHandleInvalidOrgID(t *testing.T) {
 
 		r := prepareRuler(t, cfg, newMockRuleStore(map[string]rulespb.RuleGroupList{}), withStart())
 
-		a := NewAPI(r, r.directStore, log.NewNopLogger())
+		a := NewAPI(r, r.store, log.NewNopLogger())
 
 		router := mux.NewRouter()
 		router.Path("/api/v1/rules").Methods(http.MethodGet).HandlerFunc(a.PrometheusRules)

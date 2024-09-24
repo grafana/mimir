@@ -473,7 +473,9 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	level.Debug(logger).Log("msg", "retrieving rule groups with namespace", "userID", userID, "namespace", namespace)
-	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace)
+	// Disable any caching when getting list of all rule groups since listing results
+	// are cached and not invalidated and this API is expected to be strongly consistent.
+	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, rulestore.WithCacheDisabled())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -606,7 +608,9 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	// Only list rule groups when enforcing a max number of groups for this tenant and namespace.
 	if a.ruler.IsMaxRuleGroupsLimited(userID, namespace) {
-		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		// Disable any caching when getting list of all rule groups since listing results
+		// are cached and not invalidated and we need the most up-to-date number.
+		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusInternalServerError)

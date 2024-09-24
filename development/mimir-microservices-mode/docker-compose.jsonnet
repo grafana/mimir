@@ -294,7 +294,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.19-alpine',
+      image: 'memcached:1.6.28-alpine',
       ports: [
         '11211:11211',
       ],
@@ -303,7 +303,7 @@ std.manifestYamlDoc({
 
   memcached_exporter:: {
     'memcached-exporter': {
-      image: 'prom/memcached-exporter:v0.6.0',
+      image: 'prom/memcached-exporter:v0.14.4',
       command: ['--memcached.address=memcached:11211', '--web.listen-address=0.0.0.0:9150'],
     },
   },

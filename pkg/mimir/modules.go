@@ -830,13 +830,12 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// we do accept stale data for about a polling interval (2 intervals in the worst
 	// case scenario due to the jitter applied).
 	cacheTTL := t.Cfg.Ruler.PollInterval
-
-	t.RulerDirectStorage, t.RulerCachedStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, cacheTTL, util_log.Logger, t.Registerer)
+	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, cacheTTL, util_log.Logger, t.Registerer)
 	return
 }
 
 func (t *Mimir) initRuler() (serv services.Service, err error) {
-	if t.RulerDirectStorage == nil {
+	if t.RulerStorage == nil {
 		level.Info(util_log.Logger).Log("msg", "The ruler storage has not been configured. Not starting the ruler.")
 		return nil, nil
 	}
@@ -939,8 +938,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		manager,
 		t.Registerer,
 		util_log.Logger,
-		t.RulerDirectStorage,
-		t.RulerCachedStorage,
+		t.RulerStorage,
 		t.Overrides,
 	)
 	if err != nil {
@@ -951,7 +949,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	t.API.RegisterRuler(t.Ruler)
 
 	// Expose HTTP configuration and prometheus-compatible Ruler APIs
-	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerDirectStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
+	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
 
 	return t.Ruler, nil
 }

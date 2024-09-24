@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 )
 
 type testGroup struct {
@@ -442,4 +445,154 @@ func (mb mockBucket) Iter(_ context.Context, _ string, f func(string) error, _ .
 		}
 	}
 	return nil
+}
+
+func TestCachingAndInvalidation(t *testing.T) {
+	fixtureGroups := []testGroup{
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup"}},
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup"}},
+		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup"}},
+		{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user"}},
+	}
+
+	setup := func(t *testing.T) (*cache.InstrumentedMockCache, *BucketRuleStore) {
+		iterCodec := &bucketcache.JSONIterCodec{}
+		baseClient := objstore.NewInMemBucket()
+		mockCache := cache.NewInstrumentedMockCache()
+
+		cacheCfg := bucketcache.NewCachingBucketConfig()
+		cacheCfg.CacheIter("rule-iter", mockCache, matchAll, time.Minute, iterCodec)
+		cacheCfg.CacheGet("rule-groups", mockCache, matchAll, 1024^2, time.Minute, time.Minute, time.Minute, true)
+		cacheClient, err := bucketcache.NewCachingBucket("rule-store", baseClient, cacheCfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+
+		ruleStore := NewBucketRuleStore(cacheClient, nil, log.NewNopLogger())
+
+		for _, g := range fixtureGroups {
+			desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
+			require.NoError(t, ruleStore.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
+		}
+
+		return mockCache, ruleStore
+	}
+
+	t.Run("list users with cache", func(t *testing.T) {
+		mockCache, ruleStore := setup(t)
+		users, err := ruleStore.ListAllUsers(context.Background())
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"user1", "user2"}, users)
+
+		require.Equal(t, 1, mockCache.CountStoreCalls())
+		require.Equal(t, 1, mockCache.CountFetchCalls())
+	})
+
+	t.Run("list users no cache", func(t *testing.T) {
+		mockCache, rs := setup(t)
+		users, err := rs.ListAllUsers(context.Background(), rulestore.WithCacheDisabled())
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"user1", "user2"}, users)
+
+		require.Equal(t, 1, mockCache.CountStoreCalls())
+		require.Equal(t, 0, mockCache.CountFetchCalls())
+	})
+
+	t.Run("list rule groups with cache", func(t *testing.T) {
+		mockCache, ruleStore := setup(t)
+		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
+
+		require.NoError(t, err)
+		require.Equal(t, rulespb.RuleGroupList{
+			{
+				Name:      "first testGroup",
+				User:      "user1",
+				Namespace: "hello",
+			},
+			{
+				Name:      "second testGroup",
+				User:      "user1",
+				Namespace: "hello",
+			},
+			{
+				Name:      "another namespace testGroup",
+				User:      "user1",
+				Namespace: "world",
+			},
+		}, groups)
+
+		require.Equal(t, 1, mockCache.CountStoreCalls())
+		require.Equal(t, 1, mockCache.CountFetchCalls())
+	})
+
+	t.Run("list rule groups no cache", func(t *testing.T) {
+		mockCache, ruleStore := setup(t)
+		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", rulestore.WithCacheDisabled())
+
+		require.NoError(t, err)
+		require.Equal(t, rulespb.RuleGroupList{
+			{
+				Name:      "first testGroup",
+				User:      "user1",
+				Namespace: "hello",
+			},
+			{
+				Name:      "second testGroup",
+				User:      "user1",
+				Namespace: "hello",
+			},
+			{
+				Name:      "another namespace testGroup",
+				User:      "user1",
+				Namespace: "world",
+			},
+		}, groups)
+
+		require.Equal(t, 1, mockCache.CountStoreCalls())
+		require.Equal(t, 0, mockCache.CountFetchCalls())
+	})
+
+	t.Run("get rule group from cache", func(t *testing.T) {
+		mockCache, ruleStore := setup(t)
+		group, err := ruleStore.GetRuleGroup(context.Background(), "user1", "world", "another namespace testGroup")
+
+		require.NoError(t, err)
+		require.NotNil(t, group)
+
+		require.Equal(t, 2, mockCache.CountStoreCalls())
+		require.Equal(t, 1, mockCache.CountFetchCalls())
+	})
+
+	t.Run("get rule groups after invalidation", func(t *testing.T) {
+		mockCache, ruleStore := setup(t)
+		group, err := ruleStore.GetRuleGroup(context.Background(), "user1", "world", "another namespace testGroup")
+
+		require.NoError(t, err)
+		require.NotNil(t, group)
+		require.Zero(t, group.QueryOffset)
+
+		require.Equal(t, 2, mockCache.CountStoreCalls())
+		require.Equal(t, 1, mockCache.CountFetchCalls())
+
+		origDeletes := mockCache.CountDeleteCalls()
+		group.QueryOffset = 42 * time.Second
+		require.NoError(t, ruleStore.SetRuleGroup(context.Background(), group.User, group.Namespace, group))
+
+		require.Equal(t, 2, mockCache.CountStoreCalls())
+		require.Equal(t, 1, mockCache.CountFetchCalls())
+		require.Equal(t, 2, mockCache.CountDeleteCalls()-origDeletes)
+
+		modifiedGroup, err := ruleStore.GetRuleGroup(context.Background(), "user1", "world", "another namespace testGroup")
+		require.NoError(t, err)
+		require.NotNil(t, modifiedGroup)
+		require.Equal(t, 42*time.Second, modifiedGroup.QueryOffset)
+
+		require.Equal(t, 4, mockCache.CountStoreCalls())
+		require.Equal(t, 2, mockCache.CountFetchCalls())
+		require.Equal(t, 2, mockCache.CountDeleteCalls()-origDeletes)
+	})
+}
+
+func matchAll(string) bool {
+	return true
 }
