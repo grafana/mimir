@@ -12,7 +12,7 @@ weight: 200
 
 # Send OpenTelemetry exponential histograms to Mimir
 
-You can collect and send exponential histograms to Mimir with the OpenTelemetry Collector. OpenTelemetry [exponential histograms](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) are compatible with Prometheus native histograms. The key difference is that exponential histograms store the `min` and `max`  observation values explicitly, whereas native histograms don't. This means that for exponential histograms, you don't need to estimate these values using the 0.0 and 1.0 quantiles.
+You can collect and send exponential histograms to Mimir with the OpenTelemetry Collector. OpenTelemetry [exponential histograms](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) are compatible with Prometheus native histograms. The key difference is that exponential histograms store the `min` and `max` observation values explicitly, whereas native histograms don't. This means that for exponential histograms, you don't need to estimate these values using the 0.0 and 1.0 quantiles.
 
 The OpenTelemetry Collector supports collecting exponential histograms and other compatible data formats, such as native histograms and DataDog sketches, through its receivers and sending them through its exporters.
 
@@ -22,7 +22,7 @@ The availability of different receivers and exporters depends on your OpenTeleme
 
 You can use the OpenTelemetry (OTLP) protocol to send exponential histograms to Grafana Mimir in their existing format, or you can use the Prometheus remote write protocol to send them as Prometheus native histograms. Refer to [Send native histograms to Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/).
 
-The OpenTelemetry SDK supports instrumenting applications in multiple languages. Refer to [Language APIs & SDKs](https://opentelemetry.io/docs/languages/). 
+The OpenTelemetry SDK supports instrumenting applications in multiple languages. Refer to [Language APIs & SDKs](https://opentelemetry.io/docs/languages/).
 
 ## Instrument an application with the OpenTelemetry SDK using Go
 
@@ -33,9 +33,9 @@ Use the OpenTelemetry SDK version 1.17.0 or later.
 
    ```
    Aggregation: metric.AggregationBase2ExponentialHistogram{
-			MaxSize:  160,
-			MaxScale: 20,
-		}
+   		MaxSize:  160,
+   		MaxScale: 20,
+   	}
    ```
 
    For more information about views, refer to [Registering Views](https://opentelemetry.io/docs/languages/go/instrumentation/#registering-views) in the OpenTelemetry SDK documentation for Go. For information about view configuration parameters, refer to [Base2 Exponential Bucket Histogram Aggregation](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/sdk.md#base2-exponential-bucket-histogram-aggregation) in the OpenTelemetry Metrics SDK on GitHub.
@@ -47,19 +47,20 @@ To ease the migration process, you can keep the custom bucket definition of an e
 1. Start with an existing histogram that uses explicit buckets.
 1. Create a view for the exponential histogram. Assign this view a unique name and include the exponential aggregation. This creates a metric with the assigned name and exponential buckets.
 
-  The following example shows how to create a metric called `request_latency_exp` that uses exponential buckets.
+The following example shows how to create a metric called `request_latency_exp` that uses exponential buckets.
 
-  ```
-  v := sdkmetric.NewView(sdkmetric.Instrument{
+```
+v := sdkmetric.NewView(sdkmetric.Instrument{
 		Name: "request_latency",
 		Kind: sdkmetric.InstrumentKindHistogram,
 	}, sdkmetric.Stream{
 		Name: "request_latency_exp",
 		Aggregation: sdkmetric.AggregationBase2ExponentialHistogram{MaxSize: 160, NoMinMax: true, MaxScale: 20},
 	})
-  ```
+```
 
-  For more information about creating a view, refer to [Views](https://opentelemetry.io/docs/specs/otel/metrics/sdk/#view) in the OpenTelemetry Metrics SDK.
+For more information about creating a view, refer to [Views](https://opentelemetry.io/docs/specs/otel/metrics/sdk/#view) in the OpenTelemetry Metrics SDK.
+
 1. Modify dashboards to use the exponential histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
    Use one of the following strategies to update dashboards.
