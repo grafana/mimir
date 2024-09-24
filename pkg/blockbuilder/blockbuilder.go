@@ -241,7 +241,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 type partitionState struct {
 	// Lag is the upperbound number of records the cycle will need to consume.
 	Lag int64
-	// Commit is the current offset commit for the partition.
+	// Commit is the offset of the next record we'll start consuming.
 	Commit kadm.Offset
 	// CommitRecordTimestamp is the timestamp of the record whose offset was committed (and not the time of commit).
 	CommitRecordTimestamp time.Time
@@ -288,7 +288,7 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 }
 
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
-// If the partition is lagging behind, it takes care of calling consuming it in sections.
+// If the partition is lagging behind, it takes care of consuming it in sections.
 func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state partitionState, cycleEnd time.Time) (err error) {
 	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
@@ -493,7 +493,7 @@ func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group
 		return fmt.Errorf("commit with partition %d, offset %d: %w", state.Commit.Partition, state.Commit.At, err)
 	}
 
-	level.Debug(logger).Log("msg", "successfully committed to Kafka", "offset", state.Commit.At)
+	level.Debug(logger).Log("msg", "successfully committed offset to Kafka", "offset", state.Commit.At)
 
 	return nil
 }
