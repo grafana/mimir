@@ -437,7 +437,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 
 	require.NoError(t, am.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_alertmanager_alerts_received_total"},
 		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "user-1")),
-		e2e.SkipMissingMetrics))
+		e2e.WaitMissingMetrics))
 
 	err = c.DeleteAlertmanagerConfig(context.Background())
 	require.NoError(t, err)
