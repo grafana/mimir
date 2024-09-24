@@ -168,7 +168,7 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.ClientTLSConfig.CustomCompressors = []string{s2.Name, s2.SnappyCompatName}
+	cfg.ClientTLSConfig.CustomCompressors = []string{s2.Name}
 	cfg.ClientTLSConfig.RegisterFlagsWithPrefix("ruler.client", f)
 	cfg.Ring.RegisterFlags(f, logger)
 	cfg.Notifier.RegisterFlags(f)

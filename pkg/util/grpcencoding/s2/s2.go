@@ -19,8 +19,6 @@ import (
 const (
 	// Name is the name of the S2 compressor.
 	Name = "s2"
-	// SnappyCompatName is the name of the Snappy compatible S2 compressor.
-	SnappyCompatName = "s2-snappy"
 )
 
 type compressor struct {
@@ -40,21 +38,13 @@ type reader struct {
 }
 
 func init() {
-	encoding.RegisterCompressor(newCompressor(false))
-	encoding.RegisterCompressor(newCompressor(true))
+	encoding.RegisterCompressor(newCompressor())
 }
 
-func newCompressor(snappyCompat bool) *compressor {
+func newCompressor() *compressor {
 	opts := []s2.WriterOption{s2.WriterConcurrency(1)}
-	var name string
-	if snappyCompat {
-		opts = append(opts, s2.WriterSnappyCompat())
-		name = SnappyCompatName
-	} else {
-		name = Name
-	}
 	c := &compressor{
-		name: name,
+		name: Name,
 	}
 	c.poolCompressor.New = func() interface{} {
 		w := s2.NewWriter(io.Discard, opts...)
