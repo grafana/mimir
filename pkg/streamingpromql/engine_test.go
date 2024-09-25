@@ -1722,14 +1722,14 @@ func TestAnnotations(t *testing.T) {
 	}
 }
 
-func TestCompareVariousMixedMetrics(t *testing.T) {
+func runMixedMetricsTests(t *testing.T, expressions []string) {
 	// Although most tests are covered with the promql test files (both ours and upstream),
 	// there is a lot of repetition around a few edge cases.
 	// This is not intended to be comprehensive, but instead check for some common edge cases
 	// ensuring MQE and Prometheus' engines return the same result when querying:
 	// - Series with mixed floats and histograms
 	// - Aggregations with mixed data types
-	// - Points with NaN
+	// - Points with NaN or infinity
 	// - Stale markers
 	// - Look backs
 
@@ -1777,51 +1777,6 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 		series{label="o", group="d"} Inf Inf -Inf Inf Inf -Inf -Inf
 	`
 
-	// Labels for generating combinations
-	labels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
-
-	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
-	// These will be used for binary operations, so we can add up to 3 series.
-	labelCombinations := testutils.Combinations(labels, 2)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labels, 3)...)
-
-	expressions := []string{}
-
-	// Binary operations
-	for _, labels := range labelCombinations {
-		if len(labels) >= 2 {
-			for _, op := range []string{"+", "-", "*", "/"} {
-				binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
-				for _, label := range labels[1:] {
-					binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
-				}
-				expressions = append(expressions, binaryExpr)
-			}
-		}
-	}
-
-	// For aggregations, also add combinations of 4 labels. (e.g., "a,b,c,d", "c,d,e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labels, 4)...)
-
-	for _, labels := range labelCombinations {
-		labelRegex := strings.Join(labels, "|")
-		// Aggregations
-		// TODO(jhesketh): Add stddev back in.
-		// stddev is excluded until https://github.com/prometheus/prometheus/pull/14941 is merged
-		// fixing an inconsistency in the Prometheus' engine where if a native histogram is the first sample
-		// loaded, it is incorrectly treated as a 0 float point.
-		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum"} {
-			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
-		}
-		// Multiple range-vector times are used to check lookbacks that only select single points, multiple points, and boundaries.
-		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[1m])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
-	}
-
 	timeRanges := []struct {
 		loadStep int
 		interval time.Duration
@@ -1859,4 +1814,56 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
+	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+
+	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
+	labelCombinations := testutils.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
+
+	expressions := []string{}
+
+	for _, labels := range labelCombinations {
+		for _, op := range []string{"+", "-", "*", "/"} {
+			binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+			for _, label := range labels[1:] {
+				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
+			}
+			expressions = append(expressions, binaryExpr)
+		}
+	}
+
+	runMixedMetricsTests(t, expressions)
+}
+
+func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
+	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+
+	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
+	labelCombinations := testutils.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
+
+	expressions := []string{}
+
+	for _, labels := range labelCombinations {
+		labelRegex := strings.Join(labels, "|")
+		// TODO(jhesketh): Add stddev back in.
+		// stddev is excluded until https://github.com/prometheus/prometheus/pull/14941 is merged
+		// fixing an inconsistency in the Prometheus' engine where if a native histogram is the first sample
+		// loaded, it is incorrectly treated as a 0 float point.
+		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum"} {
+			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
+		}
+		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[1m])`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
+	}
+
+	runMixedMetricsTests(t, expressions)
 }
