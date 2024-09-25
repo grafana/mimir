@@ -2480,16 +2480,8 @@ alertmanager_client:
 # matchers for routes and inhibition rules, in silences, and in the labels for
 # alerts. It is recommended that all tenants run the `migrate-utf8` command in
 # mimirtool before enabling this mode. Otherwise, some tenant configurations
-# might fail to load. To identify tenants with incompatible configurations,
-# search Mimir server logs for lines containing `Alertmanager is moving to a new
-# parser for labels and matchers, and this input is incompatible`. To find
-# tenant configurations that are valid but contain ambiguous matchers, search
-# for log lines containing `Matchers input has disagreement`. Each log line
-# includes the invalid input, a suggestion on how to fix the input (excluding
-# ambiguous matchers, as these require manual correction), and the ID of the
-# affected tenant. You must run Mimir with debug-level logging enabled.
-# Otherwise, these lines aren't logged. For more information, refer to
-# https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
+# might fail to load. For more information, refer to [Enable
+# UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).
 # Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
 # configurations if tenants added UTF-8 characters to their Alertmanager
 # configuration while it was enabled.
