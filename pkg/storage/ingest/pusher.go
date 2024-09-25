@@ -86,12 +86,12 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 			Buckets:                         prometheus.DefBuckets,
 		}),
 		ingestionShardBatchAge: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_ingestion_shard_batch_age_seconds",
+			Name:                        "cortex_ingest_storage_reader_batching_queue_age_seconds",
 			Help:                        "Age of the batch when it is being ingested by an ingestion shard. This is the time since adding the first sample to the batch. A high value indicated that the batching queue is not processing fast enough or that the batches are not filling up fast enough.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"user"}),
 		batchProcessingTimeSeconds: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_ingestion_shard_batch_processing_time_seconds",
+			Name:                        "cortex_ingest_storage_reader_batching_queue_processing_time_seconds",
 			Help:                        "Time to process a batch of samples in an ingestion shard.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"batch_contents", "user"}),
