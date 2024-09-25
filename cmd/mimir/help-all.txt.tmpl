@@ -1227,8 +1227,6 @@ Usage of ./cmd/mimir/mimir:
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
-  -distributor.limit-inflight-requests-using-grpc-method-limiter
-    	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -distributor.max-exemplars-per-series-per-request int
     	[experimental] Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.
   -distributor.max-otlp-request-size int
@@ -1455,8 +1453,6 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.limit-inflight-requests-using-grpc-method-limiter
-    	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int
@@ -1917,8 +1913,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
     	Limit the time range for partial queries at the querier level.
-  -querier.max-query-into-future duration
-    	[deprecated] Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
