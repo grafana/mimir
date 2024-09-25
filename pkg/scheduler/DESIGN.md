@@ -8,33 +8,103 @@ While the `RequestQueue`'s responsibilities are relatively broad, including the 
 querier-worker connection lifecycles and graceful startup/shutdown logic,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
 
+
+#### Tree Queue: What and Why?
+
 The "tree queue" structure serves a purpose much like a discrete priority queue.
 Rather than a single queue, the requests are split into many queues,
 each of which is located at a leaf node in the tree structure.
 
 
-```mermaid
-graph TB
-    root(("root"))
-    nodeA(("A"))
-    nodeB(("B"))
-    nodeA1(("A-1"))
-    nodeA2(("A-2"))
-    nodeB1(("B-1"))
-    nodeB2(("B-2"))
+The tree structure meets the specific requirements of our queue prioritization algorithms, namely:
 
-    root<-->nodeA
-    root<-->nodeB
-    nodeA<-->nodeA1
-    nodeA<-->nodeA2
-    nodeB<-->nodeB1
-    nodeB<-->nodeB2
+* we must select a queue to dequeue from based on two separate algorithms, each with independent state
+* there is a hierarchy of importance between the two queue selection algorithms - one is primary, the other secondary
+* one of the queue selection algorithms (tenant-querier shuffle shard) can reject all queue options presented to it
+
+These requirements lend themselves to a search tree or decision tree structure;
+the levels of the tree express a clear hierarchy of decisonmaking
+and traversal algorithms provide a familiar pattern for searching through the tree.
+
+#### Tree Queue: Simplified Structure
+
+Before digging deeper into the specific queue selection algorithms,
+check this simplified view of how we traverse the tree to select the next queue to dequeue a query request from:
+
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": false}} }%%
+
+graph TB
+    queryComponentAlgo["`
+       select query component node by querier-worker ID
+    `"]
+    style queryComponentAlgo fill:white,stroke:lightgray,stroke-dasharray:5
+
+
+    root(["`**root**
+
+    `"])
+
+    root~~~tenandShardAlgo["
+        select tenant by global tenant rotation
+    "]
+
+    style tenandShardAlgo fill:white,stroke:lightgray,stroke-dasharray:5
+
+    ingester(["`**ingester**`"])
+    storeGateway(["`**store-gateway**`"])
+
+    both(["`**ingester +store-gateway**`"])
+
+    root-->ingester
+    ingester-->root
+
+    root-->storeGateway
+    storeGateway-->root
+
+    root-->both
+    both-->root
+
+    ingester-tenant1(["`**tenant1**
+
+    [queue node]
+    `"])
+    ingester-tenant2(["`**tenant2**
+
+    [queue node]
+    `"])
+
+    storeGateway-tenant1(["`**tenant1**
+
+    [queue node]
+    `"])
+    storeGateway-tenant2(["`**tenant2**
+
+    [queue node]
+    `"])
+
+    both-tenant1(["`**tenant1**
+
+    [queue node]
+    `"])
+    both-tenant2(["`**tenant2**
+
+    [queue node]
+    `"])
+
+    ingester-->|sharded?|ingester-tenant1
+    ingester-tenant1-->|no|ingester
+    ingester-->|sharded?|ingester-tenant2
+    ingester-tenant2-->|no|ingester
+
+    storeGateway-->|sharded?|storeGateway-tenant1
+    storeGateway-tenant1-->|no|storeGateway
+    storeGateway-->|sharded?|storeGateway-tenant2
+    storeGateway-tenant2-->|no|storeGateway
+
+    both-->|sharded?|both-tenant1
+    both-tenant1-->|no|both
+    both-->|sharded?|both-tenant2
+    both-tenant2-->|no|both
 
 ```
-
-The tree structure meets the specific needs of our queue prioritization algorithms, namely:
-
-1. we must select a queue to dequeue from based on two separate algorithms, each with independent state
-  1. when traversing the  
-* there is a defined hierarchy between queue selection algorithms - one is more important
-* the queue selection algorithm based on tenant-querier shuffle sharding can reject
