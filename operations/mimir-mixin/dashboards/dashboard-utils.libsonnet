@@ -1438,7 +1438,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       on(%(aggregation_labels)s, metric, scaledObject) group_left
       label_replace(
         label_replace(
-            kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"} * 0,
+            # Using `max by ()` so that series churn doesn't break the promQL join
+            max by (%(aggregation_labels)s, metric, horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"} * 0),
             "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
         ),
         "metric", "$1", "metric_name", "(.+)"
