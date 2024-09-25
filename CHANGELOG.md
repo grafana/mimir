@@ -3284,6 +3284,8 @@ _Changes since `grafana/cortex-jsonnet` `1.9.0`._
    }
    ```
 * [FEATURE] Added multi-zone ingesters and store-gateways support. #1352 #1552
+* [FEATURE] The following alertmanager limit was added: #TODO
+  * User grafana config size (`-alertmanager.max-config-size-bytes`)
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
 * [ENHANCEMENT] Update `etcd-operator` to latest version (see https://github.com/grafana/jsonnet-libs/pull/480). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)
