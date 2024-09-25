@@ -360,6 +360,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_metadata_in_total",
 		"cortex_distributor_non_ha_samples_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
+		"cortex_distributor_label_values_with_newlines_total",
 	}
 
 	d.receivedSamples.WithLabelValues("userA").Add(5)
@@ -415,6 +416,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		cortex_distributor_exemplars_in_total{user="userA"} 5
+
+		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
+		# TYPE cortex_distributor_label_values_with_newlines_total counter
+		cortex_distributor_label_values_with_newlines_total{user="userA"} 1
 		`), metrics...))
 
 	d.cleanupInactiveUser("userA")
@@ -449,6 +454,9 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
+
+		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
+		# TYPE cortex_distributor_label_values_with_newlines_total counter
 		`), metrics...))
 }
 
