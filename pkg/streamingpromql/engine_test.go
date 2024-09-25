@@ -59,8 +59,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			requireRangeQueryIsUnsupported(t, featureToggles, expression, expectedError)
-			requireInstantQueryIsUnsupported(t, featureToggles, expression, expectedError)
+			requireQueryIsUnsupported(t, featureToggles, expression, expectedError)
 		})
 	}
 
@@ -82,8 +81,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableAggregationOperations = false
 
-		requireRangeQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
-		requireInstantQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+		requireQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
 	})
 
 	t.Run("binary expressions", func(t *testing.T) {
@@ -91,17 +89,10 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		featureToggles.EnableBinaryOperations = false
 
 		for _, op := range []string{"+", "> bool"} {
-			requireRangeQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s other_metric{}", op), "binary expressions")
-			requireInstantQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s other_metric{}", op), "binary expressions")
-
-			requireRangeQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s 1", op), "binary expressions")
-			requireInstantQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s 1", op), "binary expressions")
-
-			requireRangeQueryIsUnsupported(t, featureToggles, fmt.Sprintf("1 %s metric{}", op), "binary expressions")
-			requireInstantQueryIsUnsupported(t, featureToggles, fmt.Sprintf("1 %s metric{}", op), "binary expressions")
-
-			requireRangeQueryIsUnsupported(t, featureToggles, fmt.Sprintf("2 %s 1", op), "binary expressions")
-			requireInstantQueryIsUnsupported(t, featureToggles, fmt.Sprintf("2 %s 1", op), "binary expressions")
+			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s other_metric{}", op), "binary expressions")
+			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s 1", op), "binary expressions")
+			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("1 %s metric{}", op), "binary expressions")
+			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("2 %s 1", op), "binary expressions")
 		}
 	})
 
@@ -109,70 +100,58 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableBinaryComparisonOperations = false
 
-		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} > other_metric{}", "binary expression with '>'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} > other_metric{}", "binary expression with '>'")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} > 1", "binary expression with '>'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} > 1", "binary expression with '>'")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "1 > metric{}", "binary expression with '>'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "1 > metric{}", "binary expression with '>'")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "2 > bool 1", "binary expression with '>'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "2 > bool 1", "binary expression with '>'")
+		requireQueryIsUnsupported(t, featureToggles, "metric{} > other_metric{}", "binary expression with '>'")
+		requireQueryIsUnsupported(t, featureToggles, "metric{} > 1", "binary expression with '>'")
+		requireQueryIsUnsupported(t, featureToggles, "1 > metric{}", "binary expression with '>'")
+		requireQueryIsUnsupported(t, featureToggles, "2 > bool 1", "binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireRangeQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireInstantQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-
-		requireRangeQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireInstantQueryIsSupported(t, featureToggles, "metric{} + 1")
-
-		requireRangeQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireInstantQueryIsSupported(t, featureToggles, "1 + metric{}")
-
-		requireRangeQueryIsSupported(t, featureToggles, "2 + 1")
-		requireInstantQueryIsSupported(t, featureToggles, "2 + 1")
+		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
+		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
+		requireQueryIsSupported(t, featureToggles, "2 + 1")
 	})
 
 	t.Run("..._over_time functions", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableOverTimeFunctions = false
 
-		requireRangeQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
-		requireInstantQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
+		requireQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
 	})
 
 	t.Run("offset modifier", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableOffsetModifier = false
 
-		requireRangeQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
+		requireQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
+		requireQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
 		requireInstantQueryIsUnsupported(t, featureToggles, "metric[2m] offset 1m", "range vector selector with 'offset'")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
 	})
 
 	t.Run("scalars", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableScalars = false
 
-		requireRangeQueryIsUnsupported(t, featureToggles, "2", "scalar values")
-		requireInstantQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+		requireQueryIsUnsupported(t, featureToggles, "2", "scalar values")
 	})
 
 	t.Run("unary negation", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableUnaryNegation = false
 
-		requireRangeQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
-		requireInstantQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
-		requireInstantQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
+		requireQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
+		requireQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
 	})
+}
+
+func requireQueryIsUnsupported(t *testing.T, toggles FeatureToggles, expression string, expectedError string) {
+	requireRangeQueryIsUnsupported(t, toggles, expression, expectedError)
+	requireInstantQueryIsUnsupported(t, toggles, expression, expectedError)
+}
+
+func requireQueryIsSupported(t *testing.T, toggles FeatureToggles, expression string) {
+	requireRangeQueryIsSupported(t, toggles, expression)
+	requireInstantQueryIsSupported(t, toggles, expression)
 }
 
 func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
