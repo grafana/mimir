@@ -266,6 +266,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				return ingesterQueryResult{}, err
 			}
 
+			defer func() {
+				resp.FreeBuffer()
+			}()
+
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
