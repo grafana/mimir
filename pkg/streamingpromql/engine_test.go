@@ -82,60 +82,12 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireInstantQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
 	})
 
-	t.Run("binary expressions", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableBinaryOperations = false
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} + other_metric{}", "binary expressions")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} + other_metric{}", "binary expressions")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} + 1", "binary expressions")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} + 1", "binary expressions")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "1 + metric{}", "binary expressions")
-		requireInstantQueryIsUnsupported(t, featureToggles, "1 + metric{}", "binary expressions")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "2 + 1", "binary expressions")
-		requireInstantQueryIsUnsupported(t, featureToggles, "2 + 1", "binary expressions")
-	})
-
-	t.Run("..._over_time functions", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableOverTimeFunctions = false
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
-		requireInstantQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
-	})
-
-	t.Run("offset modifier", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableOffsetModifier = false
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric[2m] offset 1m", "range vector selector with 'offset'")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
-	})
-
 	t.Run("scalars", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableScalars = false
 
 		requireRangeQueryIsUnsupported(t, featureToggles, "2", "scalar values")
 		requireInstantQueryIsUnsupported(t, featureToggles, "2", "scalar values")
-	})
-
-	t.Run("unary negation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableUnaryNegation = false
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
-		requireInstantQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
-
-		requireRangeQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
-		requireInstantQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
 	})
 }
 

@@ -125,10 +125,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			lookbackDelta = q.engine.lookbackDelta
 		}
 
-		if !q.engine.featureToggles.EnableOffsetModifier && (e.OriginalOffset != 0 || e.Offset != 0) {
-			return nil, compat.NewNotSupportedError("instant vector selector with 'offset'")
-		}
-
 		return &operators.InstantVectorSelector{
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			Selector: &operators.Selector{
@@ -169,10 +165,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	case *parser.Call:
 		return q.convertFunctionCallToInstantVectorOperator(e)
 	case *parser.BinaryExpr:
-		if !q.engine.featureToggles.EnableBinaryOperations {
-			return nil, compat.NewNotSupportedError("binary expressions")
-		}
-
 		// We only need to handle three combinations of types here:
 		// Scalar on left, vector on right
 		// Vector on left, scalar on right
@@ -239,10 +231,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
 		}
 
-		if !q.engine.featureToggles.EnableUnaryNegation {
-			return nil, compat.NewNotSupportedError("unary negation of instant vectors")
-		}
-
 		inner, err := q.convertToInstantVectorOperator(e.Expr)
 		if err != nil {
 			return nil, err
@@ -261,10 +249,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 }
 
 func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call) (types.InstantVectorOperator, error) {
-	if !q.engine.featureToggles.EnableOverTimeFunctions && slices.Contains(overTimeFunctionNames, e.Func.Name) {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-	}
-
 	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
@@ -290,10 +274,6 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		vectorSelector := e.VectorSelector.(*parser.VectorSelector)
-
-		if !q.engine.featureToggles.EnableOffsetModifier && (vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0) {
-			return nil, compat.NewNotSupportedError("range vector selector with 'offset'")
-		}
 
 		return &operators.RangeVectorSelector{
 			Selector: &operators.Selector{
@@ -345,10 +325,6 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
 		}
 
-		if !q.engine.featureToggles.EnableUnaryNegation {
-			return nil, compat.NewNotSupportedError("unary negation of scalars")
-		}
-
 		inner, err := q.convertToScalarOperator(e.Expr)
 		if err != nil {
 			return nil, err
@@ -362,10 +338,6 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	case *parser.ParenExpr:
 		return q.convertToScalarOperator(e.Expr)
 	case *parser.BinaryExpr:
-		if !q.engine.featureToggles.EnableBinaryOperations {
-			return nil, compat.NewNotSupportedError("binary expressions")
-		}
-
 		lhs, err := q.convertToScalarOperator(e.LHS)
 		if err != nil {
 			return nil, err
