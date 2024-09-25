@@ -279,7 +279,7 @@ func TestClientErrorFilteringPusher_PushToStorage(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := newClientErrorFilteringPusher(nil, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
+			c := newPushErrorHandler(nil, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
 
 			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
 			assert.Equal(t, tc.expectedSampled, sampled)

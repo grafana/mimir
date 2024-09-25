@@ -55,7 +55,6 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
-	pusher = newClientErrorFilteringPusher(pusher, metrics, util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), logger)
 	return &pusherConsumer{
 		pusher:      pusher,
 		kafkaConfig: kafkaCfg,
@@ -143,10 +142,17 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 
 func (c pusherConsumer) newStorageWriter() PusherCloser {
 	if c.kafkaConfig.IngestionConcurrency == 0 {
-		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher)
+		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
 
-	return newParallelStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.IngestionConcurrency, c.kafkaConfig.IngestionConcurrencyBatchSize, c.logger)
+	return newParallelStoragePusher(
+		c.metrics.storagePusherMetrics,
+		c.pusher,
+		c.kafkaConfig.FallbackClientErrorSampleRate,
+		c.kafkaConfig.IngestionConcurrency,
+		c.kafkaConfig.IngestionConcurrencyBatchSize,
+		c.logger,
+	)
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
@@ -155,92 +161,26 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
 	ctx = user.InjectOrgID(ctx, tenantID)
+
 	err := writer.PushToStorage(ctx, req)
 
 	return err
 }
 
-// clientErrorFilteringPusher filters out client errors and logs them.
-// It only returns errors that are not client errors.
-type clientErrorFilteringPusher struct {
-	upstream         Pusher
-	metrics          *pusherConsumerMetrics
-	clientErrSampler *util_log.Sampler
-	fallbackLogger   log.Logger
-}
-
-func newClientErrorFilteringPusher(upstream Pusher, metrics *pusherConsumerMetrics, clientErrSampler *util_log.Sampler, fallbackLogger log.Logger) *clientErrorFilteringPusher {
-	return &clientErrorFilteringPusher{
-		upstream:         upstream,
-		metrics:          metrics,
-		clientErrSampler: clientErrSampler,
-		fallbackLogger:   fallbackLogger,
-	}
-}
-
-func (p *clientErrorFilteringPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
-	err := p.upstream.PushToStorage(ctx, request)
-	p.metrics.totalRequests.Inc()
-	if p.handlePushErr(ctx, err, spanlogger.FromContext(ctx, p.fallbackLogger)) {
-		return err
-	}
-
-	return nil
-}
-
-func (p *clientErrorFilteringPusher) handlePushErr(ctx context.Context, err error, spanLog *spanlogger.SpanLogger) bool {
-	if err == nil {
-		return false
-	}
-	// Only return non-client errors; these will stop the processing of the current Kafka fetches and retry (possibly).
-	if !mimirpb.IsClientError(err) {
-		p.metrics.serverErrRequests.Inc()
-		_ = spanLog.Error(err)
-		return true
-	}
-
-	p.metrics.clientErrRequests.Inc()
-
-	// The error could be sampled or marked to be skipped in logs, so we check whether it should be
-	// logged before doing it.
-	if keep, reason := p.shouldLogClientError(ctx, err); keep {
-		if reason != "" {
-			err = fmt.Errorf("%w (%s)", err, reason)
-		}
-
-		// This error message is consistent with error message in Prometheus remote-write and OTLP handlers in distributors.
-		level.Warn(spanLog).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "insight", true, "err", err)
-	}
-	return false
-}
-
-// shouldLogClientError returns whether err should be logged.
-func (p *clientErrorFilteringPusher) shouldLogClientError(ctx context.Context, err error) (bool, string) {
-	var optional middleware.OptionalLogging
-	if !errors.As(err, &optional) {
-		// If error isn't sampled yet, we wrap it into our sampler and try again.
-		err = p.clientErrSampler.WrapError(err)
-		if !errors.As(err, &optional) {
-			// We can get here if c.clientErrSampler is nil.
-			return true, ""
-		}
-	}
-
-	return optional.ShouldLog(ctx)
-}
-
 // sequentialStoragePusher receives mimirpb.WriteRequest which are then pushed to the storage one by one.
 type sequentialStoragePusher struct {
-	metrics *storagePusherMetrics
+	metrics      *storagePusherMetrics
+	errorHandler *pushErrorHandler
 
 	pusher Pusher
 }
 
 // newSequentialStoragePusher creates a new sequentialStoragePusher instance.
-func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher) sequentialStoragePusher {
+func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sampleRate int64, logger log.Logger) sequentialStoragePusher {
 	return sequentialStoragePusher{
-		metrics: metrics,
-		pusher:  pusher,
+		metrics:      metrics,
+		pusher:       pusher,
+		errorHandler: newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
 	}
 }
 
@@ -251,7 +191,11 @@ func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirp
 		ssp.metrics.processingTime.WithLabelValues(requestContents(wr)).Observe(time.Since(now).Seconds())
 	}(time.Now())
 
-	return ssp.pusher.PushToStorage(ctx, wr)
+	if err := ssp.pusher.PushToStorage(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
+		return err
+	}
+
+	return nil
 }
 
 // Close implements the PusherCloser interface.
@@ -268,17 +212,19 @@ type parallelStoragePusher struct {
 	// pushers is map["$tenant|$source"]*parallelStorageShards
 	pushers        map[string]*parallelStorageShards
 	upstreamPusher Pusher
+	errorHandler   *pushErrorHandler
 	numShards      int
 	batchSize      int
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
 		pushers:        make(map[string]*parallelStorageShards),
 		upstreamPusher: pusher,
 		numShards:      numShards,
+		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
 		batchSize:      batchSize,
 		metrics:        metrics,
 	}
@@ -325,7 +271,8 @@ type labelsHashFunc func(labels.Labels) uint64
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
 type parallelStorageShards struct {
-	metrics *storagePusherMetrics
+	metrics      *storagePusherMetrics
+	errorHandler *pushErrorHandler
 
 	pusher     Pusher
 	hashLabels labelsHashFunc
@@ -376,7 +323,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
 
 		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
-			return fmt.Errorf("encountered a non-client error when ingesting shard; this error was for a previous write request for the same tenant: %w", err)
+			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
 	}
 
@@ -384,13 +331,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 	shard := 0
 	for mdIdx := range request.Metadata {
 		if err := p.shards[shard].AddMetadataToBatch(ctx, request.Source, request.Metadata[mdIdx]); err != nil {
-			// TODO: Technically, we should determine at this point what type of error it is and abort the whole push if it's a server error.
-			// We'll do that in the next PR as otherwise it's too many changes right now.
-			if !mimirpb.IsClientError(err) {
-				return err
-			}
-
-			errs.Add(err)
+			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
 		shard++
 		shard %= p.numShards
@@ -440,8 +381,10 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 
 		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
 
+		// The error handler needs to determine if this is a server error or not.
+		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
 		p.metrics.processingTime.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
-		if err != nil {
+		if err != nil && p.errorHandler.IsServerError(wr.Context, err) {
 			queue.ErrorChannel() <- err
 		}
 	}
@@ -459,6 +402,73 @@ func requestContents(request *mimirpb.WriteRequest) string {
 		// This would be a bug, but at least we'd know.
 		return "empty"
 	}
+}
+
+// pushErrorHandler filters out client errors and logs them.
+// It only returns errors that are not client errors.
+type pushErrorHandler struct {
+	metrics          *storagePusherMetrics
+	clientErrSampler *util_log.Sampler
+	fallbackLogger   log.Logger
+}
+
+// newPushErrorHandler creates a new pushErrorHandler instance.
+func newPushErrorHandler(metrics *storagePusherMetrics, clientErrSampler *util_log.Sampler, fallbackLogger log.Logger) *pushErrorHandler {
+	return &pushErrorHandler{
+		metrics:          metrics,
+		clientErrSampler: clientErrSampler,
+		fallbackLogger:   fallbackLogger,
+	}
+}
+
+// IsServerError returns whether the error is a server error or not, the context is used to extract the span from the trace.
+// When the error is a server error, we'll add it to the span passed down in the context and return true to indicate that the we should stop processing.
+// When it is a client error, we'll add it to the span and log it to stdout/stderr.
+func (p *pushErrorHandler) IsServerError(ctx context.Context, err error) bool {
+	// For every request, we have to determine if it's a server error.
+	// For the sake of simplicity, let's increment the total requests counter here.
+	p.metrics.totalRequests.Inc()
+
+	spanLog := spanlogger.FromContext(ctx, p.fallbackLogger)
+	if err == nil {
+		return false
+	}
+
+	// Only return non-client errors; these will stop the processing of the current Kafka fetches and retry (possibly).
+	if !mimirpb.IsClientError(err) {
+		p.metrics.serverErrRequests.Inc()
+		_ = spanLog.Error(err)
+		return true
+	}
+
+	p.metrics.clientErrRequests.Inc()
+
+	// The error could be sampled or marked to be skipped in logs, so we check whether it should be
+	// logged before doing it.
+	if keep, reason := p.shouldLogClientError(ctx, err); keep {
+		if reason != "" {
+			err = fmt.Errorf("%w (%s)", err, reason)
+		}
+
+		// This error message is consistent with error message in Prometheus remote-write and OTLP handlers in distributors.
+		level.Warn(spanLog).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "insight", true, "err", err)
+	}
+	return false
+}
+
+// shouldLogClientError returns whether err should be logged.
+func (p *pushErrorHandler) shouldLogClientError(ctx context.Context, err error) (bool, string) {
+	var optional middleware.OptionalLogging
+	if !errors.As(err, &optional) {
+		// If error isn't sampled yet, we wrap it into our sampler and try again.
+		err = p.clientErrSampler.WrapError(err)
+		if !errors.As(err, &optional) {
+			// We can get here if c.clientErrSampler is nil.
+			return true, ""
+		}
+	}
+
+	return optional.ShouldLog(ctx)
 }
 
 // batchingQueue is a queue that batches the incoming time series according to the batch size.
