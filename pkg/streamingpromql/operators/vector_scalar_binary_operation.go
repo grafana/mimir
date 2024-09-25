@@ -24,6 +24,7 @@ type VectorScalarBinaryOperation struct {
 	Vector                   types.InstantVectorOperator
 	ScalarIsLeftSide         bool
 	Op                       parser.ItemType
+	ReturnBool               bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	timeRange types.QueryTimeRange
@@ -42,12 +43,20 @@ func NewVectorScalarBinaryOperation(
 	vector types.InstantVectorOperator,
 	scalarIsLeftSide bool,
 	op parser.ItemType,
+	returnBool bool,
 	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*VectorScalarBinaryOperation, error) {
-	f := arithmeticOperationFuncs[op]
+	var f binaryOperationFunc
+
+	if returnBool {
+		f = boolComparisonOperationFuncs[op]
+	} else {
+		f = arithmeticAndComparisonOperationFuncs[op]
+	}
+
 	if f == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
@@ -57,6 +66,7 @@ func NewVectorScalarBinaryOperation(
 		Vector:                   vector,
 		ScalarIsLeftSide:         scalarIsLeftSide,
 		Op:                       op,
+		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
 		timeRange:          timeRange,
@@ -93,11 +103,13 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 		return nil, err
 	}
 
-	// We don't need to do deduplication and merging of series in this operator: we expect that this operator
-	// is wrapped in a DeduplicateAndMerge.
-	metadata, err = functions.DropSeriesName(metadata, v.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
+	if !v.Op.IsComparisonOperator() || v.ReturnBool {
+		// We don't need to do deduplication and merging of series in this operator: we expect that this operator
+		// is wrapped in a DeduplicateAndMerge.
+		metadata, err = functions.DropSeriesName(metadata, v.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return metadata, nil

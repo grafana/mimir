@@ -173,6 +173,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError("binary expressions")
 		}
 
+		if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableBinaryComparisonOperations {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
+		}
+
 		// We only need to handle three combinations of types here:
 		// Scalar on left, vector on right
 		// Vector on left, scalar on right
@@ -209,7 +213,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 
 			scalarIsLeftSide := e.LHS.Type() == parser.ValueTypeScalar
 
-			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, q.timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, e.ReturnBool, q.timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 			if err != nil {
 				return nil, err
 			}
@@ -233,7 +237,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 	case *parser.UnaryExpr:
 		if e.Op != parser.SUB {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
@@ -364,6 +368,10 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	case *parser.BinaryExpr:
 		if !q.engine.featureToggles.EnableBinaryOperations {
 			return nil, compat.NewNotSupportedError("binary expressions")
+		}
+
+		if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableBinaryComparisonOperations {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
 		}
 
 		lhs, err := q.convertToScalarOperator(e.LHS)
