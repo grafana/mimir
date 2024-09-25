@@ -262,7 +262,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				if !isResponseCachable(downstreamRes, s.logger) {
+				if !isResponseCachable(downstreamRes) {
 					continue
 				}
 
@@ -408,7 +408,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 				"hashedKey", foundKey,
 				"traceID", cachedExtent.TraceId,
 				"start", time.UnixMilli(cachedExtent.Start),
-				"end", time.UnixMilli(cachedExtent.Start),
+				"end", time.UnixMilli(cachedExtent.End),
 			)
 			usedBytes += cachedExtent.Response.Size()
 		}

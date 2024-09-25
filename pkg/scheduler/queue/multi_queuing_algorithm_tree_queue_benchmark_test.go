@@ -375,39 +375,45 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		tqa := newTenantQuerierAssignments()
+		tqaNonFlipped := newTenantQuerierAssignments()
+		tqaFlipped := newTenantQuerierAssignments()
+		tqaQuerierWorkerPrioritization := newTenantQuerierAssignments()
 
-		nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
+		nonFlippedRoundRobinTree, err := NewTree(tqaNonFlipped, &roundRobinState{})
 		require.NoError(t, err)
 
-		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqa, &roundRobinState{})
+		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqaFlipped)
 		require.NoError(t, err)
 
-		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqa, &roundRobinState{})
+		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
 		require.NoError(t, err)
 
-		trees := []struct {
+		treeScenarios := []struct {
 			name string
 			tree Tree
+			tqa  *tenantQuerierAssignments
 		}{
 			// keeping these names the same length keeps logged results aligned
 			{
 				"tenant-querier -> query component round-robin tree",
 				nonFlippedRoundRobinTree,
+				tqaNonFlipped,
 			},
 			{
 				"query component round-robin -> tenant-querier tree",
 				flippedRoundRobinTree,
+				tqaFlipped,
 			},
 			{
 				"worker-queue prioritization -> tenant-querier tree",
 				querierWorkerPrioritizationTree,
+				tqaQuerierWorkerPrioritization,
 			},
 		}
-		for _, tree := range trees {
+		for _, scenario := range treeScenarios {
 			testCaseName := fmt.Sprintf(
 				"tree: %s, %s",
-				tree.name,
+				scenario.name,
 				weightedQueueDimensionTestCase.name,
 			)
 			testCaseObservations := &testScenarioQueueDurationObservations{
@@ -417,7 +423,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			}
 
 			// only the non-flipped tree uses the old tenant -> query component hierarchy
-			prioritizeQueryComponents := tree.tree != nonFlippedRoundRobinTree
+			prioritizeQueryComponents := scenario.tree != nonFlippedRoundRobinTree
 
 			t.Run(testCaseName, func(t *testing.T) {
 				queue, err := NewRequestQueue(
@@ -434,9 +440,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierAssignments
 				// so we have to override here to use the same structures as the test case
-				queue.queueBroker.tenantQuerierAssignments = tqa
+				queue.queueBroker.tenantQuerierAssignments = scenario.tqa
 				queue.queueBroker.prioritizeQueryComponents = prioritizeQueryComponents
-				queue.queueBroker.tree = tree.tree
+				queue.queueBroker.tree = scenario.tree
 
 				ctx := context.Background()
 				require.NoError(t, queue.starting(ctx))
@@ -482,7 +488,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				// ensure everything was dequeued
-				path, val := tree.tree.Dequeue(&DequeueArgs{querierID: tqa.currentQuerier})
+				path, val := scenario.tree.Dequeue(&DequeueArgs{querierID: scenario.tqa.currentQuerier})
 				assert.Nil(t, val)
 				assert.Equal(t, path, QueuePath{})
 			})

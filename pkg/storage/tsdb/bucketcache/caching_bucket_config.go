@@ -60,8 +60,9 @@ type existsConfig struct {
 
 type getConfig struct {
 	existsConfig
-	contentTTL       time.Duration
-	maxCacheableSize int
+	contentTTL           time.Duration
+	maxCacheableSize     int
+	invalidateOnMutation bool
 }
 
 type getRangeConfig struct {
@@ -77,7 +78,8 @@ type getRangeConfig struct {
 
 type attributesConfig struct {
 	operationConfig
-	ttl time.Duration
+	ttl                  time.Duration
+	invalidateOnMutation bool
 }
 
 func newOperationConfig(cache cache.Cache, matcher func(string) bool) operationConfig {
@@ -104,15 +106,16 @@ func (cfg *CachingBucketConfig) CacheIter(configName string, cache cache.Cache, 
 }
 
 // CacheGet configures caching of "Get" operation for matching files. Content of the object is cached, as well as whether object exists or not.
-func (cfg *CachingBucketConfig) CacheGet(configName string, cache cache.Cache, matcher func(string) bool, maxCacheableSize int, contentTTL, existsTTL, doesntExistTTL time.Duration) {
+func (cfg *CachingBucketConfig) CacheGet(configName string, cache cache.Cache, matcher func(string) bool, maxCacheableSize int, contentTTL, existsTTL, doesntExistTTL time.Duration, invalidateOnMutation bool) {
 	cfg.get[configName] = &getConfig{
 		existsConfig: existsConfig{
 			operationConfig: newOperationConfig(cache, matcher),
 			existsTTL:       existsTTL,
 			doesntExistTTL:  doesntExistTTL,
 		},
-		contentTTL:       contentTTL,
-		maxCacheableSize: maxCacheableSize,
+		contentTTL:           contentTTL,
+		maxCacheableSize:     maxCacheableSize,
+		invalidateOnMutation: invalidateOnMutation,
 	}
 }
 
@@ -144,10 +147,11 @@ func (cfg *CachingBucketConfig) CacheGetRange(configName string, cache cache.Cac
 }
 
 // CacheAttributes configures caching of "Attributes" operation for matching files.
-func (cfg *CachingBucketConfig) CacheAttributes(configName string, cache cache.Cache, matcher func(name string) bool, ttl time.Duration) {
+func (cfg *CachingBucketConfig) CacheAttributes(configName string, cache cache.Cache, matcher func(name string) bool, ttl time.Duration, invalidateOnMutation bool) {
 	cfg.attributes[configName] = &attributesConfig{
-		operationConfig: newOperationConfig(cache, matcher),
-		ttl:             ttl,
+		operationConfig:      newOperationConfig(cache, matcher),
+		ttl:                  ttl,
+		invalidateOnMutation: invalidateOnMutation,
 	}
 }
 

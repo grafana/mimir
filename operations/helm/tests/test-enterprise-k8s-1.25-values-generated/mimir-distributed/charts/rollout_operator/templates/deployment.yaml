@@ -5,10 +5,10 @@ kind: Deployment
 metadata:
   name: test-enterprise-k8s-1.25-values-rollout-operator
   labels:
-    helm.sh/chart: rollout-operator-0.17.0
+    helm.sh/chart: rollout-operator-0.18.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
-    app.kubernetes.io/version: "v0.18.0"
+    app.kubernetes.io/version: "v0.19.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -43,7 +43,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: "grafana/rollout-operator:v0.18.0"
+          image: "grafana/rollout-operator:v0.19.1"
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns

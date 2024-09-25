@@ -35250,7 +35250,7 @@ data:
                    "query": "label_values(cortex_ingester_active_series{cluster=~\"$cluster\", namespace=~\"$namespace\"}, user)",
                    "refresh": 1,
                    "regex": "",
-                   "sort": 1,
+                   "sort": 7,
                    "tagValuesQuery": "",
                    "tags": [ ],
                    "tagsQuery": "",

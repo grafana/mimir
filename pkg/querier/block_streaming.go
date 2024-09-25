@@ -295,6 +295,13 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 }
 
 func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) error {
+	if err := s.ctx.Err(); err != nil {
+		// If the context is already cancelled, stop now for the same reasons as below.
+		// We do this extra check here to ensure that we don't get unlucky and continue to send to seriesChunksChan even if
+		// the context is cancelled because the consumer of the stream is reading faster than we can read new batches.
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
+	}
+
 	select {
 	case <-s.ctx.Done():
 		// Why do we abort if the context is done?

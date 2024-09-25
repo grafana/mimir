@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -263,13 +264,12 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 	return true, ""
 }
 
-// isResponseCachable says whether the response should be cached or not.
-func isResponseCachable(r Response, logger log.Logger) bool {
-	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
-	for _, v := range headerValues {
-		if v == noStoreValue {
-			level.Debug(logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
-			return false
+// isResponseCachable returns true if a response hasn't explicitly disabled caching
+// via an HTTP header, false otherwise.
+func isResponseCachable(r Response) bool {
+	for _, hv := range r.GetHeaders() {
+		if hv.GetName() == cacheControlHeader {
+			return !slices.Contains(hv.GetValues(), noStoreValue)
 		}
 	}
 
@@ -329,18 +329,6 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	})
 
 	return cachable
-}
-
-func getHeaderValuesWithName(r Response, headerName string) (headerValues []string) {
-	for _, hv := range r.GetHeaders() {
-		if hv.GetName() != headerName {
-			continue
-		}
-
-		headerValues = append(headerValues, hv.GetValues()...)
-	}
-
-	return
 }
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
@@ -642,6 +630,6 @@ func cacheHashKey(key string) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(key)) // This'll never error.
 
-	// Hex because memcache errors for the bytes produced by the hash.
+	// Hex because memcache keys must be non-whitespace non-control ASCII
 	return hex.EncodeToString(hasher.Sum(nil))
 }

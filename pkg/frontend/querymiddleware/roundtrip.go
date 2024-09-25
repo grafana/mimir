@@ -58,6 +58,7 @@ type Config struct {
 	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
 	ResultsCacheConfig       `yaml:"results_cache"`
 	CacheResults             bool          `yaml:"cache_results"`
+	CacheErrors              bool          `yaml:"cache_errors" category:"experimental"`
 	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
 	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
 	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
@@ -87,6 +88,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 2*time.Second, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
+	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.PrunedQueries, "query-frontend.prune-queries", false, "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
@@ -104,7 +106,7 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
+	if cfg.CacheResults || cfg.CacheErrors || cfg.cardinalityBasedShardingEnabled() {
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
 			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
@@ -336,6 +338,14 @@ func newQueryMiddlewares(
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
+
+	if cfg.CacheResults && cfg.CacheErrors {
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("error_caching", metrics),
+			newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, log, registerer),
+		)
+	}
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
