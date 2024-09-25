@@ -24,7 +24,7 @@ These requirements lend themselves to a search tree or decision tree structure;
 the levels of the tree express a clear hierarchy of decisonmaking
 and traversal algorithms provide a familiar pattern for searching through the tree.
 
-#### Tree Queue: Simplified Diagram
+#### Simplified Diagram
 
 Before digging deeper into the specific queue selection algorithms,
 we can start with this simplified view of how we traverse the tree
@@ -53,7 +53,9 @@ graph TB
     ingester(["`**ingester**`"])
     storeGateway(["`**store-gateway**`"])
 
-    both(["`**ingester +store-gateway**`"])
+    both(["`**ingester +
+
+    store-gateway**`"])
 
     root<-->ingester
     root<-->storeGateway
