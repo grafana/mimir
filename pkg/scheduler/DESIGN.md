@@ -101,4 +101,19 @@ graph TB
 
 ```
 
+### Queue Selection Algorithms
 
+#### Context & Requirements
+
+The `RequestQueue` originally utilized only a single dimension of queue splitting, by tenant.
+The structure and queue selection served to accomplish two purposes:
+1. tenant fairness via a simple round-robin between all tenants with non-empty query request queues
+1. rudimentary tenant isolation via shuffle-sharding noisy tenants to only a subset of queriers
+
+While this inter-tenant Quality-Of-Service approach has worked well,
+we observed QOS issues arising from the varying characteristics of Mimir's two "query components"
+used by the queriers to fetch TSDB data for executing queries: ingesters and store-gateways.
+
+<!--The structure had a simple hashmap mapping tenant IDs to a queue,-->
+<!--and rotated through a global list of active tenantIDs.-->
+<!--to select the next tenant sharded to the waiting querier.-->
