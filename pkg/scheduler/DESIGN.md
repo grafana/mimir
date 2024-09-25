@@ -1,6 +1,4 @@
-## Query Request Queue Design
-
-### Queue Splitting and Dequeuing Priority
+## Query Request Queue Design: Queue Splitting and Prioritization
 
 The `RequestQueue` subservice embedded into the scheduler process is responsible for
 all decisions regarding enqueuing and dequeuing of query requests.
@@ -9,7 +7,7 @@ querier-worker connection lifecycles and graceful startup/shutdown logic,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
 
 
-#### Tree Queue: What and Why?
+### Tree Queue: What and Why?
 
 The "tree queue" structure serves a purpose much like a discrete priority queue.
 Rather than a single queue, the requests are split into many queues,
@@ -26,10 +24,11 @@ These requirements lend themselves to a search tree or decision tree structure;
 the levels of the tree express a clear hierarchy of decisonmaking
 and traversal algorithms provide a familiar pattern for searching through the tree.
 
-#### Tree Queue: Simplified Structure
+#### Tree Queue: Simplified Diagram
 
 Before digging deeper into the specific queue selection algorithms,
-check this simplified view of how we traverse the tree to select the next queue to dequeue a query request from:
+we can start with this simplified view of how we traverse the tree
+to select the next queue to dequeue a query request from:
 
 ```mermaid
 %%{init: {"flowchart": {"htmlLabels": false}} }%%
@@ -92,19 +91,17 @@ graph TB
     [queue node]
     `"])
 
-    ingester-->|sharded?|ingester-tenant1
-    ingester-tenant1-->|no|ingester
-    ingester-->|sharded?|ingester-tenant2
-    ingester-tenant2-->|no|ingester
+    ingester<-->ingester-tenant1
+    ingester<>-->ingester-tenant2
 
-    storeGateway-->|sharded?|storeGateway-tenant1
-    storeGateway-tenant1-->|no|storeGateway
-    storeGateway-->|sharded?|storeGateway-tenant2
-    storeGateway-tenant2-->|no|storeGateway
 
-    both-->|sharded?|both-tenant1
-    both-tenant1-->|no|both
-    both-->|sharded?|both-tenant2
-    both-tenant2-->|no|both
+    storeGateway<-->storeGateway-tenant1
+    storeGateway<-->storeGateway-tenant2
+
+    both<-->both-tenant1
+    both<-->both-tenant2
+
 
 ```
+
+
