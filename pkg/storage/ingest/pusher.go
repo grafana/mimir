@@ -157,7 +157,6 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 	ctx = user.InjectOrgID(ctx, tenantID)
 	err := writer.PushToStorage(ctx, req)
 
-	c.metrics.totalRequests.Inc()
 	return err
 }
 
@@ -181,6 +180,7 @@ func newClientErrorFilteringPusher(upstream Pusher, metrics *pusherConsumerMetri
 
 func (p *clientErrorFilteringPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	err := p.upstream.PushToStorage(ctx, request)
+	p.metrics.totalRequests.Inc()
 	if p.handlePushErr(ctx, err, spanlogger.FromContext(ctx, p.fallbackLogger)) {
 		return err
 	}
