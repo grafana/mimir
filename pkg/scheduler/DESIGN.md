@@ -92,7 +92,7 @@ graph TB
     `"])
 
     ingester<-->ingester-tenant1
-    ingester<>-->ingester-tenant2
+    ingester<-->ingester-tenant2
 
 
     storeGateway<-->storeGateway-tenant1
