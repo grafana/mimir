@@ -140,6 +140,7 @@ type Distributor struct {
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	labelValuesWithNewlinesPerUser   *prometheus.CounterVec
 	hashCollisionCount               prometheus.Counter
 
 	// Metrics for data rejected for hitting per-tenant limits
@@ -412,6 +413,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
+		labelValuesWithNewlinesPerUser: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_label_values_with_newlines_total",
+			Help: "Total amount of label values with newlines seen at ingestion time.",
+		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
 		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, reasonRateLimited),
@@ -651,6 +656,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
+	d.labelValuesWithNewlinesPerUser.DeleteLabelValues(userID)
 
 	d.PushMetrics.deleteUserMetrics(userID)
 
@@ -771,6 +777,15 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		ts.SortExemplars()
 	}
 	return nil
+}
+func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
+	count := 0
+	for _, l := range labels {
+		if strings.IndexByte(l.Value, '\n') >= 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1026,6 +1041,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 
+		labelValuesWithNewlines := 0
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
 			totalExemplars += len(ts.Exemplars)
@@ -1053,10 +1069,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+			labelValuesWithNewlines += d.labelValuesWithNewlines(ts.Labels)
 		}
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+		d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
 
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
