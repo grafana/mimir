@@ -57,6 +57,7 @@ type pusherConsumerMetrics struct {
 	numTimeSeriesPerFlush      *prometheus.HistogramVec
 	ingestionShardBatchAge     *prometheus.HistogramVec
 	batchProcessingTimeSeconds *prometheus.HistogramVec
+	batchProcessingErrorsTotal *prometheus.CounterVec
 	processingTimeSeconds      prometheus.Observer
 	clientErrRequests          prometheus.Counter
 	serverErrRequests          prometheus.Counter
@@ -94,6 +95,10 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 			Help:                        "Time to process a batch of samples in an ingestion shard.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"batch_contents", "user"}),
+		batchProcessingErrorsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_batching_queue_processing_errors_total",
+			Help: "Number of errors encountered while processing a batch of samples in an ingestion shard. These are usually server errors and abort processing further records. This should track cortex_ingest_storage_reader_records_failed_total{cause='server'}.",
+		}, []string{"user"}),
 
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
@@ -494,6 +499,7 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 
 		p.metrics.batchProcessingTimeSeconds.WithLabelValues(requestContents(wr.WriteRequest), tenantID).Observe(time.Since(processingStart).Seconds())
 		if err != nil {
+			p.metrics.batchProcessingErrorsTotal.WithLabelValues(tenantID).Inc()
 			queue.ErrorChannel() <- err
 		}
 	}
