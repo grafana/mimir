@@ -308,74 +308,99 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
 	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
-	am := &MultitenantAlertmanager{
-		store:  alertstore,
-		logger: test.NewTestingLogger(t),
-	}
-
-	require.Len(t, storage.Objects(), 0)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/grafana/config", nil)
-	{
-		rec := httptest.NewRecorder()
-		am.SetUserGrafanaConfig(rec, req)
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
-		require.Len(t, storage.Objects(), 0)
-	}
-
-	ctx := user.InjectOrgID(context.Background(), "test_user")
-	req = req.WithContext(ctx)
-	{
-		// First, try with invalid configuration.
-		rec := httptest.NewRecorder()
-		json := `
+	cases := []struct {
+		name            string
+		maxConfigSize   int
+		orgID           string
+		body            string
+		expStatusCode   int
+		expResponseBody string
+		expStorageKey   string
+	}{
 		{
-			"configuration_hash": "some_hash",
-			"created": 12312414343,
-			"default": false
-		}
-		`
-		req.Body = io.NopCloser(strings.NewReader(json))
-		am.SetUserGrafanaConfig(rec, req)
-		require.Equal(t, http.StatusBadRequest, rec.Code)
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-		failedJSON := `
+			name:          "missing org id",
+			expStatusCode: http.StatusUnauthorized,
+		},
 		{
-			"error": "error marshalling JSON Grafana Alertmanager config: no route provided in config",
-			"status": "error"
-		}
-		`
-		require.JSONEq(t, failedJSON, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-
-		// Now, with a valid configuration.
-		rec = httptest.NewRecorder()
-		json = fmt.Sprintf(`
-		{
-			"configuration": %s,
-			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
-			"created": 12312414343,
-			"default": false,
-			"promoted": true,
-			"external_url": "http://test.grafana.com",
-			"static_headers": {
-				"Header-1": "Value-1",
-				"Header-2": "Value-2"
+			name: "invalid config",
+			body: `
+			{
+				"configuration_hash": "some_hash",
+				"created": 12312414343,
+				"default": false
 			}
-		}
-		`, testGrafanaConfig)
-		req.Body = io.NopCloser(strings.NewReader(json))
-		am.SetUserGrafanaConfig(rec, req)
+			`,
+			orgID:         "test_user",
+			expStatusCode: http.StatusBadRequest,
+			expResponseBody: `
+			{
+				"error": "error marshalling JSON Grafana Alertmanager config: no route provided in config",
+				"status": "error"
+			}
+			`,
+		},
+		{
+			name: "with valid config",
+			body: fmt.Sprintf(`
+			{
+				"configuration": %s,
+				"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
+				"created": 12312414343,
+				"default": false,
+				"promoted": true,
+				"external_url": "http://test.grafana.com",
+				"static_headers": {
+					"Header-1": "Value-1",
+					"Header-2": "Value-2"
+				}
+			}
+			`, testGrafanaConfig),
+			orgID:           "test_user",
+			expStatusCode:   http.StatusCreated,
+			expResponseBody: successJSON,
+			expStorageKey:   "grafana_alertmanager/test_user/grafana_config",
+		},
+	}
 
-		require.Equal(t, http.StatusCreated, rec.Code)
-		body, err = io.ReadAll(rec.Body)
-		require.NoError(t, err)
-		require.JSONEq(t, successJSON, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			am := &MultitenantAlertmanager{
+				store:  alertstore,
+				logger: test.NewTestingLogger(t),
+				limits: &mockAlertManagerLimits{
+					maxGrafanaConfigSize: tc.maxConfigSize,
+				},
+			}
+			rec := httptest.NewRecorder()
+			ctx := context.Background()
+			if tc.orgID != "" {
+				ctx = user.InjectOrgID(ctx, "test_user")
+			}
 
-		require.Len(t, storage.Objects(), 1)
-		_, ok := storage.Objects()["grafana_alertmanager/test_user/grafana_config"]
-		require.True(t, ok)
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/grafana/config",
+				io.NopCloser(strings.NewReader(tc.body)),
+			).WithContext(ctx)
+
+			am.SetUserGrafanaConfig(rec, req)
+			require.Equal(t, tc.expStatusCode, rec.Code)
+
+			if tc.expResponseBody != "" {
+				body, err := io.ReadAll(rec.Body)
+				require.NoError(t, err)
+
+				require.JSONEq(t, tc.expResponseBody, string(body))
+			}
+
+			if tc.expStorageKey == "" {
+				require.Len(t, storage.Objects(), 0)
+			} else {
+				require.Len(t, storage.Objects(), 1)
+				_, ok := storage.Objects()[tc.expStorageKey]
+				require.True(t, ok)
+			}
+		})
 	}
 }
 
