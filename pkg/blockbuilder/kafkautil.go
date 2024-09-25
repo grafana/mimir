@@ -48,7 +48,7 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 	})
 	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffsetMillis points at.
 	for topic, pt := range startOffsets.Offsets() {
-		for partition := range pt {
+		for partition, startOffset := range pt {
 			if _, ok := offsets.Lookup(topic, partition); ok {
 				continue
 			}
@@ -59,6 +59,11 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 			o, ok := fallbackOffsets.Lookup(topic, partition)
 			if !ok {
 				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, topic)
+			}
+			if o.Offset < startOffset.At {
+				// Skip the resolved fallback offset if it's before the partition's start offset (i.e. before the earliest offset of the partition).
+				// This should not happen in Kafka, but can happen in Kafka-compatible systems, e.g. Warpstream.
+				continue
 			}
 			offsets.Add(kadm.OffsetResponse{Offset: kadm.Offset{
 				Topic:       o.Topic,
