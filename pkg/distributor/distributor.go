@@ -1074,7 +1074,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
-		d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
+		if labelValuesWithNewlines > 0 {
+			d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
+		}
 
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
