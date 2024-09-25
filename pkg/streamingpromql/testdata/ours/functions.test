@@ -18,8 +18,18 @@ eval range from 0 to 4m step 1m rate(some_metric[1m])
   {env="test", cluster="eu"} _ 3 3 3 3
   {env="test", cluster="us"} _ 4 4 4 4
 
+# Range query with increase.
+eval range from 0 to 4m step 1m increase(some_metric[1m])
+  {env="prod", cluster="eu"} _ 60 60 60 60
+  {env="prod", cluster="us"} _ 120 120 120 120
+  {env="test", cluster="eu"} _ 180 180 180 180
+  {env="test", cluster="us"} _ 240 240 240 240
+
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
+  # Should return no results.
+
+eval range from 0 to 4m step 1m increase(some_nonexistent_metric[1m])
   # Should return no results.
 
 # Ensure we don't include points outside the range of each individual step.
@@ -33,12 +43,21 @@ eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
 eval range from 0 to 8m step 1m rate(some_metric_with_gaps[1m])
   {} _ 1 1 1 1 _ _ 2 2
 
+eval range from 0 to 8m step 1m increase(some_metric_with_gaps[1m])
+  {} _ 60 60 60 60 _ _ 120 120
+
 eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m])
   {} _ 0.5 1 1 1 1 14.666666666666666 2 2
+
+eval range from 0 to 8m step 1m increase(some_metric_with_gaps[2m])
+  {} _ 60 120 120 120 120 1760 240 240
 
 # Test that we handle staleness markers correctly.
 eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m])
   {} _ 0.5 1 1 1 1
+
+eval range from 0 to 5m step 1m increase(some_metric_with_stale_marker[2m])
+  {} _ 60 120 120 120 120
 
 clear
 

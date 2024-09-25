@@ -16,44 +16,55 @@ import (
 )
 
 var Rate = FunctionOverRangeVector{
-	StepFunc:                       rate,
+	StepFunc:                       rate(true),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunc:             DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
-	fCount := len(fHead) + len(fTail)
-
-	hHead, hTail := histogramBuffer.UnsafePoints(step.RangeEnd)
-	hCount := len(hHead) + len(hTail)
-
-	if fCount > 0 && hCount > 0 {
-		// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
-		// Otherwise, emit a warning and drop this sample.
-		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
-		return 0, false, nil, nil
-	}
-
-	if fCount >= 2 {
-		val := floatRate(fCount, floatBuffer, step, fHead, fTail, rangeSeconds)
-		return val, true, nil, nil
-	}
-
-	if hCount >= 2 {
-		val, err := histogramRate(step, hHead, hTail, rangeSeconds, hCount, emitAnnotation)
-		if err != nil {
-			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-			return 0, false, nil, err
-		}
-		return 0, false, val, nil
-	}
-
-	return 0, false, nil, nil
+var Increase = FunctionOverRangeVector{
+	StepFunc:                       rate(false),
+	SeriesValidationFuncFactory:    rateSeriesValidator,
+	SeriesMetadataFunc:             DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func histogramRate(step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+// isRate is true for `rate` function, or false for `instant` function
+func rate(isRate bool) RangeVectorStepFunction {
+	rate := func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
+		fCount := len(fHead) + len(fTail)
+
+		hHead, hTail := histogramBuffer.UnsafePoints(step.RangeEnd)
+		hCount := len(hHead) + len(hTail)
+
+		if fCount > 0 && hCount > 0 {
+			// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
+			// Otherwise, emit a warning and drop this sample.
+			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+			return 0, false, nil, nil
+		}
+
+		if fCount >= 2 {
+			val := floatRate(isRate, fCount, floatBuffer, step, fHead, fTail, rangeSeconds)
+			return val, true, nil, nil
+		}
+
+		if hCount >= 2 {
+			val, err := histogramRate(isRate, step, hHead, hTail, rangeSeconds, hCount, emitAnnotation)
+			if err != nil {
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return 0, false, nil, err
+			}
+			return 0, false, val, nil
+		}
+
+		return 0, false, nil, nil
+	}
+	return rate
+}
+
+func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	var firstPoint promql.HPoint
 	if len(hHead) > 0 {
 		firstPoint = hHead[0]
@@ -128,11 +139,11 @@ func histogramRate(step types.RangeVectorStepData, hHead []promql.HPoint, hTail 
 
 	}
 
-	val := calculateHistogramRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	val := calculateHistogramRate(isRate, step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
 	return val, err
 }
 
-func floatRate(fCount int, floatBuffer *types.FPointRingBuffer, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
+func floatRate(isRate bool, fCount int, floatBuffer *types.FPointRingBuffer, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
 	firstPoint := floatBuffer.First()
 
 	var lastPoint promql.FPoint
@@ -159,13 +170,13 @@ func floatRate(fCount int, floatBuffer *types.FPointRingBuffer, step types.Range
 	accumulate(fHead)
 	accumulate(fTail)
 
-	val := calculateFloatRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+	val := calculateFloatRate(isRate, step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
 	return val
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func calculateHistogramRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int) *histogram.FloatHistogram {
+func calculateHistogramRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int) *histogram.FloatHistogram {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -188,7 +199,9 @@ func calculateHistogramRate(rangeStart, rangeEnd int64, rangeSeconds float64, fi
 	extrapolateToInterval += durationToEnd
 
 	factor := extrapolateToInterval / sampledInterval
-	factor /= rangeSeconds
+	if isRate {
+		factor /= rangeSeconds
+	}
 	delta.CounterResetHint = histogram.GaugeType
 	delta.Compact(0)
 	return delta.Mul(factor)
@@ -196,7 +209,7 @@ func calculateHistogramRate(rangeStart, rangeEnd int64, rangeSeconds float64, fi
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func calculateFloatRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
+func calculateFloatRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -232,7 +245,10 @@ func calculateFloatRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstP
 	extrapolateToInterval += durationToEnd
 
 	factor := extrapolateToInterval / sampledInterval
-	factor /= rangeSeconds
+
+	if isRate {
+		factor /= rangeSeconds
+	}
 	return delta * factor
 }
 
