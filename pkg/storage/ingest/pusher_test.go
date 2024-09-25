@@ -208,7 +208,8 @@ func TestPusherConsumer(t *testing.T) {
 			})
 
 			logs := &concurrency.SyncBuffer{}
-			c := newPusherConsumer(pusher, KafkaConfig{}, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewLogfmtLogger(logs))
+			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			c := newPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -666,7 +667,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			pusher := &mockPusher{}
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
-			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
 			shardingP := newParallelStorageShards(metrics, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
 			for i, req := range tc.expectedUpstreamPushes {
@@ -829,7 +830,7 @@ func TestParallelStoragePusher(t *testing.T) {
 				receivedPushes[tenantID][req.Source]++
 			}).Return(nil)
 
-			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
 			psp := newParallelStoragePusher(metrics, pusher, 1, 1, logger)
 
 			// Process requests
@@ -854,7 +855,9 @@ func TestParallelStoragePusher(t *testing.T) {
 func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	capacity := 2
 	batchSize := 3
-	queue := newBatchingQueue(capacity, batchSize)
+	reg := prometheus.NewPedanticRegistry()
+	m := newBatchingQueueMetrics(reg)
+	queue := newBatchingQueue(capacity, batchSize, m)
 
 	ctx := context.Background()
 	series := mockPreallocTimeseries("series_1")
@@ -887,6 +890,15 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	require.Len(t, queue.ch, 0)
 	require.Len(t, queue.errCh, 0)
 	require.Len(t, queue.currentBatch.Timeseries, 0)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP cortex_ingest_storage_reader_batching_queue_flush_errors_total Number of errors encountered while flushing a batch of samples to the storage.
+# TYPE cortex_ingest_storage_reader_batching_queue_flush_errors_total counter
+cortex_ingest_storage_reader_batching_queue_flush_errors_total 0
+# HELP cortex_ingest_storage_reader_batching_queue_flush_total Number of times a batch of samples is flushed to the storage.
+# TYPE cortex_ingest_storage_reader_batching_queue_flush_total counter
+cortex_ingest_storage_reader_batching_queue_flush_total 3
+`)))
 }
 
 func TestBatchingQueue(t *testing.T) {
@@ -1117,7 +1129,9 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.PreallocTimeseries) *batchingQueue {
 	t.Helper()
 
-	queue := newBatchingQueue(capacity, batchSize)
+	reg := prometheus.NewPedanticRegistry()
+	m := newBatchingQueueMetrics(reg)
+	queue := newBatchingQueue(capacity, batchSize, m)
 
 	for _, s := range series {
 		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
