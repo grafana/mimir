@@ -1819,8 +1819,10 @@ func runMixedMetricsTests(t *testing.T, expressions []string) {
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
 
+	// Test each label individually to catch edge cases in with single series
+	labelCombinations := testutils.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
-	labelCombinations := testutils.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
@@ -1841,8 +1843,10 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
 
+	// Test each label individually to catch edge cases in with single series
+	labelCombinations := testutils.Combinations(labelsToUse, 1)
 	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
-	labelCombinations := testutils.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
@@ -1867,8 +1871,10 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 func TestCompareVariousMixedMetricsRate(t *testing.T) {
 	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
 
+	// Test each label individually to catch edge cases in with single series
+	labelCombinations := testutils.Combinations(labelsToUse, 1)
 	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
-	labelCombinations := testutils.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
