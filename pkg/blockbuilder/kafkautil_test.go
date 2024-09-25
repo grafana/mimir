@@ -55,6 +55,18 @@ func TestKafkaGetGroupLag(t *testing.T) {
 	err := admClient.CommitAllOffsets(ctx, testGroup, offsets)
 	require.NoError(t, err)
 
+	// Truncate partition 1 after second to last record to emulate the retention
+	// Note Kafka sets partition's start offset to the requested offset. Any records within the segment before the requested offset can no longer be read.
+	// Note the difference between DeleteRecords and DeleteOffsets in kadm docs.
+	deleteRecOffsets := make(kadm.Offsets)
+	deleteRecOffsets.Add(kadm.Offset{
+		Topic:     testTopic,
+		Partition: 1,
+		At:        numRecords - 2,
+	})
+	_, err = admClient.DeleteRecords(ctx, deleteRecOffsets)
+	require.NoError(t, err)
+
 	getTopicPartitionLag := func(t *testing.T, lag kadm.GroupLag, topic string, part int32) int64 {
 		l, ok := lag.Lookup(topic, part)
 		require.True(t, ok)
@@ -62,14 +74,26 @@ func TestKafkaGetGroupLag(t *testing.T) {
 	}
 
 	t.Run("fallbackOffset=milliseconds", func(t *testing.T) {
-		// get the timestamp of second to last produced record
-		rec := producedRecords[len(producedRecords)-2]
+		// get the timestamp of the last produced record
+		rec := producedRecords[len(producedRecords)-1]
 		fallbackOffset := rec.Timestamp.Add(-time.Millisecond).UnixMilli()
 		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, fallbackOffset)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
-		require.EqualValues(t, 2, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to known record and get its lag from there")
+		require.EqualValues(t, 1, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to known record and get its lag from there")
+		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
+	})
+
+	t.Run("fallbackOffset=before-earliest", func(t *testing.T) {
+		// get the timestamp of third to last produced record (record before earliest in partition 1)
+		rec := producedRecords[len(producedRecords)-3]
+		fallbackOffset := rec.Timestamp.Add(-time.Millisecond).UnixMilli()
+		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, fallbackOffset)
+		require.NoError(t, err)
+
+		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
+		require.EqualValues(t, 2, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to earliest and get its lag from there")
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
 	})
 
@@ -78,7 +102,7 @@ func TestKafkaGetGroupLag(t *testing.T) {
 		require.NoError(t, err)
 
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
-		require.EqualValues(t, numRecords, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to the start and get its lag from there")
+		require.EqualValues(t, 2, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to the earliest and get its lag from there")
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
 	})
 
@@ -93,7 +117,7 @@ func TestKafkaGetGroupLag(t *testing.T) {
 
 		// This group doesn't have any commits, so it must calc its lag from the fallback.
 		require.EqualValues(t, numRecords, getTopicPartitionLag(t, groupLag, testTopic, 0))
-		require.EqualValues(t, numRecords, getTopicPartitionLag(t, groupLag, testTopic, 1))
+		require.EqualValues(t, 2, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to the earliest and get its lag from there")
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
 	})
 }
@@ -122,6 +146,7 @@ func TestKafkaMarshallingCommitMeta(t *testing.T) {
 func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs...),
+		kgo.AllowAutoTopicCreation(),
 		// We will choose the partition of each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)
