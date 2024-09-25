@@ -561,6 +561,10 @@ func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time
 	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
 }
 
+func (m multiTenantMockLimits) ResultsCacheTTLForErrors(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForErrors
+}
+
 func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
 }
@@ -609,6 +613,7 @@ type mockLimits struct {
 	resultsCacheOutOfOrderWindowTTL      time.Duration
 	resultsCacheTTLForCardinalityQuery   time.Duration
 	resultsCacheTTLForLabelsQuery        time.Duration
+	resultsCacheTTLForErrors             time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
 	blockedQueries                       []*validation.BlockedQuery
 	alignQueriesWithStep                 bool
@@ -676,6 +681,10 @@ func (m mockLimits) ResultsCacheTTL(string) time.Duration {
 
 func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration {
 	return m.resultsCacheOutOfOrderWindowTTL
+}
+
+func (m mockLimits) ResultsCacheTTLForErrors(string) time.Duration {
+	return m.resultsCacheTTLForErrors
 }
 
 func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {

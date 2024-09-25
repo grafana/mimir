@@ -1644,6 +1644,10 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
+# (experimental) Cache non-transient errors from queries.
+# CLI flag: -query-frontend.cache-errors
+[cache_errors: <boolean> | default = false]
+
 # (advanced) Maximum number of retries for a single request; beyond this, the
 # downstream error is returned.
 # CLI flag: -query-frontend.max-retries-per-request
@@ -3450,6 +3454,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # The value 0 disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
+
+# (experimental) Time to live duration for cached non-transient errors
+# CLI flag: -query-frontend.results-cache-ttl-for-errors
+[results_cache_ttl_for_errors: <duration> | default = 5m]
 
 # (advanced) Cache requests that are not step-aligned.
 # CLI flag: -query-frontend.cache-unaligned-requests
