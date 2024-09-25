@@ -129,27 +129,29 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 
 func (e *errorCachingHandler) loadErrorFromCache(ctx context.Context, key, hashedKey string, spanLog *spanlogger.SpanLogger) *apierror.APIError {
 	res := e.cache.GetMulti(ctx, []string{hashedKey})
-	if cached, ok := res[hashedKey]; ok {
-		var cachedError CachedError
-		if err := proto.Unmarshal(cached, &cachedError); err != nil {
-			level.Warn(spanLog).Log("msg", "unable to unmarshall cached error", "err", err)
-			return nil
-		}
-
-		if cachedError.GetKey() != key {
-			spanLog.DebugLog(
-				"msg", "cached error key does not match",
-				"expected_key", key,
-				"actual_key", cachedError.GetKey(),
-				"hashed_key", hashedKey,
-			)
-			return nil
-		}
-
-		return apierror.New(apierror.Type(cachedError.ErrorType), cachedError.ErrorMessage)
+	cached, ok := res[hashedKey]
+	if !ok {
+		return nil
 	}
 
-	return nil
+	var cachedError CachedError
+	if err := proto.Unmarshal(cached, &cachedError); err != nil {
+		level.Warn(spanLog).Log("msg", "unable to unmarshall cached error", "err", err)
+		return nil
+	}
+
+	if cachedError.GetKey() != key {
+		spanLog.DebugLog(
+			"msg", "cached error key does not match",
+			"expected_key", key,
+			"actual_key", cachedError.GetKey(),
+			"hashed_key", hashedKey,
+		)
+		return nil
+	}
+
+	return apierror.New(apierror.Type(cachedError.ErrorType), cachedError.ErrorMessage)
+
 }
 
 func (e *errorCachingHandler) storeErrorToCache(key, hashedKey string, ttl time.Duration, apiErr *apierror.APIError, spanLog *spanlogger.SpanLogger) {

@@ -76,9 +76,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 	t.Run("cache hit", func(t *testing.T) {
 		c := cache.NewInstrumentedMockCache()
 
-		innerRes := newEmptyPrometheusResponse()
 		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
 		ctx := user.InjectOrgID(context.Background(), "1234")
 		req := newDefaultRequest()
