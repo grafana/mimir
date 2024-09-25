@@ -320,7 +320,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 	return nil
 }
 
-func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.Logger, builder *TSDBBuilder, partition int32, state partitionState, sectionEnd time.Time) (_ partitionState, retErr error) {
+func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.Logger, builder *TSDBBuilder, partition int32, state partitionState, sectionEnd time.Time) (retState partitionState, retErr error) {
 	// Oppose to the section's range (and cycle's range), that include the ConsumeIntervalBuffer, the block's range doesn't.
 	// Thus, truncate the timestamp with ConsumptionInterval here to round the block's range.
 	blockEnd := sectionEnd.Truncate(b.cfg.ConsumeInterval)
@@ -335,14 +335,14 @@ func (b *BlockBuilder) consumePartitionSection(ctx context.Context, logger log.L
 		dur := time.Since(t)
 
 		if retErr != nil {
-			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur, "curr_lag", state.Lag)
+			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur, "curr_lag", retState.Lag)
 			return
 		}
 
 		b.blockBuilderMetrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", partition)).Observe(dur.Seconds())
-		level.Info(logger).Log("msg", "done consuming", "duration", dur, "curr_lag", state.Lag,
+		level.Info(logger).Log("msg", "done consuming", "duration", dur, "curr_lag", retState.Lag,
 			"last_block_end", startState.LastBlockEnd, "curr_block_end", blockEnd,
-			"last_seen_offset", startState.LastSeenOffset, "curr_seen_offset", state.LastSeenOffset,
+			"last_seen_offset", startState.LastSeenOffset, "curr_seen_offset", retState.LastSeenOffset,
 			"num_blocks", numBlocks)
 	}(time.Now(), state)
 
@@ -506,7 +506,7 @@ func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group
 		return fmt.Errorf("commit with partition %d, offset %d: %w", state.Commit.Partition, state.Commit.At, err)
 	}
 
-	level.Debug(logger).Log("msg", "successfully committed offset to Kafka", "offset", state.Commit.At)
+	level.Info(logger).Log("msg", "successfully committed offset to kafka", "offset", state.Commit.At)
 
 	return nil
 }
