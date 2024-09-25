@@ -20,7 +20,7 @@ The OpenTelemetry Collector supports collecting exponential histograms and other
 The availability of different receivers and exporters depends on your OpenTelemetry Collector [distribution](https://opentelemetry.io/docs/concepts/distributions/).
 {{< /admonition >}}
 
-You can use the OpenTelemetry protocol (OTLP) to send exponential histograms to Grafana Mimir in their existing format, or you can use the Prometheus remote write protocol to send them as Prometheus native histograms. Refer to [Send native histograms to Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/).
+You can use the OpenTelemetry protocol (OTLP) over HTTP to send exponential histograms to Grafana Mimir in their existing format, or you can use the Prometheus remote write protocol to send them as Prometheus native histograms.
 
 The OpenTelemetry SDK supports instrumenting applications in multiple languages. Refer to [Language APIs & SDKs](https://opentelemetry.io/docs/languages/) for a complete list.
 
