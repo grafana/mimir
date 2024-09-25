@@ -1739,44 +1739,46 @@ func TestCompareVariousMixedMetrics(t *testing.T) {
 
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
-	// We're loading series with the follow combinations of values. This is difficult to visually see in the actual
+	// We're loading series with the following combinations of values. This is difficult to visually see in the actual
 	// data loaded, so it is represented in a table here.
-	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale
-	// {a} f f f f f f
-	// {b} h h h h h h
-	// {c} f h f h N h
-	// {d} f _ _ s f f
-	// {e} h h _ s h N
-	// {f} f N _ f f N
-	// {g} N N N N N N
-	// {h} N N N _ N s
-	// {i} f h _ N h s
-	// {j} f f s s s s
-	// {k} 0 0 0 N s 0
-	// {l} h _ f _ s N
-	// {m} s s N _ _ f
-	// {n} _ _ _ _ _ _
+	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale, i = infinity
+	// {a} f f f f f f f
+	// {b} h h h h h h h
+	// {c} f h i h N h f
+	// {d} f _ i s f f _
+	// {e} h h _ s i N h
+	// {f} f N _ i f N _
+	// {g} N N N N N N N
+	// {h} N N i _ N s N
+	// {i} f h _ N h s i
+	// {j} f i s s s s f
+	// {k} 0 0 i N s 0 0
+	// {l} h _ i _ s N f
+	// {m} s i N _ _ f _
+	// {n} _ _ _ _ _ _ _
+	// {o} i i i i i i i
 
-	pointsPerSeries := 6
+	pointsPerSeries := 7
 	samples := `
-		series{label="a", group="a"} 1 2 3 4 5 -50
-		series{label="b", group="a"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}} {{schema:2 sum:20 count:15 buckets:[4]}} {{schema:3 sum:25 count:20 buckets:[5 8]}} {{schema:4 sum:30 count:25 buckets:[6 9 10 11]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}} {{schema:6 sum:40 count:35 buckets:[8 11 14]}}
-		series{label="c", group="a"} 1 {{schema:3 sum:5 count:3 buckets:[1 1 1]}} 3 {{schema:3 sum:10 count:6 buckets:[2 2 2]}} NaN {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
-		series{label="d", group="a"} 1 _ _ stale 5 6
-		series{label="e", group="b"} {{schema:4 sum:12 count:8 buckets:[2 3 3]}} {{schema:4 sum:14 count:9 buckets:[3 3 3]}} _ stale {{schema:4 sum:18 count:11 buckets:[4 4 3]}} NaN
-		series{label="f", group="b"} 1 NaN _ 4 5 NaN
-		series{label="g", group="b"} NaN NaN NaN NaN NaN NaN
-		series{label="h", group="b"} NaN NaN NaN _ NaN stale
-		series{label="i", group="c"} 1 {{schema:5 sum:15 count:10 buckets:[3 2 5]}} _ NaN {{schema:2 sum:30 count:25 buckets:[6 9 10 9 1]}} stale
-		series{label="j", group="c"} 1 -20 stale stale stale stale
-		series{label="k", group="c"} 0 0 0 NaN stale 0
-		series{label="l", group="d"} {{schema:1 sum:10 count:5 buckets:[1 2]}} _ 3 _ stale NaN
-		series{label="m", group="d"} stale stale NaN _ _ 4
-		series{label="n", group="d"}
+		series{label="a", group="a"} 1 2 3 4 5 -50 100
+		series{label="b", group="a"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}} {{schema:2 sum:20 count:15 buckets:[4]}} {{schema:3 sum:25 count:20 buckets:[5 8]}} {{schema:4 sum:30 count:25 buckets:[6 9 10 11]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}} {{schema:6 sum:40 count:35 buckets:[8 11 14]}} {{schema:7 sum:45 count:40 buckets:[9 12 15]}}
+		series{label="c", group="a"} 1 {{schema:3 sum:5 count:3 buckets:[1 1 1]}} -Inf {{schema:3 sum:10 count:6 buckets:[2 2 2]}} NaN {{schema:3 sum:12 count:7 buckets:[2 2 3]}} 5
+		series{label="d", group="a"} 1 _ Inf stale 5 6 _
+		series{label="e", group="b"} {{schema:4 sum:12 count:8 buckets:[2 3 3]}} {{schema:4 sum:14 count:9 buckets:[3 3 3]}} _ stale Inf NaN {{schema:4 sum:18 count:11 buckets:[4 4 3]}}
+		series{label="f", group="b"} 1 NaN _ Inf 5 NaN _
+		series{label="g", group="b"} NaN NaN NaN NaN NaN NaN NaN
+		series{label="h", group="b"} NaN NaN Inf _ NaN stale NaN
+		series{label="i", group="c"} 1 {{schema:5 sum:15 count:10 buckets:[3 2 5]}} _ NaN {{schema:2 sum:30 count:25 buckets:[6 9 10 9 1]}} stale Inf
+		series{label="j", group="c"} 1 Inf stale stale stale stale 2
+		series{label="k", group="c"} 0 0 -Inf NaN stale 0 0
+		series{label="l", group="d"} {{schema:1 sum:10 count:5 buckets:[1 2]}} _ -Inf _ stale NaN 3
+		series{label="m", group="d"} stale Inf NaN _ _ 4 _
+		series{label="n", group="d"} _ _ _ _ _ _ _
+		series{label="o", group="d"} Inf Inf -Inf Inf Inf -Inf -Inf
 	`
 
 	// Labels for generating combinations
-	labels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"}
+	labels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
 	// These will be used for binary operations, so we can add up to 3 series.
