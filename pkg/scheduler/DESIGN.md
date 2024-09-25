@@ -55,14 +55,9 @@ graph TB
 
     both(["`**ingester +store-gateway**`"])
 
-    root-->ingester
-    ingester-->root
-
-    root-->storeGateway
-    storeGateway-->root
-
-    root-->both
-    both-->root
+    root<-->ingester
+    root<-->storeGateway
+    root<-->both
 
     ingester-tenant1(["`**tenant1**
 
