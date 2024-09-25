@@ -60,7 +60,7 @@ func TestQuerierWorkerQueuePriority_SingleWorkerBehavior(t *testing.T) {
 
 	querierWorkerPrioritizationQueueAlgo := NewQuerierWorkerQueuePriorityAlgo()
 
-	tree, err := NewTree(querierWorkerPrioritizationQueueAlgo, &roundRobinState{})
+	tree, err := NewTree(querierWorkerPrioritizationQueueAlgo)
 	require.NoError(t, err)
 
 	for _, operation := range operationOrder {
@@ -83,7 +83,7 @@ func TestQuerierWorkerQueuePriority_SingleWorkerBehavior(t *testing.T) {
 func TestQuerierWorkerQueuePriority_StartPositionByWorker(t *testing.T) {
 	querierWorkerPrioritizationQueueAlgo := NewQuerierWorkerQueuePriorityAlgo()
 
-	tree, err := NewTree(querierWorkerPrioritizationQueueAlgo, &roundRobinState{})
+	tree, err := NewTree(querierWorkerPrioritizationQueueAlgo)
 	require.NoError(t, err)
 
 	// enqueue 3 objects each to 3 different children;
@@ -165,7 +165,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker(t *testing.T) {
 func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTree(t *testing.T) {
 	querierWorkerPrioritizationQueueAlgo := NewQuerierWorkerQueuePriorityAlgo()
 
-	tree, err := NewTree(&roundRobinState{}, querierWorkerPrioritizationQueueAlgo, &roundRobinState{})
+	tree, err := NewTree(&roundRobinState{}, querierWorkerPrioritizationQueueAlgo)
 	require.NoError(t, err)
 
 	// enqueue 2 objects each to 2 different children, each with 3 different grandchildren;

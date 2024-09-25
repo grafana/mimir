@@ -1109,20 +1109,24 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 					continue
 				}
 
-				alerts := []*AlertStateDesc{}
-				for _, a := range rule.ActiveAlerts() {
-					alerts = append(alerts, &AlertStateDesc{
-						State:           a.State.String(),
-						Labels:          mimirpb.FromLabelsToLabelAdapters(a.Labels),
-						Annotations:     mimirpb.FromLabelsToLabelAdapters(a.Annotations),
-						Value:           a.Value,
-						ActiveAt:        a.ActiveAt,
-						FiredAt:         a.FiredAt,
-						ResolvedAt:      a.ResolvedAt,
-						LastSentAt:      a.LastSentAt,
-						ValidUntil:      a.ValidUntil,
-						KeepFiringSince: a.KeepFiringSince,
-					})
+				var alerts []*AlertStateDesc
+				if !req.ExcludeAlerts {
+					activeAlerts := rule.ActiveAlerts()
+					alerts = make([]*AlertStateDesc, 0, len(activeAlerts))
+					for _, a := range activeAlerts {
+						alerts = append(alerts, &AlertStateDesc{
+							State:           a.State.String(),
+							Labels:          mimirpb.FromLabelsToLabelAdapters(a.Labels),
+							Annotations:     mimirpb.FromLabelsToLabelAdapters(a.Annotations),
+							Value:           a.Value,
+							ActiveAt:        a.ActiveAt,
+							FiredAt:         a.FiredAt,
+							ResolvedAt:      a.ResolvedAt,
+							LastSentAt:      a.LastSentAt,
+							ValidUntil:      a.ValidUntil,
+							KeepFiringSince: a.KeepFiringSince,
+						})
+					}
 				}
 				ruleDesc = &RuleStateDesc{
 					Rule: &rulespb.RuleDesc{

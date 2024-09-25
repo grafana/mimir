@@ -77,22 +77,40 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOpti
 	return obj, nil
 }
 
+const maxSingleCopySize int64 = 5 * (1024 * 1024 * 1024) // 5 GiB
+
 func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error {
 	d, ok := dstBucket.(*s3Bucket)
 	if !ok {
 		return errors.New("destination Bucket wasn't an S3 Bucket")
 	}
-	_, err := d.client.CopyObject(ctx,
-		minio.CopyDestOptions{
-			Bucket: d.bucketName,
-			Object: options.destinationObjectName(objectName),
-		},
-		minio.CopySrcOptions{
-			Bucket:    bkt.bucketName,
-			Object:    objectName,
-			VersionID: options.SourceVersionID,
-		},
-	)
+
+	stat, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{
+		VersionID: options.SourceVersionID,
+	})
+	if err != nil {
+		return err
+	}
+
+	dstOptions := minio.CopyDestOptions{
+		Bucket: d.bucketName,
+		Object: options.destinationObjectName(objectName),
+	}
+
+	srcOptions := minio.CopySrcOptions{
+		Bucket:    bkt.bucketName,
+		Object:    objectName,
+		VersionID: options.SourceVersionID,
+	}
+
+	if stat.Size <= maxSingleCopySize {
+		_, err := d.client.CopyObject(ctx, dstOptions, srcOptions)
+		return err
+	}
+
+	// Uses a multi-part upload
+	// Due to https://github.com/minio/minio-go/issues/1683 this likely does not work cross-region
+	_, err = d.client.ComposeObject(ctx, dstOptions, srcOptions)
 	return err
 }
 

@@ -1226,7 +1226,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.17.0
+        image: grafana/rollout-operator:v0.19.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:

@@ -33,7 +33,11 @@ func Test_NewTree(t *testing.T) {
 			treeAlgos: []QueuingAlgorithm{&tenantQuerierAssignments{}},
 		},
 		{
-			name:      "fail to create tree without defined dequeuing algorithm",
+			name:      "successfully create a tree with no queuing algorithms", // creates a single node with a queue
+			treeAlgos: []QueuingAlgorithm{},
+		},
+		{
+			name:      "fail to create tree with nil dequeuing algorithm",
 			treeAlgos: []QueuingAlgorithm{nil},
 			expectErr: true,
 		},
@@ -60,19 +64,22 @@ func Test_EnqueueBackByPath(t *testing.T) {
 	}{
 		{
 			name:                "enqueue round-robin node to round-robin node",
-			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}, &roundRobinState{}},
+			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}},
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
-			name:                "enqueue tenant-querier node to round-robin node",
-			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}, &tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}}},
-			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
+			name:             "enqueue tenant-querier node to round-robin node",
+			treeAlgosByDepth: []QueuingAlgorithm{&roundRobinState{}, newTenantQuerierAssignments()},
+			childPathsToEnqueue: []QueuePath{
+				{"tenant-querier-1", "child-1"},
+				{"tenant-querier-2", "child-2"},
+				{"tenant-querier-1", "child-2"},
+			},
 		},
 		{
 			name: "enqueue round-robin node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				newTenantQuerierAssignments(),
-				&roundRobinState{},
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
 		},
@@ -82,7 +89,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 				newTenantQuerierAssignments(),
 				newTenantQuerierAssignments(),
 			},
-			childPathsToEnqueue: []QueuePath{{"child-1"}},
+			childPathsToEnqueue: []QueuePath{{"child", "grandchild"}},
 		},
 		{
 			name: "fail to enqueue to a node at depth 1 in tree with max-depth of 2",
@@ -97,7 +104,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name:                "fail to enqueue beyond max-depth",
 			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}},
-			childPathsToEnqueue: []QueuePath{{"child, grandchild"}},
+			childPathsToEnqueue: []QueuePath{{"child", "grandchild"}},
 			expectErr:           true,
 		},
 	}
@@ -128,8 +135,8 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 		expected         []any
 	}{
 		{
-			name:             "enqueue to front of round-robin node",
-			treeAlgosByDepth: []QueuingAlgorithm{&roundRobinState{}},
+			name:             "enqueue to front of a leaf off round-robin node",
+			treeAlgosByDepth: []QueuingAlgorithm{},
 			enqueueObjs: []enqueueObj{
 				{"query-1", QueuePath{}},
 				{"query-2", QueuePath{}},
@@ -137,13 +144,11 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 			expected: []any{"query-2", "query-1"},
 		},
 		{
-			name: "enqueue to front of tenant-querier node",
-			treeAlgosByDepth: []QueuingAlgorithm{&tenantQuerierAssignments{
-				currentQuerier: someQuerier,
-			}},
+			name:             "enqueue to front of a leaf off tenant-querier node",
+			treeAlgosByDepth: []QueuingAlgorithm{newTenantQuerierAssignments()},
 			enqueueObjs: []enqueueObj{
-				{"query-1", QueuePath{}},
-				{"query-2", QueuePath{}},
+				{"query-1", QueuePath{"tq-1"}},
+				{"query-2", QueuePath{"tq-1"}},
 			},
 			expected: []any{"query-2", "query-1"},
 		},
@@ -168,67 +173,74 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 	}
 }
 
-func Test_Dequeue_RootNode(t *testing.T) {
+func Test_Dequeue_SingleAlgo(t *testing.T) {
 	tests := []struct {
-		name          string
-		rootAlgo      QueuingAlgorithm
-		enqueueToRoot []any
-		dequeueArgs   *DequeueArgs
-		expected      []any
+		name        string
+		rootAlgo    []QueuingAlgorithm
+		enqueueObjs []enqueueObj
+		dequeueArgs *DequeueArgs
+		expectNil   bool
 	}{
 		{
+			name: "dequeue from empty leaf node",
+		},
+		{
 			name:     "dequeue from empty round-robin root node",
-			rootAlgo: &roundRobinState{},
+			rootAlgo: []QueuingAlgorithm{&roundRobinState{}},
 		},
 		{
 			name:        "dequeue from empty tenant-querier root node",
-			rootAlgo:    newTenantQuerierAssignments(),
+			rootAlgo:    []QueuingAlgorithm{newTenantQuerierAssignments()},
 			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
 		},
 		{
-			name:          "dequeue from non-empty round-robin root node",
-			rootAlgo:      &roundRobinState{},
-			enqueueToRoot: []any{"something-in-root"},
-			expected:      []any{"something-in-root"},
+			name:        "dequeue from non-empty leaf node",
+			rootAlgo:    []QueuingAlgorithm{},
+			enqueueObjs: []enqueueObj{{"something-in-root", QueuePath{}}},
 		},
 		{
-			name:          "dequeue from non-empty tenant-querier root node",
-			rootAlgo:      newTenantQuerierAssignments(),
-			enqueueToRoot: []any{"something-else-in-root"},
-			expected:      []any{"something-else-in-root"},
-			dequeueArgs:   &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
+			name:        "dequeue from non-empty round-robin root node",
+			rootAlgo:    []QueuingAlgorithm{&roundRobinState{}},
+			enqueueObjs: []enqueueObj{{"round-robin-child-object", QueuePath{"round-robin-child"}}},
 		},
 		{
-			name:          "dequeue from non-empty tenant-querier root node with no current querier",
-			rootAlgo:      newTenantQuerierAssignments(),
-			enqueueToRoot: []any{"something-in-root"},
+			name:        "dequeue from non-empty tenant-querier root node",
+			rootAlgo:    []QueuingAlgorithm{newTenantQuerierAssignments()},
+			enqueueObjs: []enqueueObj{{"tqa-child-object", QueuePath{"tqa-child"}}},
+			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
+		},
+		{
+			name:        "dequeue from non-empty tenant-querier root node with no current querier",
+			rootAlgo:    []QueuingAlgorithm{newTenantQuerierAssignments()},
+			enqueueObjs: []enqueueObj{{"tqa-child-object", QueuePath{"tqa-child"}}},
+			expectNil:   true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, err := NewTree(tt.rootAlgo)
+			require.LessOrEqual(t, len(tt.rootAlgo), 1)
+			tree, err := NewTree(tt.rootAlgo...)
 			require.NoError(t, err)
 
-			path := QueuePath{}
-			for _, elt := range tt.enqueueToRoot {
-				err = tree.EnqueueBackByPath(path, elt)
+			for _, obj := range tt.enqueueObjs {
+				err = tree.EnqueueBackByPath(obj.path, obj.obj)
 				require.NoError(t, err)
 			}
 
-			for _, elt := range tt.enqueueToRoot {
+			for _, obj := range tt.enqueueObjs {
 				dequeuePath, v := tree.Dequeue(tt.dequeueArgs)
-				if tt.expected != nil {
-					require.Equal(t, path, dequeuePath)
-					require.Equal(t, elt, v)
+				if !tt.expectNil {
+					require.Equal(t, obj.path, dequeuePath)
+					require.Equal(t, obj.obj, v)
 				} else {
-					require.Equal(t, path, dequeuePath)
+					require.Equal(t, QueuePath{}, dequeuePath)
 					require.Nil(t, v)
 				}
 
 			}
 
 			dequeuePath, v := tree.Dequeue(tt.dequeueArgs)
-			require.Equal(t, path, dequeuePath)
+			require.Equal(t, QueuePath{}, dequeuePath)
 			require.Nil(t, v)
 
 		})
@@ -277,7 +289,7 @@ func Test_RoundRobinDequeue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := make([]QueuingAlgorithm, 0)
-			for i := 0; i < tt.treeDepth; i++ {
+			for i := 0; i < tt.treeDepth-1; i++ {
 				args = append(args, &roundRobinState{})
 			}
 			tree, err := NewTree(args...)
@@ -317,7 +329,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 	}{
 		{
 			name:             "round-robin node should dequeue from first child one more time after new node added",
-			treeAlgosByDepth: []QueuingAlgorithm{&roundRobinState{}, &roundRobinState{}},
+			treeAlgosByDepth: []QueuingAlgorithm{&roundRobinState{}},
 			operationOrder: []op{
 				{enqueue, QueuePath{"child-1"}, "obj-1"},
 				{enqueue, QueuePath{"child-1"}, "obj-2"},
@@ -331,16 +343,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 		{
 			name: "should dequeue from new tenant-querier child before repeat-dequeueing",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				&tenantQuerierAssignments{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
-					tenantNodes:      map[string][]*Node{},
-					currentQuerier:   placeholderQuerier,
-				},
-				&tenantQuerierAssignments{
-					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
-					tenantNodes:      map[string][]*Node{},
-					currentQuerier:   placeholderQuerier,
-				},
+				newTenantQuerierAssignments(),
 			},
 			operationOrder: []op{
 				{enqueue, QueuePath{"child-1"}, "obj-1"},
@@ -391,7 +394,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1"},
 			enqueueObjs: []enqueueObj{
@@ -407,7 +409,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-2": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1"},
 			enqueueObjs: []enqueueObj{
@@ -423,7 +424,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-2": {}}, "tenant-2": {"querier-2": {}}, "tenant-3": {"querier-1": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1", "querier-1"},
 			enqueueObjs: []enqueueObj{
@@ -441,7 +441,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-2": {}}, "tenant-2": {"querier-2": {}}, "tenant-3": {"querier-1": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1", "querier-1", "querier-1"},
 			enqueueObjs: []enqueueObj{
@@ -460,7 +459,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}, "tenant-2": {"querier-2": {}}, "tenant-3": {"querier-1": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1", "querier-1", "querier-1"},
 			enqueueObjs: []enqueueObj{
@@ -478,7 +476,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantNodes:      map[string][]*Node{},
 				},
 				&roundRobinState{},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1", "querier-1", "querier-1"},
 			enqueueObjs: []enqueueObj{
@@ -495,7 +492,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-2", "querier-1"},
@@ -515,7 +511,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{""},
 			enqueueObjs: []enqueueObj{
@@ -531,7 +526,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{"tenant-1": {"querier-1": {}}, "tenant-2": nil},
 					tenantNodes:      map[string][]*Node{},
 				},
-				&roundRobinState{},
 				&roundRobinState{},
 			},
 			currQuerier: []QuerierID{"querier-1", "querier-1", "querier-1"},
@@ -576,7 +570,7 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 		currentQuerier: QuerierID(""),
 	}
 
-	tree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
+	tree, err := NewTree(tqa, &roundRobinState{})
 	require.NoError(t, err)
 
 	enqueueObjs := []enqueueObj{
@@ -729,7 +723,7 @@ func Test_DequeueUnbalancedRoundRobinTree(t *testing.T) {
 }
 
 func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
-	tree, err := NewTree(&roundRobinState{}, &roundRobinState{})
+	tree, err := NewTree(&roundRobinState{})
 	require.NoError(t, err)
 	require.NotNil(t, tree)
 
@@ -807,28 +801,33 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 func Test_NodeCannotDeleteItself(t *testing.T) {
 	tests := []struct {
 		name     string
-		nodeType QueuingAlgorithm
+		nodeType []QueuingAlgorithm
 	}{
-		{"round robin", &roundRobinState{}},
-		{"tenant querier assignment", &tenantQuerierAssignments{}},
+		{"root node is leaf node", []QueuingAlgorithm{}},
+		{"round robin", []QueuingAlgorithm{&roundRobinState{}}},
+		{"tenant querier assignment", []QueuingAlgorithm{&tenantQuerierAssignments{}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, err := NewTree(tt.nodeType)
+			require.LessOrEqual(t, len(tt.nodeType), 1)
+			tree, err := NewTree(tt.nodeType...)
 			require.NoError(t, err)
 			require.NotNil(t, tree)
 
 			_, _ = tree.Dequeue(nil)
 
 			require.NotNil(t, tree.rootNode)
-			require.Zero(t, tree.rootNode.getLocalQueue().Len())
-			require.Empty(t, tree.rootNode.queueMap)
+			if tree.rootNode.isLeaf() {
+				require.Zero(t, tree.rootNode.getLocalQueue().Len())
+			} else {
+				require.Empty(t, tree.rootNode.queueMap)
+			}
 		})
 	}
 }
 
 func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimension int) *MultiQueuingAlgorithmTreeQueue {
-	tree, err := NewTree(&roundRobinState{}, &roundRobinState{}, &roundRobinState{})
+	tree, err := NewTree(&roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
 	require.Equal(t, 1, tree.rootNode.nodeCount())
 	require.Equal(t, 0, tree.rootNode.ItemCount())
@@ -871,7 +870,7 @@ func makeUnbalancedRoundRobinTree(t *testing.T) *MultiQueuingAlgorithmTreeQueue 
 	        	   └── val2
 
 	*/
-	tree, err := NewTree(&roundRobinState{}, &roundRobinState{}, &roundRobinState{})
+	tree, err := NewTree(&roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
 	require.Equal(t, 1, tree.rootNode.nodeCount())
 	require.Equal(t, 0, tree.rootNode.ItemCount())

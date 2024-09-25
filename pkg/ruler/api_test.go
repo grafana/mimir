@@ -542,6 +542,77 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 		},
+		"API request with exclude_alerts=true returns alerting rules without alerts": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			expectedConfigured: 1,
+			queryParams:        "?exclude_alerts=true",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: nil,
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"API request with exclude_alerts=false returns alerting rules including alerts": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			expectedConfigured: 1,
+			queryParams:        "?exclude_alerts=false",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"Invalid exclude_alerts param": {
+			configuredRules:    rulespb.RuleGroupList{},
+			expectedConfigured: 0,
+			queryParams:        "?exclude_alerts=foo",
+			limits:             validation.MockDefaultOverrides(),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErrorType:  v1.ErrBadData,
+			expectedRules:      []*RuleGroup{},
+		},
 		"Invalid type param": {
 			configuredRules:    rulespb.RuleGroupList{},
 			expectedConfigured: 0,

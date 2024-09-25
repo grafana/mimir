@@ -166,11 +166,18 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	excludeAlerts, err := parseExcludeAlerts(req)
+	if err != nil {
+		respondInvalidRequest(logger, w, "invalid exclude_alerts parameter")
+		return
+	}
+
 	rulesReq := RulesRequest{
-		Filter:    AnyRule,
-		RuleName:  req.URL.Query()["rule_name"],
-		RuleGroup: req.URL.Query()["rule_group"],
-		File:      req.URL.Query()["file"],
+		Filter:        AnyRule,
+		RuleName:      req.URL.Query()["rule_name"],
+		RuleGroup:     req.URL.Query()["rule_group"],
+		File:          req.URL.Query()["file"],
+		ExcludeAlerts: excludeAlerts,
 	}
 
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
@@ -209,9 +216,12 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 
 		for i, rl := range g.ActiveRules {
 			if g.ActiveRules[i].Rule.Alert != "" {
-				alerts := make([]*Alert, 0, len(rl.Alerts))
-				for _, a := range rl.Alerts {
-					alerts = append(alerts, alertStateDescToPrometheusAlert(a))
+				var alerts []*Alert
+				if !excludeAlerts {
+					alerts = make([]*Alert, 0, len(rl.Alerts))
+					for _, a := range rl.Alerts {
+						alerts = append(alerts, alertStateDescToPrometheusAlert(a))
+					}
 				}
 				grp.Rules[i] = alertingRule{
 					State:          rl.GetState(),
@@ -263,6 +273,21 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	if n, err := w.Write(b); err != nil {
 		level.Error(logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
+}
+
+func parseExcludeAlerts(req *http.Request) (bool, error) {
+	excludeAlerts := req.URL.Query().Get("exclude_alerts")
+	if excludeAlerts == "" {
+		return false, nil
+	}
+
+	value, err := strconv.ParseBool(excludeAlerts)
+	if err != nil {
+		return false, fmt.Errorf("unable to parse exclude_alerts value %w", err)
+	}
+
+	return value, nil
+
 }
 
 func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {

@@ -408,7 +408,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 				"hashedKey", foundKey,
 				"traceID", cachedExtent.TraceId,
 				"start", time.UnixMilli(cachedExtent.Start),
-				"end", time.UnixMilli(cachedExtent.Start),
+				"end", time.UnixMilli(cachedExtent.End),
 			)
 			usedBytes += cachedExtent.Response.Size()
 		}

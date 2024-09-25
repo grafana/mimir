@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -136,6 +137,7 @@ type prepareOptions struct {
 	rulerAddrMap     map[string]*Ruler
 	rulerAddrAutoMap bool
 	start            bool
+	managerQueryFunc rules.QueryFunc
 }
 
 func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
@@ -197,6 +199,13 @@ func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
 	}
 }
 
+// withManagerQueryFunc is a prepareOption that configures the query function to pass to the ruler manager.
+func withManagerQueryFunc(queryFunc rules.QueryFunc) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.managerQueryFunc = queryFunc
+	}
+}
+
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
@@ -227,15 +236,21 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	noopQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
-	noopQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
-		return nil, nil
+
+	var queryFunc rules.QueryFunc
+	if options.managerQueryFunc != nil {
+		queryFunc = options.managerQueryFunc
+	} else {
+		queryFunc = func(context.Context, string, time.Time) (promql.Vector, error) {
+			return nil, nil
+		}
 	}
 
 	// Mock the pusher
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
 	require.NoError(t, err)
 
@@ -338,6 +353,79 @@ func TestRuler_Rules(t *testing.T) {
 				expectedRg := tc.mockRules[tc.userID][i]
 				compareRuleGroupDescToStateDesc(t, expectedRg, rg)
 			}
+		})
+	}
+}
+
+func TestRuler_ExcludeAlerts(t *testing.T) {
+	alertingMockRules := map[string]rulespb.RuleGroupList{
+		"user1": {
+			&rulespb.RuleGroupDesc{
+				Name:          "group1",
+				Namespace:     "namespace1",
+				User:          "user1",
+				SourceTenants: []string{"tenant-1"},
+				Rules:         []*rulespb.RuleDesc{createAlertingRule("testAlert", "up")},
+				Interval:      time.Duration(0 * time.Second),
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		mockRules           map[string]rulespb.RuleGroupList
+		userID              string
+		excludeAlerts       bool
+		expectedAlertsCount int
+	}{
+		"rules - user1 - exclude_alerts=true does not return alerts": {
+			userID:              "user1",
+			mockRules:           alertingMockRules,
+			excludeAlerts:       true,
+			expectedAlertsCount: 0,
+		},
+		"rules - user1 - exclude_alerts=false returns alerts": {
+			userID:              "user1",
+			mockRules:           alertingMockRules,
+			excludeAlerts:       false,
+			expectedAlertsCount: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultRulerConfig(t)
+			cfg.EvaluationInterval = time.Second
+			cfg.TenantFederation.Enabled = true
+
+			// Mock the query function to return a constant vector
+			constantQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
+				return promql.Vector{
+					{T: 12345, F: 1.0},
+				}, nil
+			}
+
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withStart(), withManagerQueryFunc(constantQueryFunc))
+
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+			// has been synched.
+			ctx := user.InjectOrgID(context.Background(), tc.userID)
+			test.Poll(t, 5*time.Second, len(mockRules[tc.userID]), func() interface{} {
+				rls, _ := r.Rules(ctx, &RulesRequest{ExcludeAlerts: tc.excludeAlerts})
+				return len(rls.Groups)
+			})
+
+			// Rules will be evaluated after some time
+			require.EventuallyWithT(t, func(c *assert.CollectT) {
+				rls, err := r.Rules(ctx, &RulesRequest{ExcludeAlerts: tc.excludeAlerts})
+				assert.NoError(c, err)
+				assert.Len(c, rls.Groups, len(mockRules[tc.userID]))
+
+				for _, ruleGroup := range rls.Groups {
+					for _, activeRule := range ruleGroup.ActiveRules {
+						assert.Len(c, activeRule.Alerts, tc.expectedAlertsCount)
+					}
+				}
+			}, time.Second*5, 1*time.Second)
 		})
 	}
 }
