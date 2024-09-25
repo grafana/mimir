@@ -54,8 +54,8 @@ type pusherConsumer struct {
 }
 
 type pusherConsumerMetrics struct {
-	numTimeSeriesPerFlush      prometheus.Histogram
-	ingestionShardBatchAge     prometheus.Histogram
+	numTimeSeriesPerFlush      *prometheus.HistogramVec
+	ingestionShardBatchAge     *prometheus.HistogramVec
 	batchProcessingTimeSeconds *prometheus.HistogramVec
 	processingTimeSeconds      prometheus.Observer
 	clientErrRequests          prometheus.Counter
@@ -71,11 +71,11 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 	}, []string{"cause"})
 
 	return &pusherConsumerMetrics{
-		numTimeSeriesPerFlush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		numTimeSeriesPerFlush: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_pusher_num_timeseries_per_shard_flush",
 			Help:                        "Number of time series pushed in each batch to an ingestion shard. A lower number than ingestion-batch-size indicates that shards are not filling up and may not be parallelizing ingestion as efficiently.",
 			NativeHistogramBucketFactor: 1.1,
-		}),
+		}, []string{"user"}),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
 			Help:                            "Time taken to process a batch of fetched records (Write requests).",
@@ -84,16 +84,16 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
 		}),
-		ingestionShardBatchAge: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		ingestionShardBatchAge: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_ingestion_shard_batch_age_seconds",
 			Help:                        "Age of the batch when it is being ingested by an ingestion shard. This is the time since adding the first sample to the batch. A high value indicated that the batching queue is not processing fast enough or that the batches are not filling up fast enough.",
 			NativeHistogramBucketFactor: 1.1,
-		}),
+		}, []string{"user"}),
 		batchProcessingTimeSeconds: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_ingestion_shard_batch_processing_time_seconds",
 			Help:                        "Time to process a batch of samples in an ingestion shard.",
 			NativeHistogramBucketFactor: 1.1,
-		}, []string{"batch_contents"}),
+		}, []string{"batch_contents", "user"}),
 
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
@@ -288,7 +288,11 @@ func newSequentialStoragePusher(metrics *pusherConsumerMetrics, pusher Pusher) s
 // PushToStorage implements the PusherCloser interface.
 func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	// TODO: What about time??
-	ssp.metrics.numTimeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
+	tenantID, _ := user.ExtractOrgID(ctx)
+	if tenantID == "" {
+		tenantID = "<unknown>"
+	}
+	ssp.metrics.numTimeSeriesPerFlush.WithLabelValues(tenantID).Observe(float64(len(wr.Timeseries)))
 	return ssp.pusher.PushToStorage(ctx, wr)
 }
 
@@ -477,13 +481,18 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 	defer queue.Done()
 
 	for wr := range queue.Channel() {
-		p.metrics.ingestionShardBatchAge.Observe(time.Since(wr.startedAt).Seconds())
-		p.metrics.numTimeSeriesPerFlush.Observe(float64(len(wr.WriteRequest.Timeseries)))
+		tenantID, _ := user.ExtractOrgID(wr.Context)
+		if tenantID == "" {
+			tenantID = "<unknown>"
+		}
+
+		p.metrics.ingestionShardBatchAge.WithLabelValues(tenantID).Observe(time.Since(wr.startedAt).Seconds())
+		p.metrics.numTimeSeriesPerFlush.WithLabelValues(tenantID).Observe(float64(len(wr.WriteRequest.Timeseries)))
 		processingStart := time.Now()
 
 		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
 
-		p.metrics.batchProcessingTimeSeconds.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
+		p.metrics.batchProcessingTimeSeconds.WithLabelValues(requestContents(wr.WriteRequest), tenantID).Observe(time.Since(processingStart).Seconds())
 		if err != nil {
 			queue.ErrorChannel() <- err
 		}
