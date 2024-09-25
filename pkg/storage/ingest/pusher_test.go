@@ -279,7 +279,7 @@ func TestClientErrorFilteringPusher_PushToStorage(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := newPushErrorHandler(nil, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
+			c := newPushErrorHandler(newStoragePusherMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
 
 			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
 			assert.Equal(t, tc.expectedSampled, sampled)
@@ -667,7 +667,8 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			shardingP := newParallelStorageShards(metrics, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
+			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
+			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
 			for i, req := range tc.expectedUpstreamPushes {
 				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
@@ -830,7 +831,7 @@ func TestParallelStoragePusher(t *testing.T) {
 			}).Return(nil)
 
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, 1, 1, logger)
+			psp := newParallelStoragePusher(metrics, pusher, 0, 1, 1, logger)
 
 			// Process requests
 			for _, req := range tc.requests {

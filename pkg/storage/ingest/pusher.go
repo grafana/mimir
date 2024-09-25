@@ -261,7 +261,7 @@ func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.Wr
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
-	p := newParallelStorageShards(c.metrics, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
+	p := newParallelStorageShards(c.metrics, c.errorHandler, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
 }
@@ -293,15 +293,16 @@ type flushableWriteRequest struct {
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(metrics *storagePusherMetrics, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
+func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
 	p := &parallelStorageShards{
-		numShards:  numShards,
-		pusher:     pusher,
-		hashLabels: hashLabels,
-		capacity:   capacity,
-		metrics:    metrics,
-		batchSize:  batchSize,
-		wg:         &sync.WaitGroup{},
+		numShards:    numShards,
+		pusher:       pusher,
+		errorHandler: errorHandler,
+		hashLabels:   hashLabels,
+		capacity:     capacity,
+		metrics:      metrics,
+		batchSize:    batchSize,
+		wg:           &sync.WaitGroup{},
 	}
 
 	p.start()
