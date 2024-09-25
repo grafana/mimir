@@ -322,6 +322,32 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			expStatusCode: http.StatusUnauthorized,
 		},
 		{
+			name: "config size > max size",
+			body: fmt.Sprintf(`
+			{
+				"configuration": %s,
+				"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
+				"created": 12312414343,
+				"default": false,
+				"promoted": true,
+				"external_url": "http://test.grafana.com",
+				"static_headers": {
+					"Header-1": "Value-1",
+					"Header-2": "Value-2"
+				}
+			}
+			`, testGrafanaConfig),
+			orgID:         "test_user",
+			maxConfigSize: 10,
+			expStatusCode: http.StatusBadRequest,
+			expResponseBody: `
+			{
+			"error": "Alertmanager configuration is too big, limit: 10 bytes",
+				"status": "error"
+			}
+			`,
+		},
+		{
 			name: "invalid config",
 			body: `
 			{
