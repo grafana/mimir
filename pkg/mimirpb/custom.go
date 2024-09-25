@@ -8,7 +8,75 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
+	protobufproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 )
+
+func init() {
+	c := encoding.GetCodecV2(proto.Name)
+	encoding.RegisterCodecV2(&CodecV2{c})
+}
+
+// CodecV2 customizes gRPC unmarshalling.
+type CodecV2 struct {
+	encoding.CodecV2
+}
+
+func messageV2Of(v any) protobufproto.Message {
+	switch v := v.(type) {
+	case protoadapt.MessageV1:
+		return protoadapt.MessageV2Of(v)
+	case protoadapt.MessageV2:
+		return v
+	default:
+		panic(fmt.Errorf("unrecognized message type %T", v))
+	}
+}
+
+// Unmarshal customizes gRPC unmarshalling.
+// If v implements the UnmarshalerV2 interface, its SetBuffer method is called with the unmarshalling buffer.
+func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	vv := messageV2Of(v)
+	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
+	defer buf.Free()
+
+	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+		return err
+	}
+
+	unmarshaler, ok := v.(UnmarshalerV2)
+	if ok {
+		buf.Ref()
+		unmarshaler.SetBuffer(buf)
+	}
+
+	return nil
+}
+
+// UnmarshalerV2 is an interface for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// Implementations of this interface should keep a reference to said buffer.
+type UnmarshalerV2 interface {
+	// SetBuffer sets the unmarshalling buffer.
+	SetBuffer(mem.Buffer)
+	// SetBuffer frees the unmarshalling buffer.
+	FreeBuffer()
+}
+
+var _ UnmarshalerV2 = &WriteRequest{}
+
+func (m *WriteRequest) SetBuffer(buf mem.Buffer) {
+	m.buffer = buf
+}
+
+func (m *WriteRequest) FreeBuffer() {
+	if m.buffer != nil {
+		m.buffer.Free()
+		m.buffer = nil
+	}
+}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.

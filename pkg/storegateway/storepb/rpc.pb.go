@@ -8,6 +8,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	types "github.com/gogo/protobuf/types"
+	"google.golang.org/grpc/mem"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -129,6 +130,9 @@ type SeriesResponse struct {
 	//	*SeriesResponse_StreamingChunks
 	//	*SeriesResponse_StreamingChunksEstimate
 	Result isSeriesResponse_Result `protobuf_oneof:"result"`
+
+	// Keep reference to buffer for unsafe references.
+	buffer mem.Buffer
 }
 
 func (m *SeriesResponse) Reset()      { *m = SeriesResponse{} }

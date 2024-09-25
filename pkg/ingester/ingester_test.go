@@ -3211,8 +3211,10 @@ func TestIngester_Push(t *testing.T) {
 
 			// Push timeseries
 			for idx, req := range testData.reqs {
-				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
-				err := i.PushWithCleanup(ctx, req, func() {})
+				// Push metrics to the ingester.
+				err := i.PushWithCleanup(ctx, req, func() {
+					req.FreeBuffer()
+				})
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
@@ -5446,7 +5448,7 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 		IsEndOfSeriesStream: true,
 	}
 
-	require.Equal(t, seriesLabelsMsg, *resp)
+	require.EqualExportedValues(t, seriesLabelsMsg, *resp)
 
 	recvMsgs := 0
 	series := 0

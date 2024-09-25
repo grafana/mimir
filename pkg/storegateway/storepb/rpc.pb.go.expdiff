@@ -1,0 +1,22 @@
+diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
+index b782f42cf..763f925f0 100644
+--- a/pkg/storegateway/storepb/rpc.pb.go
++++ b/pkg/storegateway/storepb/rpc.pb.go
+@@ -8,7 +8,6 @@ import (
+ 	_ "github.com/gogo/protobuf/gogoproto"
+ 	proto "github.com/gogo/protobuf/proto"
+ 	types "github.com/gogo/protobuf/types"
+-	"google.golang.org/grpc/mem"
+ 	io "io"
+ 	math "math"
+ 	math_bits "math/bits"
+@@ -130,9 +129,6 @@ type SeriesResponse struct {
+ 	//	*SeriesResponse_StreamingChunks
+ 	//	*SeriesResponse_StreamingChunksEstimate
+ 	Result isSeriesResponse_Result `protobuf_oneof:"result"`
+-
+-	// Keep reference to buffer for unsafe references.
+-	buffer mem.Buffer
+ }
+ 
+ func (m *SeriesResponse) Reset()      { *m = SeriesResponse{} }

@@ -10,6 +10,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
+	"google.golang.org/grpc/mem"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -244,6 +245,9 @@ type WriteRequest struct {
 
 	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
+
+	// Keep reference to buffer for unsafe references.
+	buffer mem.Buffer
 }
 
 func (m *WriteRequest) Reset()      { *m = WriteRequest{} }

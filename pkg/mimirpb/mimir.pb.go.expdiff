@@ -1,18 +1,29 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 8e2109f8ae..1ec0a3ecf9 100644
+index 3ca1707fd..5d1a69e5e 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
-@@ -241,9 +241,6 @@ type WriteRequest struct {
+@@ -10,7 +10,6 @@ import (
+ 	_ "github.com/gogo/protobuf/gogoproto"
+ 	proto "github.com/gogo/protobuf/proto"
+ 	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
+-	"google.golang.org/grpc/mem"
+ 	io "io"
+ 	math "math"
+ 	math_bits "math/bits"
+@@ -242,12 +241,6 @@ type WriteRequest struct {
  	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
  	// Skip validation of label names and values.
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
 -
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
+-
+-	// Keep reference to buffer for unsafe references.
+-	buffer mem.Buffer
  }
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
-@@ -383,9 +380,6 @@ type TimeSeries struct {
+@@ -387,9 +380,6 @@ type TimeSeries struct {
  	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
  	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
  	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
@@ -22,7 +33,7 @@ index 8e2109f8ae..1ec0a3ecf9 100644
  }
  
  func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
-@@ -6182,7 +6176,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -6186,7 +6176,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
@@ -30,7 +41,7 @@ index 8e2109f8ae..1ec0a3ecf9 100644
  			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
-@@ -6535,11 +6528,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+@@ -6539,11 +6528,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
