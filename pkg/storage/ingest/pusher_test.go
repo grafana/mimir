@@ -164,8 +164,8 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:3],
 			expErr:      "", // since all fof those were client errors, we don't return an error
 			expectedLogLines: []string{
-				"method=pusherConsumer.pushToStorage level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" user=t1 insight=true err=\"rpc error: code = InvalidArgument desc = ingester test error\"",
-				"method=pusherConsumer.pushToStorage level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" user=t1 insight=true err=\"rpc error: code = Unknown desc = ingester test error\"",
+				"user=t1 level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" insight=true err=\"rpc error: code = InvalidArgument desc = ingester test error\"",
+				"user=t1 level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" insight=true err=\"rpc error: code = Unknown desc = ingester test error\"",
 			},
 		},
 		"ingester server error": {
@@ -183,7 +183,7 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:2], // the rest of the requests are not attempted
 			expErr:      "ingester internal error",
 			expectedLogLines: []string{
-				"method=pusherConsumer.pushToStorage level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" user=t1 insight=true err=\"rpc error: code = InvalidArgument desc = ingester test error\"",
+				"user=t1 level=warn msg=\"detected a client error while ingesting write request (the request may have been partially ingested)\" insight=true err=\"rpc error: code = InvalidArgument desc = ingester test error\"",
 			},
 		},
 	}
@@ -239,7 +239,7 @@ func removeUnimportantLogFields(lines []string) []string {
 	return lines
 }
 
-func TestPusherConsumer_clientErrorSampling(t *testing.T) {
+func TestPushErrorHandler_IsServerError(t *testing.T) {
 	type testCase struct {
 		sampler         *util_log.Sampler
 		err             error
@@ -279,8 +279,7 @@ func TestPusherConsumer_clientErrorSampling(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := newPusherConsumer(nil, KafkaConfig{}, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
-			c.fallbackClientErrSampler = tc.sampler
+			c := newPushErrorHandler(newStoragePusherMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
 
 			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
 			assert.Equal(t, tc.expectedSampled, sampled)
@@ -668,7 +667,8 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			shardingP := newParallelStorageShards(metrics, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
+			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
+			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
 			for i, req := range tc.expectedUpstreamPushes {
 				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
@@ -831,7 +831,7 @@ func TestParallelStoragePusher(t *testing.T) {
 			}).Return(nil)
 
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, 1, 1, logger)
+			psp := newParallelStoragePusher(metrics, pusher, 0, 1, 1, logger)
 
 			// Process requests
 			for _, req := range tc.requests {

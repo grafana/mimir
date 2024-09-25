@@ -12,20 +12,12 @@ import (
 // pusherConsumerMetrics holds the metrics for the pusherConsumer.
 type pusherConsumerMetrics struct {
 	processingTimeSeconds prometheus.Observer
-	clientErrRequests     prometheus.Counter
-	serverErrRequests     prometheus.Counter
-	totalRequests         prometheus.Counter
 
 	storagePusherMetrics *storagePusherMetrics
 }
 
 // newPusherConsumerMetrics creates a new pusherConsumerMetrics instance.
 func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics {
-	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_ingest_storage_reader_records_failed_total",
-		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
-	}, []string{"cause"})
-
 	return &pusherConsumerMetrics{
 		storagePusherMetrics: newStoragePusherMetrics(reg),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -35,13 +27,6 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
-		}),
-
-		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
-		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
-		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_records_total",
-			Help: "Number of attempted records (write requests).",
 		}),
 	}
 }
@@ -53,10 +38,18 @@ type storagePusherMetrics struct {
 	processingTime       *prometheus.HistogramVec
 	timeSeriesPerFlush   prometheus.Histogram
 	batchingQueueMetrics *batchingQueueMetrics
+	clientErrRequests    prometheus.Counter
+	serverErrRequests    prometheus.Counter
+	totalRequests        prometheus.Counter
 }
 
 // newStoragePusherMetrics creates a new storagePusherMetrics instance.
 func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
+	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_ingest_storage_reader_records_failed_total",
+		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
+	}, []string{"cause"})
+
 	return &storagePusherMetrics{
 		batchingQueueMetrics: newBatchingQueueMetrics(reg),
 		batchAge: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -73,6 +66,12 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 			Name:                        "cortex_ingest_storage_reader_pusher_timeseries_per_flush",
 			Help:                        "Number of time series pushed in each batch to an ingestion shard. A lower number than -ingest-storage.kafka.ingestion-concurrency-batch-size indicates that shards are not filling up and may not be parallelizing ingestion as efficiently.",
 			NativeHistogramBucketFactor: 1.1,
+		}),
+		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
+		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
+		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_records_total",
+			Help: "Number of attempted records (write requests).",
 		}),
 	}
 }
