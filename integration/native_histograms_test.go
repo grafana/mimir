@@ -4,13 +4,13 @@
 package integration
 
 import (
-	"github.com/prometheus/common/model"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
