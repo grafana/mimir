@@ -1679,8 +1679,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
   -log.rate-limit-logs-per-second float
     	[experimental] Maximum number of messages per second to be logged. (default 10000)
-  -max-cost-attribution-per-user int
-    	[experimental] Maximum number of cost attributions allowed per user. (default 200)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -3064,11 +3062,13 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-label string
-    	[experimental] Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'cost' label with cost label's value. Currently applies to the following metrics: cortex_discarded_samples_total
+    	[experimental] Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'attrib' cost attribution's label's value. Applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.max-cost-attribution-per-user int
+    	[experimental] The maximum number of cost attribution labels per user, across the cluster. 0 to disable cost attribution.
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

@@ -105,7 +105,7 @@ type Distributor struct {
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
-	costAttributionsvr     *util.CostAttributionCleanupService
+	costAttributionSvc     *util.CostAttributionCleanupService
 	// For handling HA replicas.
 	HATracker *haTracker
 
@@ -306,10 +306,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides,
-	activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionClenaupService *util.CostAttributionCleanupService,
-	ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing,
-	canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionClenaupService *util.CostAttributionCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -344,7 +341,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
 		HATracker:             haTracker,
-		costAttributionsvr:    costAttributionClenaupService,
+		costAttributionSvc:    costAttributionClenaupService,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -1442,7 +1439,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(req, userID, d.limits.CostAttributionLabel(userID))
+	now := mtime.Now()
+
+	d.updateReceivedMetrics(req, userID, d.limits.CostAttributionLabel(userID), now)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -1673,14 +1672,18 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, costAttributionLabel string) {
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, costAttributionLabel string, now time.Time) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
-	costAttribution := make(map[string]int)
+	costAttributionSize := 0
+	if costAttributionLabel != "" {
+		costAttributionSize = d.limits.MaxCostAttributionPerUser(userID)
+	}
+	costAttribution := make(map[string]int, costAttributionSize)
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 		if costAttributionLabel != "" {
-			attribution := d.costAttributionsvr.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel), mtime.Now())
+			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel), now, costAttributionSize)
 			costAttribution[attribution]++
 		}
 	}

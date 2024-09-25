@@ -4,6 +4,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -14,17 +15,15 @@ import (
 )
 
 type CostAttribution struct {
-	mu                    sync.RWMutex
-	timestampsPerUser     map[string]map[string]*atomic.Int64 // map[user][group] -> timestamp
-	coolDownDeadline      map[string]*atomic.Int64
-	maxAttributionPerUser int
+	mu                sync.RWMutex
+	timestampsPerUser map[string]map[string]*atomic.Int64 // map[user][group] -> timestamp
+	coolDownDeadline  map[string]*atomic.Int64
 }
 
-func NewCostAttribution(maxAttributionPerUser int) *CostAttribution {
+func NewCostAttribution() *CostAttribution {
 	return &CostAttribution{
-		timestampsPerUser:     map[string]map[string]*atomic.Int64{},
-		coolDownDeadline:      map[string]*atomic.Int64{},
-		maxAttributionPerUser: maxAttributionPerUser,
+		timestampsPerUser: map[string]map[string]*atomic.Int64{},
+		coolDownDeadline:  map[string]*atomic.Int64{},
 	}
 }
 
@@ -110,7 +109,7 @@ func (ca *CostAttribution) purgeInactiveAttributions(inactiveTimeout time.Durati
 	}
 }
 
-func (ca *CostAttribution) attributionLimitExceeded(userID, attribution string, now time.Time) bool {
+func (ca *CostAttribution) attributionLimitExceeded(userID, attribution string, now time.Time, limit int) bool {
 	// if we are still at the cooldown period, we will consider the limit reached
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
@@ -126,7 +125,7 @@ func (ca *CostAttribution) attributionLimitExceeded(userID, attribution string, 
 	}
 
 	// if the user has reached the limit, we will set the cooldown period which is 20 minutes
-	maxReached := len(ca.timestampsPerUser[userID]) >= ca.maxAttributionPerUser
+	maxReached := len(ca.timestampsPerUser[userID]) >= limit
 	if maxReached {
 		ca.coolDownDeadline[userID].Store(time.Now().Add(20 * time.Minute).UnixNano())
 		return true
@@ -141,32 +140,34 @@ type CostAttributionCleanupService struct {
 	costAttribution *CostAttribution
 	cleanupFuncs    []func(userID, attribution string)
 	inactiveTimeout time.Duration
+	invalidValue    string
 }
 
 type CostAttributionMetricsCleaner interface {
 	RemoveAttributionMetricsForUser(userID, attribution string)
 }
 
-func NewCostAttributionCleanupService(cleanupInterval, inactiveTimeout time.Duration, maxAttributionPerUser int, logger log.Logger, cleanupFns ...func(string, string)) *CostAttributionCleanupService {
+func NewCostAttributionCleanupService(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, cleanupFns ...func(string, string)) *CostAttributionCleanupService {
 	s := &CostAttributionCleanupService{
-		costAttribution: NewCostAttribution(maxAttributionPerUser),
+		costAttribution: NewCostAttribution(),
 		cleanupFuncs:    cleanupFns,
 		inactiveTimeout: inactiveTimeout,
 		logger:          logger,
+		invalidValue:    "__unaccounted__",
 	}
 
 	s.Service = services.NewTimerService(cleanupInterval, nil, s.iteration, nil).WithName("cost attribution cleanup")
 	return s
 }
 
-func (s *CostAttributionCleanupService) UpdateAttributionTimestamp(user, attribution string, now time.Time) string {
+func (s *CostAttributionCleanupService) UpdateAttributionTimestamp(user, attribution string, now time.Time, limit int) string {
 	// empty label is not normal, if user set attribution label, the metrics send has to include the label
 	if attribution == "" {
-		attribution = "other"
-		level.Error(s.logger).Log("msg", "set attribution label to \"other\" since missing cost attribution label in metrics")
-	} else if s.costAttribution.attributionLimitExceeded(user, attribution, now) {
-		attribution = "other"
-		level.Error(s.logger).Log("msg", "set attribution label to \"other\" since user has reached the limit of cost attribution labels")
+		attribution = s.invalidValue
+		level.Error(s.logger).Log("msg", fmt.Sprintf("set attribution label to \"%s\" since missing cost attribution label in metrics", s.invalidValue))
+	} else if s.costAttribution.attributionLimitExceeded(user, attribution, now, limit) {
+		attribution = s.invalidValue
+		level.Error(s.logger).Log("msg", "set attribution label to \"%s\" since user has reached the limit of cost attribution labels", s.invalidValue)
 	}
 
 	s.costAttribution.UpdateAttributionTimestampForUser(user, attribution, now)

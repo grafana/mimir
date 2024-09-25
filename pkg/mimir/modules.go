@@ -650,7 +650,7 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 }
 
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
-	t.CostAttributionCleanup = util.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, t.Cfg.MaxCostAttributionPerUser, util_log.Logger)
+	t.CostAttributionCleanup = util.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger)
 	return t.CostAttributionCleanup, nil
 }
 

@@ -41,7 +41,11 @@ func TestIsLabelValueActive(t *testing.T) {
 		labels.FromStrings("a", "5"),
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
+<<<<<<< HEAD
 	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
+=======
+	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
+>>>>>>> 7e628c3508 (address comments)
 
 	memPostings := index.NewMemPostings()
 	for i, l := range series {

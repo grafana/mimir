@@ -310,7 +310,7 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
-	costAttribution *util.CostAttributionCleanupService
+	costAttributionSvc *util.CostAttributionCleanupService
 
 	tsdbMetrics *tsdbMetrics
 
@@ -380,12 +380,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(
-	cfg Config, limits *validation.Overrides,
-	ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher,
-	activeGroupsCleanupService *util.ActiveGroupsCleanupService,
-	costAttributionCleanupService *util.CostAttributionCleanupService,
-	registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionCleanupService *util.CostAttributionCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -393,7 +388,7 @@ func New(
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-	i.costAttribution = costAttributionCleanupService
+	i.costAttributionSvc = costAttributionCleanupService
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
@@ -1170,7 +1165,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		// successfully committed
 
 		stats = pushStats{
-			failedSamplesAttribution: make(map[string]int),
+			failedSamplesAttribution: make(map[string]int, i.limits.MaxCostAttributionPerUser(userID)),
 		}
 
 		firstPartialErr error
@@ -1288,10 +1283,8 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
-	if stats.failedSamplesAttribution != nil && len(stats.failedSamplesAttribution) > 0 {
-		for label, count := range stats.failedSamplesAttribution {
-			discarded.samplesPerAttribution.WithLabelValues(userID, label).Add(float64(count))
-		}
+	for label, count := range stats.failedSamplesAttribution {
+		discarded.samplesPerAttribution.WithLabelValues(userID, label).Add(float64(count))
 	}
 }
 
@@ -1302,12 +1295,19 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 	// Return true if handled as soft error, and we can ingest more series.
+	// get the cost attribution value for the series
+	costLabel := i.limits.CostAttributionLabel(userID)
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
-
-		// get the cost attribution value for the series
-		costLabel := i.limits.CostAttributionLabel(userID)
 		if costLabel != "" {
-			costAttrib := i.costAttribution.UpdateAttributionTimestamp(userID, validation.AttributionValue(costLabel, userID, labels), time.Now())
+			costAttrib := ""
+			for _, label := range labels {
+				if label.Name == costLabel {
+					costAttrib = label.Value
+				}
+			}
+			// get the label value and update the timestamp,
+			// if the cordianlity is reached or we are currently in cooldown period, function would returned __unaccounted__
+			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend, i.limits.MaxCostAttributionPerUser(userID))
 			stats.failedSamplesAttribution[costAttrib]++
 		}
 
@@ -1415,12 +1415,15 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
 	for _, ts := range timeseries {
-		// The cost attribution value for the series
-		costLabel := i.limits.CostAttributionLabel(userID)
 		var costAttrib string
 		// when cost attribution label is set
 		if costLabel != "" {
-			costAttrib = i.costAttribution.UpdateAttributionTimestamp(userID, validation.AttributionValue(costLabel, userID, ts.Labels), time.Now())
+			for _, label := range ts.Labels {
+				if label.Name == costLabel {
+					costAttrib = label.Value
+				}
+			}
+			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend, i.limits.MaxCostAttributionPerUser(userID))
 		}
 
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -2678,7 +2681,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			i.cfg.ActiveSeriesMetrics.IdleTimeout,
 			userID,
 			i.limits.CostAttributionLabel(userID),
-			i.costAttribution,
+			i.costAttributionSvc,
+			i.limits.MaxCostAttributionPerUser(userID),
 		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

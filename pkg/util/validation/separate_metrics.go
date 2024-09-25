@@ -30,17 +30,3 @@ func GroupLabel(o *Overrides, userID string, timeseries []mimirpb.PreallocTimese
 
 	return ""
 }
-
-// AttributionLabel obtains the value of cost attribution label for tenant
-func AttributionValue(attribLab string, userID string, lbs []mimirpb.LabelAdapter) string {
-	if len(lbs) == 0 {
-		return ""
-	}
-
-	for _, label := range lbs {
-		if label.Name == attribLab {
-			return label.Value
-		}
-	}
-	return ""
-}

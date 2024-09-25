@@ -146,7 +146,8 @@ type Limits struct {
 <<<<<<< HEAD
 =======
 	// User defined label to give the cost distribution by values of the label
-	CostAttributionLabel string `yaml:"cost_attribution_label" json:"cost_attribution_label" category:"experimental"`
+	CostAttributionLabel      string `yaml:"cost_attribution_label" json:"cost_attribution_label" category:"experimental"`
+	MaxCostAttributionPerUser int    `yaml:"max_cost_attribution_per_user" json:"max_cost_attribution_per_user" category:"experimental"`
 
 >>>>>>> 3c422a8f57 (new service for tracking cost attribution)
 	// Querier enforced limits.
@@ -289,10 +290,15 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 =======
 	f.StringVar(&l.CostAttributionLabel, "validation.cost-attribution-label", "", "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'cost' label with cost label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 >>>>>>> 3c422a8f57 (new service for tracking cost attribution)
+=======
+	f.StringVar(&l.CostAttributionLabel, "validation.cost-attribution-label", "", "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'attrib' cost attribution's label's value. Applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total.")
+	f.IntVar(&l.MaxCostAttributionPerUser, "validation.max-cost-attribution-per-user", 0, "The maximum number of cost attribution labels per user, across the cluster. 0 to disable cost attribution.")
+>>>>>>> 7e628c3508 (address comments)
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
@@ -780,6 +786,17 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
+<<<<<<< HEAD
+=======
+func (o *Overrides) CostAttributionLabel(userID string) string {
+	return o.getOverridesForUser(userID).CostAttributionLabel
+}
+
+func (o *Overrides) MaxCostAttributionPerUser(userID string) int {
+	return o.getOverridesForUser(userID).MaxCostAttributionPerUser
+}
+
+>>>>>>> 7e628c3508 (address comments)
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
 func (o *Overrides) IngestionTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionTenantShardSize

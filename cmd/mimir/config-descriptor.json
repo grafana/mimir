@@ -59,17 +59,6 @@
     },
     {
       "kind": "field",
-      "name": "max_cost_attribution_per_user",
-      "required": false,
-      "desc": "Maximum number of cost attributions allowed per user.",
-      "fieldValue": null,
-      "fieldDefaultValue": 200,
-      "fieldFlag": "max-cost-attribution-per-user",
-      "fieldType": "int",
-      "fieldCategory": "experimental"
-    },
-    {
-      "kind": "field",
       "name": "cost_attribution_eviction_interval",
       "required": false,
       "desc": "Interval at which to evict inactive cost attributions.",
@@ -4010,11 +3999,22 @@
           "kind": "field",
           "name": "cost_attribution_label",
           "required": false,
-          "desc": "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'cost' label with cost label's value. Currently applies to the following metrics: cortex_discarded_samples_total",
+          "desc": "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'attrib' cost attribution's label's value. Applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "validation.cost-attribution-label",
           "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_per_user",
+          "required": false,
+          "desc": "The maximum number of cost attribution labels per user, across the cluster. 0 to disable cost attribution.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.max-cost-attribution-per-user",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {

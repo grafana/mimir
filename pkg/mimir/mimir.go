@@ -109,7 +109,6 @@ type Config struct {
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
 	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"advanced"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
-	MaxCostAttributionPerUser       int                    `yaml:"max_cost_attribution_per_user" category:"experimental"`
 	CostAttributionEvictionInterval time.Duration          `yaml:"cost_attribution_eviction_interval" category:"experimental"`
 	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`
@@ -172,7 +171,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution-eviction-interval", 10*time.Minute, "Interval at which to evict inactive cost attributions.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
-	f.IntVar(&c.MaxCostAttributionPerUser, "max-cost-attribution-per-user", 200, "Maximum number of cost attributions allowed per user.")
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
 
