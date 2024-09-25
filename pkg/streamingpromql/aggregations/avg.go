@@ -26,9 +26,10 @@ type AvgAggregationGroup struct {
 	histograms             []*histogram.FloatHistogram
 	histogramPointCount    int
 
-	// Keeps track of how many series we have encountered thus far for the group at this point
-	// This is necessary to do per point (instead of just counting the groups) as a series may have
+	// Keeps track of how many samples we have encountered thus far for the group at this point
+	// This is necessary to do per point (instead of just counting the input series) as a series may have
 	// stale or non-existent values that are not added towards the count.
+	// We use float64 instead of uint64 so that we can reuse the float pool and don't have to retype on each division.
 	groupSeriesCounts []float64
 }
 

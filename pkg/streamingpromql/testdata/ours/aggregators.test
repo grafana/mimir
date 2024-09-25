@@ -327,3 +327,5 @@ eval range from 0m to 1m step 1m count(series)
 
 eval range from 0m to 1m step 1m group(series)
   {} _ 1
+
+clear
