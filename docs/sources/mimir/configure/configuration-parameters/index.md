@@ -948,11 +948,6 @@ instance_limits:
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
 [write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
-# (deprecated) When enabled, in-flight write requests limit is checked as soon
-# as the gRPC request is received, before the request is decoded and parsed.
-# CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
-
 # (advanced) Number of pre-allocated workers used to forward push requests to
 # the ingesters. If 0, no workers will be used and a new goroutine will be
 # spawned for each ingester push request. If not enough workers available, new
@@ -1251,11 +1246,6 @@ instance_limits:
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 
-# (deprecated) When enabled, in-flight write requests limit is checked as soon
-# as the gRPC request is received, before the request is decoded and parsed.
-# CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
-
 # (advanced) Each error will be logged once in this many times. Use 0 to log all
 # of them.
 # CLI flag: -ingester.error-sample-rate
@@ -1364,10 +1354,6 @@ The `querier` block configures the querier.
 # query-store-after'.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
-
-# (deprecated) Maximum duration into the future you can query. 0 to disable.
-# CLI flag: -querier.max-query-into-future
-[max_query_into_future: <duration> | default = 10m]
 
 store_gateway_client:
   # (advanced) Enable TLS for gRPC client connecting to store-gateway.

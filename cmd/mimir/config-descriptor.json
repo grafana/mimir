@@ -1682,17 +1682,6 @@
         },
         {
           "kind": "field",
-          "name": "limit_inflight_requests_using_grpc_method_limiter",
-          "required": false,
-          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.limit-inflight-requests-using-grpc-method-limiter",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
           "name": "reusable_ingester_push_workers",
           "required": false,
           "desc": "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)",
@@ -1733,17 +1722,6 @@
           "fieldFlag": "querier.query-store-after",
           "fieldType": "duration",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "max_query_into_future",
-          "required": false,
-          "desc": "Maximum duration into the future you can query. 0 to disable.",
-          "fieldValue": null,
-          "fieldDefaultValue": 600000000000,
-          "fieldFlag": "querier.max-query-into-future",
-          "fieldType": "duration",
-          "fieldCategory": "deprecated"
         },
         {
           "kind": "block",
@@ -3424,17 +3402,6 @@
           "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "limit_inflight_requests_using_grpc_method_limiter",
-          "required": false,
-          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "ingester.limit-inflight-requests-using-grpc-method-limiter",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
