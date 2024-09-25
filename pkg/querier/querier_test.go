@@ -642,45 +642,34 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	}
 }
 
-func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
+func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 	const engineLookbackDelta = 5 * time.Minute
 
 	now := time.Now()
 
 	tests := map[string]struct {
-		maxQueryIntoFuture time.Duration
-		queryStartTime     time.Time
-		queryEndTime       time.Time
-		expectedSkipped    bool
-		expectedStartTime  time.Time
-		expectedEndTime    time.Time
+		queryStartTime    time.Time
+		queryEndTime      time.Time
+		expectedStartTime time.Time
+		expectedEndTime   time.Time
 	}{
 		"should manipulate query if end time is after the limit": {
-			maxQueryIntoFuture: 10 * time.Minute,
-			queryStartTime:     now.Add(-5 * time.Hour),
-			queryEndTime:       now.Add(1 * time.Hour),
-			expectedStartTime:  now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
-			expectedEndTime:    now.Add(10 * time.Minute),
+			queryStartTime:    now.Add(-5 * time.Hour),
+			queryEndTime:      now.Add(1 * time.Hour),
+			expectedStartTime: now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
+			expectedEndTime:   now.Add(1 * time.Hour),
 		},
-		"should not manipulate query if end time is far in the future but limit is disabled": {
-			maxQueryIntoFuture: 0,
-			queryStartTime:     now.Add(-5 * time.Hour),
-			queryEndTime:       now.Add(100 * time.Hour),
-			expectedStartTime:  now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
-			expectedEndTime:    now.Add(100 * time.Hour),
+		"should not manipulate query if end time is far in the future": {
+			queryStartTime:    now.Add(-5 * time.Hour),
+			queryEndTime:      now.Add(100 * time.Hour),
+			expectedStartTime: now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
+			expectedEndTime:   now.Add(100 * time.Hour),
 		},
-		"should not manipulate query if end time is in the future but below the limit": {
-			maxQueryIntoFuture: 10 * time.Minute,
-			queryStartTime:     now.Add(-100 * time.Minute),
-			queryEndTime:       now.Add(5 * time.Minute),
-			expectedStartTime:  now.Add(-100 * time.Minute).Add(-engineLookbackDelta),
-			expectedEndTime:    now.Add(5 * time.Minute),
-		},
-		"should skip executing a query outside the allowed time range": {
-			maxQueryIntoFuture: 10 * time.Minute,
-			queryStartTime:     now.Add(50 * time.Minute),
-			queryEndTime:       now.Add(60 * time.Minute),
-			expectedSkipped:    true,
+		"should manipulate query if start time is far in the future": {
+			queryStartTime:    now.Add(50 * time.Minute),
+			queryEndTime:      now.Add(60 * time.Minute),
+			expectedStartTime: now.Add(50 * time.Minute).Add(-engineLookbackDelta),
+			expectedEndTime:   now.Add(60 * time.Minute),
 		},
 	}
 
@@ -695,7 +684,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	for name, c := range tests {
-		cfg.MaxQueryIntoFuture = c.maxQueryIntoFuture
 		t.Run(name, func(t *testing.T) {
 			// We don't need to query any data for this test, so an empty store is fine.
 			distributor := &mockDistributor{}
@@ -718,16 +706,11 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			_, err = r.Matrix()
 			require.Nil(t, err)
 
-			if !c.expectedSkipped {
-				// Assert on the time range of the actual executed query (5s delta).
-				delta := float64(5000)
-				require.Len(t, distributor.Calls, 1)
-				assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
-				assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(3).(model.Time)), delta)
-			} else {
-				// Ensure no query has been executed (because skipped).
-				assert.Len(t, distributor.Calls, 0)
-			}
+			// Assert on the time range of the actual executed query (5s delta).
+			delta := float64(5000)
+			require.Len(t, distributor.Calls, 1)
+			assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+			assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(3).(model.Time)), delta)
 		})
 	}
 }
@@ -1080,7 +1063,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
-			cfg.MaxQueryIntoFuture = 0
 
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)

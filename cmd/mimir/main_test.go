@@ -104,12 +104,12 @@ func TestFlagParsing(t *testing.T) {
 				defaults := mimir.Config{}
 				flagext.DefaultValues(&defaults)
 
-				require.NotZero(t, defaults.Querier.MaxQueryIntoFuture,
-					"This test asserts that mimir.Config.Querier.MaxQueryIntoFuture default value is not zero. "+
+				require.NotZero(t, defaults.Querier.QueryStoreAfter,
+					"This test asserts that mimir.Config.Querier.QueryStoreAfter default value is not zero. "+
 						"If it's zero, this test is useless. Please change it to use a config value with a non-zero default.",
 				)
 
-				require.Equal(t, cfg.Querier.MaxQueryIntoFuture, defaults.Querier.MaxQueryIntoFuture,
+				require.Equal(t, cfg.Querier.QueryStoreAfter, defaults.Querier.QueryStoreAfter,
 					"YAML parser has set the [entire] Querier config to zero values by specifying an empty node."+
 						"If this happens again, check git history on how this was checked with previous YAML parser implementation.")
 			},
