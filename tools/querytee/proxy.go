@@ -34,6 +34,7 @@ type ProxyConfig struct {
 	PreferredBackend                    string
 	BackendReadTimeout                  time.Duration
 	CompareResponses                    bool
+	ShiftComparisonQueriesBy            time.Duration
 	LogSlowQueryResponseThreshold       time.Duration
 	ValueComparisonTolerance            float64
 	UseRelativeError                    bool
@@ -43,6 +44,7 @@ type ProxyConfig struct {
 	BackendSkipTLSVerify                bool
 	AddMissingTimeParamToInstantQueries bool
 	SecondaryBackendsRequestProportion  float64
+	ShiftComparisonSamplingRatio        float64
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
@@ -69,6 +71,9 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
 	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", 1.0, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set.")
+	f.DurationVar(&cfg.ShiftComparisonQueriesBy, "proxy.shift-comparison-queries-by", 0, "Shift the timestamps of the queries by the given duration before querying and comparing them. This will still do the query for the preferred backend with the original timestamps but do another query with shifted timestamps for comparison.")
+	// Defaulted to 0 to avoid mistakes of not setting this correctly and overloading the store-gateways with shifted queries.
+	f.Float64Var(&cfg.ShiftComparisonSamplingRatio, "proxy.shift-comparison-sampling-ratio", 0, "Ratio of queries for which query times are shifted based on -proxy.shift-comparison-queries-by config, sampled randomly. Must be between 0 and 1 (inclusive).")
 }
 
 type Route struct {
@@ -232,7 +237,7 @@ func (p *Proxy) Start() error {
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {

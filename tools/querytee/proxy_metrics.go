@@ -20,11 +20,12 @@ const (
 type ComparisonResult string
 
 type ProxyMetrics struct {
-	requestDuration        *prometheus.HistogramVec
-	responsesTotal         *prometheus.CounterVec
-	responsesComparedTotal *prometheus.CounterVec
-	relativeDuration       *prometheus.HistogramVec
-	proportionalDuration   *prometheus.HistogramVec
+	requestDuration         *prometheus.HistogramVec
+	responsesTotal          *prometheus.CounterVec
+	responsesComparedTotal  *prometheus.CounterVec
+	shiftedComparisonsTotal *prometheus.CounterVec
+	relativeDuration        *prometheus.HistogramVec
+	proportionalDuration    *prometheus.HistogramVec
 }
 
 func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
@@ -43,6 +44,11 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 		responsesComparedTotal: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Namespace: queryTeeMetricsNamespace,
 			Name:      "responses_compared_total",
+			Help:      "Total number of responses compared per route name by result.",
+		}, []string{"route", "result"}),
+		shiftedComparisonsTotal: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+			Namespace: queryTeeMetricsNamespace,
+			Name:      "shifted_comparisons_total",
 			Help:      "Total number of responses compared per route name by result.",
 		}, []string{"route", "result"}),
 		relativeDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{

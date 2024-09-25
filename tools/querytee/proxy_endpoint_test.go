@@ -23,9 +23,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
@@ -115,7 +119,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, testConfig(0, 1))
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -160,7 +164,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, testConfig(0, 1))
 
 	for _, tc := range []struct {
 		name    string
@@ -336,7 +340,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, testConfig(0, 1))
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -428,8 +432,8 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			backends := []ProxyBackendInterface{
-				newMockProxyBackend("preferred-backend", time.Second, true, []time.Duration{scenario.preferredResponseLatency}),
-				newMockProxyBackend("secondary-backend", time.Second, false, []time.Duration{scenario.secondaryResponseLatency}),
+				newMockProxyBackend("preferred-backend", time.Second, true, []time.Duration{scenario.preferredResponseLatency}, nil),
+				newMockProxyBackend("secondary-backend", time.Second, false, []time.Duration{scenario.secondaryResponseLatency}, nil),
 			}
 
 			logger := newMockLogger()
@@ -438,7 +442,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, testConfig(scenario.slowResponseThreshold, 1))
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -497,8 +501,8 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			preferredLatencies, secondaryLatencies := splitLatencyPairs(scenario.latencyPairs)
 			backends := []ProxyBackendInterface{
-				newMockProxyBackend("preferred-backend", time.Second, true, preferredLatencies),
-				newMockProxyBackend("secondary-backend", time.Second, false, secondaryLatencies),
+				newMockProxyBackend("preferred-backend", time.Second, true, preferredLatencies, nil),
+				newMockProxyBackend("secondary-backend", time.Second, false, secondaryLatencies, nil),
 			}
 
 			logger := newMockLogger()
@@ -507,7 +511,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, testConfig(0, 1))
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -534,6 +538,140 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 			require.Equal(t, 1, len(gotProportional), "Expect only one metric after filtering")
 			require.Equal(t, uint64(len(scenario.latencyPairs)), gotProportional[0].Metric[0].Histogram.GetSampleCount())
 			require.InDelta(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum(), 1e-9)
+		})
+	}
+}
+
+func Test_ProxyEndpoint_ShiftedQueriesForComparison(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
+	scenarios := map[string]struct {
+		route      string
+		start, end int64
+		shiftBy    time.Duration
+	}{
+		"no shifts for range query": {
+			route: querymiddleware.QueryRangePathSuffix,
+			end:   time.Now().UnixMilli(),
+			start: time.Now().Add(-time.Hour).UnixMilli(),
+		},
+		"no shifts for instant query": {
+			route: querymiddleware.InstantQueryPathSuffix,
+			start: time.Now().UnixMilli(),
+		},
+		"no shifts non-promql query": {
+			route: "/api/v1/test",
+		},
+		"shifted range query": {
+			route:   querymiddleware.QueryRangePathSuffix,
+			end:     time.Now().UnixMilli(),
+			start:   time.Now().Add(-time.Hour).UnixMilli(),
+			shiftBy: 4 * time.Hour,
+		},
+		"shifted instant query": {
+			route:   querymiddleware.InstantQueryPathSuffix,
+			start:   time.Now().UnixMilli(),
+			shiftBy: 4 * time.Hour,
+		},
+	}
+
+	codec := querymiddleware.NewPrometheusCodec(nil, 5*time.Minute, "json")
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			latencies := []time.Duration{time.Second, time.Second, time.Second}
+			var preferredReqs, secondaryReqs []*http.Request
+			backends := []ProxyBackendInterface{
+				newMockProxyBackend("preferred-backend", time.Second, true, latencies, func(r *http.Request) {
+					preferredReqs = append(preferredReqs, r)
+				}),
+				newMockProxyBackend("secondary-backend", time.Second, false, latencies, func(r *http.Request) {
+					secondaryReqs = append(secondaryReqs, r)
+				}),
+			}
+
+			logger := test.NewTestingLogger(t)
+			reg := prometheus.NewPedanticRegistry()
+			comparator := &mockComparator{
+				comparisonResult: ComparisonSuccess,
+			}
+
+			cfg := testConfig(0, 1)
+			cfg.ShiftComparisonQueriesBy = scenario.shiftBy
+			if cfg.ShiftComparisonQueriesBy > 0 {
+				cfg.ShiftComparisonSamplingRatio = 1
+			}
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, cfg)
+
+			resp := httptest.NewRecorder()
+			var req *http.Request
+
+			expr, err := parser.ParseExpr("up")
+			require.NoError(t, err)
+			switch scenario.route {
+			case querymiddleware.QueryRangePathSuffix:
+				queryReq := querymiddleware.NewPrometheusRangeQueryRequest(
+					"http://test"+scenario.route, nil,
+					scenario.start, scenario.end, time.Second.Milliseconds(),
+					time.Second, expr, querymiddleware.Options{}, nil)
+				req, err = codec.EncodeMetricsQueryRequest(context.Background(), queryReq)
+				require.NoError(t, err)
+			case querymiddleware.InstantQueryPathSuffix:
+				queryReq := querymiddleware.NewPrometheusInstantQueryRequest(
+					"http://test"+scenario.route, nil, scenario.start,
+					time.Second, expr, querymiddleware.Options{}, nil)
+				req, err = codec.EncodeMetricsQueryRequest(context.Background(), queryReq)
+				require.NoError(t, err)
+				scenario.end = scenario.start
+			default:
+				req, err = http.NewRequest("GET", "http://test"+scenario.route, http.NoBody)
+				require.NoError(t, err)
+			}
+
+			// Do the request.
+			endpoint.ServeHTTP(resp, req)
+			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+			// Wait for the response comparison to complete before checking the logged messages.
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
+
+			got, done, err := prometheus.ToTransactionalGatherer(reg).Gather()
+			defer done()
+			require.NoError(t, err, "Failed to gather metrics from registry")
+			comparisons := filterMetrics(got, []string{"cortex_querytee_shifted_comparisons_total"})
+
+			require.Len(t, secondaryReqs, 1)
+			if scenario.shiftBy == 0 || (scenario.route != querymiddleware.QueryRangePathSuffix && scenario.route != querymiddleware.InstantQueryPathSuffix) {
+				require.Len(t, preferredReqs, 1)
+				require.Len(t, comparisons, 0, "Expect no comparison metric")
+				return
+			}
+
+			require.Len(t, preferredReqs, 2)
+			require.Len(t, comparisons, 1, "Expect only one metric after filtering")
+			require.Equal(t, float64(1), comparisons[0].Metric[0].Counter.GetValue())
+
+			compareRequest := func(req querymiddleware.MetricsQueryRequest, shift time.Duration) {
+				require.Equal(t, scenario.start-shift.Milliseconds(), req.GetStart())
+				require.Equal(t, scenario.end-shift.Milliseconds(), req.GetEnd())
+				require.Equal(t, "up", req.GetQuery())
+			}
+
+			pr1, err := codec.DecodeMetricsQueryRequest(context.Background(), preferredReqs[0])
+			require.NoError(t, err)
+			pr2, err := codec.DecodeMetricsQueryRequest(context.Background(), preferredReqs[1])
+			require.NoError(t, err)
+
+			if pr1.GetStart() == scenario.start {
+				compareRequest(pr1, 0)
+				compareRequest(pr2, scenario.shiftBy)
+			} else {
+				compareRequest(pr1, scenario.shiftBy)
+				compareRequest(pr2, 0)
+			}
+
+			sr, err := codec.DecodeMetricsQueryRequest(context.Background(), secondaryReqs[0])
+			require.NoError(t, err)
+			compareRequest(sr, scenario.shiftBy)
 		})
 	}
 }
@@ -756,14 +894,16 @@ type mockProxyBackend struct {
 	preferred             bool
 	fakeResponseLatencies []time.Duration
 	responseIndex         int
+	requestCallback       func(r *http.Request)
 }
 
-func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration) ProxyBackendInterface {
+func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration, requestCallback func(r *http.Request)) ProxyBackendInterface {
 	return &mockProxyBackend{
 		name:                  name,
 		timeout:               timeout,
 		preferred:             preferred,
 		fakeResponseLatencies: fakeResponseLatencies,
+		requestCallback:       requestCallback,
 	}
 }
 
@@ -779,7 +919,10 @@ func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
 }
 
-func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+func (b *mockProxyBackend) ForwardRequest(_ context.Context, req *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+	if b.requestCallback != nil {
+		b.requestCallback(req)
+	}
 	resp := &http.Response{
 		StatusCode: 200,
 		Header:     make(http.Header),
@@ -804,37 +947,37 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 		expectedPreferredOnlySelectionCount int // Out of 1000 runs
 	}{
 		"single preferred backend, secondary request proportion 0.0": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil, nil)},
 			secondaryBackendRequestProportion:   0.0,
 			expectedPreferredOnlySelectionCount: runCount,
 		},
 		"single preferred backend, secondary request proportion 1.0": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil, nil)},
 			secondaryBackendRequestProportion:   1.0,
 			expectedPreferredOnlySelectionCount: runCount,
 		},
 		"single non-preferred backend, secondary request proportion 0.0": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, false, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, false, nil, nil)},
 			secondaryBackendRequestProportion:   0.0,
 			expectedPreferredOnlySelectionCount: runCount,
 		},
 		"single non-preferred backend, secondary request proportion 1.0": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, false, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, false, nil, nil)},
 			secondaryBackendRequestProportion:   1.0,
 			expectedPreferredOnlySelectionCount: runCount,
 		},
 		"multiple backends, secondary request proportion 0.0": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil, nil)},
 			secondaryBackendRequestProportion:   0.0,
 			expectedPreferredOnlySelectionCount: runCount,
 		},
 		"multiple backends, secondary request proportion 0.2": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil, nil)},
 			secondaryBackendRequestProportion:   0.2,
 			expectedPreferredOnlySelectionCount: 800,
 		},
 		"multiple backends, secondary request proportion 1.0": {
-			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil)},
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil, nil)},
 			secondaryBackendRequestProportion:   1.0,
 			expectedPreferredOnlySelectionCount: 0,
 		},
@@ -842,7 +985,7 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion)
+			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, testConfig(0, testCase.secondaryBackendRequestProportion))
 			preferredOnlySelectionCount := 0
 
 			for i := 0; i < runCount; i++ {
@@ -864,5 +1007,12 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 				require.InEpsilonf(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount, 0.2, "expected to choose only the preferred backend %v times, but chose it %v times", testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
 			}
 		})
+	}
+}
+
+func testConfig(slowQueryResponseThreshold time.Duration, secondaryBackendsRequestProportion float64) ProxyConfig {
+	return ProxyConfig{
+		LogSlowQueryResponseThreshold:      slowQueryResponseThreshold,
+		SecondaryBackendsRequestProportion: secondaryBackendsRequestProportion,
 	}
 }
