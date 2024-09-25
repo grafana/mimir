@@ -2337,7 +2337,7 @@ alertmanager_client:
   [max_send_msg_size: <int> | default = 104857600]
 
   # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
+  # 'gzip', 'snappy', 's2' and '' (disable compression)
   # CLI flag: -alertmanager.alertmanager-client.grpc-compression
   [grpc_compression: <string> | default = ""]
 
@@ -2592,7 +2592,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 [max_send_msg_size: <int> | default = 104857600]
 
 # (advanced) Use compression when sending messages. Supported values are:
-# 'gzip', 'snappy' and '' (disable compression)
+# 'gzip', 'snappy', 's2' and '' (disable compression)
 # CLI flag: -<prefix>.grpc-compression
 [grpc_compression: <string> | default = ""]
 
