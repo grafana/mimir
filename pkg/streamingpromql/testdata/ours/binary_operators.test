@@ -718,3 +718,28 @@ eval range from 0 to 60m step 6m scalar(left_floats) < bool 3
 
 eval range from 0 to 60m step 6m scalar(left_floats) <= bool 3
   {} 1 1 0 0 1 0 0 0 0 0 1
+
+clear
+
+# Vector/vector comparison operations with label matching with on and ignoring.
+load 6m
+  left_side{env="test", pod="a"} 1 2 3 4 5
+  left_side{env="prod", pod="b"} 10 20 30 40 50
+  right_side{env="test", pod="c"} 5 4 3 2 1
+  right_side{env="prod", pod="d"} 50 40 30 20 10
+
+eval range from 0 to 24m step 6m left_side > on (env) right_side
+  {env="test"} _ _ _ 4 5
+  {env="prod"} _ _ _ 40 50
+
+eval range from 0 to 24m step 6m left_side > ignoring (pod) right_side
+  left_side{env="test"} _ _ _ 4 5
+  left_side{env="prod"} _ _ _ 40 50
+
+eval range from 0 to 24m step 6m left_side > bool on (env) right_side
+  {env="test"} 0 0 0 1 1
+  {env="prod"} 0 0 0 1 1
+
+eval range from 0 to 24m step 6m left_side > bool ignoring (pod) right_side
+  {env="test"} 0 0 0 1 1
+  {env="prod"} 0 0 0 1 1
