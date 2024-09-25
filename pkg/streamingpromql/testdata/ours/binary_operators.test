@@ -512,7 +512,7 @@ eval range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
 eval range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
   {} 1 0 _ _ 1
 
-# Vector / scalar combinations
+# Vector / scalar combinations with scalar on right side
 eval range from 0 to 60m step 6m left_floats == 3
   left_floats _ _ _ _ 3 _ _ _ _ _ _
 
@@ -617,6 +617,88 @@ eval range from 0 to 24m step 6m left_histograms <= bool 3
 
 eval range from 0 to 24m step 6m left_histograms <= bool 0
   {} 1 1 _ _ 1
+
+# Vector / scalar combinations with scalar on left side
+eval range from 0 to 60m step 6m 3 == left_floats
+  left_floats _ _ _ _ 3 _ _ _ _ _ _
+
+eval range from 0 to 60m step 6m 3 != left_floats
+  left_floats 1 2 _ _ _ _ 4 5 NaN Inf -Inf
+
+eval range from 0 to 60m step 6m 3 < left_floats
+  left_floats _ _ _ _ _ _ 4 5 _ Inf _
+
+eval range from 0 to 60m step 6m 3 <= left_floats
+  left_floats _ _ _ _ 3 _ 4 5 _ Inf _
+
+eval range from 0 to 60m step 6m 3 > left_floats
+  left_floats 1 2 _ _ _ _ _ _ _ _ -Inf
+
+eval range from 0 to 60m step 6m 3 >= left_floats
+  left_floats 1 2 _ _ 3 _ _ _ _ _ -Inf
+
+eval range from 0 to 60m step 6m 3 == bool left_floats
+  {} 0 0 _ _ 1 _ 0 0 0 0 0
+
+eval range from 0 to 60m step 6m Inf == left_floats
+  left_floats _ _ _ _ _ _ _ _ _ Inf _
+
+eval range from 0 to 60m step 6m Inf == bool left_floats
+  {} 0 0 _ _ 0 _ 0 0 0 1 0
+
+eval range from 0 to 60m step 6m NaN == left_floats
+  # No results.
+
+eval range from 0 to 60m step 6m NaN == bool left_floats
+  {} 0 0 _ _ 0 _ 0 0 0 0 0
+
+eval range from 0 to 24m step 6m 3 == left_histograms
+  # No results.
+
+# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
+# It has been moved to testdata/ours-only/binary_operators.test until the issue described there
+# has been resolved.
+# eval range from 0 to 24m step 6m 0 == left_histograms
+#   left_histograms 0 0 _ _ 0
+
+# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
+# It has been moved to testdata/ours-only/binary_operators.test until the issue described there
+# has been resolved.
+# eval range from 0 to 24m step 6m 3 != left_histograms
+#   left_histograms 0 0 _ _ 0
+
+eval range from 0 to 24m step 6m 0 != left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 < left_histograms
+  # No results.
+
+# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
+# It has been moved to testdata/ours-only/binary_operators.test until the issue described there has been resolved.
+# eval range from 0 to 24m step 6m 3 > left_histograms
+#   left_histograms 0 0 _ _ 0
+
+eval range from 0 to 24m step 6m 0 > left_histograms
+  # No results.
+
+# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
+# It has been moved to testdata/ours-only/binary_operators.test until the issue described there has been resolved.
+# eval range from 0 to 24m step 6m 3 >= left_histograms
+#   left_histograms 0 0 _ _ 0
+
+# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
+# It has been moved to testdata/ours-only/binary_operators.test until the issue described there has been resolved.
+# eval range from 0 to 24m step 6m 0 >= left_histograms
+#   left_histograms 0 0 _ _ 0
 
 # Scalar / scalar combinations
 eval range from 0 to 60m step 6m scalar(left_floats) == bool 3
