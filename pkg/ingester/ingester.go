@@ -910,6 +910,11 @@ func (i *Ingester) applyTSDBSettings() {
 		} else {
 			db.db.DisableNativeHistograms()
 		}
+		if i.limits.OOONativeHistogramsIngestionEnabled(userID) {
+			db.db.EnableOOONativeHistograms()
+		} else {
+			db.db.DisableOOONativeHistograms()
+		}
 	}
 }
 
@@ -2682,6 +2687,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMaxBytes: i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
 		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
+		EnableOOONativeHistograms:             i.limits.OOONativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
 	if err != nil {

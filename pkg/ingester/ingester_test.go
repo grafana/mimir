@@ -9720,10 +9720,21 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 // The correctness of changed runtime is already tested in Prometheus, so we only check if the
 // change is being applied here.
 func Test_Ingester_OutOfOrder(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrder(t, tc.makeWriteRequest, tc.makeExpectedSamples)
+		})
+	}
+}
+
+func testIngesterOutOfOrder(t *testing.T,
+	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
 	l := defaultLimitsTestConfig()
+	l.NativeHistogramsIngestionEnabled = true
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", "test").Return(nil)
 	override, err := validation.NewOverrides(l, tenantOverride)
@@ -9732,7 +9743,12 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	setOOOTimeWindow := func(oooTW model.Duration) {
 		tenantOverride.ExpectedCalls = nil
 		tenantOverride.On("ByUserID", "test").Return(&validation.Limits{
-			OutOfOrderTimeWindow: oooTW,
+			OutOfOrderTimeWindow:                oooTW,
+			OOONativeHistogramsIngestionEnabled: true,
+
+			// Need to set this in the tenant limits even though it's already set in the global config as once the
+			// tenant limits is not nil, all configs are read from the tenant limits rather than the global one.
+			NativeHistogramsIngestionEnabled: true,
 		})
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
@@ -9755,17 +9771,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		end = end * time.Minute.Milliseconds()
 
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
-		var samples []mimirpb.Sample
-		var lbls [][]mimirpb.LabelAdapter
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: ts,
-				Value:       float64(ts),
-			})
-			lbls = append(lbls, s)
-		}
-
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
 			require.Error(t, err, "should have failed on push")
@@ -9779,17 +9785,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		var expSamples []model.SamplePair
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			expSamples = append(expSamples, model.SamplePair{
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
-			})
-		}
-		expMatrix := model.Matrix{{
-			Metric: model.Metric{"__name__": "test_1", "status": "200"},
-			Values: expSamples,
-		}}
+		expMatrix := makeExpectedSamples(start, end, model.Metric{"__name__": "test_1", "status": "200"})
 
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
@@ -9865,15 +9861,27 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 // Test_Ingester_OutOfOrder_CompactHead tests that the OOO head is compacted
 // when the compaction is forced or when the TSDB is idle.
 func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrderCompactHead(t, tc.makeWriteRequest, tc.makeExpectedSamples)
+		})
+	}
+}
+
+func testIngesterOutOfOrderCompactHead(t *testing.T,
+	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	// Set the OOO window to 30 minutes
+	// Set the OOO window to 30 minutes and enable native histograms.
 	limits := map[string]*validation.Limits{
 		userID: {
-			OutOfOrderTimeWindow: model.Duration(30 * time.Minute),
+			OutOfOrderTimeWindow:                model.Duration(30 * time.Minute),
+			OOONativeHistogramsIngestionEnabled: true,
+			NativeHistogramsIngestionEnabled:    true,
 		},
 	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
@@ -9896,17 +9904,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		end = end * time.Minute.Milliseconds()
 
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
-		var samples []mimirpb.Sample
-		var lbls [][]mimirpb.LabelAdapter
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: ts,
-				Value:       float64(ts),
-			})
-			lbls = append(lbls, s)
-		}
-
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
@@ -9915,17 +9913,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		var expSamples []model.SamplePair
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			expSamples = append(expSamples, model.SamplePair{
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
-			})
-		}
-		expMatrix := model.Matrix{{
-			Metric: model.Metric{"__name__": "test_1", "status": "200"},
-			Values: expSamples,
-		}}
+		expMatrix := makeExpectedSamples(start, end, model.Metric{"__name__": "test_1", "status": "200"})
 
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
@@ -9962,11 +9950,29 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 // Test_Ingester_OutOfOrder_CompactHead_StillActive tests that active series correctly tracks OOO series after compaction.
 func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrderCompactHeadStillActive(t,
+				func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+					return tc.makeWriteRequest(ts, ts, s)
+				})
+		})
+	}
+}
+
+func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
+	makeWriteRequest func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	// Set the OOO window to 10h.
-	limits := map[string]*validation.Limits{userID: {OutOfOrderTimeWindow: model.Duration(10 * time.Hour)}}
+	// Set the OOO window to 10h and enable native histograms.
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow:                model.Duration(10 * time.Hour),
+			NativeHistogramsIngestionEnabled:    true,
+			OOONativeHistogramsIngestionEnabled: true,
+		},
+	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
@@ -9981,9 +9987,8 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
-		samples := []mimirpb.Sample{{TimestampMs: ts * time.Minute.Milliseconds(), Value: float64(ts)}}
-		lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}}}
-		_, err = i.Push(ctx, mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API))
+		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
+		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
 
@@ -11375,4 +11380,87 @@ func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb
 	defer i.FinishPushRequest(ctx)
 
 	return i.Push(ctx, req)
+}
+
+var ingesterSampleTypeScenarios = map[string]struct {
+	makeWriteRequest    func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix
+}{
+	"float": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var samples []mimirpb.Sample
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: ts,
+					Value:       float64(ts),
+				})
+				lbls = append(lbls, s)
+			}
+			return mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SamplePair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SamplePair{
+					Timestamp: model.Time(ts),
+					Value:     model.SampleValue(ts),
+				})
+			}
+			return model.Matrix{{
+				Metric: m,
+				Values: expSamples,
+			}}
+		},
+	},
+	"int histogram": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var histograms []mimirpb.Histogram
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				h := util_test.GenerateTestHistogram(int(ts))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, h))
+				lbls = append(lbls, s)
+			}
+			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SampleHistogramPair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SampleHistogramPair{
+					Timestamp: model.Time(ts),
+					Histogram: mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(int(ts)))),
+				})
+			}
+			return model.Matrix{{
+				Metric:     m,
+				Histograms: expSamples,
+			}}
+		},
+	},
+	"float histogram": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var histograms []mimirpb.Histogram
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				h := util_test.GenerateTestFloatHistogram(int(ts))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, h))
+				lbls = append(lbls, s)
+			}
+			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SampleHistogramPair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SampleHistogramPair{
+					Timestamp: model.Time(ts),
+					Histogram: mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(int(ts)))),
+				})
+			}
+			return model.Matrix{{
+				Metric:     m,
+				Histograms: expSamples,
+			}}
+		},
+	},
 }
