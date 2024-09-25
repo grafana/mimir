@@ -32,7 +32,7 @@ killercoda:
       foreground: "docker-compose-update.sh"
   preprocessing:
     substitutions:
-      - regexp: 'tutorial-architecture.png'
+      - regexp: "tutorial-architecture\\.png"
         replacement: https://grafana.com/media/docs/mimir/tutorial-architecture.png
   backend:
     imageid: ubuntu
