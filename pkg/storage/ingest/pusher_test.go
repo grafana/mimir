@@ -239,7 +239,7 @@ func removeUnimportantLogFields(lines []string) []string {
 	return lines
 }
 
-func TestClientErrorFilteringPusher_PushToStorage(t *testing.T) {
+func TestPushErrorHandler_IsServerError(t *testing.T) {
 	type testCase struct {
 		sampler         *util_log.Sampler
 		err             error
