@@ -1980,6 +1980,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_binary_comparison_operations",
+              "required": false,
+              "desc": "Enable support for binary comparison operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-binary-comparison-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_scalars",
               "required": false,
               "desc": "Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.",

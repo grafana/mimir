@@ -32,20 +32,25 @@ func NewScalarScalarBinaryOperation(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {
-	f := arithmeticOperationFuncs[op]
-	if f == nil {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
-	}
-
-	return &ScalarScalarBinaryOperation{
+	s := &ScalarScalarBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		Op:                       op,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
+		expressionPosition:       expressionPosition,
+	}
 
-		opFunc:             f,
-		expressionPosition: expressionPosition,
-	}, nil
+	if op.IsComparisonOperator() {
+		s.opFunc = boolComparisonOperationFuncs[op]
+	} else {
+		s.opFunc = arithmeticAndComparisonOperationFuncs[op]
+	}
+
+	if s.opFunc == nil {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
+	}
+
+	return s, nil
 }
 
 func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.ScalarData, error) {

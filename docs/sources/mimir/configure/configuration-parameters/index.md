@@ -1504,6 +1504,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
   [enable_aggregation_operations: <boolean> | default = true]
 
+  # (experimental) Enable support for binary comparison operations in Mimir's
+  # query engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-comparison-operations
+  [enable_binary_comparison_operations: <boolean> | default = true]
+
   # (experimental) Enable support for scalars in Mimir's query engine. Only
   # applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
