@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
+	randv2 "math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -796,7 +796,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 	createRandomWriteRequest := func() *mimirpb.WriteRequest {
 		// It's important that each request has a different size to reproduce the deadlock.
-		metricName := strings.Repeat("x", rand.Intn(1000))
+		metricName := strings.Repeat("x", randv2.IntN(1000))
 
 		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}
 		return &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API}
@@ -814,7 +814,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 	// Throttle a very short (random) time to increase chances of hitting race conditions.
 	cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
-		time.Sleep(time.Duration(rand.Int63n(int64(time.Millisecond))))
+		time.Sleep(time.Duration(randv2.Int64N(int64(time.Millisecond))))
 
 		return nil, nil, false
 	})

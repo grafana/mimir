@@ -2373,9 +2373,9 @@ func TestConcurrentFetchers(t *testing.T) {
 	t.Run("concurrency can be updated", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		rec1 := []byte(fmt.Sprintf("record-1"))
-		rec2 := []byte(fmt.Sprintf("record-2"))
-		rec3 := []byte(fmt.Sprintf("record-3"))
+		rec1 := []byte("record-1")
+		rec2 := []byte("record-2")
+		rec3 := []byte("record-3")
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)

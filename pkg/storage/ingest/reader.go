@@ -959,6 +959,7 @@ func newConcurrentFetchers(
 		trackCompressedBytes: trackCompressedBytes,
 		tracer:               recordsTracer(),
 		orderedFetches:       make(chan fetchResult),
+		done:                 make(chan struct{}),
 	}
 
 	var err error
@@ -995,6 +996,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records in
 	}
 
 	r.stop()
+	r.done = make(chan struct{})
 
 	go r.start(ctx, r.lastReturnedRecord, concurrency, records)
 }
@@ -1251,7 +1253,6 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 }
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
-	r.done = make(chan struct{})
 	r.wg.Add(concurrency)
 
 	wants := make(chan fetchWant)
