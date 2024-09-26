@@ -2,6 +2,8 @@
 
 package queue
 
+import "slices"
+
 // QueuingAlgorithm represents the set of operations specific to different approaches to queuing/dequeuing. It is
 // applied at the layer-level -- every Node at the same depth in a MultiQueuingAlgorithmTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
@@ -47,19 +49,34 @@ type roundRobinState struct {
 func (rrs *roundRobinState) setup(_ *DequeueArgs) {
 }
 
-// addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective of the parent's
-// queuePosition. The new child is added at queuePosition - 1, and queuePosition is incremented to keep it pointed
-// to the same child.
+func (rrs *roundRobinState) wrapQueuePositionIndex(node *Node, increment bool) {
+	if increment {
+		node.queuePosition++
+	}
+
+	if node.queuePosition >= len(node.queueOrder) {
+		node.queuePosition = 0
+	}
+}
+
+// addChildNode adds a child Node to the "end" of the parent's queueOrder
+// relative to perspective of the parent Node's current queuePosition.
 func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 	// add childNode to n.queueMap
 	parent.queueMap[child.Name()] = child
 
-	parent.queueOrder = append(parent.queueOrder[:parent.queuePosition], append([]string{child.Name()}, parent.queueOrder[parent.queuePosition:]...)...)
-
-	// if we added to a previously empty queueOrder, we want to keep the queuePosition at 0; otherwise, update
-	// n.queuePosition to point to the same element it was pointed at before.
-	if len(parent.queueOrder) > 1 {
-		parent.queuePosition++ // keep position pointed at same element
+	if parent.queuePosition == 0 {
+		// special case; since we are at the beginning of the order,
+		// only a simple append is needed to add the new node to the end,
+		// which also creates a more intuitive initial order for tests
+		parent.queueOrder = append(parent.queueOrder, child.Name())
+	} else {
+		// insert into the order behind current child queue index
+		// to prevent the possibility of new nodes continually jumping the line
+		parent.queueOrder = slices.Insert(parent.queueOrder, parent.queuePosition, child.Name())
+		// since the new node was inserted into the order behind the current node,
+		// the queuePosition must be pushed forward to remain pointing at the same node
+		rrs.wrapQueuePositionIndex(parent, true)
 	}
 }
 
@@ -79,34 +96,29 @@ func (rrs *roundRobinState) dequeueSelectNode(node *Node) *Node {
 // dequeueUpdateState does the following:
 //   - deletes the dequeued-from child node if it is empty after the dequeue operation
 //   - increments queuePosition if no child was deleted
-func (rrs *roundRobinState) dequeueUpdateState(nodeToUpdate *Node, dequeuedFrom *Node) {
-	// if the child node is nil, we haven't done anything to the tree; if the nodeToUpdate is
-	// a leaf node, there's nothing to update; in both cases, return early
-	if dequeuedFrom == nil || nodeToUpdate.isLeaf() {
+func (rrs *roundRobinState) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
+	// if the child node is nil, we haven't done anything to the tree; return early
+	if dequeuedFrom == nil {
 		return
 	}
 
-	// corner case: if node == dequeuedFrom and is empty, we will try to delete a "child" (no-op),
-	// and won't increment position. This is fine, because if the node is empty, there's nothing to
-	// increment to.
-	childIsEmpty := dequeuedFrom.IsEmpty()
-
-	// if the child is empty, we should delete it, but not increment queue position, since removing an element
-	// from queueOrder sets our position to the next element already.
-	if childIsEmpty {
+	// if the child is empty, we should delete it
+	if dequeuedFrom != node && dequeuedFrom.IsEmpty() {
 		childName := dequeuedFrom.Name()
-		delete(nodeToUpdate.queueMap, childName)
-		for idx, name := range nodeToUpdate.queueOrder {
-			if name == childName {
-				nodeToUpdate.queueOrder = append(nodeToUpdate.queueOrder[:idx], nodeToUpdate.queueOrder[idx+1:]...)
-			}
+
+		childIndex := slices.Index(node.queueOrder, childName)
+		if childIndex != -1 {
+			node.queueOrder = slices.Delete(node.queueOrder, childIndex, childIndex+1)
+			// we do not need to increment queuePosition
+			// the node removed is always the node pointed to by queuePosition
+			// so removing it sets our queuePosition to the next node already
+			// we will wrap if needed, as queuePosition may be pointing past the end of the slice now
+			rrs.wrapQueuePositionIndex(node, false)
 		}
 
+		// delete child node from its parent's queueMap
+		delete(node.queueMap, childName)
 	} else {
-		nodeToUpdate.queuePosition++
-	}
-
-	if nodeToUpdate.queuePosition >= len(nodeToUpdate.queueOrder) {
-		nodeToUpdate.queuePosition = 0
+		rrs.wrapQueuePositionIndex(node, true)
 	}
 }
