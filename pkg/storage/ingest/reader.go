@@ -1269,6 +1269,9 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	)
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
+	// We need to make sure we don't leak any goroutine given that start is called within a goroutine.
+	r.wg.Add(1)
+	defer r.wg.Done()
 	for {
 		refillBufferedResult := nextResult
 		if readyBufferedResults != nil {
