@@ -1888,14 +1888,12 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[1m])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`sum(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`sum(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`increase(series{label=~"(%s)"}[45s])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`increase(series{label=~"(%s)"}[1m])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`sum(increase(series{label=~"(%s)"}[2m15s]))`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`sum(increase(series{label=~"(%s)"}[5m]))`, labelRegex))
+		for _, function := range []string{"rate", "increase"} {
+			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[5m]))`, function, labelRegex))
+		}
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
