@@ -59,29 +59,29 @@ graph TB
     root<-->storeGateway
     root<-->both
 
-    ingester-tenant1(["`**tenant1**
+    ingester-tenant1(["`**tenant-1**
 
     [queue node]
     `"])
-    ingester-tenant2(["`**tenant2**
-
-    [queue node]
-    `"])
-
-    storeGateway-tenant1(["`**tenant1**
-
-    [queue node]
-    `"])
-    storeGateway-tenant2(["`**tenant2**
+    ingester-tenant2(["`**tenant-2**
 
     [queue node]
     `"])
 
-    both-tenant1(["`**tenant1**
+    storeGateway-tenant1(["`**tenant-1**
 
     [queue node]
     `"])
-    both-tenant2(["`**tenant2**
+    storeGateway-tenant2(["`**tenant-2**
+
+    [queue node]
+    `"])
+
+    both-tenant1(["`**tenant-1**
+
+    [queue node]
+    `"])
+    both-tenant2(["`**tenant-2**
 
     [queue node]
     `"])
@@ -101,26 +101,28 @@ graph TB
 
 #### Enqueuing to the Tree Queue
 
-On enqueue, we bin requests into separate queues based on two static properties of the query request:
+On enqueue, we partition requests into separate queues based on two static properties of the query request:
 
 - the "expected query component"
   - `ingester`, `store-gateway`, `ingester-and-store-gateway`, or `unknown`
 - the tenant ID of the request
 
 These properties are used to place the request into a queue at a leaf node.
-For example, a request from tenant1 which is expected to only utilize ingesters
-will be enqueued at the leaf node reached by the path `root -> ingester -> tenant1`.
+A request from `tenant-1` which is expected to only utilize ingesters
+will be enqueued at the leaf node reached by the path `root -> ingester -> tenant-1`.
 
 #### Dequeuing from the Tree Queue
 
 On dequeue, we perform a depth-first search of the tree structure to select a leaf node to dequeue from.
 Each of the two non-leaf levels of the tree uses a different algorithm to select the next child node.
 
-1. Starting at the root node, one algorithm chooses one of the 4 query component child nodes.
-1. At the next level down, the other algorithm attempts to choose a tenant-specific child node.
+1. At the root node level, one algorithm selects one of four possible query component child nodes.
+1. At query component level, the other algorithm attempts to select a tenant-specific child node.
+   1. due to tenant-querier shuffle sharding, it is possible that none of the tenant nodes
+      can be selected for dequeuing for the current querier.
 1. If a tenant node is selected, the search dequeues from it as it has reached a leaf node.
 1. If no tenant node is selected, the search returns back up to the root node level
-   and selects another query component child node to continue the search from.
+   and selects the next query component child node to continue the search from.
 
 #### Full Diagram
 
