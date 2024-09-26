@@ -3,8 +3,6 @@
 package ingest
 
 import (
-	"time"
-
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,7 +18,7 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 	opts = append(opts,
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(fetchMaxBytes), // these are unused by concurrent fetchers
-		kgo.FetchMaxWait(5*time.Second),
+		kgo.FetchMaxWait(defaultMinBytesMaxWaitTime),
 		kgo.FetchMaxPartitionBytes(50_000_000), // these are unused by concurrent fetchers
 
 		// BrokerMaxReadBytes sets the maximum response size that can be read from
