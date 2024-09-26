@@ -330,36 +330,36 @@ gantt
         slow : milestone, m19, 19, 0s
 
     section consumer-1
-        process fast        :active, c1-1, 00, 1s
-        wait                :done, c1-2, 01, 3s
-        process fast        :active, c1-3, 04, 1s
-        wait                :done, c1-4, 05, 1s
-        process fast        :active, c1-5, 06, 1s
-        process slow        : c1-6, 07, 8s
-        process fast        :active, c1-7, 15, 1s
-        process slow...     : c1-8, 16, 4s
+        fast        :active, c1-1, 00, 1s
+        wait        :done, c1-2, 01, 3s
+        fast        :active, c1-3, 04, 1s
+        wait        :done, c1-4, 05, 1s
+        fast        :active, c1-5, 06, 1s
+        slow        : c1-6, 07, 8s
+        fast        :active, c1-7, 15, 1s
+        slow...     : c1-8, 16, 4s
 
     section consumer-2
-        wait                :done, c2-1, 00, 1s
-        process slow        : c2-2, 01, 8s
-        process fast        :active, c2-3, 09, 1s
-        process slow        : c2-4, 10, 8s
-        process fast        :active, c2-5, 18, 1s
-        process slow...     : c2-6, 19, 1s
+        wait        :done, c2-1, 00, 1s
+        slow        : c2-2, 01, 8s
+        fast        :active, c2-3, 09, 1s
+        slow        : c2-4, 10, 8s
+        fast        :active, c2-5, 18, 1s
+        slow...     : c2-6, 19, 1s
 
     section consumer-3
-        wait                :done, c3-1, 00, 2s
-        process fast        :active, c3-2, 02, 1s
-        wait                :done, c3-3, 03, 2s
-        process slow        : c3-4, 05, 8s
-        process fast        :active, c3-5, 13, 1s
-        process slow...     : c3-6, 14, 6s
+        wait        :done, c3-1, 00, 2s
+        fast        :active, c3-2, 02, 1s
+        wait        :done, c3-3, 03, 2s
+        slow        : c3-4, 05, 8s
+        fast        :active, c3-5, 13, 1s
+        slow...     : c3-6, 14, 6s
 
     section consumer-4
-        wait                :done, c4-1, 00, 3s
-        process slow        : c4-2, 03, 8s
-        process fast        :active, c4-3, 11, 1s
-        process slow        : c4-4, 12, 8s
+        wait        :done, c4-1, 00, 3s
+        slow        : c4-2, 03, 8s
+        fast        :active, c4-3, 11, 1s
+        slow        : c4-4, 12, 8s
 
 ```
 
