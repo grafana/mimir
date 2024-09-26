@@ -17,4 +17,11 @@ eval range from 0 to 6m step 1m stddev by (group) (series)
   {group="d"} NaN 0 0 0 NaN 0 0
   {group="e"} NaN 0 0 0 NaN 0 0
 
+eval range from 0 to 6m step 1m stdvar by (group) (series)
+  {group="a"} 16 9 4 49 56.25 676 676
+  {group="b"} 0 NaN NaN 324 NaN 625 625
+  {group="c"} NaN 0.25 2.25 6.25 NaN 900 900
+  {group="d"} NaN 0 0 0 NaN 0 0
+  {group="e"} NaN 0 0 0 NaN 0 0
+
 clear

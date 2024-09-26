@@ -1853,8 +1853,8 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		// TODO(jhesketh): Add stddev back in.
-		// stddev is excluded until https://github.com/prometheus/prometheus/pull/14941 is merged
+		// TODO(jhesketh): Add stddev/stdvar back in.
+		// stddev/stdvar are excluded until https://github.com/prometheus/prometheus/pull/14941 is merged
 		// fixing an inconsistency in the Prometheus' engine where if a native histogram is the first sample
 		// loaded, it is incorrectly treated as a 0 float point.
 		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum"} {

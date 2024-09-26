@@ -15,9 +15,17 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type StddevAggregationGroup struct {
+// stddev represents whether this aggregation is `stddev` (true), or `stdvar` (false)
+func NewStddevStdvarAggregationGroup(stddev bool) *StddevStdvarAggregationGroup {
+	return &StddevStdvarAggregationGroup{stddev: stddev}
+}
+
+type StddevStdvarAggregationGroup struct {
 	floats     []float64
 	floatMeans []float64
+
+	// stddev represents whether this aggregation is `stddev` (true), or `stdvar` (false)
+	stddev bool
 
 	// Keeps track of how many samples we have encountered thus far for the group at this point
 	// This is necessary to do per point (instead of just counting the input series) as a series may have
@@ -26,7 +34,7 @@ type StddevAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
 	var err error
 
 	// Native histograms are ignored for stddev
@@ -63,7 +71,7 @@ func (g *StddevAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	return nil
 }
 
-func (g *StddevAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, sc := range g.groupSeriesCounts {
 		if sc > 0 {
@@ -82,7 +90,14 @@ func (g *StddevAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRa
 		for i, sc := range g.groupSeriesCounts {
 			if sc > 0 {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
-				f := math.Sqrt(g.floats[i] / g.groupSeriesCounts[i])
+				var f float64
+				if g.stddev {
+					// stddev
+					f = math.Sqrt(g.floats[i] / g.groupSeriesCounts[i])
+				} else {
+					// stdvar
+					f = g.floats[i] / g.groupSeriesCounts[i]
+				}
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
 		}
