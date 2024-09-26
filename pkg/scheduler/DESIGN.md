@@ -1,4 +1,4 @@
-## Query Request Queue Design: Queue Splitting and Prioritization
+# Query Request Queue Design: Queue Splitting and Prioritization
 
 The `RequestQueue` subservice embedded into the scheduler process is responsible for
 all decisions regarding enqueuing and dequeuing of query requests.
@@ -6,7 +6,7 @@ While the `RequestQueue`'s responsibilities are relatively broad, including mana
 querier-worker connection lifecycles and graceful startup/shutdown,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
 
-### Tree Queue: What and Why
+## Tree Queue: What and Why
 
 The "tree queue" structure serves the purpose of a discrete priority queue.
 The requests are split into many queues, each of which is located at a leaf node in the tree structure.
@@ -22,7 +22,7 @@ These requirements lend themselves to a search tree or decision tree structure;
 the levels of the tree express a clear hierarchy of decisonmaking between the two algorithms,
 and the depth-first traversal provides a familiar pattern for searching for a leaf node to dequeue from.
 
-#### Simplified Diagram
+### Simplified Diagram
 
 For brevity, we omit the `unknown` query component node and its subtree,
 as the algorithm to select query component nodes treats `unknown` the same as `ingester-and-store-gateway`.
@@ -102,7 +102,7 @@ graph TB
 
 ```
 
-#### Enqueuing to the Tree Queue
+### Enqueuing to the Tree Queue
 
 On enqueue, we partition requests into separate queues based on two static properties of the query request:
 
@@ -114,7 +114,7 @@ These properties are used to place the request into a queue at a leaf node.
 A request from `tenant-1` which is expected to only utilize ingesters
 will be enqueued at the leaf node reached by the path `root -> ingester -> tenant-1`.
 
-#### Dequeuing from the Tree Queue
+### Dequeuing from the Tree Queue
 
 On dequeue, we perform a depth-first search of the tree structure to select a leaf node to dequeue from.
 Each of the two non-leaf levels of the tree uses a different algorithm to select the next child node.
@@ -127,7 +127,7 @@ Each of the two non-leaf levels of the tree uses a different algorithm to select
 1. If no tenant node is selected, the search returns back up to the root node level
    and selects the next query component child node to continue the search from.
 
-#### Full Diagram
+### Full Diagram
 
 ```mermaid
 ---
@@ -234,11 +234,11 @@ graph TB
     both-tenant3-->|yes|dequeue-both-tenant3
 ```
 
-### Deep Dive: Queue Selection Algorithms
+## Deep Dive: Queue Selection Algorithms
 
-#### Context & Requirements
+### Context & Requirements
 
-##### Original State: Queue Splitting by Tenant
+### Original State: Queue Splitting by Tenant
 
 The `RequestQueue` originally utilized only a single dimension of queue splitting, by tenant.
 The structure and queue selection served to accomplish two purposes:
@@ -250,7 +250,7 @@ While this inter-tenant Quality-Of-Service approach has worked well,
 we observed other QOS issues arising from the varying characteristics of Mimir's two "query components"
 utilized by the queriers to fetch TSDB data for executing queries: ingesters and store-gateways.
 
-##### New Requirement: Queue Splitting by Query Component
+### New Requirement: Queue Splitting by Query Component
 
 Ingesters serve requests for recent data, and store-gateways serve requests for older data.
 While queries can overlap the time periods of data fetched by both query components,
@@ -260,7 +260,7 @@ Ingesters and store-gateways tend to experience issues independently of each oth
 but when one component was in a degraded state, _all_ queries would wait in the queue behind the slow queries,
 causing high latency and timeouts for queries which could have been serviced by the non-degraded query component.
 
-#### Phase 1: Query Component Selection by Round-Robin
+### Phase 1: Query Component Selection by Round-Robin
 
 In the first phase, we believed that it would be enough to duplicate the tenant queue splitting approach.
 We split the tenant queues further by query component, so that each tenant could have up to four queues.
@@ -269,31 +269,28 @@ With the addition of another split, we introduced the "tree queue" structure, in
 The tree queue allowed more clear management of the two dimensions of queue splitting rather than one.
 
 For simplicity at this stage, the tenant selection algorithm was kept higher in the tree
-and therefore took priority of the query component queue selection algorithm.
+and therefore took priority over the query component queue selection algorithm.
 Additionally, the query component selection algorithm was a simple round-robin.
 
 This phase was a failure due to both of those design decisions.
 
-##### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
+### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
 
 The fact that the tenant selection was given priority over query-component selection
 meant that a tenant's query traffic profile could override the query component round-robin.
 
-If the query component round-robin was set to dequeue for a query for the store-gateways
-but the tenant rotation had selected `tenant-1` which was only sending ingester query at the time,
+If the query component round-robin was set to dequeue a store-gateway query
+but the tenant rotation had selected `tenant-1` which was only sending ingester queries at the time,
 the system would dequeue an ingester query in order to prioritize dequeuing for `tenant-1`.
 
-##### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
+### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
 
-Inverting the tree's algorithm hierarchy to flip the tenant and query component selection priorities
-would not have solved the more significant issue caused by latency from a degraded query component.
-
-The vanilla round-robin algorithm does not sufficiently guard against connection pool exhaustion
-in situations where one query component is experiencing high latency.
+A vanilla round-robin algorithm does not sufficiently guard against a high-latency component
+saturating all or nearly all connections with queries stuck in the slow component.
 Despite alternating the which query component is dequeued for, utilization of the querier-worker connections
 as measured by inflight query processing time will grow asymptotically to be dominated by the slow query component.
 
-#### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
+### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
 
 To demonstrate the issue, we can simplify the system to two query components and four querier connections.
 Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
