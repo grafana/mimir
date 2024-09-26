@@ -4,11 +4,10 @@ package alertmanager
 
 import (
 	"fmt"
-	"io"
 	"net/url"
-	"strings"
 	"testing"
 
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -140,9 +139,11 @@ func Test_loadTemplates(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			readers := make([]io.Reader, 0, len(c.loaded))
+			readers := make([]alertingTemplates.TemplateDefinition, 0, len(c.loaded))
 			for _, tmpl := range c.loaded {
-				readers = append(readers, strings.NewReader(tmpl))
+				readers = append(readers, alertingTemplates.TemplateDefinition{
+					Template: tmpl,
+				})
 			}
 			tmpl, err := loadTemplates(readers, WithCustomFunctions("test"))
 			assert.NoError(t, err)

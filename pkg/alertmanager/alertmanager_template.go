@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	tmplhtml "html/template"
-	"io"
 	"net/url"
 	"path"
+	"strings"
 	tmpltext "text/template"
 
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/template"
 )
@@ -95,7 +96,7 @@ func WithCustomFunctions(userID string) template.Option {
 
 // loadTemplates produces a template.Template from several in-memory template files.
 // It is adapted from FromGlobs in prometheus/alertmanager: https://github.com/prometheus/alertmanager/blob/9de8ef36755298a68b6ab20244d4369d38bdea99/template/template.go#L67-L95
-func loadTemplates(tmpls []io.Reader, options ...template.Option) (*template.Template, error) {
+func loadTemplates(tmpls []alertingTemplates.TemplateDefinition, options ...template.Option) (*template.Template, error) {
 	t, err := template.New(options...)
 	if err != nil {
 		return nil, err
@@ -118,7 +119,7 @@ func loadTemplates(tmpls []io.Reader, options ...template.Option) (*template.Tem
 	}
 
 	for _, tp := range tmpls {
-		if err := t.Parse(tp); err != nil {
+		if err := t.Parse(strings.NewReader(tp.Template)); err != nil {
 			return nil, err
 		}
 	}
