@@ -154,7 +154,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -alertmanager.alertmanager-client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -alertmanager.alertmanager-client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.grpc-max-send-msg-size int
@@ -304,7 +304,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.utf8-migration-logging-enabled
     	[experimental] Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.
   -alertmanager.utf8-strict-mode-enabled
-    	[experimental] Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. To identify tenants with incompatible configurations, search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. To find tenant configurations that are valid but contain ambiguous matchers, search for log lines containing `Matchers input has disagreement`. Each log line includes the invalid input, a suggestion on how to fix the input (excluding ambiguous matchers, as these require manual correction), and the ID of the affected tenant. You must run Mimir with debug-level logging enabled. Otherwise, these lines aren't logged. For more information, refer to https://prometheus.io/docs/alerting/latest/configuration/#label-matchers. Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.
+    	[experimental] Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.get-request-for-ingester-shutdown-enabled
@@ -1227,8 +1227,6 @@ Usage of ./cmd/mimir/mimir:
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
-  -distributor.limit-inflight-requests-using-grpc-method-limiter
-    	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -distributor.max-exemplars-per-series-per-request int
     	[experimental] Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.
   -distributor.max-otlp-request-size int
@@ -1414,7 +1412,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -ingester.client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -ingester.client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
@@ -1455,8 +1453,6 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.limit-inflight-requests-using-grpc-method-limiter
-    	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int
@@ -1868,7 +1864,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -querier.frontend-client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -querier.frontend-client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
@@ -1917,8 +1913,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
     	Limit the time range for partial queries at the querier level.
-  -querier.max-query-into-future duration
-    	[deprecated] Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
@@ -1929,16 +1923,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-binary-comparison-operations
     	[experimental] Enable support for binary comparison operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-binary-operations
-    	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-offset-modifier
-    	[experimental] Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-over-time-functions
-    	[experimental] Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-scalars
     	[experimental] Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-unary-negation
-    	[experimental] Enable support for unary negation in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -1974,7 +1960,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.scheduler-client.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -querier.scheduler-client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -querier.scheduler-client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.scheduler-client.grpc-max-send-msg-size int
@@ -2027,6 +2013,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
+  -query-frontend.cache-errors
+    	[experimental] Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
   -query-frontend.cache-unaligned-requests
@@ -2052,7 +2040,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -query-frontend.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -query-frontend.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-frontend.grpc-client-config.grpc-max-send-msg-size int
@@ -2125,6 +2113,8 @@ Usage of ./cmd/mimir/mimir:
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
     	Time to live duration for cached cardinality query results. The value 0 disables the cache.
+  -query-frontend.results-cache-ttl-for-errors duration
+    	[experimental] Time to live duration for cached non-transient errors (default 5m)
   -query-frontend.results-cache-ttl-for-labels-query duration
     	Time to live duration for cached label names and label values query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
@@ -2258,7 +2248,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -query-scheduler.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -query-scheduler.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
@@ -2630,7 +2620,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -ruler.client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -ruler.client.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
@@ -2718,7 +2708,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
     	Rate limit burst for gRPC client.
   -ruler.query-frontend.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy', 's2' and '' (disable compression)
   -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size int
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size int

@@ -363,7 +363,7 @@ func TestIsResponseCachable(t *testing.T) {
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ret := isResponseCachable(tc.response, log.NewNopLogger())
+				ret := isResponseCachable(tc.response)
 				require.Equal(t, tc.expected, ret)
 			})
 		}

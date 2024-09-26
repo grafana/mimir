@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -157,11 +158,8 @@ func TestTSDBBuilder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
-			builder := NewTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
-				TSDB: mimir_tsdb.TSDBConfig{
-					Dir: t.TempDir(),
-				},
-			})
+			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
 
 			currEnd, lastEnd := tc.currEnd, tc.lastEnd
 			{ // Add float samples.
@@ -350,11 +348,8 @@ func TestProcessingEmptyRequest(t *testing.T) {
 
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	builder := NewTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
-		TSDB: mimir_tsdb.TSDBConfig{
-			Dir: t.TempDir(),
-		},
-	})
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
 
 	// Has a timeseries with no samples.
 	var rec kgo.Record

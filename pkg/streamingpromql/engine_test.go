@@ -79,18 +79,6 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
 	})
 
-	t.Run("binary expressions", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableBinaryOperations = false
-
-		for _, op := range []string{"+", "> bool"} {
-			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s other_metric{}", op), "binary expressions")
-			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("metric{} %s 1", op), "binary expressions")
-			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("1 %s metric{}", op), "binary expressions")
-			requireQueryIsUnsupported(t, featureToggles, fmt.Sprintf("2 %s 1", op), "binary expressions")
-		}
-	})
-
 	t.Run("binary expressions with comparison operation", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableBinaryComparisonOperations = false
@@ -107,35 +95,11 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsSupported(t, featureToggles, "2 + 1")
 	})
 
-	t.Run("..._over_time functions", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableOverTimeFunctions = false
-
-		requireQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
-	})
-
-	t.Run("offset modifier", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableOffsetModifier = false
-
-		requireQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
-		requireQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
-		requireInstantQueryIsUnsupported(t, featureToggles, "metric[2m] offset 1m", "range vector selector with 'offset'")
-	})
-
 	t.Run("scalars", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableScalars = false
 
 		requireQueryIsUnsupported(t, featureToggles, "2", "scalar values")
-	})
-
-	t.Run("unary negation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableUnaryNegation = false
-
-		requireQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
-		requireQueryIsUnsupported(t, featureToggles, "-(1)", "unary negation of scalars")
 	})
 }
 
@@ -1493,6 +1457,24 @@ func TestAnnotations(t *testing.T) {
 		"sum() with only native histograms": {
 			data: mixedFloatHistogramData,
 			expr: `sum(metric{type="histogram"})`,
+		},
+
+		"avg() with float and native histogram at same step": {
+			data:                       mixedFloatHistogramData,
+			expr:                       "avg by (series) (metric)",
+			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+		},
+		"avg() with floats and native histograms for different output series at the same step": {
+			data: mixedFloatHistogramData,
+			expr: "avg by (type) (metric)",
+		},
+		"avg() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `avg(metric{type="float"})`,
+		},
+		"avg() with only native histograms": {
+			data: mixedFloatHistogramData,
+			expr: `avg(metric{type="histogram"})`,
 		},
 
 		"rate() over metric without counter suffix containing only floats": {
