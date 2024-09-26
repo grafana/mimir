@@ -57,7 +57,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 		return types.ScalarData{}, err
 	}
 
-	for t := i.TimeRange.StartT; t <= i.TimeRange.EndT; t += i.TimeRange.IntervalMs {
+	for t := i.TimeRange.StartT; t <= i.TimeRange.EndT; t += i.TimeRange.IntervalMilliseconds {
 		output = append(output, promql.FPoint{
 			T: t,
 			F: math.NaN(),
@@ -71,7 +71,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 		}
 
 		for _, p := range seriesData.Floats {
-			sampleIdx := (p.T - i.TimeRange.StartT) / i.TimeRange.IntervalMs
+			sampleIdx := (p.T - i.TimeRange.StartT) / i.TimeRange.IntervalMilliseconds
 
 			if seenPoint[sampleIdx] {
 				// We've already seen another point at this timestamp, so return NaN at this timestamp.

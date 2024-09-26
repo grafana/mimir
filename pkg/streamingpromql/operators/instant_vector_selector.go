@@ -64,7 +64,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	lastHistogramT := int64(math.MinInt64)
 	var lastHistogram *histogram.FloatHistogram
 
-	for stepT := v.Selector.TimeRange.StartT; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMs {
+	for stepT := v.Selector.TimeRange.StartT; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMilliseconds {
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram

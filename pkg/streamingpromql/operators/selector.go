@@ -63,7 +63,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
 		End:   endTimestamp,
-		Step:  s.TimeRange.IntervalMs,
+		Step:  s.TimeRange.IntervalMilliseconds,
 		Range: rangeMilliseconds,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.

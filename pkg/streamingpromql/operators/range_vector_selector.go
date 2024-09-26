@@ -81,7 +81,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, hi
 		return types.RangeVectorStepData{}, err
 	}
 
-	m.nextT += m.Selector.TimeRange.IntervalMs
+	m.nextT += m.Selector.TimeRange.IntervalMilliseconds
 
 	return types.RangeVectorStepData{
 		StepT:      stepT,
