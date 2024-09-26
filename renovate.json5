@@ -3,7 +3,7 @@
     "extends": [
       "config:base"
     ],
-    "baseBranches": ["main", "release-2.13", "release-2.12"],
+    "baseBranches": ["main", "release-2.14", "release-2.13", "release-2.12"],
     "postUpdateOptions": [
       "gomodTidy",
       "gomodUpdateImportPaths"
@@ -11,7 +11,7 @@
     "schedule": ["before 9am on Monday"],
     "packageRules": [
       {
-        "matchBaseBranches": ["release-2.13", "release-2.12"],
+        "matchBaseBranches": ["release-2.14", "release-2.13", "release-2.12"],
         "packagePatterns": ["*"],
         "enabled": false
       },
