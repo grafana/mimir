@@ -279,35 +279,35 @@ This phase was a failure due to both of those design decisions.
 ##### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
 
 The fact that the tenant selection was done first meant that a tenant's query traffic profile
-could essentially cause the query component round-robin to be irrelevant.
+could essentially override the query component round-robin.
 With tenant selection done first, the decision pattern is essentially:
 
-> We are going to dequeue something for `tenant-1` no matter what.
-> We will _try_ to dequeue for a different query component than last time if we can,
-> but if `tenant-1` has no requests for that component, we will have to move on
-> and dequeue something from the same query componennt as last time anyway.
+> Dequeue something for `tenant-1` no matter what.
+> _Try_ to dequeue for a different query component than last time,
+> but if `tenant-1` has no requests for that component, move on
+> and dequeue something from the same query component anyway.
 
-If it was in the interest of the system to dequeue for a query for the store-gateways
-but we had selected `tenant-1` which was only sending ingester query at the time,
-we would dequeue an ingester query because the tenant selection had priority over the query component selection.
+If the query component round-robin was set to dequeue for a query for the store-gateways
+but the tenant rotation had selected `tenant-1` which was only sending ingester query at the time,
+the system would dequeue an ingester query in order to prioritize dequing for `tenant-1`.
 
-##### Failure 2: Inability to Prevent Connection Pool Exhaustion (major)
+##### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
 
 Inverting the tree's algorithm hierarchy to flip the tenant and query component selection priorities
 would not have solved the more significant issue caused by latency from a degraded query component.
 
-The more significant issue was that the vanilla round-robin algorithm does not sufficiently guard against
-the fact that in situations where one query component is experiencing high latency,
-the utilization of the querier-worker connections as measured by inflight query processing time
-will grow asymptotically to be dominated by the slow query component.
+The vanilla round-robin algorithm does not sufficiently guard against connection pool exhaustion
+in situations where one query component is experiencing high latency.
+Despite alternating the which query component is dequeued for, utilization of the querier-worker connections
+as measured by inflight query processing time will grow asymptotically to be dominated by the slow query component.
 
-The below diagram demonstrates this by simplifying the system to two query components and four querier connections.
+#### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
+
+The below diagram demonstrates the issue by simplifying the system to two query components and four querier connections.
 Queries to the "slow" query component take 8 ticks to process, while queries to the "fast" query component take 1 tick.
-An 8x difference is a very minimal compared to how much slower a degraded query component can be in practice.
 
-Dequeuing takes no time, as real dequeuing time is negligible compared to query processing time.
-Because the round-robin rotation changes with each dequeue, when two querier connections finish at the same time,
-for purposes of the demonstration the querier connection with a lower number ID is selected to dequeue next.
+When two querier connections finish at the same time, the querier connections are dequeued from in connection ID order.
+The round-robin selection advances from fast to slow or vice versa with each dequeue.
 
 In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
 
@@ -325,7 +325,7 @@ config:
   theme: default
 ---
 gantt
-    title A Gantt Diagram
+    title Query Processing Time Utilization with Round-Robin
     dateFormat ss
     axisFormat %S
     tickInterval 1second
@@ -334,26 +334,25 @@ gantt
         fast        :active, c1-1, 00, 1s
         fast        :active, c1-2, 01, 1s
         fast        :active, c1-3, 02, 1s
-        slow        : c1-4, 03, 8s
-        slow...     : c1-5, 11, 5s
+        slow        :done, c1-4, 03, 8s
+        slow...     :done, c1-5, 11, 5s
 
     section consumer-2
-        slow        : c2-1, 00, 8s
+        slow        :done, c2-1, 00, 8s
         fast        :active, c2-2, 08, 1s
         fast        :active, c2-3, 09, 1s
         fast        :active, c2-4, 10, 1s
         fast        :active, c2-5, 11, 1s
-        slow...     : c2-6, 12, 4s
+        slow...     :done, c2-6, 12, 4s
 
     section consumer-3
         fast        :active, c3-1, 00, 1s
-        slow        : c3-2, 01, 8s
-    %% fast        :active, c3-3, 09, 1s
-        slow...     : c3-3, 09, 7s
+        slow        :done, c3-2, 01, 8s
+        slow...     :done, c3-3, 09, 7s
 
     section consumer-4
-        slow        : c4-1, 00, 8s
-        slow        : c4-2, 08, 8s
+        slow        :done, c4-1, 00, 8s
+        slow        :done, c4-2, 08, 8s
 
 ```
 
@@ -379,7 +378,7 @@ config:
   theme: default
 ---
 gantt
-    title A Gantt Diagram
+    title Query Processing Time Utilization with Querier-Worker Queue Prioritization
     dateFormat ss
     axisFormat %S
     tickInterval 1second
@@ -422,11 +421,11 @@ gantt
 
 
     section consumer-3
-        slow        : c3-1, 00, 8s
-        slow        : c3-2, 08, 8s
+        slow        :done, c3-1, 00, 8s
+        slow        :done, c3-2, 08, 8s
 
     section consumer-4
-        slow        : c4-1, 00, 8s
-        slow        : c4-2, 08, 8s
+        slow        :done, c4-1, 00, 8s
+        slow        :done, c4-2, 08, 8s
 
 ```
