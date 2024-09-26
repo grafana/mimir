@@ -1674,23 +1674,7 @@ func TestAnnotations(t *testing.T) {
 	}
 }
 
-func runMixedMetricsTests(t *testing.T, expressions []string) {
-	// Although most tests are covered with the promql test files (both ours and upstream),
-	// there is a lot of repetition around a few edge cases.
-	// This is not intended to be comprehensive, but instead check for some common edge cases
-	// ensuring MQE and Prometheus' engines return the same result when querying:
-	// - Series with mixed floats and histograms
-	// - Aggregations with mixed data types
-	// - Points with NaN or infinity
-	// - Stale markers
-	// - Look backs
-
-	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
-
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
+func getMixedMetricsForTests() ([]string, int, string) {
 	// We're loading series with the following combinations of values. This is difficult to visually see in the actual
 	// data loaded, so it is represented in a table here.
 	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale, i = infinity
@@ -1728,6 +1712,27 @@ func runMixedMetricsTests(t *testing.T, expressions []string) {
 		series{label="n", group="d"} _ _ _ _ _ _ _
 		series{label="o", group="d"} Inf Inf -Inf Inf Inf -Inf -Inf
 	`
+	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+
+	return labelsToUse, pointsPerSeries, samples
+}
+
+func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries int, samples string) {
+	// Although most tests are covered with the promql test files (both ours and upstream),
+	// there is a lot of repetition around a few edge cases.
+	// This is not intended to be comprehensive, but instead check for some common edge cases
+	// ensuring MQE and Prometheus' engines return the same result when querying:
+	// - Series with mixed floats and histograms
+	// - Aggregations with mixed data types
+	// - Points with NaN or infinity
+	// - Stale markers
+	// - Look backs
+
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	timeRanges := []struct {
 		loadStep int
@@ -1769,7 +1774,7 @@ func runMixedMetricsTests(t *testing.T, expressions []string) {
 }
 
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
-	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -1789,11 +1794,11 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
 }
 
 func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
-	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -1817,11 +1822,11 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
 }
 
 func TestCompareVariousMixedMetricsRate(t *testing.T) {
-	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -1840,5 +1845,5 @@ func TestCompareVariousMixedMetricsRate(t *testing.T) {
 		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
 	}
 
-	runMixedMetricsTests(t, expressions)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
 }
