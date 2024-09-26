@@ -4826,11 +4826,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 ### redis
 
-{{< admonition type="caution" >}}
-Starting with Mimir 2.14, Redis-based caching is deprecated.
-It will be removed in a future release.
-{{< /admonition >}}
-
 The `redis` block configures the Redis-based caching backend. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `blocks-storage.bucket-store.chunks-cache`
