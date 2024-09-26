@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand/v2"
+	randv2 "math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -796,7 +796,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 	createRandomWriteRequest := func() *mimirpb.WriteRequest {
 		// It's important that each request has a different size to reproduce the deadlock.
-		metricName := strings.Repeat("x", rand.IntN(1000))
+		metricName := strings.Repeat("x", randv2.IntN(1000))
 
 		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}
 		return &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API}
@@ -814,7 +814,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 	// Throttle a very short (random) time to increase chances of hitting race conditions.
 	cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
-		time.Sleep(time.Duration(rand.Int64N(int64(time.Millisecond))))
+		time.Sleep(time.Duration(randv2.Int64N(int64(time.Millisecond))))
 
 		return nil, nil, false
 	})
@@ -1098,8 +1098,10 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg.Address = clusterAddr
 	cfg.Topic = topicName
 	cfg.WriteTimeout = 2 * time.Second
-	cfg.FetchConcurrency = 2
-	cfg.RecordsPerFetch = 2
+	cfg.StartupRecordsPerFetch = 2
+	cfg.StartupRecordsPerFetch = 2
+	cfg.OngoingRecordsPerFetch = 2
+	cfg.OngoingFetchConcurrency = 2
 
 	return cfg
 }

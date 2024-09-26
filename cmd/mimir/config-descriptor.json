@@ -6650,22 +6650,42 @@
             },
             {
               "kind": "field",
-              "name": "fetch_concurrency",
+              "name": "startup_fetch_concurrency",
               "required": false,
-              "desc": "The number of concurrent fetch requests that the ingester sends to Kafka when catching up during startup.",
+              "desc": "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 1,
-              "fieldFlag": "ingest-storage.kafka.fetch-concurrency",
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.startup-fetch-concurrency",
               "fieldType": "int"
             },
             {
               "kind": "field",
-              "name": "records_per_fetch",
+              "name": "startup_records_per_fetch",
               "required": false,
-              "desc": "The number of records to fetch from Kafka in a single request.",
+              "desc": "The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on ingest-storage.kafka.startup-fetch-concurrency being greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 128,
-              "fieldFlag": "ingest-storage.kafka.records-per-fetch",
+              "fieldDefaultValue": 2500,
+              "fieldFlag": "ingest-storage.kafka.startup-records-per-fetch",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ongoing_fetch_concurrency",
+              "required": false,
+              "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. It must be greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.ongoing-fetch-concurrency",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ongoing_records_per_fetch",
+              "required": false,
+              "desc": "The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 30,
+              "fieldFlag": "ingest-storage.kafka.ongoing-records-per-fetch",
               "fieldType": "int"
             },
             {
