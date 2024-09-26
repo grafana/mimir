@@ -1889,3 +1889,30 @@ func TestCompareVariousMixedMetricsRate(t *testing.T) {
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
 }
+
+func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+
+	// Test each label individually to catch edge cases in with single series
+	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f", etc)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+
+	expressions := []string{}
+
+	for _, labels := range labelCombinations {
+		labelRegex := strings.Join(labels, "|")
+		for _, op := range []string{"==", "!=", ">", "<", ">=", "<="} {
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s 10`, labelRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`1 %s series{label=~"(%s)"}`, op, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s Inf`, labelRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`-Inf %s series{label=~"(%s)"}`, op, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool -10`, labelRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`-1 %s bool series{label=~"(%s)"}`, op, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool Inf`, labelRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`-Inf %s bool series{label=~"(%s)"}`, op, labelRegex))
+		}
+	}
+
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+}
