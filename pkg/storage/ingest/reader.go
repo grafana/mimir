@@ -911,8 +911,6 @@ type concurrentFetchers struct {
 	metrics     *readerMetrics
 	tracer      *kotel.Tracer
 
-	concurrency      int
-	recordsPerFetch  int
 	minBytesWaitTime time.Duration
 
 	orderedFetches     chan fetchResult
