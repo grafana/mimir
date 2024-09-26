@@ -854,7 +854,7 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
-// mergedWith merges other with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
+// Merge merges other with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
 func (fr *fetchResult) Merge(older fetchResult) fetchResult {
 	if fr.ctx != nil {
 		level.Debug(spanlogger.FromContext(fr.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
