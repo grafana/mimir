@@ -968,8 +968,10 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (kgo.Fetches, cont
 		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
-		r.lastReturnedRecord = f.Records[len(f.Records)-1].Offset
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
+		if len(f.Records) > 0 {
+			r.lastReturnedRecord = f.Records[len(f.Records)-1].Offset
+		}
 
 		return kgo.Fetches{{
 			Topics: []kgo.FetchTopic{
@@ -988,7 +990,7 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 			return i
 		}
 	}
-	return len(records) - 1
+	return len(records)
 }
 
 func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
