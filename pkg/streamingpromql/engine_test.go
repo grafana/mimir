@@ -1434,13 +1434,15 @@ func TestAnnotations(t *testing.T) {
 		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
     `
 
-	testCases := map[string]struct {
+	type testCase struct {
 		data                               string
 		expr                               string
 		expectedWarningAnnotations         []string
 		expectedInfoAnnotations            []string
 		skipComparisonWithPrometheusReason string
-	}{
+	}
+
+	testCases := map[string]testCase{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
 			expr:                       "sum by (series) (metric)",
@@ -1477,68 +1479,6 @@ func TestAnnotations(t *testing.T) {
 			expr: `avg(metric{type="histogram"})`,
 		},
 
-		"rate() over metric without counter suffix containing only floats": {
-			data:                    mixedFloatHistogramData,
-			expr:                    `rate(metric{type="float"}[1m])`,
-			expectedInfoAnnotations: []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric" (1:6)`},
-		},
-		"rate() over metric without counter suffix containing only native histograms": {
-			data: mixedFloatHistogramData,
-			expr: `rate(metric{type="histogram"}[1m])`,
-		},
-		"rate() over metric ending in _total": {
-			data: `some_metric_total 0+1x3`,
-			expr: `rate(some_metric_total[1m])`,
-		},
-		"rate() over metric ending in _sum": {
-			data: `some_metric_sum 0+1x3`,
-			expr: `rate(some_metric_sum[1m])`,
-		},
-		"rate() over metric ending in _count": {
-			data: `some_metric_count 0+1x3`,
-			expr: `rate(some_metric_count[1m])`,
-		},
-		"rate() over metric ending in _bucket": {
-			data: `some_metric_bucket 0+1x3`,
-			expr: `rate(some_metric_bucket[1m])`,
-		},
-		"rate() over multiple metric names": {
-			data: `
-				not_a_counter{env="prod", series="1"}      0+1x3
-				a_total{series="2"}                        1+1x3
-				a_sum{series="3"}                          2+1x3
-				a_count{series="4"}                        3+1x3
-				a_bucket{series="5"}                       4+1x3
-				not_a_counter{env="test", series="6"}      5+1x3
-				also_not_a_counter{env="test", series="7"} 6+1x3
-			`,
-			expr: `rate({__name__!=""}[1m])`,
-			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:6)`,
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:6)`,
-			},
-		},
-		"rate() over series with both floats and histograms": {
-			data:                       `some_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       `rate(some_metric_count[1m])`,
-			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric_count" (1:6)`},
-		},
-		"rate() over series with first histogram that is not a counter": {
-			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}`,
-			expr:                       `rate(some_metric[1m])`,
-			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
-		},
-		"rate() over series with last histogram that is not a counter": {
-			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
-			expr:                       `rate(some_metric[1m])`,
-			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
-		},
-		"rate() over series with a histogram that is not a counter that is neither the first or last in the range": {
-			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}`,
-			expr:                       `rate(some_metric[2m] @ 2m)`,
-			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
-		},
-
 		"sum() over native histograms with both exponential and custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
 			expr: `sum(metric{series=~"exponential-buckets|custom-buckets-1"})`,
@@ -1552,41 +1492,6 @@ func TestAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:5)`,
 			},
-		},
-
-		"rate() over native histograms with both exponential and custom buckets": {
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: `rate(metric{series="mixed-exponential-custom-buckets"}[1m])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:6)`,
-			},
-		},
-		"rate() over native histograms with incompatible custom buckets": {
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: `rate(metric{series="incompatible-custom-buckets"}[1m])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:6)`,
-			},
-		},
-		"rate() over metric without counter suffix with single float or histogram in range": {
-			data: `
-				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
-			`,
-			expr:                       "rate(series[45s])",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
-			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
-		},
-		"rate() over one point in range": {
-			data: `
-				series 1
-			`,
-			expr:                       "rate(series[1m])",
-			expectedWarningAnnotations: []string{},
-			expectedInfoAnnotations:    []string{},
-			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
 		},
 
 		"sum_over_time() over series with both floats and histograms": {
@@ -1661,6 +1566,108 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:99)`,
 			},
 		},
+	}
+
+	// rate and increase use the same annotations
+	for _, function := range []string{"rate", "increase"} {
+		position := len(fmt.Sprintf("%s(", function)) + 1
+		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only floats", function)] = testCase{
+			data:                    mixedFloatHistogramData,
+			expr:                    fmt.Sprintf(`%s(metric{type="float"}[1m])`, function),
+			expectedInfoAnnotations: []string{fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric" (1:%d)`, position)},
+		}
+
+		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only native histograms", function)] = testCase{
+			data: mixedFloatHistogramData,
+			expr: fmt.Sprintf(`%s(metric{type="histogram"}[1m])`, function),
+		}
+		testCases[fmt.Sprintf("%s() over metric ending in _total", function)] = testCase{
+			data: `some_metric_total 0+1x3`,
+			expr: fmt.Sprintf(`%s(some_metric_total[1m])`, function),
+		}
+		testCases[fmt.Sprintf("%s() over metric ending in _sum", function)] = testCase{
+			data: `some_metric_sum 0+1x3`,
+			expr: fmt.Sprintf(`%s(some_metric_sum[1m])`, function),
+		}
+		testCases[fmt.Sprintf("%s() over metric ending in _count", function)] = testCase{
+			data: `some_metric_count 0+1x3`,
+			expr: fmt.Sprintf(`%s(some_metric_count[1m])`, function),
+		}
+		testCases[fmt.Sprintf("%s() over metric ending in _bucket", function)] = testCase{
+			data: `some_metric_bucket 0+1x3`,
+			expr: fmt.Sprintf(`%s(some_metric_bucket[1m])`, function),
+		}
+		testCases[fmt.Sprintf("%s() over multiple metric names", function)] = testCase{
+			data: `
+				not_a_counter{env="prod", series="1"}      0+1x3
+				a_total{series="2"}                        1+1x3
+				a_sum{series="3"}                          2+1x3
+				a_count{series="4"}                        3+1x3
+				a_bucket{series="5"}                       4+1x3
+				not_a_counter{env="test", series="6"}      5+1x3
+				also_not_a_counter{env="test", series="7"} 6+1x3
+			`,
+			expr: fmt.Sprintf(`%s({__name__!=""}[1m])`, function),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:%d)`, position),
+				fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:%d)`, position),
+			},
+		}
+		testCases[fmt.Sprintf("%s() over series with both floats and histograms", function)] = testCase{
+			data:                       `some_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                       fmt.Sprintf(`%s(some_metric_count[1m])`, function),
+			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric_count" (1:%d)`, position)},
+		}
+		testCases[fmt.Sprintf("%s() over series with first histogram that is not a counter", function)] = testCase{
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}`,
+			expr:                       fmt.Sprintf(`%s(some_metric[1m])`, function),
+			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
+		}
+		testCases[fmt.Sprintf("%s() over series with last histogram that is not a counter", function)] = testCase{
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
+			expr:                       fmt.Sprintf(`%s(some_metric[1m])`, function),
+			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
+		}
+		testCases[fmt.Sprintf("%s() over series with a histogram that is not a counter that is neither the first or last in the range", function)] = testCase{
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}`,
+			expr:                       fmt.Sprintf(`%s(some_metric[2m] @ 2m)`, function),
+			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
+		}
+
+		testCases[fmt.Sprintf("%s() over native histograms with both exponential and custom buckets", function)] = testCase{
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[1m])`, function),
+			expectedWarningAnnotations: []string{
+				fmt.Sprintf(`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:%d)`, position),
+			},
+		}
+		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = testCase{
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[1m])`, function),
+			expectedWarningAnnotations: []string{
+				fmt.Sprintf(`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:%d)`, position),
+			},
+		}
+		testCases[fmt.Sprintf("%s() over metric without counter suffix with single float or histogram in range", function)] = testCase{
+			data: `
+				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
+			`,
+			expr:                       fmt.Sprintf("%s(series[45s])", function),
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
+			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
+		}
+		testCases[fmt.Sprintf("%s() over one point in range", function)] = testCase{
+			data: `
+				series 1
+			`,
+			expr:                       fmt.Sprintf("%s(series[1m])", function),
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
+			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
+		}
 	}
 
 	opts := NewTestEngineOpts()
@@ -1867,7 +1874,7 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
 }
 
-func TestCompareVariousMixedMetricsRate(t *testing.T) {
+func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
@@ -1881,10 +1888,12 @@ func TestCompareVariousMixedMetricsRate(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[1m])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`sum(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`sum(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
+		for _, function := range []string{"rate", "increase"} {
+			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[5m]))`, function, labelRegex))
+		}
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)

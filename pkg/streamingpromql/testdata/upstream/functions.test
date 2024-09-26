@@ -98,12 +98,11 @@ load 5m
 	http_requests{path="/bumms"}    1+10x10
 
 # Tests for increase().
-# Unsupported by streaming engine.
-# eval instant at 50m increase(http_requests[50m])
-# 	{path="/foo"}   100
-# 	{path="/bar"}    90
-# 	{path="/dings"} 100
-# 	{path="/bumms"} 100
+eval instant at 50m increase(http_requests[50m])
+	{path="/foo"}   100
+	{path="/bar"}    90
+	{path="/dings"} 100
+	{path="/bumms"} 100
 
 # "foo" and "bar" are already at value 0 at t=0, so no extrapolation
 # happens. "dings" has value 10 at t=0 and would reach 0 at t=-5m. The
@@ -112,12 +111,11 @@ load 5m
 # chosen. However, "bumms" has value 1 at t=0 and would reach 0 at
 # t=-30s. Here the extrapolation to t=-2m30s would reach a negative
 # value, and therefore the extrapolation happens only by 30s.
-# Unsupported by streaming engine.
-# eval instant at 50m increase(http_requests[100m])
-# 	{path="/foo"}   100
-# 	{path="/bar"}    90
-# 	{path="/dings"} 105
-# 	{path="/bumms"} 101
+eval instant at 50m increase(http_requests[100m])
+	{path="/foo"}   100
+	{path="/bar"}    90
+	{path="/dings"} 105
+	{path="/bumms"} 101
 
 clear
 
@@ -128,9 +126,8 @@ clear
 load 5m
 	http_requests{path="/foo"}	0 1 2 3 2 3 4
 
-# Unsupported by streaming engine.
-# eval instant at 30m increase(http_requests[30m])
-#     {path="/foo"} 7
+eval instant at 30m increase(http_requests[30m])
+    {path="/foo"} 7
 
 clear
 
