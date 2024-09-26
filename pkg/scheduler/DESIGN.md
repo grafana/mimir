@@ -284,7 +284,7 @@ With tenant selection done first, the decision pattern is essentially:
 
 > We are going to dequeue something for `tenant-1` no matter what.
 > We will _try_ to dequeue for a different query component than last time if we can,
-> but if `tenant-1` has no requests for that component, we will move on
+> but if `tenant-1` has no requests for that component, we will have to move on
 > and dequeue something from the same query componennt as last time anyway.
 
 If it was in the interest of the system to dequeue for a query for the store-gateways
@@ -292,6 +292,29 @@ but we had selected `tenant-1` which was only sending ingester query at the time
 we would dequeue an ingester query because the tenant selection had priority over the query component selection.
 
 ##### Failure 2: Inability to Prevent Connection Pool Exhaustion (major)
+
+Inverting the tree's algorithm hierarchy to flip the tenant and query component selection priorities
+would not have solved the more significant issue caused by latency from a degraded query component.
+
+The more significant issue was that the vanilla round-robin algorithm does not sufficiently guard against
+the fact that in situations where one query component is experiencing high latency,
+the utilization of the querier-worker connections as measured by inflight query processing time
+will grow asymptotically to be dominated by the slow query component.
+
+The below diagram demonstrates this by simplifying the system to two query components and four querier connections.
+Queries to the "slow" query component take 8 ticks to process, while queries to the "fast" query component take 1 tick.
+An 8x difference is a very minimal compared to how much slower a degraded query component can be in practice.
+
+Dequeuing takes no time, as real dequeuing time is negligible compared to query processing time.
+Because the round-robin rotation changes with each dequeue, when two querier connections finish at the same time,
+for purposes of the demonstration the querier connection with a lower number ID is selected to dequeue next.
+
+In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
+
+- dequeues and starts processing 16 queries: 8 fast, 8 slow
+- completes processing 13 queries: 8 fast, 5 slow
+- spends 8 ticks processing the fast queries
+- spends 56 ticks processing the slow queries
 
 ```mermaid
 ---
@@ -307,52 +330,30 @@ gantt
     axisFormat %S
     tickInterval 1second
 
-    section round-robin
-        fast : milestone, m0, 00, 0s
-        slow : milestone, m1, 01, 0s
-        fast : milestone, m2, 02, 0s
-        slow : milestone, m3, 03, 0s
-        fast : milestone, m4, 04, 0s
-        slow : milestone, m5, 05, 0s
-        fast : milestone, m6, 06, 0s
-        slow : milestone, m7, 07, 0s
-        fast : milestone, m8, 08, 0s
-        fast : milestone, m9, 09, 0s
-        slow : milestone, m10, 10, 0s
-        fast : milestone, m11, 11, 0s
-        slow : milestone, m12, 12, 0s
-        fast : milestone, m13, 13, 0s
-        slow : milestone, m14, 14, 0s
-        fast : milestone, m15, 15, 0s
-
     section consumer-1
         fast        :active, c1-1, 00, 1s
-        wait        :done, c1-2, 01, 3s
-        fast        :active, c1-3, 04, 1s
-        wait        :done, c1-4, 05, 1s
-        fast        :active, c1-5, 06, 1s
-        slow        : c1-6, 07, 8s
-        fast        :active, c1-7, 15, 1s
+        fast        :active, c1-2, 01, 1s
+        fast        :active, c1-3, 02, 1s
+        slow        : c1-4, 03, 8s
+        slow...     : c1-5, 11, 5s
 
     section consumer-2
-        wait        :done, c2-1, 00, 1s
-        slow        : c2-2, 01, 8s
+        slow        : c2-1, 00, 8s
+        fast        :active, c2-2, 08, 1s
         fast        :active, c2-3, 09, 1s
-        slow...     : c2-4, 10, 6s
+        fast        :active, c2-4, 10, 1s
+        fast        :active, c2-5, 11, 1s
+        slow...     : c2-6, 12, 4s
 
     section consumer-3
-        wait        :done, c3-1, 00, 2s
-        fast        :active, c3-2, 02, 1s
-        wait        :done, c3-3, 03, 2s
-        slow        : c3-4, 05, 8s
-        fast        :active, c3-5, 13, 1s
-        slow...     : c3-6, 14, 2s
+        fast        :active, c3-1, 00, 1s
+        slow        : c3-2, 01, 8s
+    %% fast        :active, c3-3, 09, 1s
+        slow...     : c3-3, 09, 7s
 
     section consumer-4
-        wait        :done, c4-1, 00, 3s
-        slow        : c4-2, 03, 8s
-        fast        :active, c4-3, 11, 1s
-        slow...     : c4-4, 12, 4s
+        slow        : c4-1, 00, 8s
+        slow        : c4-2, 08, 8s
 
 ```
 
@@ -360,3 +361,72 @@ gantt
 <!--and rotated through a global list of active tenantIDs.-->
 <!--to select the next tenant sharded to the waiting querier.-->
 
+... [fill in in stuff about the new algorithm]
+
+In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
+
+- dequeues and starts processing 36 queries: 32 fast, 4 slow
+- completes processing 36 queries: 32 fast, 4 slow
+- spends 32 ticks processing the fast queries
+- spends 32 ticks processing the slow queries
+
+```mermaid
+---
+config:
+  gantt:
+    displayMode: compact
+    numberSectionStyles: 2
+  theme: default
+---
+gantt
+    title A Gantt Diagram
+    dateFormat ss
+    axisFormat %S
+    tickInterval 1second
+
+    section consumer-1
+        fast        :active, c1-1, 00, 1s
+        fast        :active, c1-2, 01, 1s
+        fast        :active, c1-3, 02, 1s
+        fast        :active, c1-4, 03, 1s
+        fast        :active, c1-5, 04, 1s
+        fast        :active, c1-6, 05, 1s
+        fast        :active, c1-7, 06, 1s
+        fast        :active, c1-8, 07, 1s
+        fast        :active, c1-9, 08, 1s
+        fast        :active, c1-10, 09, 1s
+        fast        :active, c1-11, 10, 1s
+        fast        :active, c1-12, 11, 1s
+        fast        :active, c1-13, 12, 1s
+        fast        :active, c1-14, 13, 1s
+        fast        :active, c1-15, 14, 1s
+        fast        :active, c1-16, 15, 1s
+
+    section consumer-2
+        fast        :active, c2-1, 00, 1s
+        fast        :active, c2-2, 01, 1s
+        fast        :active, c2-3, 02, 1s
+        fast        :active, c2-4, 03, 1s
+        fast        :active, c2-5, 04, 1s
+        fast        :active, c2-6, 05, 1s
+        fast        :active, c2-7, 06, 1s
+        fast        :active, c2-8, 07, 1s
+        fast        :active, c2-9, 08, 1s
+        fast        :active, c2-10, 09, 1s
+        fast        :active, c2-11, 10, 1s
+        fast        :active, c2-12, 11, 1s
+        fast        :active, c2-13, 12, 1s
+        fast        :active, c2-14, 13, 1s
+        fast        :active, c2-15, 14, 1s
+        fast        :active, c2-16, 15, 1s
+
+
+    section consumer-3
+        slow        : c3-1, 00, 8s
+        slow        : c3-2, 08, 8s
+
+    section consumer-4
+        slow        : c4-1, 00, 8s
+        slow        : c4-2, 08, 8s
+
+```
