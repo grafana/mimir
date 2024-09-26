@@ -144,7 +144,6 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
 - Querier
-  - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
@@ -157,7 +156,6 @@ The following features are currently experimental:
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
-  - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
@@ -165,7 +163,6 @@ The following features are currently experimental:
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
-  - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
 - Read-write deployment mode
 - API endpoints:
@@ -212,3 +209,4 @@ The following features or configuration parameters are currently deprecated and 
 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
+- Support for Redis-based caching
