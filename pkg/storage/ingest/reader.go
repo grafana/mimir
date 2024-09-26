@@ -131,7 +131,9 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	if err != nil {
 		return errors.Wrap(err, "creating service manager")
 	}
-	err = services.StartManagerAndAwaitHealthy(ctx, r.dependencies)
+	// Use context.Background() because we want to stop all dependencies when the PartitionReader stops
+	// instead of stopping them when ctx is cancelled and while the PartitionReader is still running.
+	err = services.StartManagerAndAwaitHealthy(context.Background(), r.dependencies)
 	if err != nil {
 		return errors.Wrap(err, "starting service manager")
 	}
