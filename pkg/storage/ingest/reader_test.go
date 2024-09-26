@@ -1711,10 +1711,12 @@ func withLogger(logger log.Logger) func(cfg *readerTestCfg) {
 	}
 }
 
+var testingLogger = mimirtest.NewTestingLogger(nil)
+
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
-		logger:      mimirtest.NewTestingLogger(t),
+		logger:      testingLogger.WithT(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
 		consumer:    consumer,

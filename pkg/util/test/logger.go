@@ -10,18 +10,27 @@ import (
 	"github.com/go-kit/log"
 )
 
-type testingLogger struct {
+type TestingLogger struct {
 	t   testing.TB
-	mtx sync.Mutex
+	mtx *sync.Mutex
 }
 
-func NewTestingLogger(t testing.TB) log.Logger {
-	return &testingLogger{
-		t: t,
+func NewTestingLogger(t testing.TB) *TestingLogger {
+	return &TestingLogger{
+		t:   t,
+		mtx: &sync.Mutex{},
 	}
 }
 
-func (l *testingLogger) Log(keyvals ...interface{}) error {
+// WithT returns a new logger that logs to t. Writes between the new logger and the original logger are synchronized.
+func (l *TestingLogger) WithT(t testing.TB) log.Logger {
+	return &TestingLogger{
+		t:   t,
+		mtx: l.mtx,
+	}
+}
+
+func (l *TestingLogger) Log(keyvals ...interface{}) error {
 	// Prepend log with timestamp.
 	keyvals = append([]interface{}{time.Now().String()}, keyvals...)
 
