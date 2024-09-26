@@ -1285,8 +1285,6 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			refillBufferedResult = nil
 		}
 		select {
-		case <-r.done:
-			return
 		case <-ctx.Done():
 			return
 
