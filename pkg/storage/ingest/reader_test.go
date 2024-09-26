@@ -219,7 +219,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOtp) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
-		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
@@ -2139,6 +2139,243 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			assert.Equal(t, testCase.expectedMetadataRefresh, refreshed)
 		})
 	}
+}
+
+func TestConcurrentFetchers(t *testing.T) {
+	const (
+		topicName       = "test-topic"
+		partitionID     = 1
+		recordsPerFetch = 3
+		concurrency     = 2
+	)
+
+	t.Run("respect context cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		// This should not block forever now
+		fetches, fetchCtx := fetchers.pollFetches(ctx)
+
+		assert.Zero(t, fetches.NumRecords())
+		assert.Error(t, fetchCtx.Err(), "Expected context to be cancelled")
+	})
+
+	t.Run("cold replay", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Produce some records before starting the fetchers
+		for i := 0; i < 5; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		fetches, _ := fetchers.pollFetches(ctx)
+		assert.Equal(t, fetches.NumRecords(), 5)
+	})
+
+	t.Run("fetch records produced after startup", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		// Produce some records after starting the fetchers
+		for i := 0; i < 3; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		fetches, _ := fetchers.pollFetches(ctx)
+		assert.Equal(t, fetches.NumRecords(), 3)
+	})
+
+	t.Run("slow processing of fetches", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		// Produce some records
+		for i := 0; i < 5; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		consumedRecords := 0
+		go func() {
+			defer wg.Done()
+			for consumedRecords < 5 {
+				fetches, _ := fetchers.pollFetches(ctx)
+				time.Sleep(100 * time.Millisecond) // Simulate slow processing
+				consumedRecords += fetches.NumRecords()
+			}
+		}()
+
+		// Produce more records while processing is slow
+		for i := 5; i < 10; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		wg.Wait()
+
+		// Collect back the rest of the records; maybe there are none.
+		for consumedRecords < 10 {
+			fetches, _ := fetchers.pollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		assert.Equal(t, consumedRecords, 10)
+	})
+
+	t.Run("fast processing of fetches", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		// Produce some records
+		for i := 0; i < 10; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			consumedRecords := 0
+			for consumedRecords < 10 {
+				fetches, _ := fetchers.pollFetches(ctx)
+				consumedRecords += fetches.NumRecords()
+				// no processing delay
+			}
+			assert.Equal(t, 10, consumedRecords)
+		}()
+
+		wg.Wait()
+	})
+
+	t.Run("fetch with different concurrency levels", func(t *testing.T) {
+		for _, concurrency := range []int{1, 2, 4} {
+			t.Run(fmt.Sprintf("concurrency-%d", concurrency), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+				client := newKafkaProduceClient(t, clusterAddr)
+
+				fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, 0, concurrency, 2)
+
+				// Produce some records
+				for i := 0; i < 20; i++ {
+					produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+				}
+
+				var totalRecords int
+				for totalRecords < 20 {
+					fetches, _ := fetchers.pollFetches(ctx)
+					totalRecords += fetches.NumRecords()
+				}
+
+				assert.Equal(t, 20, totalRecords)
+			})
+		}
+	})
+
+	t.Run("start from mid-stream offset", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Produce some initial records
+		for i := 0; i < 5; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// Get the offset of the last produced record
+		lastOffset := produceRecord(ctx, t, client, topicName, partitionID, []byte("last-initial-record"))
+
+		// Start fetchers from the offset after the initial records
+		fetchers := createConcurrentFetchers(t, ctx, client, topicName, partitionID, lastOffset-1, concurrency, recordsPerFetch)
+
+		// Produce some more records
+		for i := 0; i < 3; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("new-record-%d", i)))
+		}
+
+		const expectedRecords = 5
+		fetchedRecordsContents := make([]string, 0, expectedRecords)
+		for len(fetchedRecordsContents) < expectedRecords {
+			fetches, _ := fetchers.pollFetches(ctx)
+			fetches.EachRecord(func(r *kgo.Record) {
+				fetchedRecordsContents = append(fetchedRecordsContents, string(r.Value))
+			})
+		}
+
+		assert.Equal(t, []string{
+			"record-4",
+			"last-initial-record",
+			"new-record-0",
+			"new-record-1",
+			"new-record-2",
+		}, fetchedRecordsContents)
+	})
+}
+
+func createConcurrentFetchers(t *testing.T, ctx context.Context, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int) *concurrentFetchers {
+	logger := log.NewNopLogger()
+	metrics := newReaderMetrics(partition, prometheus.NewRegistry())
+
+	// This instantiates the fields of kprom.
+	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
+	metrics.kprom.OnNewClient(client)
+
+	offsetReader := &partitionOffsetClient{
+		client: client,
+		topic:  topic,
+	}
+
+	startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
+		return offsetReader.FetchPartitionStartOffset(ctx, partition)
+	}, time.Second, logger)
+
+	f, err := newConcurrentFetchers(
+		ctx,
+		client,
+		logger,
+		topic,
+		partition,
+		startOffset,
+		concurrency,
+		recordsPerFetch,
+		false,
+		defaultMinBytesWaitTime,
+		offsetReader,
+		startOffsetsReader,
+		&metrics,
+	)
+	require.NoError(t, err)
+
+	return f
 }
 
 type waiterFunc func()
