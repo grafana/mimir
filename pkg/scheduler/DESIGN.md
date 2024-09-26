@@ -307,27 +307,27 @@ gantt
     axisFormat %S
     tickInterval 1second
 
-    section state
-        round-robin#colon; fast : milestone, m0, 00, 0s
-        round-robin#colon; slow : milestone, m1, 01, 0s
-        round-robin#colon; fast : milestone, m2, 02, 0s
-        round-robin#colon; slow : milestone, m3, 03, 0s
-        round-robin#colon; fast : milestone, m4, 04, 0s
-        round-robin#colon; slow : milestone, m5, 05, 0s
-        round-robin#colon; fast : milestone, m6, 06, 0s
-        round-robin#colon; slow : milestone, m7, 07, 0s
-        round-robin#colon; fast : milestone, m8, 08, 0s
-        round-robin#colon; fast : milestone, m9, 09, 0s
-        round-robin#colon; slow : milestone, m10, 10, 0s
-        round-robin#colon; fast : milestone, m11, 11, 0s
-        round-robin#colon; slow : milestone, m12, 12, 0s
-        round-robin#colon; fast : milestone, m13, 13, 0s
-        round-robin#colon; slow : milestone, m14, 14, 0s
-        round-robin#colon; fast : milestone, m15, 15, 0s
-        round-robin#colon; slow : milestone, m16, 16, 0s
-        round-robin#colon; fast : milestone, m17, 17, 0s
-        round-robin#colon; fast : milestone, m18, 18, 0s
-        round-robin#colon; slow : milestone, m19, 19, 0s
+    section round-robin
+        fast : milestone, m0, 00, 0s
+        slow : milestone, m1, 01, 0s
+        fast : milestone, m2, 02, 0s
+        slow : milestone, m3, 03, 0s
+        fast : milestone, m4, 04, 0s
+        slow : milestone, m5, 05, 0s
+        fast : milestone, m6, 06, 0s
+        slow : milestone, m7, 07, 0s
+        fast : milestone, m8, 08, 0s
+        fast : milestone, m9, 09, 0s
+        slow : milestone, m10, 10, 0s
+        fast : milestone, m11, 11, 0s
+        slow : milestone, m12, 12, 0s
+        fast : milestone, m13, 13, 0s
+        slow : milestone, m14, 14, 0s
+        fast : milestone, m15, 15, 0s
+        slow : milestone, m16, 16, 0s
+        fast : milestone, m17, 17, 0s
+        fast : milestone, m18, 18, 0s
+        slow : milestone, m19, 19, 0s
 
     section consumer-1
         process fast        :active, c1-1, 00, 1s
