@@ -25,6 +25,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   ]),
 
   local sortAscending = 1,
+  local sortNaturalAscending = 7,
 
   _config:: error 'must provide _config',
 
@@ -124,7 +125,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending),
 
       addActiveUserSelectorTemplates()::
-        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user', sort=sortAscending),
+        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user', sort=sortNaturalAscending),
 
       addCustomTemplate(label, name, options, defaultIndex=0):: self {
         // Escape the comma because it's used a separator in the options list.

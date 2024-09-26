@@ -948,11 +948,6 @@ instance_limits:
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
 [write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
-# (deprecated) When enabled, in-flight write requests limit is checked as soon
-# as the gRPC request is received, before the request is decoded and parsed.
-# CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
-
 # (advanced) Number of pre-allocated workers used to forward push requests to
 # the ingesters. If 0, no workers will be used and a new goroutine will be
 # spawned for each ingester push request. If not enough workers available, new
@@ -1251,11 +1246,6 @@ instance_limits:
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 
-# (deprecated) When enabled, in-flight write requests limit is checked as soon
-# as the gRPC request is received, before the request is decoded and parsed.
-# CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
-
 # (advanced) Each error will be logged once in this many times. Use 0 to log all
 # of them.
 # CLI flag: -ingester.error-sample-rate
@@ -1364,10 +1354,6 @@ The `querier` block configures the querier.
 # query-store-after'.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
-
-# (deprecated) Maximum duration into the future you can query. 0 to disable.
-# CLI flag: -querier.max-query-into-future
-[max_query_into_future: <duration> | default = 10m]
 
 store_gateway_client:
   # (advanced) Enable TLS for gRPC client connecting to store-gateway.
@@ -1518,30 +1504,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
   [enable_aggregation_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for binary operations in Mimir's query engine.
-  # Only applies if the Mimir query engine is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-binary-operations
-  [enable_binary_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for offset modifier in Mimir's query engine.
-  # Only applies if the Mimir query engine is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
-  [enable_offset_modifier: <boolean> | default = true]
-
-  # (experimental) Enable support for ..._over_time functions in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
-  [enable_over_time_functions: <boolean> | default = true]
-
   # (experimental) Enable support for scalars in Mimir's query engine. Only
   # applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
-
-  # (experimental) Enable support for unary negation in Mimir's query engine.
-  # Only applies if the Mimir query engine is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-unary-negation
-  [enable_unary_negation: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1657,6 +1623,10 @@ results_cache:
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
+
+# (experimental) Cache non-transient errors from queries.
+# CLI flag: -query-frontend.cache-errors
+[cache_errors: <boolean> | default = false]
 
 # (advanced) Maximum number of retries for a single request; beyond this, the
 # downstream error is returned.
@@ -2337,7 +2307,7 @@ alertmanager_client:
   [max_send_msg_size: <int> | default = 104857600]
 
   # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
+  # 'gzip', 'snappy', 's2' and '' (disable compression)
   # CLI flag: -alertmanager.alertmanager-client.grpc-compression
   [grpc_compression: <string> | default = ""]
 
@@ -2592,7 +2562,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 [max_send_msg_size: <int> | default = 104857600]
 
 # (advanced) Use compression when sending messages. Supported values are:
-# 'gzip', 'snappy' and '' (disable compression)
+# 'gzip', 'snappy', 's2' and '' (disable compression)
 # CLI flag: -<prefix>.grpc-compression
 [grpc_compression: <string> | default = ""]
 
@@ -3464,6 +3434,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # The value 0 disables the cache.
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
+
+# (experimental) Time to live duration for cached non-transient errors
+# CLI flag: -query-frontend.results-cache-ttl-for-errors
+[results_cache_ttl_for_errors: <duration> | default = 5m]
 
 # (advanced) Cache requests that are not step-aligned.
 # CLI flag: -query-frontend.cache-unaligned-requests

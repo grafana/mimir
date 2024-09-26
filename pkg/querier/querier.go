@@ -44,8 +44,6 @@ import (
 type Config struct {
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
-	// Deprecated in Mimir 2.12, remove in Mimir 2.14
-	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"deprecated"`
 
 	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
@@ -74,7 +72,6 @@ const (
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 
-	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
@@ -218,15 +215,14 @@ func newQueryable(
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		return multiQuerier{
-			distributor:        distributor,
-			blockStore:         blockStore,
-			queryMetrics:       queryMetrics,
-			cfg:                cfg,
-			minT:               minT,
-			maxT:               maxT,
-			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
-			limits:             limits,
-			logger:             logger,
+			distributor:  distributor,
+			blockStore:   blockStore,
+			queryMetrics: queryMetrics,
+			cfg:          cfg,
+			minT:         minT,
+			maxT:         maxT,
+			limits:       limits,
+			logger:       logger,
 		}, nil
 
 	})
@@ -240,8 +236,7 @@ type multiQuerier struct {
 	cfg          Config
 	minT, maxT   int64
 
-	maxQueryIntoFuture time.Duration
-	limits             *validation.Overrides
+	limits *validation.Overrides
 
 	logger log.Logger
 }
@@ -262,7 +257,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 		mq.queryMetrics,
 	))
 
-	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, mq.cfg.MaxQueryIntoFuture, spanlogger.FromContext(ctx, mq.logger))
+	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, spanlogger.FromContext(ctx, mq.logger))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -332,7 +327,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, mq.maxQueryIntoFuture, spanLog)
+	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, spanLog)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
@@ -586,9 +581,7 @@ func (s *sliceSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, spanLog *spanlogger.SpanLogger) (int64, int64, error) {
-	endMs = clampMaxTime(spanLog, endMs, now, maxQueryIntoFuture, "max query into future")
-
+func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, spanLog *spanlogger.SpanLogger) (int64, int64, error) {
 	maxQueryLookback := limits.MaxQueryLookback(userID)
 	startMs = clampMinTime(spanLog, startMs, now, -maxQueryLookback, "max query lookback")
 

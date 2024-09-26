@@ -90,6 +90,9 @@ type Limits interface {
 	// ResultsCacheTTLForLabelsQuery returns TTL for cached results for label names and values queries.
 	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
 
+	// ResultsCacheTTLForErrors returns TTL for cached non-transient errors.
+	ResultsCacheTTLForErrors(userID string) time.Duration
+
 	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
 	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 

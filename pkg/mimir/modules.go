@@ -292,26 +292,20 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	var ingFn func() pushReceiver
-	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
-		ingFn = func() pushReceiver {
-			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
-			if t.Ingester == nil {
-				return nil
-			}
-			return t.Ingester
+	ingFn := func() pushReceiver {
+		// Return explicit nil if there's no ingester. We don't want to return typed-nil as interface value.
+		if t.Ingester == nil {
+			return nil
 		}
+		return t.Ingester
 	}
 
-	var distFn func() pushReceiver
-	if t.Cfg.Distributor.LimitInflightRequestsUsingGrpcMethodLimiter {
-		distFn = func() pushReceiver {
-			// Return explicit nil, if there's no distributor. We don't want to return typed-nil as interface value.
-			if t.Distributor == nil {
-				return nil
-			}
-			return t.Distributor
+	distFn := func() pushReceiver {
+		// Return explicit nil if there's no distributor. We don't want to return typed-nil as interface value.
+		if t.Distributor == nil {
+			return nil
 		}
+		return t.Distributor
 	}
 
 	// Installing this allows us to reject push requests received via gRPC early -- before they are fully read into memory.
