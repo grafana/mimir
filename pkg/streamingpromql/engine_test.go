@@ -1841,8 +1841,8 @@ func TestCompareVariousMixedMetricsRate(t *testing.T) {
 		labelRegex := strings.Join(labels, "|")
 		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[45s])`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`rate(series{label=~"(%s)"}[1m])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`avg(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`sum(rate(series{label=~"(%s)"}[2m15s]))`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`sum(rate(series{label=~"(%s)"}[5m]))`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
