@@ -22,13 +22,11 @@ These requirements lend themselves to a search tree or decision tree structure;
 the levels of the tree express a clear hierarchy of decisonmaking between the two algorithms,
 and the depth-first traversal provides a familiar pattern for searching for a leaf node to dequeue from.
 
-### Simplified Diagram
-
-For brevity, we omit the `unknown` query component node and its subtree,
-as the algorithm to select query component nodes treats `unknown` the same as `ingester-and-store-gateway`.
+### Diagram: Dequeue Decision Tree (Simplified)
 
 ```mermaid
 ---
+title: Dequeue Decision Tree (Simplified)
 config:
   theme: default
 ---
@@ -127,10 +125,10 @@ Each of the two non-leaf levels of the tree uses a different algorithm to select
 1. If no tenant node is selected, the search returns back up to the root node level
    and selects the next query component child node to continue the search from.
 
-### Full Diagram
-
+### Diagram: Dequeue Decision Tree (Full)
 ```mermaid
 ---
+title: Dequeue Decision Tree (Full)
 config:
   theme: default
 ---
@@ -303,8 +301,11 @@ In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
 - spends 8 ticks processing the fast queries
 - spends 56 ticks processing the slow queries
 
+#### Diagram: Query Processing Time Utilization with Round-Robin
+
 ```mermaid
 ---
+title: Query Processing Time Utilization with Round-Robin
 config:
   gantt:
     displayMode: compact
@@ -312,7 +313,6 @@ config:
   theme: default
 ---
 gantt
-    title Query Processing Time Utilization with Round-Robin
     dateFormat ss
     axisFormat %S
     tickInterval 1second
@@ -356,8 +356,11 @@ In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
 - spends 32 ticks processing the fast queries
 - spends 32 ticks processing the slow queries
 
+#### Diagram: Query Processing Time Utilization with Querier-Worker Queue Prioritization
+
 ```mermaid
 ---
+title: Query Processing Time Utilization with Querier-Worker Queue Prioritization
 config:
   gantt:
     displayMode: compact
@@ -365,7 +368,6 @@ config:
   theme: default
 ---
 gantt
-    title Query Processing Time Utilization with Querier-Worker Queue Prioritization
     dateFormat ss
     axisFormat %S
     tickInterval 1second
