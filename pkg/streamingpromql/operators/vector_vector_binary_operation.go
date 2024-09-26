@@ -32,6 +32,7 @@ type VectorVectorBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
+	ReturnBool               bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	VectorMatching parser.VectorMatching
@@ -80,15 +81,11 @@ func NewVectorVectorBinaryOperation(
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
+	returnBool bool,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*VectorVectorBinaryOperation, error) {
-	opFunc := arithmeticOperationFuncs[op]
-	if opFunc == nil {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
-	}
-
 	b := &VectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
@@ -96,10 +93,20 @@ func NewVectorVectorBinaryOperation(
 		rightIterator:            types.InstantVectorSeriesDataIterator{},
 		VectorMatching:           vectorMatching,
 		Op:                       op,
+		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
-		opFunc:             opFunc,
 		expressionPosition: expressionPosition,
+	}
+
+	if returnBool {
+		b.opFunc = boolComparisonOperationFuncs[op]
+	} else {
+		b.opFunc = arithmeticAndComparisonOperationFuncs[op]
+	}
+
+	if b.opFunc == nil {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
 	b.emitAnnotation = func(generator functions.AnnotationGenerator) {
@@ -369,6 +376,15 @@ func (b *VectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labe
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
 			lb.Keep(b.VectorMatching.MatchingLabels...)
+			return lb.Labels()
+		}
+	}
+
+	if b.Op.IsComparisonOperator() && !b.ReturnBool {
+		// If this is a comparison operator, we want to retain the metric name, as the comparison acts like a filter.
+		return func(l labels.Labels) labels.Labels {
+			lb.Reset(l)
+			lb.Del(b.VectorMatching.MatchingLabels...)
 			return lb.Labels()
 		}
 	}
@@ -666,7 +682,7 @@ func (b *VectorVectorBinaryOperation) Close() {
 type binaryOperationFunc func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
 
 // FIXME(jhesketh): Investigate avoiding copying histograms for binary ops.
-var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
+var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.ADD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		if hlhs != nil && hrhs != nil {
 			res, err := hlhs.Copy().Add(hrhs)
@@ -710,5 +726,92 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 	parser.ATAN2: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Atan2(lhs, rhs), nil, true, nil
+	},
+	parser.EQLC: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs == rhs {
+			return lhs, nil, true, nil
+		}
+
+		return 0, nil, false, nil
+	},
+	parser.NEQ: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs != rhs {
+			return lhs, nil, true, nil
+		}
+
+		return 0, nil, false, nil
+	},
+	parser.LTE: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs <= rhs {
+			return lhs, nil, true, nil
+		}
+
+		return 0, nil, false, nil
+	},
+	parser.LSS: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs < rhs {
+			return lhs, nil, true, nil
+		}
+
+		return 0, nil, false, nil
+	},
+	parser.GTE: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs >= rhs {
+			return lhs, nil, true, nil
+		}
+
+		return 0, nil, false, nil
+	},
+	parser.GTR: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs > rhs {
+			return lhs, nil, true, nil
+		}
+
+		return 0, nil, false, nil
+	},
+}
+
+var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
+	parser.EQLC: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs == rhs {
+			return 1, nil, true, nil
+		}
+
+		return 0, nil, true, nil
+	},
+	parser.NEQ: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs != rhs {
+			return 1, nil, true, nil
+		}
+
+		return 0, nil, true, nil
+	},
+	parser.LTE: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs <= rhs {
+			return 1, nil, true, nil
+		}
+
+		return 0, nil, true, nil
+	},
+	parser.LSS: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs < rhs {
+			return 1, nil, true, nil
+		}
+
+		return 0, nil, true, nil
+	},
+	parser.GTE: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs >= rhs {
+			return 1, nil, true, nil
+		}
+
+		return 0, nil, true, nil
+	},
+	parser.GTR: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if lhs > rhs {
+			return 1, nil, true, nil
+		}
+
+		return 0, nil, true, nil
 	},
 }

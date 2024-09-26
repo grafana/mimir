@@ -21,14 +21,12 @@ eval instant at 15m metric + another_metric
 	{env="1"} 300
 
 # Does not drop __name__ for binary comparison operators
-# Unsupported by streaming engine.
-# eval instant at 15m metric <= another_metric
-# 	metric{env="1"} 120
+eval instant at 15m metric <= another_metric
+	metric{env="1"} 120
 
 # Drops __name__ for binary comparison operators with "bool" modifier
-# Unsupported by streaming engine.
-# eval instant at 15m metric <= bool another_metric
-# 	{env="1"} 1
+eval instant at 15m metric <= bool another_metric
+	{env="1"} 1
 
 # Drops __name__ for vector-scalar operations
 eval instant at 15m metric * 2

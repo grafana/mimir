@@ -274,52 +274,41 @@ eval instant at 50m http_requests{group="canary"} / ignoring(group) http_request
 
 
 # Comparisons.
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) > 1000
-# 	{job="app-server"} 2600
+eval instant at 50m SUM(http_requests) BY (job) > 1000
+	{job="app-server"} 2600
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1000 < SUM(http_requests) BY (job)
-# 	{job="app-server"} 2600
+eval instant at 50m 1000 < SUM(http_requests) BY (job)
+	{job="app-server"} 2600
 
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) <= 1000
-# 	{job="api-server"} 1000
+eval instant at 50m SUM(http_requests) BY (job) <= 1000
+	{job="api-server"} 1000
 
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) != 1000
-# 	{job="app-server"} 2600
+eval instant at 50m SUM(http_requests) BY (job) != 1000
+	{job="app-server"} 2600
 
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) == 1000
-# 	{job="api-server"} 1000
+eval instant at 50m SUM(http_requests) BY (job) == 1000
+	{job="api-server"} 1000
 
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) == bool 1000
-# 	{job="api-server"} 1
-# 	{job="app-server"} 0
+eval instant at 50m SUM(http_requests) BY (job) == bool 1000
+	{job="api-server"} 1
+	{job="app-server"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) == bool SUM(http_requests) BY (job)
-# 	{job="api-server"} 1
-# 	{job="app-server"} 1
+eval instant at 50m SUM(http_requests) BY (job) == bool SUM(http_requests) BY (job)
+	{job="api-server"} 1
+	{job="app-server"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m SUM(http_requests) BY (job) != bool SUM(http_requests) BY (job)
-# 	{job="api-server"} 0
-# 	{job="app-server"} 0
+eval instant at 50m SUM(http_requests) BY (job) != bool SUM(http_requests) BY (job)
+	{job="api-server"} 0
+	{job="app-server"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m 0 == bool 1
-# 	0
+eval instant at 50m 0 == bool 1
+	0
 
-# Unsupported by streaming engine.
-# eval instant at 50m 1 == bool 1
-# 	1
+eval instant at 50m 1 == bool 1
+	1
 
-# Unsupported by streaming engine.
-# eval instant at 50m http_requests{job="api-server", instance="0", group="production"} == bool 100
-# 	{job="api-server", instance="0", group="production"} 1
+eval instant at 50m http_requests{job="api-server", instance="0", group="production"} == bool 100
+	{job="api-server", instance="0", group="production"} 1
 
 # group_left/group_right.
 
@@ -507,20 +496,16 @@ load 5m
     test_total{instance="localhost"} 50
     test_smaller{instance="localhost"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 5m test_total > bool test_smaller
-#     {instance="localhost"} 1
+eval instant at 5m test_total > bool test_smaller
+    {instance="localhost"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 5m test_total > test_smaller
-#     test_total{instance="localhost"} 50
+eval instant at 5m test_total > test_smaller
+    test_total{instance="localhost"} 50
 
-# Unsupported by streaming engine.
-# eval instant at 5m test_total < bool test_smaller
-#     {instance="localhost"} 0
+eval instant at 5m test_total < bool test_smaller
+    {instance="localhost"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 5m test_total < test_smaller
+eval instant at 5m test_total < test_smaller
 
 clear
 
