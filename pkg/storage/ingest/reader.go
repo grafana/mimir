@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +27,8 @@ import (
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
