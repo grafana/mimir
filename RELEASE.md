@@ -23,7 +23,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.11.0  | 2023-12-06 | Justin Lei         |
 | 2.12.0  | 2024-03-11 | Yuri Nikolic       |
 | 2.13.0  | 2024-06-17 | Dimitar Dimitrov   |
-| 2.14.0  | 2024-09-09 | _To be announced_  |
+| 2.14.0  | 2024-10-07 | Vladimir Varankin  |
 | 2.15.0  | 2024-12-09 | _To be announced_  |
 | 2.16.0  | 2025-03-10 | _To be announced_  |
 
@@ -82,10 +82,10 @@ If something is not clear, you can get back to this document to learn more about
     git push -u origin release-<version>
     ```
   - [ ] Remove "main / unreleased" section from the CHANGELOG
-  - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json` configuration on the `main` branch by adding the new version.
+  - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json5` configuration on the `main` branch by adding the new version.
         This way we ensure that dependency updates maintain the new version, as well as the latest two minor versions.
         For instance, if versions 3.0 and 2.10 are configured in `renovate.json`, and version 3.1 is being released,
-        during the release process `renovate.json` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
+        during the release process `renovate.json5` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
     - Keep in mind this is a release candidate, so the version string in VERSION and CHANGELOG must end in `-rc.#`, where `#` is the release candidate number, starting at 0.
@@ -138,9 +138,9 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
-  - [ ] If during the release process settings in the `renovate.json` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
+  - [ ] If during the release process settings in the `renovate.json5` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
         modify it again to ensure that only the latest two minor versions get updated.
-        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, `renovate.json` should keep updated the following branches:
+        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
         `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
