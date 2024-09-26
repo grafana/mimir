@@ -2,15 +2,14 @@
 
 The `RequestQueue` subservice embedded into the scheduler process is responsible for
 all decisions regarding enqueuing and dequeuing of query requests.
-While the `RequestQueue`'s responsibilities are relatively broad, including the domain logic for
-querier-worker connection lifecycles and graceful startup/shutdown logic,
+While the `RequestQueue`'s responsibilities are relatively broad, including management of
+querier-worker connection lifecycles and graceful startup/shutdown,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
 
 ### Tree Queue: What and Why
 
 The "tree queue" structure serves the purpose of a discrete priority queue.
-Rather than a single queue, the requests are split into many queues,
-each of which is located at a leaf node in the tree structure.
+The requests are split into many queues, each of which is located at a leaf node in the tree structure.
 
 The tree structure enables some of the specific requirements of our queue selection algorithms:
 
@@ -258,9 +257,8 @@ While queries can overlap the time periods of data fetched by both query compone
 many requests are served by only one of the two components.
 
 Ingesters and store-gateways tend to experience issues independently of each other,
-but when one component was in a degraded state, queries which only utilized the other component
-would still have to wait in the queue, leading to latency and ultimately timeouts and cancelletions
-for queries that could have been serviced by the non-degraded query component.
+but when one component was in a degraded state, _all_ queries would wait in the queue behind the slow queries,
+causing high latency and timeouts for queries which could have been serviced by the non-degraded query component.
 
 #### Phase 1: Query Component Selection by Round-Robin
 
@@ -278,18 +276,12 @@ This phase was a failure due to both of those design decisions.
 
 ##### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
 
-The fact that the tenant selection was done first meant that a tenant's query traffic profile
-could essentially override the query component round-robin.
-With tenant selection done first, the decision pattern is essentially:
-
-> Dequeue something for `tenant-1` no matter what.
-> _Try_ to dequeue for a different query component than last time,
-> but if `tenant-1` has no requests for that component, move on
-> and dequeue something from the same query component anyway.
+The fact that the tenant selection was given priority over query-component selection
+meant that a tenant's query traffic profile could override the query component round-robin.
 
 If the query component round-robin was set to dequeue for a query for the store-gateways
 but the tenant rotation had selected `tenant-1` which was only sending ingester query at the time,
-the system would dequeue an ingester query in order to prioritize dequing for `tenant-1`.
+the system would dequeue an ingester query in order to prioritize dequeuing for `tenant-1`.
 
 ##### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
 
@@ -303,10 +295,8 @@ as measured by inflight query processing time will grow asymptotically to be dom
 
 #### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
 
-The below diagram demonstrates the issue by simplifying the system to two query components and four querier connections.
-Queries to the "slow" query component take 8 ticks to process, while queries to the "fast" query component take 1 tick.
-
-When two querier connections finish at the same time, the querier connections are dequeued from in connection ID order.
+To demonstrate the issue, we can simplify the system to two query components and four querier connections.
+Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
 The round-robin selection advances from fast to slow or vice versa with each dequeue.
 
 In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
