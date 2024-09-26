@@ -27,7 +27,8 @@ var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
 	parser.GROUP:  func() AggregationGroup { return NewCountGroupAggregationGroup(false) },
 	parser.MAX:    func() AggregationGroup { return NewMinMaxAggregationGroup(true) },
 	parser.MIN:    func() AggregationGroup { return NewMinMaxAggregationGroup(false) },
-	parser.STDDEV: func() AggregationGroup { return &StddevAggregationGroup{} },
+	parser.STDDEV: func() AggregationGroup { return NewStddevStdvarAggregationGroup(true) },
+	parser.STDVAR: func() AggregationGroup { return NewStddevStdvarAggregationGroup(false) },
 	parser.SUM:    func() AggregationGroup { return &SumAggregationGroup{} },
 }
 
