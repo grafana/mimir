@@ -29,6 +29,11 @@ For brevity, we omit the `unknown` query component node and its subtree,
 as the algorithm to select query component nodes treats `unknown` the same as `ingester-and-store-gateway`.
 
 ```mermaid
+---
+config:
+  theme: default
+---
+
 %%{init: {"flowchart": {"htmlLabels": false}} }%%
 
 graph TB
@@ -96,7 +101,6 @@ graph TB
     both<-->both-tenant1
     both<-->both-tenant2
 
-
 ```
 
 #### Enqueuing to the Tree Queue
@@ -127,6 +131,11 @@ Each of the two non-leaf levels of the tree uses a different algorithm to select
 #### Full Diagram
 
 ```mermaid
+---
+config:
+  theme: default
+---
+
 %%{init: {"flowchart": {"htmlLabels": false}} }%%
 
 graph TB
@@ -247,13 +256,11 @@ utilized by the queriers to fetch TSDB data for executing queries: ingesters and
 Ingesters serve requests for recent data, and store-gateways serve requests for older data.
 While queries can overlap the time periods of data fetched by both query components,
 many requests are served by only one of the two components.
-In particular, recording and alerting queries are typically focused on current system state
-and therefore often only require the recent data from ingesters.
 
 Ingesters and store-gateways tend to experience issues independently of each other,
 but when one component was in a degraded state, queries which only utilized the other component
 would still have to wait in the queue, leading to latency and ultimately timeouts and cancelletions
-for queries that should have been able to be serviced by the non-degraded query component.
+for queries that could have been serviced by the non-degraded query component.
 
 #### Phase 1: Query Component Selection by Round-Robin
 
@@ -286,6 +293,77 @@ we would dequeue an ingester query because the tenant selection had priority ove
 
 ##### Failure 2: Inability to Prevent Connection Pool Exhaustion (major)
 
+```mermaid
+---
+config:
+  gantt:
+    displayMode: compact
+    numberSectionStyles: 2
+  theme: default
+---
+gantt
+    title A Gantt Diagram
+    dateFormat ss
+    axisFormat %S
+    tickInterval 1second
+
+    section state
+        round-robin#colon; fast : milestone, m0, 00, 0s
+        round-robin#colon; slow : milestone, m1, 01, 0s
+        round-robin#colon; fast : milestone, m2, 02, 0s
+        round-robin#colon; slow : milestone, m3, 03, 0s
+        round-robin#colon; fast : milestone, m4, 04, 0s
+        round-robin#colon; slow : milestone, m5, 05, 0s
+        round-robin#colon; fast : milestone, m6, 06, 0s
+        round-robin#colon; slow : milestone, m7, 07, 0s
+        round-robin#colon; fast : milestone, m8, 08, 0s
+        round-robin#colon; fast : milestone, m9, 09, 0s
+        round-robin#colon; slow : milestone, m10, 10, 0s
+        round-robin#colon; fast : milestone, m11, 11, 0s
+        round-robin#colon; slow : milestone, m12, 12, 0s
+        round-robin#colon; fast : milestone, m13, 13, 0s
+        round-robin#colon; slow : milestone, m14, 14, 0s
+        round-robin#colon; fast : milestone, m15, 15, 0s
+        round-robin#colon; slow : milestone, m16, 16, 0s
+        round-robin#colon; fast : milestone, m17, 17, 0s
+        round-robin#colon; fast : milestone, m18, 18, 0s
+        round-robin#colon; slow : milestone, m19, 19, 0s
+
+    section consumer-1
+        process fast        :active, c1-1, 00, 1s
+        wait                :done, c1-2, 01, 3s
+        process fast        :active, c1-3, 04, 1s
+        wait                :done, c1-4, 05, 1s
+        process fast        :active, c1-5, 06, 1s
+        process slow        : c1-6, 07, 8s
+        process fast        :active, c1-7, 15, 1s
+        process slow...     : c1-8, 16, 4s
+
+    section consumer-2
+        wait                :done, c2-1, 00, 1s
+        process slow        : c2-2, 01, 8s
+        process fast        :active, c2-3, 09, 1s
+        process slow        : c2-4, 10, 8s
+        process fast        :active, c2-5, 18, 1s
+        process slow...     : c2-6, 19, 1s
+
+    section consumer-3
+        wait                :done, c3-1, 00, 2s
+        process fast        :active, c3-2, 02, 1s
+        wait                :done, c3-3, 03, 2s
+        process slow        : c3-4, 05, 8s
+        process fast        :active, c3-5, 13, 1s
+        process slow...     : c3-6, 14, 6s
+
+    section consumer-4
+        wait                :done, c4-1, 00, 3s
+        process slow        : c4-2, 03, 8s
+        process fast        :active, c4-3, 11, 1s
+        process slow        : c4-4, 12, 8s
+
+```
+
 <!--The structure had a simple hashmap mapping tenant IDs to a queue,-->
 <!--and rotated through a global list of active tenantIDs.-->
 <!--to select the next tenant sharded to the waiting querier.-->
+
