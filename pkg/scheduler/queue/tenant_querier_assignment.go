@@ -254,13 +254,13 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) *Node {
 	if node.isLeaf() || len(node.queueMap) == 0 {
 		return node
 	}
-
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == "" {
 		return nil
 	}
 
-	// tenantOrderIndex is set to the _last_ tenant we dequeued from; advance queue position for dequeue
+	// Before this point, tenantOrderIndex represents the _last_ tenant we dequeued from;
+	// here, we advance queue position to point to the index we _will_ dequeue from
 	tqa.tenantOrderIndex++
 	if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
 		tqa.tenantOrderIndex = 0

@@ -2,6 +2,10 @@
 
 package queue
 
+import (
+	"slices"
+)
+
 // QueuingAlgorithm represents the set of operations specific to different approaches to queuing/dequeuing. It is
 // applied at the layer-level -- every Node at the same depth in a MultiQueuingAlgorithmTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
@@ -51,10 +55,11 @@ func (rrs *roundRobinState) setup(_ *DequeueArgs) {
 // queuePosition. The new child is added at queuePosition - 1, and queuePosition is incremented to keep it pointed
 // to the same child.
 func (rrs *roundRobinState) addChildNode(parent, child *Node) {
-	// add childNode to n.queueMap
+	// add child to parent.queueMap
 	parent.queueMap[child.Name()] = child
 
-	parent.queueOrder = append(parent.queueOrder[:parent.queuePosition], append([]string{child.Name()}, parent.queueOrder[parent.queuePosition:]...)...)
+	// add child to queueOrder at queuePosition, behind the element previously at queuePosition
+	parent.queueOrder = slices.Insert(parent.queueOrder, parent.queuePosition, child.Name())
 
 	// if we added to a previously empty queueOrder, we want to keep the queuePosition at 0; otherwise, update
 	// n.queuePosition to point to the same element it was pointed at before.
@@ -86,23 +91,18 @@ func (rrs *roundRobinState) dequeueUpdateState(nodeToUpdate *Node, dequeuedFrom 
 		return
 	}
 
-	// corner case: if node == dequeuedFrom and is empty, we will try to delete a "child" (no-op),
-	// and won't increment position. This is fine, because if the node is empty, there's nothing to
-	// increment to.
-	childIsEmpty := dequeuedFrom.IsEmpty()
-
-	// if the child is empty, we should delete it, but not increment queue position, since removing an element
-	// from queueOrder sets our position to the next element already.
+	// if dequeuedFrom is an empty child node, we should delete it, but not increment queue position,
+	// since removing an element from queueOrder sets our position to the next element already.
+	childIsEmpty := dequeuedFrom != nodeToUpdate && dequeuedFrom.IsEmpty()
 	if childIsEmpty {
 		childName := dequeuedFrom.Name()
 		delete(nodeToUpdate.queueMap, childName)
-		for idx, name := range nodeToUpdate.queueOrder {
-			if name == childName {
-				nodeToUpdate.queueOrder = append(nodeToUpdate.queueOrder[:idx], nodeToUpdate.queueOrder[idx+1:]...)
-			}
+		// if the child is found in queueOrder, delete it
+		if childQueueIndex := slices.Index(nodeToUpdate.queueOrder, childName); childQueueIndex != -1 {
+			nodeToUpdate.queueOrder = slices.Delete(nodeToUpdate.queueOrder, childQueueIndex, childQueueIndex+1)
 		}
-
 	} else {
+		// no child deleted, update queue position to the next element
 		nodeToUpdate.queuePosition++
 	}
 
