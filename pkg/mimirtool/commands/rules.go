@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/term"
 	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
@@ -107,6 +108,7 @@ type RuleCommand struct {
 	Format string
 
 	DisableColor bool
+	ForceColor   bool
 
 	// Diff Rules Config
 	Verbose bool
@@ -206,12 +208,14 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Print Rules Command
 	printRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	printRulesCmd.Flag("force-color", "force colored output").BoolVar(&r.ForceColor)
 	printRulesCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Get RuleGroup Command
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup to retrieve.").Required().StringVar(&r.RuleGroup)
 	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	getRuleGroupCmd.Flag("force-color", "force colored output").BoolVar(&r.ForceColor)
 	getRuleGroupCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Delete RuleGroup Command
@@ -232,6 +236,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	diffRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	diffRulesCmd.Flag("force-color", "force colored output").BoolVar(&r.ForceColor)
 	diffRulesCmd.Flag("verbose", "show diff output with rules changes").BoolVar(&r.Verbose)
 
 	// Sync Command
@@ -281,6 +286,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	// List Command
 	listCmd.Flag("format", "Backend type to interact with: <json|yaml|table>").Default("table").EnumVar(&r.Format, formats...)
 	listCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	listCmd.Flag("force-color", "force colored output").BoolVar(&r.ForceColor)
 
 	// Delete Namespace Command
 	deleteNamespaceCmd.Arg("namespace", "Namespace to delete.").Required().StringVar(&r.Namespace)
@@ -383,7 +389,7 @@ func (r *RuleCommand) listRules(_ *kingpin.ParseContext) error {
 
 	}
 
-	p := printer.New(r.DisableColor)
+	p := printer.New(r.DisableColor, r.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 	return p.PrintRuleSet(rules, r.Format, os.Stdout)
 }
 
@@ -397,7 +403,7 @@ func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
 	}
 
-	p := printer.New(r.DisableColor)
+	p := printer.New(r.DisableColor, r.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 
 	if r.OutputDir != "" {
 		log.Infof("Output dir detected writing rules to directory: %s", r.OutputDir)
@@ -456,7 +462,7 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	p := printer.New(r.DisableColor)
+	p := printer.New(r.DisableColor, r.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 	return p.PrintRuleGroup(*group)
 }
 
@@ -591,7 +597,7 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 		})
 	}
 
-	p := printer.New(r.DisableColor)
+	p := printer.New(r.DisableColor, r.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 	return p.PrintComparisonResult(changes, r.Verbose)
 }
 

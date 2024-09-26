@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/term"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
@@ -43,6 +44,7 @@ type AlertmanagerCommand struct {
 	AlertmanagerConfigFile string
 	TemplateFiles          []string
 	DisableColor           bool
+	ForceColor             bool
 	ValidateOnly           bool
 	OutputDir              string
 	UTF8StrictMode         bool
@@ -81,6 +83,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	getAlertsCmd.Flag("force-color", "force colored output").BoolVar(&a.ForceColor)
 	getAlertsCmd.Flag("output-dir", "The directory where the config and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
 
 	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
@@ -98,6 +101,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	migrateCmd.Flag("force-color", "force colored output").BoolVar(&a.ForceColor)
 	migrateCmd.Flag("output-dir", "The directory where the migrated configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
 
 	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
@@ -153,7 +157,7 @@ func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
 	}
 
 	if a.OutputDir == "" {
-		p := printer.New(a.DisableColor)
+		p := printer.New(a.DisableColor, a.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 		return p.PrintAlertmanagerConfig(cfg, templates)
 	}
 	return a.outputAlertManagerConfigTemplates(cfg, templates)
@@ -253,7 +257,7 @@ func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
 		return fmt.Errorf("failed to migrate cfg: %w", err)
 	}
 	if a.OutputDir == "" {
-		p := printer.New(a.DisableColor)
+		p := printer.New(a.DisableColor, a.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 		return p.PrintAlertmanagerConfig(cfg, templates)
 	}
 	return a.outputAlertManagerConfigTemplates(cfg, templates)

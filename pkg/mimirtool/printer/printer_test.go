@@ -58,6 +58,8 @@ test-namespace-2 | test-rulegroup-d
 		name             string
 		giveDisableColor bool
 		giveFormat       string
+		giveIsTTY        bool
+		giveForceColor   bool
 		wantOutput       string
 	}{
 		{
@@ -69,7 +71,21 @@ test-namespace-2 | test-rulegroup-d
 		{
 			name:       "prints colorful json",
 			giveFormat: "json",
+			giveIsTTY:  true,
 			wantOutput: wantColoredJSONBuffer.String(),
+		},
+		{
+			name:       "prints colorless json on non-tty",
+			giveFormat: "json",
+			giveIsTTY:  false,
+			wantOutput: wantJSONOutput,
+		},
+		{
+			name:           "prints colorful json on non-tty with forced colors",
+			giveFormat:     "json",
+			giveIsTTY:      false,
+			giveForceColor: true,
+			wantOutput:     wantColoredJSONBuffer.String(),
 		},
 		{
 			name:             "prints colorless yaml",
@@ -80,7 +96,29 @@ test-namespace-2 | test-rulegroup-d
 		{
 			name:       "prints colorful yaml",
 			giveFormat: "yaml",
+			giveIsTTY:  true,
 			wantOutput: wantColoredYAMLBuffer.String(),
+		},
+		{
+			name:           "prints colorful yaml on non-tty with forced colors",
+			giveFormat:     "yaml",
+			giveIsTTY:      false,
+			giveForceColor: true,
+			wantOutput:     wantColoredYAMLBuffer.String(),
+		},
+		{
+			name:             "prints colorful yaml on tty with forced colors even if colors are disabled",
+			giveFormat:       "yaml",
+			giveIsTTY:        true,
+			giveDisableColor: true,
+			giveForceColor:   true,
+			wantOutput:       wantColoredYAMLBuffer.String(),
+		},
+		{
+			name:       "prints colorless yaml on non-tty",
+			giveFormat: "yaml",
+			giveIsTTY:  false,
+			wantOutput: wantYAMLOutput,
 		},
 		{
 			name:             "defaults to tabwriter",
@@ -93,7 +131,7 @@ test-namespace-2 | test-rulegroup-d
 		t.Run(tt.name, func(tst *testing.T) {
 			var b bytes.Buffer
 
-			p := New(tt.giveDisableColor)
+			p := New(tt.giveDisableColor, tt.giveForceColor, tt.giveIsTTY)
 			err := p.PrintRuleSet(giveRules, tt.giveFormat, &b)
 
 			require.NoError(tst, err)
