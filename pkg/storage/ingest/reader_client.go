@@ -18,7 +18,7 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 	opts = append(opts,
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(fetchMaxBytes), // these are unused by concurrent fetchers
-		kgo.FetchMaxWait(defaultMinBytesWaitTime),
+		kgo.FetchMaxWait(defaultMinBytesMaxWaitTime),
 		kgo.FetchMaxPartitionBytes(50_000_000), // these are unused by concurrent fetchers
 
 		// BrokerMaxReadBytes sets the maximum response size that can be read from

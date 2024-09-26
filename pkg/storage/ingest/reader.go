@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,8 +28,6 @@ import (
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -38,10 +37,10 @@ const (
 	// kafkaOffsetEnd is a special offset value that means the end of the partition.
 	kafkaOffsetEnd = int64(-1)
 
-	// defaultMinBytesWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
+	// defaultMinBytesMaxWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
 	// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
 	// Warpstream clamps this between 5s and 30s.
-	defaultMinBytesWaitTime = 5 * time.Second
+	defaultMinBytesMaxWaitTime = 5 * time.Second
 )
 
 var (
@@ -120,7 +119,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		metrics:                               newReaderMetrics(partitionID, reg),
 		consumedOffsetWatcher:                 newPartitionOffsetWatcher(),
-		concurrentFetchersMinBytesMaxWaitTime: defaultMinBytesWaitTime,
+		concurrentFetchersMinBytesMaxWaitTime: defaultMinBytesMaxWaitTime,
 		logger:                                log.With(logger, "partition", partitionID),
 		reg:                                   reg,
 	}
@@ -820,7 +819,7 @@ func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) 
 	default:
 		logger = level.Error(logger)
 	}
-	firstTimestamp, lastTimestamp := "", ""
+	var firstTimestamp, lastTimestamp string
 	if gotRecords > 0 {
 		firstTimestamp = fr.Records[0].Timestamp.String()
 		lastTimestamp = fr.Records[gotRecords-1].Timestamp.String()
@@ -855,20 +854,18 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
-// mergedWith merges fr with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
-func (fr *fetchResult) mergedWith(other fetchResult) fetchResult {
-	other.logMerged()
-	fr.Records = append(other.Records, fr.Records...)
-	// We ignore HighWatermark, LogStartOffset, LastStableOffset because this result should be more up to date.
-	fr.fetchedBytes += other.fetchedBytes
-	return *fr
-}
-
-func (fr *fetchResult) logMerged() {
-	if fr.ctx == nil {
-		return // maybe fr is just the zero value
+// mergedWith merges other with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
+func (fr *fetchResult) Merge(older fetchResult) fetchResult {
+	if fr.ctx != nil {
+		level.Debug(spanlogger.FromContext(fr.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
 	}
-	level.Debug(spanlogger.FromContext(fr.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
+
+	// older.Records are older than fr.Records, so we append them first.
+	fr.Records = append(older.Records, fr.Records...)
+
+	// We ignore HighWatermark, LogStartOffset, LastStableOffset because this result should be more up to date.
+	fr.fetchedBytes += older.fetchedBytes
+	return *fr
 }
 
 func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
@@ -1149,7 +1146,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
-			f = f.mergedWith(previousResult)
+			f = f.Merge(previousResult)
 			previousResult = f
 			if f.Err != nil {
 				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
@@ -1173,8 +1170,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			case <-ctx.Done():
 			default:
 				if w.startOffset >= w.endOffset {
-					// we've fetched all we were asked for;
-					// the whole batch is ready, and we definitely have to wait to send on the channel now
+					// We've fetched all we were asked for the whole batch is ready, and we definitely have to wait to send on the channel now.
 					f.startWaitingForConsumption()
 					select {
 					case w.result <- f:
