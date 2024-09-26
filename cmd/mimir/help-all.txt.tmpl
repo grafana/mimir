@@ -1921,16 +1921,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.mimir-query-engine.enable-aggregation-operations
     	[experimental] Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-binary-operations
-    	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-offset-modifier
-    	[experimental] Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-over-time-functions
-    	[experimental] Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-scalars
     	[experimental] Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
-  -querier.mimir-query-engine.enable-unary-negation
-    	[experimental] Enable support for unary negation in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
