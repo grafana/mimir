@@ -1901,16 +1901,23 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
-		labelRegex := strings.Join(labels, "|")
+		allLabelsRegex := strings.Join(labels, "|")
 		for _, op := range []string{"==", "!=", ">", "<", ">=", "<="} {
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s 10`, labelRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`1 %s series{label=~"(%s)"}`, op, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s Inf`, labelRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`-Inf %s series{label=~"(%s)"}`, op, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool -10`, labelRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`-1 %s bool series{label=~"(%s)"}`, op, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool Inf`, labelRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`-Inf %s bool series{label=~"(%s)"}`, op, labelRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s 10`, allLabelsRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`1 %s series{label=~"(%s)"}`, op, allLabelsRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s Inf`, allLabelsRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`-Inf %s series{label=~"(%s)"}`, op, allLabelsRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool -10`, allLabelsRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`-1 %s bool series{label=~"(%s)"}`, op, allLabelsRegex))
+			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool Inf`, allLabelsRegex, op))
+			expressions = append(expressions, fmt.Sprintf(`-Inf %s bool series{label=~"(%s)"}`, op, allLabelsRegex))
+
+			// vector / vector cases
+			vectorExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+			for _, label := range labels[1:] {
+				vectorExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
+			}
+			expressions = append(expressions, vectorExpr)
 		}
 	}
 
