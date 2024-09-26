@@ -1852,7 +1852,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
-	reader.concurrentFetchersMinBytesMaxWaitTime = time.Second
+	reader.concurrentFetchersMinBytesMaxWaitTime = 500 * time.Millisecond
 
 	return reader
 }
