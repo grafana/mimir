@@ -6672,7 +6672,7 @@
               "kind": "field",
               "name": "ongoing_fetch_concurrency",
               "required": false,
-              "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. 0 to disable.",
+              "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. It must be greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.ongoing-fetch-concurrency",

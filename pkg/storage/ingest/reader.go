@@ -243,9 +243,7 @@ func (r *PartitionReader) stopDependencies() error {
 }
 
 func (r *PartitionReader) run(ctx context.Context) error {
-	if r.kafkaCfg.OngoingFetchConcurrency > 0 {
-		r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
-	}
+	r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
 
 	for ctx.Err() == nil {
 		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
@@ -1279,6 +1277,8 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			refillBufferedResult = nil
 		}
 		select {
+		case <-r.done:
+			return
 		case <-ctx.Done():
 			return
 
