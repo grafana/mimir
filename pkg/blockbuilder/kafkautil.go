@@ -48,7 +48,7 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 	})
 	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffsetMillis points at.
 	for topic, pt := range startOffsets.Offsets() {
-		for partition := range pt {
+		for partition, startOffset := range pt {
 			if _, ok := offsets.Lookup(topic, partition); ok {
 				continue
 			}
@@ -59,6 +59,11 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 			o, ok := fallbackOffsets.Lookup(topic, partition)
 			if !ok {
 				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, topic)
+			}
+			if o.Offset < startOffset.At {
+				// Skip the resolved fallback offset if it's before the partition's start offset (i.e. before the earliest offset of the partition).
+				// This should not happen in Kafka, but can happen in Kafka-compatible systems, e.g. Warpstream.
+				continue
 			}
 			offsets.Add(kadm.OffsetResponse{Offset: kadm.Offset{
 				Topic:       o.Topic,
@@ -75,4 +80,41 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 		State: "Empty",
 	}
 	return kadm.CalculateGroupLagWithStartOffsets(descrGroup, offsets, startOffsets, endOffsets), nil
+}
+
+const (
+	kafkaCommitMetaV1 = 1
+)
+
+// commitRecTs: timestamp of the record which was committed (and not the commit time).
+// lastRecOffset: offset of the last record processed (which will be >= commit record offset).
+// blockEndTs: timestamp of the block end in this cycle.
+func marshallCommitMeta(commitRecTs, lastRecOffset, blockEndTs int64) string {
+	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecOffset, blockEndTs)
+}
+
+// commitRecTs: timestamp of the record which was committed (and not the commit time).
+// lastRecOffset: offset of the last record processed (which will be >= commit record offset).
+// blockEndTs: timestamp of the block end in this cycle.
+func unmarshallCommitMeta(s string) (commitRecTs, lastRecOffset, blockEndTs int64, err error) {
+	if s == "" {
+		return
+	}
+	var (
+		version int
+		metaStr string
+	)
+	_, err = fmt.Sscanf(s, "%d,%s", &version, &metaStr)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid commit metadata format: parse meta version: %w", err)
+	}
+
+	if version != kafkaCommitMetaV1 {
+		return 0, 0, 0, fmt.Errorf("unsupported commit meta version %d", version)
+	}
+	_, err = fmt.Sscanf(metaStr, "%d,%d,%d", &commitRecTs, &lastRecOffset, &blockEndTs)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid commit metadata format: %w", err)
+	}
+	return
 }

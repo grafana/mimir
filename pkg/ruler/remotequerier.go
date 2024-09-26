@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -75,6 +76,7 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
 
+	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
