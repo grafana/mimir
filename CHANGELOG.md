@@ -183,7 +183,7 @@
 ### Mimirtool
 
 * [CHANGE] Disable colored output on mimirtool when the output is not to a terminal. #9423
-* [CHANGE] Add `--force-color` flag to be able to enable colored output when the output is not to a terminal. #9119
+* [CHANGE] Add `--force-color` flag to be able to enable colored output when the output is not to a terminal. #9423
 * [CHANGE] Analyze Rules: Count recording rules used in rules group as used. #6133
 * [CHANGE] Remove deprecated `--rule-files` flag in favor of CLI arguments for the following commands: #8701
   * `mimirtool rules load`
