@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package activeseries
+package activeseriesmodel
 
 import (
 	"fmt"
@@ -66,16 +66,16 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		},
 	} {
 		t.Run(tc.series.String(), func(t *testing.T) {
-			got := asm.matches(tc.series)
+			got := asm.Matches(tc.series)
 			assert.Equal(t, tc.expected, preAllocDynamicSliceToSlice(got))
 		})
 	}
 }
 
-func preAllocDynamicSliceToSlice(prealloc preAllocDynamicSlice) []int {
-	slice := make([]int, prealloc.len())
-	for i := 0; i < prealloc.len(); i++ {
-		slice[i] = int(prealloc.get(i))
+func preAllocDynamicSliceToSlice(prealloc PreAllocDynamicSlice) []int {
+	slice := make([]int, prealloc.Len())
+	for i := 0; i < prealloc.Len(); i++ {
+		slice[i] = int(prealloc.Get(i))
 	}
 	return slice
 }
@@ -128,8 +128,8 @@ func BenchmarkMatchesSeries(b *testing.B) {
 			series := makeLabels(bc.total, bc.matching)
 			b.Run(fmt.Sprintf("TrackerCount: %d, Labels: %d, Matching: %d", trackerCount, bc.total, bc.matching), func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					got := asms[i].matches(series)
-					require.Equal(b, bc.matching, got.len())
+					got := asms[i].Matches(series)
+					require.Equal(b, bc.matching, got.Len())
 				}
 			})
 		}

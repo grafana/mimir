@@ -11,7 +11,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/util/configdoc"
 )
 
@@ -169,7 +169,7 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 // then gets confused.
 var ignoredStructTypes = []reflect.Type{
 	reflect.TypeOf(flagext.Secret{}),
-	reflect.TypeOf(activeseries.CustomTrackersConfig{}),
+	reflect.TypeOf(asmodel.CustomTrackersConfig{}),
 }
 
 func ignoreStructType(fieldType reflect.Type) bool {

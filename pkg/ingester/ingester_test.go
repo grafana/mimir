@@ -59,7 +59,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -74,8 +74,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
-	m, err := activeseries.NewCustomTrackersConfig(source)
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) asmodel.CustomTrackersConfig {
+	m, err := asmodel.NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
 }
@@ -9297,7 +9297,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs               []*mimirpb.WriteRequest
 		expectedMetrics    string
-		activeSeriesConfig activeseries.CustomTrackersConfig
+		activeSeriesConfig asmodel.CustomTrackersConfig
 		tenantLimits       *TenantLimitsMock
 	}{
 		"override flag based config with runtime overwrite": {

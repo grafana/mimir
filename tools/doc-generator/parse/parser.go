@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/objstore/providers/s3"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -365,7 +365,7 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
-	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
+	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
 		return "", false
@@ -451,7 +451,7 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
-	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
+	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
 		return "", false
