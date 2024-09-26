@@ -29,13 +29,13 @@ type Printer struct {
 }
 
 // New returns a Printer struct
-func New(color bool) *Printer {
+func New(disableColor bool, forceColor bool, isTTY bool) *Printer {
 	return &Printer{
-		disableColor: color,
+		disableColor: !forceColor && (disableColor || !isTTY),
 		colorizer: colorstring.Colorize{
 			Colors:  colorstring.DefaultColors,
 			Reset:   true,
-			Disable: color,
+			Disable: !forceColor && (disableColor || !isTTY),
 		},
 	}
 }
