@@ -1041,7 +1041,7 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 
 func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) kmsg.FetchRequest {
 	req := kmsg.NewFetchRequest()
-	req.MinBytes = 1
+	req.MinBytes = 1 // Warpstream ignores this field. This means that the WaitTime below is always waited and MaxBytes play a bigger role in how fast Ws responds.
 	req.Version = 13
 	req.MaxWaitMillis = int32(r.minBytesWaitTime / time.Millisecond)
 	req.MaxBytes = fw.MaxBytes()
