@@ -2399,7 +2399,7 @@ func createConcurrentFetchers(t *testing.T, ctx context.Context, client *kgo.Cli
 		concurrency,
 		recordsPerFetch,
 		false,
-		time.Second, // same order of magnitude as the real one (defaultMinBytesWaitTime), but faster for tests
+		time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 		offsetReader,
 		startOffsetsReader,
 		&metrics,
