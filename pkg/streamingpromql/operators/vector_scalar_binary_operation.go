@@ -87,7 +87,7 @@ func NewVectorScalarBinaryOperation(
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
 			//
-			// We deliberately ignore the histogram value as we need to treat it as if it was a float with value 0,
+			// We deliberately ignore the histogram value as we need to treat it as if it were a float with value 0,
 			// pending the resolution of the discussion in https://github.com/prometheus/prometheus/issues/13934#issuecomment-2372947976.
 			return vectorF, nil, ok, err
 		}
