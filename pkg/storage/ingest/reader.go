@@ -923,7 +923,9 @@ type concurrentFetchers struct {
 }
 
 func (r *concurrentFetchers) Stop() {
-	r.stop()
+	close(r.done)
+
+	r.wg.Wait()
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -995,7 +997,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records in
 		return
 	}
 
-	r.stop()
+	r.Stop()
 	r.done = make(chan struct{})
 
 	go r.start(ctx, r.lastReturnedRecord, concurrency, records)
@@ -1314,12 +1316,6 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			bufferedResult = fetchResult{}
 		}
 	}
-}
-
-func (r *concurrentFetchers) stop() {
-	close(r.done)
-
-	r.wg.Wait()
 }
 
 type waiter interface {
