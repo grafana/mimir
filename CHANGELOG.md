@@ -174,6 +174,8 @@
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 * [BUGFIX] Dashboards: avoid over-counting of ingesters metrics when migrating to experimental ingest storage. #9170
 * [BUGFIX] Dashboards: fix `job_prefix` not utilized in `jobSelector`. #9155
+* [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412
+* [BUGFIX] Alerts: Fix autoscaling metrics joins in `MimirAutoscalerNotActive` when series churn. #9412
 
 ### Jsonnet
 
