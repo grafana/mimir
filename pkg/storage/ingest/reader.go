@@ -953,11 +953,9 @@ func newConcurrentFetchers(
 	f := &concurrentFetchers{
 		client:               client,
 		logger:               logger,
-		concurrency:          concurrency,
 		topicName:            topic,
 		partitionID:          partition,
 		metrics:              metrics,
-		recordsPerFetch:      recordsPerFetch,
 		minBytesWaitTime:     minBytesWaitTime,
 		lastReturnedRecord:   noReturnedRecords,
 		startOffsets:         startOffsetsReader,
@@ -996,10 +994,6 @@ func newConcurrentFetchers(
 }
 
 func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records int) {
-	if r.concurrency == concurrency && r.recordsPerFetch == records {
-		return
-	}
-
 	r.Stop()
 	r.done = make(chan struct{})
 
