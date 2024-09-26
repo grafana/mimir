@@ -47,7 +47,7 @@ var testRoutes = []Route{
 
 type testComparator struct{}
 
-func (testComparator) Compare(_, _ []byte) (ComparisonResult, error) {
+func (testComparator) Compare(_, _ []byte, _ time.Time) (ComparisonResult, error) {
 	return ComparisonSuccess, nil
 }
 
