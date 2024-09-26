@@ -23,6 +23,41 @@
     // Allow to fine-tune which components gets deployed. This is useful when following the procedure
     // to rollout ingesters autoscaling with no downtime.
     ingest_storage_ingester_autoscaling_ingester_annotations_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
+
+    // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
+    ingest_storage_ingester_autoscaling_triggers: [
+      {
+        // Target ingesters in primary zone, ignoring read-write mode ingesters.
+        local sum_series_from_ready_pods = |||
+          sum(
+              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
+              and
+              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
+          )
+        |||,
+
+        local ratio_of_ready_pods_vs_all_replicas = |||
+          (
+              sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
+              /
+              scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
+          )
+        |||,
+
+        query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
+                + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
+          cluster: $._config.cluster,
+          namespace: $._config.namespace,
+          primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
+        },
+        threshold: std.toString($._config.ingest_storage_ingester_autoscaling_active_series_threshold),
+        metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
+      },
+    ],
+
+    // When set to false, metrics used by scaling triggers are only indexed if there is more than 1 trigger.
+    // When set to true, they are always indexed.
+    ingest_storage_ingester_autoscaling_index_metrics: false,
   },
 
   // Validate the configuration.
@@ -76,41 +111,23 @@
   // Define a ScaledObject for primary zone.
   //
 
-  newPartitionsPrimaryIngesterZoneScaledObject(primaryZone, min_replicas, max_replicas, active_series_threshold, targetResource)::
+  newPartitionsPrimaryIngesterZoneScaledObject(primaryZone, min_replicas, max_replicas, triggers, targetResource, indexMetrics)::
+    local formatTrigger(i, trigger, addIndexSuffix=false) = {
+      query: trigger.query,
+      metric_name: if addIndexSuffix then
+        'cortex_%s_replicas_hpa_%s_%d' % [std.strReplace(primaryZone, '-', '_'), std.strReplace($._config.namespace, '-', '_'), i]
+      else
+        'cortex_%s_replicas_hpa_%s' % [std.strReplace(primaryZone, '-', '_'), std.strReplace($._config.namespace, '-', '_')]
+      ,
+      threshold: trigger.threshold,
+      metric_type: trigger.metric_type,
+      ignore_null_values: false,  // Report error if query returns no value.
+    };
+
     local scaledObjectConfig = {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
-      triggers: [
-        {
-          // Target ingesters in primary zone, ignoring read-write mode ingesters.
-          local sum_series_from_ready_pods = |||
-            sum(
-                sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
-                and
-                sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
-            )
-          |||,
-
-          local ratio_of_ready_pods_vs_all_replicas = |||
-            (
-                sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
-                /
-                scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
-            )
-          |||,
-
-          query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
-                  + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
-            cluster: $._config.cluster,
-            namespace: $._config.namespace,
-            primary_zone: primaryZone,
-          },
-          metric_name: 'cortex_%s_replicas_hpa_%s' % [std.strReplace(primaryZone, '-', '_'), std.strReplace($._config.namespace, '-', '_')],
-          threshold: std.toString(active_series_threshold),
-          metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
-          ignore_null_values: false,  // Report error if query returns no value.
-        },
-      ],
+      triggers: std.mapWithIndex(function(ix, tr) formatTrigger(ix, tr, indexMetrics || std.length(triggers) > 1), triggers),
     };
 
     self.newScaledObject(primaryZone, $._config.namespace, scaledObjectConfig, apiVersion=targetResource.apiVersion, kind=targetResource.kind) +
@@ -152,8 +169,9 @@
       $._config.ingest_storage_ingester_autoscaling_primary_zone,
       $._config.ingest_storage_ingester_autoscaling_min_replicas_per_zone,
       $._config.ingest_storage_ingester_autoscaling_max_replicas_per_zone,
-      $._config.ingest_storage_ingester_autoscaling_active_series_threshold,
-      $.ingester_primary_zone_replica_template
+      $._config.ingest_storage_ingester_autoscaling_triggers,
+      $.ingester_primary_zone_replica_template,
+      $._config.ingest_storage_ingester_autoscaling_index_metrics,
     ),
 
   // Utility used to override a field only if exists in super.
