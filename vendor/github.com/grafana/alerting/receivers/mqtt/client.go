@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"time"
 
 	mqttLib "github.com/at-wat/mqtt-go"
@@ -63,10 +64,27 @@ func (c *mqttClient) Publish(ctx context.Context, message message) error {
 		return errors.New("failed to publish: client is not connected to the broker")
 	}
 
+	var mqttQoS mqttLib.QoS
+	var err error
+	switch message.qos {
+	case 0:
+		mqttQoS = mqttLib.QoS0
+	case 1:
+		mqttQoS = mqttLib.QoS1
+	case 2:
+		mqttQoS = mqttLib.QoS2
+	default:
+		err = fmt.Errorf("failed to publish: invalid QoS level %d", message.qos)
+	}
+
+	if err != nil {
+		return err
+	}
+
 	return c.client.Publish(ctx, &mqttLib.Message{
 		Topic:   message.topic,
-		QoS:     mqttLib.QoS0,
-		Retain:  false,
+		QoS:     mqttQoS,
+		Retain:  message.retain,
 		Payload: message.payload,
 	})
 }
