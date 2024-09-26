@@ -6654,7 +6654,7 @@
               "required": false,
               "desc": "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 15,
+              "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.startup-fetch-concurrency",
               "fieldType": "int"
             },
@@ -6674,7 +6674,7 @@
               "required": false,
               "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 2,
+              "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.ongoing-fetch-concurrency",
               "fieldType": "int"
             },

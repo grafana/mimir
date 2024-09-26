@@ -3863,7 +3863,7 @@ kafka:
   # The number of concurrent fetch requests that the ingester makes when reading
   # data from Kafka during startup. 0 to disable.
   # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
-  [startup_fetch_concurrency: <int> | default = 15]
+  [startup_fetch_concurrency: <int> | default = 0]
 
   # The number of records per fetch request that the ingester makes when reading
   # data from Kafka during startup. Depends on
@@ -3874,7 +3874,7 @@ kafka:
   # The number of concurrent fetch requests that the ingester makes when reading
   # data continuously from Kafka after startup. 0 to disable.
   # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
-  [ongoing_fetch_concurrency: <int> | default = 2]
+  [ongoing_fetch_concurrency: <int> | default = 0]
 
   # The number of records per fetch request that the ingester makes when reading
   # data continuously from Kafka after startup. Depends on
