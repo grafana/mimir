@@ -6,7 +6,6 @@ While the `RequestQueue`'s responsibilities are relatively broad, including the 
 querier-worker connection lifecycles and graceful startup/shutdown logic,
 the queuing logic is isolated into a "tree queue" structure and its associated queue algorithms.
 
-
 ### Tree Queue: What and Why
 
 The "tree queue" structure serves the purpose of a discrete priority queue.
@@ -15,16 +14,17 @@ each of which is located at a leaf node in the tree structure.
 
 The tree structure enables some of the specific requirements of our queue selection algorithms:
 
-* we must select a queue to dequeue from based on two independent algorithms, each with their own state
-* there is a hierarchy of importance between the two algorithms - one is primary, the other secondary
-* one of the algorithms (tenant-querier shuffle shard) can reject all queue options presented to it,
-requiring us to return back up to the previous level of queue selection to continue searching.
+- we must select a queue to dequeue from based on two independent algorithms, each with their own state
+- there is a hierarchy of importance between the two algorithms - one is primary, the other secondary
+- one of the algorithms (tenant-querier shuffle shard) can reject all queue options presented to it,
+  requiring us to return back up to the previous level of queue selection to continue searching.
 
 These requirements lend themselves to a search tree or decision tree structure;
 the levels of the tree express a clear hierarchy of decisonmaking between the two algorithms,
 and the depth-first traversal provides a familiar pattern for searching for a leaf node to dequeue from.
 
 #### Simplified Diagram
+
 For brevity, we omit the `unknown` query component node and its subtree,
 as the algorithm to select query component nodes treats `unknown` the same as `ingester-and-store-gateway`.
 
@@ -100,17 +100,19 @@ graph TB
 ```
 
 #### Enqueuing to the Tree Queue
+
 On enqueue, we bin requests into separate queues based on two static properties of the query request:
 
-* the "expected query component"
-  * `ingester`, `store-gateway`, `ingester-and-store-gateway`, or `unknown`
-* the tenant ID of the request
+- the "expected query component"
+  - `ingester`, `store-gateway`, `ingester-and-store-gateway`, or `unknown`
+- the tenant ID of the request
 
 These properties are used to place the request into a queue at a leaf node.
 For example, a request from tenant1 which is expected to only utilize ingesters
-will be enqueued at the leaf node reached by the path `root -> ingester -> tenant1`. 
+will be enqueued at the leaf node reached by the path `root -> ingester -> tenant1`.
 
 #### Dequeuing from the Tree Queue
+
 On dequeue, we perform a depth-first search of the tree structure to select a leaf node to dequeue from.
 Each of the two non-leaf levels of the tree uses a different algorithm to select the next child node.
 
@@ -118,7 +120,7 @@ Each of the two non-leaf levels of the tree uses a different algorithm to select
 1. At the next level down, the other algorithm attempts to choose a tenant-specific child node.
 1. If a tenant node is selected, the search dequeues from it as it has reached a leaf node.
 1. If no tenant node is selected, the search returns back up to the root node level
-and selects another query component child node to continue the search from.
+   and selects another query component child node to continue the search from.
 
 #### Full Diagram
 
@@ -228,6 +230,7 @@ graph TB
 
 The `RequestQueue` originally utilized only a single dimension of queue splitting, by tenant.
 The structure and queue selection served to accomplish two purposes:
+
 1. tenant fairness via a simple round-robin between all tenants with non-empty query request queues
 1. rudimentary tenant isolation via shuffle-sharding noisy tenants to only a subset of queriers
 
