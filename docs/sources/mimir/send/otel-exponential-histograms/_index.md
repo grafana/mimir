@@ -51,12 +51,12 @@ To ease the migration process, you can keep the custom bucket definition of an e
 
    ```
    v := sdkmetric.NewView(sdkmetric.Instrument{
-	   	Name: "request_latency",
-	   	Kind: sdkmetric.InstrumentKindHistogram,
-	   }, sdkmetric.Stream{
-		   Name: "request_latency_exp",
-		   Aggregation: sdkmetric.AggregationBase2ExponentialHistogram{MaxSize: 160, NoMinMax: true, MaxScale: 20},
-	   })
+      	Name: "request_latency",
+      	Kind: sdkmetric.InstrumentKindHistogram,
+      }, sdkmetric.Stream{
+   	   Name: "request_latency_exp",
+   	   Aggregation: sdkmetric.AggregationBase2ExponentialHistogram{MaxSize: 160, NoMinMax: true, MaxScale: 20},
+      })
    ```
 
    For more information about creating a view, refer to [View](https://opentelemetry.io/docs/specs/otel/metrics/sdk/#view) in the OpenTelemetry Metrics SDK.
