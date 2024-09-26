@@ -24,7 +24,7 @@ import (
 )
 
 type ResponsesComparator interface {
-	Compare(expected, actual []byte) (ComparisonResult, error)
+	Compare(expected, actual []byte, queryEvaluationTime time.Time) (ComparisonResult, error)
 }
 
 type ProxyEndpoint struct {
@@ -102,14 +102,15 @@ func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
 	var (
-		wg           = sync.WaitGroup{}
-		err          error
-		body         []byte
-		responses    = make([]*backendResponse, 0, len(backends))
-		responsesMtx = sync.Mutex{}
-		timingMtx    = sync.Mutex{}
-		query        = req.URL.RawQuery
-		logger, ctx  = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming proxied request")
+		wg             = sync.WaitGroup{}
+		err            error
+		body           []byte
+		responses      = make([]*backendResponse, 0, len(backends))
+		responsesMtx   = sync.Mutex{}
+		timingMtx      = sync.Mutex{}
+		query          = req.URL.RawQuery
+		logger, ctx    = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming proxied request")
+		evaluationTime = time.Now()
 	)
 
 	defer logger.Finish()
@@ -258,7 +259,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 			expectedResponse, actualResponse = actualResponse, expectedResponse
 		}
 
-		result, err := p.compareResponses(expectedResponse, actualResponse)
+		result, err := p.compareResponses(expectedResponse, actualResponse, evaluationTime)
 		if result == ComparisonFailed {
 			level.Error(logger).Log(
 				"msg", "response comparison failed",
@@ -314,7 +315,7 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 	return firstResponse
 }
 
-func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse) (ComparisonResult, error) {
+func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse, queryEvaluationTime time.Time) (ComparisonResult, error) {
 	if expectedResponse.err != nil {
 		return ComparisonFailed, fmt.Errorf("skipped comparison of response because the request to the preferred backend failed: %w", expectedResponse.err)
 	}
@@ -335,7 +336,7 @@ func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backe
 		return ComparisonSkipped, fmt.Errorf("skipped comparison of response because the response from the secondary backend contained an unexpected content type '%s', expected 'application/json'", actualResponse.contentType)
 	}
 
-	return p.comparator.Compare(expectedResponse.body, actualResponse.body)
+	return p.comparator.Compare(expectedResponse.body, actualResponse.body, queryEvaluationTime)
 }
 
 type backendResponse struct {

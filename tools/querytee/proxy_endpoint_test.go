@@ -704,7 +704,7 @@ type mockComparator struct {
 	comparisonError  error
 }
 
-func (m *mockComparator) Compare(_, _ []byte) (ComparisonResult, error) {
+func (m *mockComparator) Compare(_, _ []byte, _ time.Time) (ComparisonResult, error) {
 	return m.comparisonResult, m.comparisonError
 }
 
