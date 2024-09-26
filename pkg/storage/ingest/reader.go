@@ -65,7 +65,14 @@ type recordConsumer interface {
 }
 
 type fetcher interface {
-	pollFetches(context.Context) (kgo.Fetches, context.Context)
+	// PollFetches fetches records from Kafka and returns them.
+	PollFetches(context.Context) (kgo.Fetches, context.Context)
+
+	// Update updates the fetcher with the given concurrency and records.
+	Update(ctx context.Context, concurrency, records int)
+
+	// Stop stops the fetcher.
+	Stop()
 }
 
 type PartitionReader struct {
@@ -92,6 +99,14 @@ type PartitionReader struct {
 
 	logger log.Logger
 	reg    prometheus.Registerer
+}
+
+func (r *PartitionReader) Stop() {
+	// Given the partition reader has no concurrency it doesn't support stopping anything.
+}
+
+func (r *PartitionReader) Update(_ context.Context, _, _ int) {
+	// Given the partition reader has no concurrency it doesn't support updates.
 }
 
 type consumerFactoryFunc func() recordConsumer
@@ -179,10 +194,10 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		return errors.Wrap(err, "starting service manager")
 	}
 
-	if r.kafkaCfg.FetchConcurrency > 1 {
-		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.FetchConcurrency, r.kafkaCfg.RecordsPerFetch, r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
+	if r.kafkaCfg.StartupFetchConcurrency > 0 {
+		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.StartupFetchConcurrency, r.kafkaCfg.StartupRecordsPerFetch, r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
 		if err != nil {
-			return errors.Wrap(err, "creating concurrent fetchers")
+			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
 	} else {
 		r.fetcher = r
@@ -215,6 +230,8 @@ func (r *PartitionReader) stopDependencies() error {
 		}
 	}
 
+	r.fetcher.Stop()
+
 	if r.client != nil {
 		r.client.Close()
 	}
@@ -223,6 +240,10 @@ func (r *PartitionReader) stopDependencies() error {
 }
 
 func (r *PartitionReader) run(ctx context.Context) error {
+	if r.kafkaCfg.OngoingFetchConcurrency > 0 {
+		r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
+	}
+
 	for ctx.Err() == nil {
 		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
 		if err != nil && !errors.Is(err, context.Canceled) {
@@ -235,7 +256,7 @@ func (r *PartitionReader) run(ctx context.Context) error {
 }
 
 func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
-	fetches, fetchCtx := r.fetcher.pollFetches(ctx)
+	fetches, fetchCtx := r.fetcher.PollFetches(ctx)
 	// Propagate the fetching span to consuming the records.
 	ctx = opentracing.ContextWithSpan(ctx, opentracing.SpanFromContext(fetchCtx))
 	r.recordFetchesMetrics(fetches, delayObserver)
@@ -714,7 +735,7 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 	return err
 }
 
-func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches, ctx2 context.Context) {
+func (r *PartitionReader) PollFetches(ctx context.Context) (result kgo.Fetches, ctx2 context.Context) {
 	defer func(start time.Time) {
 		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -878,6 +899,9 @@ func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
 }
 
 type concurrentFetchers struct {
+	wg   sync.WaitGroup
+	done chan struct{}
+
 	client      *kgo.Client
 	logger      log.Logger
 	partitionID int32
@@ -898,6 +922,10 @@ type concurrentFetchers struct {
 	trackCompressedBytes bool
 }
 
+func (r *concurrentFetchers) Stop() {
+	r.stop()
+}
+
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
 func newConcurrentFetchers(
 	ctx context.Context,
@@ -916,6 +944,7 @@ func newConcurrentFetchers(
 ) (*concurrentFetchers, error) {
 
 	const noReturnedRecords = -1 // we still haven't returned the 0 offset.
+
 	f := &concurrentFetchers{
 		client:               client,
 		logger:               logger,
@@ -955,12 +984,22 @@ func newConcurrentFetchers(
 	}
 	f.topicID = topics[topic].ID
 
-	go f.runFetchers(ctx, startOffset)
+	go f.start(ctx, startOffset, concurrency, recordsPerFetch)
 
 	return f, nil
 }
 
-func (r *concurrentFetchers) pollFetches(ctx context.Context) (kgo.Fetches, context.Context) {
+func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records int) {
+	if r.concurrency == concurrency && r.recordsPerFetch == records {
+		return
+	}
+
+	r.stop()
+
+	go r.start(ctx, r.lastReturnedRecord, concurrency, records)
+}
+
+func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, context.Context) {
 	waitStartTime := time.Now()
 	select {
 	case <-ctx.Done():
@@ -1129,8 +1168,9 @@ func sumRecordLengths(records []*kgo.Record) (sum int) {
 	return sum
 }
 
-func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.WaitGroup, wants chan fetchWant, logger log.Logger) {
-	defer fetchersWg.Done()
+func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger) {
+	defer r.wg.Done()
+
 	errBackoff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 250 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
@@ -1154,10 +1194,21 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			if f.Err != nil {
 				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
 			}
+
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
 				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
 				attemptSpan.Finish()
+
+				// There is a chance we've been told to stop even when we have no records.
+				select {
+				case <-r.done:
+					wantSpan.Finish()
+					close(w.result)
+					return
+				default:
+				}
+
 				continue
 			}
 			// Next attempt will be from the last record onwards.
@@ -1168,6 +1219,11 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			errBackoff.Reset()
 
 			select {
+			case <-r.done:
+				wantSpan.Finish()
+				attemptSpan.Finish()
+				close(w.result)
+				return
 			case w.result <- f:
 				previousResult = fetchResult{}
 			case <-ctx.Done():
@@ -1176,6 +1232,11 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 					// We've fetched all we were asked for the whole batch is ready, and we definitely have to wait to send on the channel now.
 					f.startWaitingForConsumption()
 					select {
+					case <-r.done:
+						wantSpan.Finish()
+						attemptSpan.Finish()
+						close(w.result)
+						return
 					case w.result <- f:
 						previousResult = fetchResult{}
 					case <-ctx.Done():
@@ -1189,20 +1250,19 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 	}
 }
 
-func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
-	fetchersWg := &sync.WaitGroup{}
-	fetchersWg.Add(r.concurrency)
-	defer fetchersWg.Wait()
+func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
+	r.done = make(chan struct{})
+	r.wg.Add(concurrency)
 
 	wants := make(chan fetchWant)
 	defer close(wants)
-	for i := 0; i < r.concurrency; i++ {
+	for i := 0; i < concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
-		go r.runFetcher(ctx, fetchersWg, wants, logger)
+		go r.run(ctx, wants, logger)
 	}
 
 	var (
-		nextFetch      = fetchWantFrom(startOffset, r.recordsPerFetch)
+		nextFetch      = fetchWantFrom(startOffset, recordsPerFetch)
 		nextResult     chan fetchResult
 		pendingResults = list.New()
 
@@ -1219,6 +1279,8 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			refillBufferedResult = nil
 		}
 		select {
+		case <-r.done:
+			return
 		case <-ctx.Done():
 			return
 
@@ -1229,7 +1291,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				nextResult = pendingResults.Front().Value.(chan fetchResult)
 				pendingResults.Remove(pendingResults.Front())
 			}
-			nextFetch = nextFetch.Next(r.recordsPerFetch)
+			nextFetch = nextFetch.Next(recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
@@ -1251,6 +1313,12 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			bufferedResult = fetchResult{}
 		}
 	}
+}
+
+func (r *concurrentFetchers) stop() {
+	close(r.done)
+
+	r.wg.Wait()
 }
 
 type waiter interface {

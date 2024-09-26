@@ -2159,7 +2159,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
 
 		// This should not block forever now
-		fetches, fetchCtx := fetchers.pollFetches(ctx)
+		fetches, fetchCtx := fetchers.PollFetches(ctx)
 
 		assert.Zero(t, fetches.NumRecords())
 		assert.Error(t, fetchCtx.Err(), "Expected context to be cancelled")
@@ -2179,7 +2179,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
 
-		fetches, _ := fetchers.pollFetches(ctx)
+		fetches, _ := fetchers.PollFetches(ctx)
 		assert.Equal(t, fetches.NumRecords(), 5)
 	})
 
@@ -2197,7 +2197,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 		}
 
-		fetches, _ := fetchers.pollFetches(ctx)
+		fetches, _ := fetchers.PollFetches(ctx)
 		assert.Equal(t, fetches.NumRecords(), 3)
 	})
 
@@ -2221,7 +2221,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			defer wg.Done()
 			consumedRecords := 0
 			for consumedRecords < 10 {
-				fetches, _ := fetchers.pollFetches(ctx)
+				fetches, _ := fetchers.PollFetches(ctx)
 				time.Sleep(1000 * time.Millisecond) // Simulate slow processing
 				consumedRecords += fetches.NumRecords()
 			}
@@ -2256,7 +2256,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			defer wg.Done()
 			consumedRecords := 0
 			for consumedRecords < 10 {
-				fetches, _ := fetchers.pollFetches(ctx)
+				fetches, _ := fetchers.PollFetches(ctx)
 				consumedRecords += fetches.NumRecords()
 				// no processing delay
 			}
@@ -2284,7 +2284,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 				var totalRecords int
 				for totalRecords < 20 {
-					fetches, _ := fetchers.pollFetches(ctx)
+					fetches, _ := fetchers.PollFetches(ctx)
 					totalRecords += fetches.NumRecords()
 				}
 
@@ -2319,7 +2319,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		const expectedRecords = 5
 		fetchedRecordsContents := make([]string, 0, expectedRecords)
 		for len(fetchedRecordsContents) < expectedRecords {
-			fetches, _ := fetchers.pollFetches(ctx)
+			fetches, _ := fetchers.PollFetches(ctx)
 			fetches.EachRecord(func(r *kgo.Record) {
 				fetchedRecordsContents = append(fetchedRecordsContents, string(r.Value))
 			})
@@ -2358,7 +2358,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			// Poll for fetches and verify
 			fetchedRecords := make([]string, 0, recordsPerRound)
 			for len(fetchedRecords) < recordsPerRound {
-				fetches, _ := fetchers.pollFetches(ctx)
+				fetches, _ := fetchers.PollFetches(ctx)
 				fetches.EachRecord(func(r *kgo.Record) {
 					fetchedRecords = append(fetchedRecords, string(r.Value))
 					t.Log("fetched", r.Offset, string(r.Value))
@@ -2368,6 +2368,46 @@ func TestConcurrentFetchers(t *testing.T) {
 			// Verify fetched records
 			assert.Equal(t, expectedRecords, fetchedRecords, "Fetched records in round %d do not match expected", round)
 		}
+	})
+
+	t.Run("concurrency can be updated", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		rec1 := []byte(fmt.Sprintf("record-1"))
+		rec2 := []byte(fmt.Sprintf("record-2"))
+		rec3 := []byte(fmt.Sprintf("record-3"))
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		produceRecordAndAssert := func(record []byte) {
+			producedOffset := produceRecord(ctx, t, client, topicName, partitionID, record)
+			// verify that the record is fetched.
+
+			var fetches kgo.Fetches
+			require.Eventually(t, func() bool {
+				fetches, _ = fetchers.PollFetches(ctx)
+				return len(fetches.Records()) == 1
+			}, 5*time.Second, 100*time.Millisecond)
+
+			require.Equal(t, fetches.Records()[0].Value, record)
+			require.Equal(t, fetches.Records()[0].Offset, producedOffset)
+		}
+
+		// Ensure that the fetchers work with the initial concurrency.
+		produceRecordAndAssert(rec1)
+
+		// Now, update the concurrency.
+		fetchers.Update(ctx, 1, 1)
+
+		// Ensure that the fetchers work with the updated concurrency.
+		produceRecordAndAssert(rec2)
+
+		// Update and verify again.
+		fetchers.Update(ctx, 10, 10)
+		produceRecordAndAssert(rec3)
+
 	})
 
 }

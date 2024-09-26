@@ -93,8 +93,11 @@ type KafkaConfig struct {
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
 
-	FetchConcurrency                  int  `yaml:"fetch_concurrency"`
-	RecordsPerFetch                   int  `yaml:"records_per_fetch"`
+	StartupFetchConcurrency int `yaml:"startup_fetch_concurrency"`
+	StartupRecordsPerFetch  int `yaml:"startup_records_per_fetch"`
+	OngoingFetchConcurrency int `yaml:"ongoing_fetch_concurrency"`
+	OngoingRecordsPerFetch  int `yaml:"ongoing_records_per_fetch"`
+
 	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 	IngestionConcurrency              int  `yaml:"ingestion_concurrency"`
 	IngestionConcurrencyBatchSize     int  `yaml:"ingestion_concurrency_batch_size"`
@@ -132,8 +135,12 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.Int64Var(&cfg.ProducerMaxBufferedBytes, prefix+".producer-max-buffered-bytes", 1024*1024*1024, "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.")
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+".wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
-	f.IntVar(&cfg.FetchConcurrency, prefix+".fetch-concurrency", 1, "The number of concurrent fetch requests that the ingester sends to Kafka when catching up during startup.")
-	f.IntVar(&cfg.RecordsPerFetch, prefix+".records-per-fetch", 128, "The number of records to fetch from Kafka in a single request.")
+
+	f.IntVar(&cfg.StartupFetchConcurrency, prefix+".startup-fetch-concurrency", 15, "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.")
+	f.IntVar(&cfg.StartupRecordsPerFetch, prefix+".startup-records-per-fetch", 2500, "The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on "+prefix+".startup-fetch-concurrency being greater than 0.")
+	f.IntVar(&cfg.OngoingFetchConcurrency, prefix+".ongoing-fetch-concurrency", 2, "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. 0 to disable.")
+	f.IntVar(&cfg.OngoingRecordsPerFetch, prefix+".ongoing-records-per-fetch", 30, "The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on "+prefix+".ongoing-fetch-concurrency being greater than 0.")
+
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 	f.IntVar(&cfg.IngestionConcurrency, prefix+".ingestion-concurrency", 0, "The number of concurrent ingestion streams to the TSDB head. 0 to disable.")
 	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+".ingestion-concurrency-batch-size", 128, "The number of timeseries to batch together before ingesting into TSDB. This is only used when ingestion-concurrency is greater than 0.")
