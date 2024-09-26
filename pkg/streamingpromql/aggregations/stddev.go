@@ -51,7 +51,7 @@ func (g *StddevAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	for _, p := range data.Floats {
-		idx := timeRange.PointIdx(p.T)
+		idx := timeRange.PointIndex(p.T)
 
 		g.groupSeriesCounts[idx]++
 		delta := p.F - g.floatMeans[idx]
@@ -81,7 +81,7 @@ func (g *StddevAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRa
 
 		for i, sc := range g.groupSeriesCounts {
 			if sc > 0 {
-				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				f := math.Sqrt(g.floats[i] / g.groupSeriesCounts[i])
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}

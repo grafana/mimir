@@ -70,14 +70,14 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	for _, p := range data.Floats {
-		idx := timeRange.PointIdx(p.T)
+		idx := timeRange.PointIndex(p.T)
 		g.accumulatePoint(idx, p.F)
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
 	// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
-		idx := timeRange.PointIdx(p.T)
+		idx := timeRange.PointIndex(p.T)
 		g.accumulatePoint(idx, 0)
 	}
 
@@ -102,7 +102,7 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRa
 
 		for i, havePoint := range g.floatPresent {
 			if havePoint {
-				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				f := g.floatValues[i]
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}

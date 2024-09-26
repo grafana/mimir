@@ -187,7 +187,7 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 			break
 		}
 
-		scalarIdx := (t - v.timeRange.StartT) / v.timeRange.IntervalMs // Scalars always have a value at every step, so we can just compute the index of the corresponding scalar value from the timestamp.
+		scalarIdx := (t - v.timeRange.StartT) / v.timeRange.IntervalMilliseconds // Scalars always have a value at every step, so we can just compute the index of the corresponding scalar value from the timestamp.
 		scalarValue := v.scalarData.Samples[scalarIdx].F
 
 		f, h, ok, err := v.opFunc(scalarValue, vectorF, vectorH)

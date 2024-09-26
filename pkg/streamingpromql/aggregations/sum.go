@@ -68,7 +68,7 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	}
 
 	for _, p := range data.Floats {
-		idx := timeRange.PointIdx(p.T)
+		idx := timeRange.PointIndex(p.T)
 		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
@@ -90,7 +90,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 	}
 
 	for inputIdx, p := range data.Histograms {
-		outputIdx := timeRange.PointIdx(p.T)
+		outputIdx := timeRange.PointIndex(p.T)
 
 		if g.histogramSums[outputIdx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
@@ -193,7 +193,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange
 
 		for i, havePoint := range g.floatPresent {
 			if havePoint {
-				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				f := g.floatSums[i] + g.floatCompensatingValues[i]
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
@@ -209,7 +209,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange
 
 		for i, h := range g.histogramSums {
 			if h != nil && h != invalidCombinationOfHistograms {
-				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
 			}
 		}

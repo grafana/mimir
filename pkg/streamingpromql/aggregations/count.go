@@ -54,11 +54,11 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 	}
 
 	for _, p := range data.Floats {
-		g.accumulatePoint(timeRange.PointIdx(p.T))
+		g.accumulatePoint(timeRange.PointIndex(p.T))
 	}
 
 	for _, p := range data.Histograms {
-		g.accumulatePoint(timeRange.PointIdx(p.T))
+		g.accumulatePoint(timeRange.PointIndex(p.T))
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
@@ -82,7 +82,7 @@ func (g *CountGroupAggregationGroup) ComputeOutputSeries(timeRange types.QueryTi
 
 		for i, fv := range g.values {
 			if fv > 0 {
-				t := timeRange.StartT + int64(i)*timeRange.IntervalMs
+				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: fv})
 			}
 		}

@@ -248,7 +248,7 @@ func TestQueryTimeRange(t *testing.T) {
 
 	startTime := time.Now()
 	testCases := map[string]testCase{
-		"Instant Query": {
+		"Instant query": {
 			start:         startTime,
 			end:           startTime,
 			interval:      0,
@@ -259,7 +259,7 @@ func TestQueryTimeRange(t *testing.T) {
 			testTimes:     []time.Time{startTime},
 			expectedIdxs:  []int64{0},
 		},
-		"Range Query with 15-minute Interval": {
+		"Range query with 15-minute interval": {
 			start:         startTime,
 			end:           startTime.Add(time.Hour),
 			interval:      time.Minute * 15,
@@ -290,12 +290,12 @@ func TestQueryTimeRange(t *testing.T) {
 
 			require.Equal(t, tc.expectedStart, qtr.StartT, "StartT matches")
 			require.Equal(t, tc.expectedEnd, qtr.EndT, "EndT matches")
-			require.Equal(t, tc.expectedIntMs, qtr.IntervalMs, "IntervalMs matches")
+			require.Equal(t, tc.expectedIntMs, qtr.IntervalMilliseconds, "IntervalMs matches")
 			require.Equal(t, tc.expectedSteps, qtr.StepCount, "StepCount matches")
 
 			for i, tt := range tc.testTimes {
 				ts := timestamp.FromTime(tt)
-				pointIdx := qtr.PointIdx(ts)
+				pointIdx := qtr.PointIndex(ts)
 				expectedIdx := tc.expectedIdxs[i]
 				require.Equal(t, expectedIdx, pointIdx, "PointIdx matches for time %v", tt)
 			}
