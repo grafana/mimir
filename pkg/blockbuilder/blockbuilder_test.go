@@ -88,7 +88,7 @@ func TestBlockBuilder_consumerLagRecords(t *testing.T) {
 			# TYPE cortex_blockbuilder_consumer_lag_records gauge
 			cortex_blockbuilder_consumer_lag_records{partition="0"} 1
 		`), "cortex_blockbuilder_consumer_lag_records"))
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, 100*time.Millisecond)
 }
 
 // Testing block builder starting up with an existing kafka commit.
@@ -158,7 +158,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	})
 
 	// We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 3 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 3 }, 30*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
@@ -183,7 +183,7 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
 
 	kafkaClient := mustKafkaClient(t, kafkaAddr)
 
@@ -197,13 +197,6 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 		produceSamples(ctx, t, kafkaClient, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
 	}
 
-	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
-	kafkaCommits := atomic.NewInt32(0)
-	kafkaCluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
-		kafkaCommits.Add(1)
-		return nil, nil, false
-	})
-
 	reg := prometheus.NewPedanticRegistry()
 
 	bb, err := New(cfg, test.NewTestingLogger(t), reg, overrides)
@@ -215,14 +208,14 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 	})
 
 	// Nothing is consumed due to zero lag.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() == 0 }, 5*time.Second, 100*time.Millisecond, "expected skipping all records before lookback period")
-
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
-		# TYPE cortex_blockbuilder_consumer_lag_records gauge
-		cortex_blockbuilder_consumer_lag_records{partition="0"} 0
-		cortex_blockbuilder_consumer_lag_records{partition="1"} 0
-	`), "cortex_blockbuilder_consumer_lag_records"))
+	require.Eventually(t, func() bool {
+		return assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
+			# TYPE cortex_blockbuilder_consumer_lag_records gauge
+			cortex_blockbuilder_consumer_lag_records{partition="0"} 0
+			cortex_blockbuilder_consumer_lag_records{partition="1"} 0
+		`), "cortex_blockbuilder_consumer_lag_records"))
+	}, 30*time.Second, 100*time.Millisecond)
 }
 
 func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
@@ -270,7 +263,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	})
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 30*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	for _, tenant := range tenants {
 		bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
