@@ -10,8 +10,6 @@ import (
 type QueuePath []string //nolint:revive // disallows types beginning with package name
 type QueueIndex int     //nolint:revive // disallows types beginning with package name
 
-const localQueueIndex = -1
-
 type Tree interface {
 	EnqueueFrontByPath(QueuePath, any) error
 	EnqueueBackByPath(QueuePath, any) error
@@ -157,7 +155,6 @@ func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
 	n := &Node{
 		name:             name,
 		localQueue:       nil,
-		queuePosition:    localQueueIndex,
 		height:           height,
 		queuingAlgorithm: da,
 	}
