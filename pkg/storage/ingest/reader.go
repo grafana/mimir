@@ -856,8 +856,8 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 
 // Merge merges other with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
 func (fr *fetchResult) Merge(older fetchResult) fetchResult {
-	if fr.ctx != nil {
-		level.Debug(spanlogger.FromContext(fr.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
+	if older.ctx != nil {
+		level.Debug(spanlogger.FromContext(older.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
 	}
 
 	// older.Records are older than fr.Records, so we append them first.
