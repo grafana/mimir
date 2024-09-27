@@ -23,7 +23,7 @@ import (
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
 func TestMain(m *testing.M) {
@@ -1025,7 +1025,7 @@ user1:
 }
 
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
+	expectedConfig, err := asmodel.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")
 	cfg := `
     user:

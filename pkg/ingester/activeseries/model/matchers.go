@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package activeseries
+package activeseriesmodel
 
 import (
 	"sort"
@@ -35,15 +35,15 @@ func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 
-// matches returns a PreAllocDynamicSlice containing only matcher indexes which are matching
-func (m *Matchers) matches(series labels.Labels) preAllocDynamicSlice {
+// Matches returns a PreAllocDynamicSlice containing only matcher indexes which are matching
+func (m *Matchers) Matches(series labels.Labels) PreAllocDynamicSlice {
 	if len(m.matchers) == 0 {
-		return preAllocDynamicSlice{}
+		return PreAllocDynamicSlice{}
 	}
-	var matches preAllocDynamicSlice
+	var matches PreAllocDynamicSlice
 	for i, sm := range m.matchers {
 		if sm.Matches(series) {
-			matches.append(i)
+			matches.Append(i)
 		}
 	}
 	return matches
@@ -83,17 +83,17 @@ func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
 
 const preAllocatedSize = 3
 
-// preAllocDynamicSlice is a slice-like uint16 data structure that allocates space for the first `preAllocatedSize` elements.
+// PreAllocDynamicSlice is a slice-like uint16 data structure that allocates space for the first `preAllocatedSize` elements.
 // When more than `preAllocatedSize` elements are appended, it allocates a slice that escapes to heap.
 // This trades in extra allocated space (2x more with `preAllocatedSize=3`) for zero-allocations in most of the cases,
 // relying on the assumption that most of the matchers will not match more than `preAllocatedSize` trackers.
-type preAllocDynamicSlice struct {
+type PreAllocDynamicSlice struct {
 	arr  [preAllocatedSize]uint16
 	arrl byte
 	rest []uint16
 }
 
-func (fs *preAllocDynamicSlice) append(val int) {
+func (fs *PreAllocDynamicSlice) Append(val int) {
 	if fs.arrl < preAllocatedSize {
 		fs.arr[fs.arrl] = uint16(val)
 		fs.arrl++
@@ -102,13 +102,13 @@ func (fs *preAllocDynamicSlice) append(val int) {
 	fs.rest = append(fs.rest, uint16(val))
 }
 
-func (fs *preAllocDynamicSlice) get(idx int) uint16 {
+func (fs *PreAllocDynamicSlice) Get(idx int) uint16 {
 	if idx < preAllocatedSize {
 		return fs.arr[idx]
 	}
 	return fs.rest[idx-preAllocatedSize]
 }
 
-func (fs *preAllocDynamicSlice) len() int {
+func (fs *PreAllocDynamicSlice) Len() int {
 	return int(fs.arrl) + len(fs.rest)
 }

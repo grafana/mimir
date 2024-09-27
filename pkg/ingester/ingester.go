@@ -52,6 +52,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -761,7 +762,7 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchers(asm *activeseries.Matchers, userDB *userTSDB, now time.Time) {
+func (i *Ingester) replaceMatchers(asm *asmodel.Matchers, userDB *userTSDB, now time.Time) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
 	userDB.activeSeries.ReloadMatchers(asm, now)
 }
@@ -775,7 +776,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
-			i.replaceMatchers(activeseries.NewMatchers(newMatchersConfig), userDB, now)
+			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
 		}
 		valid := userDB.activeSeries.Purge(now)
 		if !valid {
@@ -2629,7 +2630,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	userDB := &userTSDB{
 		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
+		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

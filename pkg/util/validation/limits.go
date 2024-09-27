@@ -22,7 +22,7 @@ import (
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -135,7 +135,7 @@ type Limits struct {
 	// Native histograms
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 	// Active series custom trackers
-	ActiveSeriesCustomTrackersConfig activeseries.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesCustomTrackersConfig asmodel.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
 	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"experimental"`
@@ -751,7 +751,7 @@ func (o *Overrides) IgnoreOOOExemplars(userID string) bool {
 	return o.getOverridesForUser(userID).IgnoreOOOExemplars
 }
 
-func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries.CustomTrackersConfig {
+func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) asmodel.CustomTrackersConfig {
 	return o.getOverridesForUser(userID).ActiveSeriesCustomTrackersConfig
 }
 
