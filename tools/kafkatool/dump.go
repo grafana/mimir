@@ -21,7 +21,6 @@ type DumpCommand struct {
 	topic             string
 	partition         int
 	skipFirst         int
-	mode              string
 	exportOffsetStart int64
 	exportMaxRecords  int
 	inOutFile         *os.File
