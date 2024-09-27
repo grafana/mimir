@@ -34,6 +34,8 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] Added `ingest_storage_ingester_autoscaling_triggers` option to specify multiple triggers in ScaledObject created for ingest-store ingester autoscaling. #9422
+
 ### Mimirtool
 
 ### Mimir Continuous Test
