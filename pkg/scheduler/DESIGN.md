@@ -546,3 +546,39 @@ gantt
         slow        :done, c4-2, 08, 8s
 
 ```
+
+### Benchmarks and Simulation
+
+The new solution was tested using both Go benchmarks and simulation in a live Mimir cluster.
+
+The measure of comparison is the time spent in queue by the queries for the non-degraded query component.
+All test scenarios slowed down the store-gateway queries and measured the time spent in queue by ingester-only queries.
+
+#### Simulation in a Live Cluster with Load Generation
+
+A 60-minute simulation was run with the following parameters:
+
+- 10k queries per second, split 50 / 50 between ingesters and store-gateways
+- 10-second artificial slowdown in the store-gateways created with a sleep in the `Series` method
+- start at 19:05
+- complete at 20:05
+- scheduler restarted to enable the new queue selection algorithm at the midpoint, 19:35
+
+Before 19:35, the queue latency for ingester-only queries approached that of the store-gateway queries.
+
+As the queue backed up, both queries for all query components had:
+
+- 99th percentile time in queue near 2 minutes
+- 50th percentile time in queue over 1 minute
+
+After the new solution was enabled at 19:35, ingester-only queries were able to be dequeued and processed
+independently of the store-gateway queries, and queue latency for the ingester-only queries dropped significantly.
+
+While queue latency for store-gateway queries remained steadily high, ingester-only queries had:
+
+- 99th percentile time in queue around 2 seconds
+- 50th percentile time in queue around 200 ms
+
+The Mimir / Reads dashboard sections for the Query Scheduler illustrate the impact of the new solution:
+
+![image Live Simulation](./images/request-queue-design-live-simulation.png)
