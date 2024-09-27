@@ -35,18 +35,18 @@ import (
 )
 
 type config struct {
-	copyConfig                objtools.CopyBucketConfig
-	minBlockDuration          time.Duration
-	minTime                   flagext.Time
-	maxTime                   flagext.Time
-	tenantConcurrency         int
-	blockConcurrency          int
-	copyPeriod                time.Duration
-	enabledUsers              flagext.StringSliceCSV
-	disabledUsers             flagext.StringSliceCSV
-	dryRun                    bool
-	anyNoCompactBlockDuration bool
-	httpListen                string
+	copyConfig                      objtools.CopyBucketConfig
+	minBlockDuration                time.Duration
+	minTime                         flagext.Time
+	maxTime                         flagext.Time
+	tenantConcurrency               int
+	blockConcurrency                int
+	copyPeriod                      time.Duration
+	enabledUsers                    flagext.StringSliceCSV
+	disabledUsers                   flagext.StringSliceCSV
+	dryRun                          bool
+	skipNoCompactBlockDurationCheck bool
+	httpListen                      string
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
@@ -60,7 +60,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.Var(&c.enabledUsers, "enabled-users", "If not empty, only blocks for these users are copied.")
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform any copy; only log what would happen.")
-	f.BoolVar(&c.anyNoCompactBlockDuration, "any-no-compact-block-duration", false, "If set, blocks marked as no-compact are not checked against min-block-duration")
+	f.BoolVar(&c.skipNoCompactBlockDurationCheck, "skip-no-compact-block-duration-check", false, "If set, blocks marked as no-compact are not checked against min-block-duration")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 }
 
@@ -271,7 +271,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 				return nil
 			}
 
-			skipDurationCheck := cfg.anyNoCompactBlockDuration && markers[blockID].noCompact
+			skipDurationCheck := cfg.skipNoCompactBlockDurationCheck && markers[blockID].noCompact
 			if !skipDurationCheck && cfg.minBlockDuration > 0 {
 				blockDuration := time.Millisecond * time.Duration(blockMeta.MaxTime-blockMeta.MinTime)
 				if blockDuration < cfg.minBlockDuration {
