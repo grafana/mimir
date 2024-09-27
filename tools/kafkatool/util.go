@@ -36,6 +36,12 @@ type BufferedPrinter struct {
 	Lines []string
 }
 
+func (p *BufferedPrinter) GetLines() []string {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	return p.Lines
+}
+
 func (p *BufferedPrinter) Reset() {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()

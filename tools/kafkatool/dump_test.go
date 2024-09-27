@@ -49,7 +49,7 @@ func TestDumpCommand_ExportImport(t *testing.T) {
 	cmd := &DumpCommand{}
 	printer := &BufferedPrinter{}
 	t.Cleanup(func() {
-		t.Log(strings.Join(printer.Lines, "\n"))
+		t.Log(strings.Join(printer.GetLines(), "\n"))
 	})
 	cmd.Register(app, clientProvider, printer)
 
