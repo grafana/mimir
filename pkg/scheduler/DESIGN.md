@@ -300,7 +300,7 @@ To demonstrate the issue, we can simplify the system to two query components and
 Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
 The round-robin selection advances from fast to slow or vice versa with each dequeue.
 
-In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
+In 64 ticks (16 each for 4 connections), the system:
 
 - dequeues and starts processing 16 queries: 8 fast, 8 slow
 - completes processing 13 queries: 8 fast, 5 slow
@@ -379,10 +379,10 @@ and the majority of those queries will be expected to fail until the component r
 
 #### Modeling the Solution
 
-Again, we simplify the system to two query components and four querier connections.
+Again we simplify the system to two query components and four querier connections.
 Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
 
-In 16 ticks each for 4 querier connections (totaling 64 ticks), the new system:
+In 64 ticks (16 each for 4 connections), the new system:
 
 - dequeues and starts processing 36 queries: 32 fast, 4 slow
 - completes processing 36 queries: 32 fast, 4 slow
@@ -398,6 +398,112 @@ and completes 8x more fast queries than the original system in the same time per
 ```mermaid
 ---
 title: Query Processing Time Utilization with Querier-Worker Queue Prioritization
+config:
+  gantt:
+    displayMode: compact
+    numberSectionStyles: 2
+  theme: default
+---
+gantt
+    dateFormat ss
+    axisFormat %S
+    tickInterval 1second
+
+    section consumer-1
+        fast        :active, c1-1, 00, 1s
+        fast        :active, c1-2, 01, 1s
+        fast        :active, c1-3, 02, 1s
+        fast        :active, c1-4, 03, 1s
+        fast        :active, c1-5, 04, 1s
+        fast        :active, c1-6, 05, 1s
+        fast        :active, c1-7, 06, 1s
+        fast        :active, c1-8, 07, 1s
+        fast        :active, c1-9, 08, 1s
+        fast        :active, c1-10, 09, 1s
+        fast        :active, c1-11, 10, 1s
+        fast        :active, c1-12, 11, 1s
+        fast        :active, c1-13, 12, 1s
+        fast        :active, c1-14, 13, 1s
+        fast        :active, c1-15, 14, 1s
+        fast        :active, c1-16, 15, 1s
+
+    section consumer-2
+        fast        :active, c2-1, 00, 1s
+        fast        :active, c2-2, 01, 1s
+        fast        :active, c2-3, 02, 1s
+        fast        :active, c2-4, 03, 1s
+        fast        :active, c2-5, 04, 1s
+        fast        :active, c2-6, 05, 1s
+        fast        :active, c2-7, 06, 1s
+        fast        :active, c2-8, 07, 1s
+        fast        :active, c2-9, 08, 1s
+        fast        :active, c2-10, 09, 1s
+        fast        :active, c2-11, 10, 1s
+        fast        :active, c2-12, 11, 1s
+        fast        :active, c2-13, 12, 1s
+        fast        :active, c2-14, 13, 1s
+        fast        :active, c2-15, 14, 1s
+        fast        :active, c2-16, 15, 1s
+
+
+    section consumer-3
+        slow        :done, c3-1, 00, 8s
+        slow        :done, c3-2, 08, 8s
+
+    section consumer-4
+        slow        :done, c4-1, 00, 8s
+        slow        :done, c4-2, 08, 8s
+
+```
+
+#### Caveats: Corner Cases and Things to Know
+
+##### Distribution of Querier-Worker Connections Across Query Component Nodes
+
+**At least 4 querier-worker connections per querier are required to avoid starving a query component node.**
+To prevent this, the querier has been updated to create at least 4 connections to each scheduler,
+ignoring any `-querier.max-concurrent` value below 4.
+
+**When the total number of querier-worker connections is not evenly divisible by the number of query component nodes,
+the modulo distribution will be uneven, with some nodes being assigned one extra connection**.
+This is not considered to be an issue.
+Queue nodes are deleted as queues are cleared, then recreated in whichever order the queries arrive in.
+As the node count and order changes over time, it in turn shuffles which node(s) receive the extra connections.
+
+##### Empty Queue Node Deletion Can Cause Temporary Starvation
+
+As mentioned above, when a queue node is emptied it is deleted from the tree structure
+and cannot be selected by the queue selection algorithms.
+This can result in the following scenario:
+
+1. Queries to store-gateways are experiencing high latency, causing backup
+   in the `store-gateway`, `ingester-and store-gateway`, and `unknown queues`.
+2. The ingester-only queries continue to be dequeued and processed by 1/4 of the querier-worker connections.
+3. The ingester-only queue is emptied and the `ingester` node is deleted from the tree.
+4. The querier-worker connections are now evenly distributed across the remaining three nodes,
+   and _all_ connections are now stuck working on slow queries touching the degraded store-gateways.
+5. More ingester-only queries arrive and are enqueued at the `ingester` node,
+   but no querier-worker connections are available to dequeue them.
+
+This scenario is not desirable, but it is considered an acceptable tradeoff against the alternatives.
+As soon as the connections which would be partitioned to the `ingester` node become available again,
+they will return to working on the ingester-only queries.
+
+Modeling a simplified system again shows that this scenario still improves on the previous state.
+
+If the fast query queue is cleared and deleted before tick 4 and created again after tick 5,
+the fast-query queue consumers will have dequeued slow queries at tick 4 and work on them until tick 12.
+At tick 12 they return to being dedicated solely to the fast-query queue.
+
+Despite the temporary fast queue starvation, in 64 ticks (16 each for 4 connections), the new system
+still dequeues, starts, and completes processing 22 queries (16 fast, 6 slow) -
+still 2x more fast queries than the original system in the same time period.
+
+##### Diagram: Temporary Fast Queue Starvation with Querier-Worker Queue Prioritization
+
+```mermaid
+---
+title: Temporary Fast Queue Starvation with Querier-Worker Queue Prioritization
 config:
   gantt:
     displayMode: compact
