@@ -49,6 +49,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] `copyblocks`: Added `--skip-no-compact-block-duration-check`, which defaults to `false`, to simplify targeting blocks that are not awaiting compaction. #9439
+
 ## v2.14.0-rc.0
 
 ### Grafana Mimir
