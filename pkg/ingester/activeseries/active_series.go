@@ -11,12 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/costattribution"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"go.uber.org/atomic"
+
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
 const (
@@ -45,22 +47,22 @@ type ActiveSeries struct {
 
 	// matchersMutex protects matchers and lastMatchersUpdate.
 	matchersMutex      sync.RWMutex
-	matchers           *Matchers
+	matchers           *asmodel.Matchers
 	lastMatchersUpdate time.Time
 
-	costAttributionLabel      string
-	costAttributionSvc        *util.CostAttributionCleanupService
-	maxCostAttributionPerUser int
+	costAttributionLabel string
+	costAttributionSvc   *costattribution.CostAttributionCleanupService
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
-	timeout time.Duration
-	userID  string
+	timeout                   time.Duration
+	userID                    string
+	maxCostAttributionPerUser int
 }
 
 // seriesStripe holds a subset of the series timestamps for a single tenant.
 type seriesStripe struct {
-	matchers *Matchers
+	matchers *asmodel.Matchers
 
 	deleted *deletedSeries
 
@@ -68,8 +70,7 @@ type seriesStripe struct {
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs                        atomic.Int64
-	costAttributionSvc                   *util.CostAttributionCleanupService
-	maxCostAttributionPerUser            int
+	costAttributionSvc                   *costattribution.CostAttributionCleanupService
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
@@ -87,20 +88,20 @@ type seriesStripe struct {
 
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
-	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches                   preAllocDynamicSlice //  Index of the matcher matching
-	numNativeHistogramBuckets int                  // Number of buckets in native histogram series, -1 if not a native histogram.
+	nanos                     *atomic.Int64                // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	matches                   asmodel.PreAllocDynamicSlice //  Index of the matcher matching
+	numNativeHistogramBuckets int                          // Number of buckets in native histogram series, -1 if not a native histogram.
 	// keep the value corresponding the label configured in serieStripe
 	deleted          bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 	attributionValue string
 }
 
 func NewActiveSeries(
-	asm *Matchers,
+	asm *asmodel.Matchers,
 	timeout time.Duration,
 	userID string,
 	costAttributionLabel string,
-	costAttributionSvc *util.CostAttributionCleanupService,
+	costAttributionSvc *costattribution.CostAttributionCleanupService,
 	maxCostAttributionPerUser int,
 ) *ActiveSeries {
 	c := &ActiveSeries{
@@ -112,7 +113,7 @@ func NewActiveSeries(
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, userID, costAttributionLabel, costAttributionSvc, maxCostAttributionPerUser)
+		c.stripes[i].reinitialize(asm, &c.deleted, userID, costAttributionLabel, costAttributionSvc)
 	}
 
 	return c
@@ -124,18 +125,18 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.matchers.MatcherNames()
 }
 
-func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
+func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	c.matchersMutex.Lock()
 	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, c.userID, c.costAttributionLabel, c.costAttributionSvc, c.maxCostAttributionPerUser)
+		c.stripes[i].reinitialize(asm, &c.deleted, c.userID, c.costAttributionLabel, c.costAttributionSvc)
 	}
 	c.matchers = asm
 	c.lastMatchersUpdate = now
 }
 
-func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
+func (c *ActiveSeries) CurrentConfig() asmodel.CustomTrackersConfig {
 	c.matchersMutex.RLock()
 	defer c.matchersMutex.RUnlock()
 	return c.matchers.Config()
@@ -372,21 +373,21 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	entry, ok := s.refs[ref]
 	if ok {
 		if entry.numNativeHistogramBuckets != numNativeHistogramBuckets {
-			matches := s.matchers.matches(series)
-			matchesLen := matches.len()
+			matches := s.matchers.Matches(series)
+			matchesLen := matches.Len()
 			if numNativeHistogramBuckets >= 0 && entry.numNativeHistogramBuckets >= 0 {
 				// change number of buckets but still a histogram
 				diff := numNativeHistogramBuckets - entry.numNativeHistogramBuckets
 				s.activeNativeHistogramBuckets = uint32(int(s.activeNativeHistogramBuckets) + diff)
 				for i := 0; i < matchesLen; i++ {
-					s.activeMatchingNativeHistogramBuckets[matches.get(i)] = uint32(int(s.activeMatchingNativeHistogramBuckets[matches.get(i)]) + diff)
+					s.activeMatchingNativeHistogramBuckets[matches.Get(i)] = uint32(int(s.activeMatchingNativeHistogramBuckets[matches.Get(i)]) + diff)
 				}
 			} else if numNativeHistogramBuckets >= 0 {
 				// change from float to histogram
 				s.activeNativeHistograms++
 				s.activeNativeHistogramBuckets += uint32(numNativeHistogramBuckets)
 				for i := 0; i < matchesLen; i++ {
-					match := matches.get(i)
+					match := matches.Get(i)
 					s.activeMatchingNativeHistograms[match]++
 					s.activeMatchingNativeHistogramBuckets[match] += uint32(numNativeHistogramBuckets)
 				}
@@ -395,7 +396,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 				s.activeNativeHistograms--
 				s.activeNativeHistogramBuckets -= uint32(entry.numNativeHistogramBuckets)
 				for i := 0; i < matchesLen; i++ {
-					match := matches.get(i)
+					match := matches.Get(i)
 					s.activeMatchingNativeHistograms[match]--
 					s.activeMatchingNativeHistogramBuckets[match] -= uint32(entry.numNativeHistogramBuckets)
 				}
@@ -406,8 +407,8 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		return entry.nanos, false
 	}
 
-	matches := s.matchers.matches(series)
-	matchesLen := matches.len()
+	matches := s.matchers.Matches(series)
+	matchesLen := matches.Len()
 
 	s.active++
 
@@ -416,7 +417,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		s.activeNativeHistogramBuckets += uint32(numNativeHistogramBuckets)
 	}
 	for i := 0; i < matchesLen; i++ {
-		match := matches.get(i)
+		match := matches.Get(i)
 		s.activeMatching[match]++
 		if numNativeHistogramBuckets >= 0 {
 			s.activeMatchingNativeHistograms[match]++
@@ -433,7 +434,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	// here if we have a cost attribution label, we can split the serie count based on the value of the label
 	// we also set the reference to the value of the label in the entry, so when remove, we can decrease the counter accordingly
 	if s.costAttributionLabel != "" {
-		attributionValue := s.costAttributionSvc.UpdateAttributionTimestamp(s.userID, series.Get(s.costAttributionLabel), time.Unix(0, nowNanos), s.maxCostAttributionPerUser)
+		attributionValue := s.costAttributionSvc.UpdateAttributionTimestamp(s.userID, series.Get(s.costAttributionLabel), time.Unix(0, nowNanos))
 		s.costAttributionValues[attributionValue]++
 		e.attributionValue = attributionValue
 	}
@@ -462,12 +463,11 @@ func (s *seriesStripe) clear() {
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
 func (s *seriesStripe) reinitialize(
-	asm *Matchers,
+	asm *asmodel.Matchers,
 	deleted *deletedSeries,
 	userID string,
 	costAttributionLabel string,
-	costAttributionSvc *util.CostAttributionCleanupService,
-	maxCostAttributionPerUser int,
+	costAttributionSvc *costattribution.CostAttributionCleanupService,
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -478,7 +478,6 @@ func (s *seriesStripe) reinitialize(
 	s.costAttributionValues = map[string]uint32{}
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
-	s.maxCostAttributionPerUser = maxCostAttributionPerUser
 	s.matchers = asm
 	s.userID = userID
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
@@ -528,9 +527,9 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		if entry.attributionValue != "" {
 			s.costAttributionValues[entry.attributionValue]++
 		}
-		ml := entry.matches.len()
+		ml := entry.matches.Len()
 		for i := 0; i < ml; i++ {
-			match := entry.matches.get(i)
+			match := entry.matches.Get(i)
 			s.activeMatching[match]++
 			if entry.numNativeHistogramBuckets >= 0 {
 				s.activeMatchingNativeHistograms[match]++
@@ -573,9 +572,9 @@ func (s *seriesStripe) remove(ref storage.SeriesRef) {
 		s.activeNativeHistograms--
 		s.activeNativeHistogramBuckets -= uint32(entry.numNativeHistogramBuckets)
 	}
-	ml := entry.matches.len()
+	ml := entry.matches.Len()
 	for i := 0; i < ml; i++ {
-		match := entry.matches.get(i)
+		match := entry.matches.Get(i)
 		s.activeMatching[match]--
 		if entry.numNativeHistogramBuckets >= 0 {
 			s.activeMatchingNativeHistograms[match]--

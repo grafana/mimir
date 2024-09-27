@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package util
+package costattribution
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"go.uber.org/atomic"
 )
 
@@ -18,12 +19,14 @@ type CostAttribution struct {
 	mu                sync.RWMutex
 	timestampsPerUser map[string]map[string]*atomic.Int64 // map[user][group] -> timestamp
 	coolDownDeadline  map[string]*atomic.Int64
+	limits            *validation.Overrides
 }
 
-func NewCostAttribution() *CostAttribution {
+func NewCostAttribution(limits *validation.Overrides) *CostAttribution {
 	return &CostAttribution{
 		timestampsPerUser: map[string]map[string]*atomic.Int64{},
 		coolDownDeadline:  map[string]*atomic.Int64{},
+		limits:            limits,
 	}
 }
 
@@ -109,7 +112,7 @@ func (ca *CostAttribution) purgeInactiveAttributions(inactiveTimeout time.Durati
 	}
 }
 
-func (ca *CostAttribution) attributionLimitExceeded(userID, attribution string, now time.Time, limit int) bool {
+func (ca *CostAttribution) attributionLimitExceeded(userID, attribution string, now time.Time) bool {
 	// if we are still at the cooldown period, we will consider the limit reached
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
@@ -125,7 +128,7 @@ func (ca *CostAttribution) attributionLimitExceeded(userID, attribution string, 
 	}
 
 	// if the user has reached the limit, we will set the cooldown period which is 20 minutes
-	maxReached := len(ca.timestampsPerUser[userID]) >= limit
+	maxReached := len(ca.timestampsPerUser[userID]) >= ca.limits.MaxCostAttributionPerUser(userID)
 	if maxReached {
 		ca.coolDownDeadline[userID].Store(time.Now().Add(20 * time.Minute).UnixNano())
 		return true
@@ -147,9 +150,9 @@ type CostAttributionMetricsCleaner interface {
 	RemoveAttributionMetricsForUser(userID, attribution string)
 }
 
-func NewCostAttributionCleanupService(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, cleanupFns ...func(string, string)) *CostAttributionCleanupService {
+func NewCostAttributionCleanupService(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, cleanupFns ...func(string, string)) *CostAttributionCleanupService {
 	s := &CostAttributionCleanupService{
-		costAttribution: NewCostAttribution(),
+		costAttribution: NewCostAttribution(limits),
 		cleanupFuncs:    cleanupFns,
 		inactiveTimeout: inactiveTimeout,
 		logger:          logger,
@@ -160,14 +163,14 @@ func NewCostAttributionCleanupService(cleanupInterval, inactiveTimeout time.Dura
 	return s
 }
 
-func (s *CostAttributionCleanupService) UpdateAttributionTimestamp(user, attribution string, now time.Time, limit int) string {
+func (s *CostAttributionCleanupService) UpdateAttributionTimestamp(user, attribution string, now time.Time) string {
 	// empty label is not normal, if user set attribution label, the metrics send has to include the label
 	if attribution == "" {
 		attribution = s.invalidValue
 		level.Error(s.logger).Log("msg", fmt.Sprintf("set attribution label to \"%s\" since missing cost attribution label in metrics", s.invalidValue))
-	} else if s.costAttribution.attributionLimitExceeded(user, attribution, now, limit) {
+	} else if s.costAttribution.attributionLimitExceeded(user, attribution, now) {
 		attribution = s.invalidValue
-		level.Error(s.logger).Log("msg", "set attribution label to \"%s\" since user has reached the limit of cost attribution labels", s.invalidValue)
+		level.Error(s.logger).Log("msg", fmt.Sprintf("set attribution label to \"%s\" since user has reached the limit of cost attribution labels", s.invalidValue))
 	}
 
 	s.costAttribution.UpdateAttributionTimestampForUser(user, attribution, now)

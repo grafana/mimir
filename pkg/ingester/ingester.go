@@ -63,6 +63,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/costattribution"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -310,7 +311,7 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
-	costAttributionSvc *util.CostAttributionCleanupService
+	costAttributionSvc *costattribution.CostAttributionCleanupService
 
 	tsdbMetrics *tsdbMetrics
 
@@ -374,13 +375,12 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-
-		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
+		errorSamplers:       newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionCleanupService *util.CostAttributionCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionCleanupService *costattribution.CostAttributionCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -1307,7 +1307,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 			// get the label value and update the timestamp,
 			// if the cordianlity is reached or we are currently in cooldown period, function would returned __unaccounted__
-			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend, i.limits.MaxCostAttributionPerUser(userID))
+			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend)
 			stats.failedSamplesAttribution[costAttrib]++
 		}
 
@@ -1423,7 +1423,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					costAttrib = label.Value
 				}
 			}
-			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend, i.limits.MaxCostAttributionPerUser(userID))
+			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend)
 		}
 
 		// The labels must be sorted (in our case, it's guaranteed a write request

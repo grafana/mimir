@@ -26,16 +26,7 @@ func TestNativeHistogramPostings_Expand(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil)
->>>>>>> 3c422a8f57 (new service for tracking cost attribution)
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
->>>>>>> 7e628c3508 (address comments)
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -71,15 +62,7 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-<<<<<<< HEAD
-<<<<<<< HEAD
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil)
->>>>>>> 3c422a8f57 (new service for tracking cost attribution)
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
->>>>>>> 7e628c3508 (address comments)
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -123,15 +106,7 @@ func TestNativeHistogramPostings_SeekSkipsNonNative(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-<<<<<<< HEAD
-<<<<<<< HEAD
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil)
->>>>>>> 3c422a8f57 (new service for tracking cost attribution)
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
->>>>>>> 7e628c3508 (address comments)
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -171,15 +146,7 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-<<<<<<< HEAD
-<<<<<<< HEAD
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil)
->>>>>>> 3c422a8f57 (new service for tracking cost attribution)
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
->>>>>>> 7e628c3508 (address comments)
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -216,15 +183,7 @@ func TestNativeHistogramPostings_SeekToEnd(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-<<<<<<< HEAD
-<<<<<<< HEAD
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "")
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil)
->>>>>>> 3c422a8f57 (new service for tracking cost attribution)
-=======
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
->>>>>>> 7e628c3508 (address comments)
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), "foo", "", nil, 0)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {

@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/costattribution"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
@@ -712,7 +713,7 @@ type Mimir struct {
 	TenantLimits                  validation.TenantLimits
 	Overrides                     *validation.Overrides
 	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	CostAttributionCleanup        *util.CostAttributionCleanupService
+	CostAttributionCleanup        *costattribution.CostAttributionCleanupService
 
 	Distributor                     *distributor.Distributor
 	Ingester                        *ingester.Ingester

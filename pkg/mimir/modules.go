@@ -60,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/costattribution"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
@@ -650,7 +651,7 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 }
 
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
-	t.CostAttributionCleanup = util.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger)
+	t.CostAttributionCleanup = costattribution.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides)
 	return t.CostAttributionCleanup, nil
 }
 

@@ -53,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/costattribution"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -105,7 +106,7 @@ type Distributor struct {
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
-	costAttributionSvc     *util.CostAttributionCleanupService
+	costAttributionSvc     *costattribution.CostAttributionCleanupService
 	// For handling HA replicas.
 	HATracker *haTracker
 
@@ -306,7 +307,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionClenaupService *util.CostAttributionCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionClenaupService *costattribution.CostAttributionCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -1683,7 +1684,7 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 		if costAttributionLabel != "" {
-			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel), now, costAttributionSize)
+			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel), now)
 			costAttribution[attribution]++
 		}
 	}
