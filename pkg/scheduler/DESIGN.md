@@ -520,37 +520,22 @@ gantt
         fast        :active, c1-2, 01, 1s
         fast        :active, c1-3, 02, 1s
         fast        :active, c1-4, 03, 1s
-        fast        :active, c1-5, 04, 1s
-        fast        :active, c1-6, 05, 1s
-        fast        :active, c1-7, 06, 1s
-        fast        :active, c1-8, 07, 1s
-        fast        :active, c1-9, 08, 1s
-        fast        :active, c1-10, 09, 1s
-        fast        :active, c1-11, 10, 1s
-        fast        :active, c1-12, 11, 1s
-        fast        :active, c1-13, 12, 1s
-        fast        :active, c1-14, 13, 1s
-        fast        :active, c1-15, 14, 1s
-        fast        :active, c1-16, 15, 1s
+        slow        :done, c1-5, 04, 8s
+        fast        :active, c1-6, 12, 1s
+        fast        :active, c1-7, 13, 1s
+        fast        :active, c1-8, 14, 1s
+        fast        :active, c1-9, 15, 1s
 
     section consumer-2
         fast        :active, c2-1, 00, 1s
         fast        :active, c2-2, 01, 1s
         fast        :active, c2-3, 02, 1s
         fast        :active, c2-4, 03, 1s
-        fast        :active, c2-5, 04, 1s
-        fast        :active, c2-6, 05, 1s
-        fast        :active, c2-7, 06, 1s
-        fast        :active, c2-8, 07, 1s
-        fast        :active, c2-9, 08, 1s
-        fast        :active, c2-10, 09, 1s
-        fast        :active, c2-11, 10, 1s
-        fast        :active, c2-12, 11, 1s
-        fast        :active, c2-13, 12, 1s
-        fast        :active, c2-14, 13, 1s
-        fast        :active, c2-15, 14, 1s
-        fast        :active, c2-16, 15, 1s
-
+        slow        :done, c2-5, 04, 8s
+        fast        :active, c2-6, 12, 1s
+        fast        :active, c2-7, 13, 1s
+        fast        :active, c2-8, 14, 1s
+        fast        :active, c2-9, 15, 1s
 
     section consumer-3
         slow        :done, c3-1, 00, 8s
