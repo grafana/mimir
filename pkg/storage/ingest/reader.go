@@ -981,7 +981,7 @@ func newConcurrentFetchers(
 	}
 	f.topicID = topics[topic].ID
 
-	f.wg.Add(1 + concurrency) // one for start + concurrency for each fetcher; we do this here to make sure we don't race with Update
+	f.wg.Add(1)
 	go f.start(ctx, startOffset, concurrency, recordsPerFetch)
 
 	return f, nil
@@ -991,7 +991,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records in
 	r.Stop()
 	r.done = make(chan struct{})
 
-	r.wg.Add(1 + concurrency) // one for start + concurrency for each fetcher; we do this here to make sure we don't race with Update
+	r.wg.Add(1)
 	go r.start(ctx, r.lastReturnedRecord+1, concurrency, records)
 }
 
@@ -1254,6 +1254,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 
 	wants := make(chan fetchWant)
 	defer close(wants)
+	r.wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
 		go r.run(ctx, wants, logger)
