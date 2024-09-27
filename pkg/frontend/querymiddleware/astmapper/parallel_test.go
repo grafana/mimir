@@ -231,6 +231,10 @@ func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
 				// sort by label functions are variadic but no parameter is a timestamp, so they're not relevant for sharding purposes.
 				return
 			}
+			if f.Name == "info" {
+				// the info function is variadic but no parameter is a timestamp, so it's not relevant for sharding purposes.
+				return
+			}
 
 			// Rest of the functions with known defaults are functions with a default time() argument.
 			require.Containsf(t, FuncsWithDefaultTimeArg, name, "Function %q has variable arguments, and it's not in the list of functions with default time() argument.", f.Name)
