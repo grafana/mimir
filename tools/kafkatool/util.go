@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -31,13 +32,19 @@ func (StdoutPrinter) PrintLine(line string) {
 }
 
 type BufferedPrinter struct {
+	mtx   sync.Mutex
 	Lines []string
 }
 
 func (p *BufferedPrinter) Reset() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
 	p.Lines = nil
 }
 
 func (p *BufferedPrinter) PrintLine(line string) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	p.Lines = append(p.Lines, line)
 }
