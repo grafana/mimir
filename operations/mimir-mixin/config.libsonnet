@@ -618,44 +618,44 @@
 
     autoscaling: {
       query_frontend: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'query-frontend',
       },
       ruler_query_frontend: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-query-frontend',
       },
       querier: {
-        enabled: false,
+        enabled: true,
         // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
         hpa_name: $._config.autoscaling_hpa_prefix + 'querier',
       },
       ruler_querier: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
       store_gateway: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
       },
       distributor: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
       },
       ruler: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler',
       },
       gateway: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'cortex-gw.*',
       },
       ingester: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
       },
       compactor: {
-        enabled: false,
+        enabled: true,
         hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
       },
     },

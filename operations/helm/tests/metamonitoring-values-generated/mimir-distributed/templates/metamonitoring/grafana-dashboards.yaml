@@ -6120,6 +6120,226 @@ data:
                 "showTitle": true,
                 "title": "Key-value store for compactors ring",
                 "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nThe minimum, maximum, and current number of compactor replicas.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Max .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Current .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Min .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 24,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Min {{ scaletargetref_name }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 25,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 26,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-compactor\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "format": "time_series",
+                            "legendFormat": "{{scaler}} failures",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Autoscaler failures rate",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Compactor – autoscaling",
+                "titleSize": "h6"
              }
           ],
           "schemaVersion": 14,
@@ -20160,7 +20380,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum, and current number of querier replicas.\n\n",
+                      "description": "### Replicas\nThe minimum, maximum, and current number of query-frontend replicas.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -20244,6 +20464,275 @@ data:
                             "sort": "none"
                          }
                       },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Min {{ scaletargetref_name }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 28,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 29,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 30,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-query-frontend\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "format": "time_series",
+                            "legendFormat": "{{scaler}} failures",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Autoscaler failures rate",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-frontend – autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nThe maximum, and current number of querier replicas.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Max .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Current .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Min .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 31,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
                       "span": 4,
                       "targets": [
                          {
@@ -20294,7 +20783,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20343,7 +20832,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20357,7 +20846,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by(cluster, namespace, scaler, metric, scaledObject) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\nlabel_replace(\n  label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, metric, horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"} * 0),\n      \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  ),\n  \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                             "format": "time_series",
                             "legendFormat": "{{scaler}} failures",
                             "legendLink": null
@@ -20372,6 +20861,275 @@ data:
                 "repeatRowId": null,
                 "showTitle": true,
                 "title": "Querier – autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas (leader zone)\nThe minimum, maximum, and current number of replicas for the leader zone of store-gateways.\nOther zones scale to follow this zone (with delay for downscale).\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Max .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Current .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Min .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 34,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Min {{ scaletargetref_name }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas (leader zone)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nNumber of store-gateway replicas per zone.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 35,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (job) (up{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ job }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold and multiplied by the current number of replicas.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 36,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".+\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n  *\n  on(cluster, namespace, scaledObject) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject) (\n      label_replace(\n        kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"},\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Desired replicas (leader zone)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 37,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-store-gateway-zone-a\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "format": "time_series",
+                            "legendFormat": "{{scaler}} failures",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Autoscaler failures rate",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Store-gateway – autoscaling",
                 "titleSize": "h6"
              },
              {
@@ -20539,7 +21297,7 @@ data:
                             }
                          ]
                       },
-                      "id": 30,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20587,7 +21345,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -20678,7 +21436,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20727,7 +21485,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20791,7 +21549,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20851,7 +21609,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20900,7 +21658,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20963,7 +21721,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21023,7 +21781,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21072,7 +21830,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21135,7 +21893,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21195,7 +21953,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21244,7 +22002,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21307,7 +22065,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21367,7 +22125,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21400,7 +22158,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 45,
+                      "id": 53,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21448,7 +22206,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 54,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21527,7 +22285,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 55,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21618,7 +22376,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 56,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21697,7 +22455,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 57,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21776,7 +22534,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 58,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21855,7 +22613,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 59,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21946,7 +22704,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 60,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21979,7 +22737,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 53,
+                      "id": 61,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -22027,7 +22785,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 62,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22106,7 +22864,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 63,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22197,7 +22955,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 64,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22276,7 +23034,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 57,
+                      "id": 65,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22355,7 +23113,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 58,
+                      "id": 66,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22434,7 +23192,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 59,
+                      "id": 67,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26151,7 +26909,7 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "sum by(cluster, namespace, scaler, metric, scaledObject) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\nlabel_replace(\n  label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, metric, horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"} * 0),\n      \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  ),\n  \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                             "format": "time_series",
                             "legendFormat": "{{scaler}} failures",
                             "legendLink": null
@@ -26212,7 +26970,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (scaler) (\n  label_replace(\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric, scaler) keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, scaledObject, metric_name) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ scaler }}",
                             "legendLink": null
@@ -26261,7 +27019,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (scaler) (\n  label_replace(\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric, scaler) keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, scaledObject, metric_name) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ scaler }}",
                             "legendLink": null
@@ -26310,7 +27068,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (scaler) (\n  label_replace(\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric, scaler) keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*queries.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, scaledObject, metric_name) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*queries.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ scaler }}",
                             "legendLink": null
@@ -29071,6 +29829,544 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Replicas\nThe minimum, maximum, and current number of ruler replicas.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Max .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Current .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Min .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 11,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Min {{ scaletargetref_name }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 14,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "format": "time_series",
+                            "legendFormat": "{{scaler}} failures",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Autoscaler failures rate",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ruler – autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nThe minimum, maximum, and current number of ruler-query-frontend replicas.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Max .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Current .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Min .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 15,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Min {{ scaletargetref_name }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 16,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (CPU): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 17,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Scaling metric (memory): Desired replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 18,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-query-frontend\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "format": "time_series",
+                            "legendFormat": "{{scaler}} failures",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Autoscaler failures rate",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ruler-query-frontend – autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -29230,7 +30526,7 @@ data:
                             }
                          ]
                       },
-                      "id": 11,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29278,7 +30574,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 20,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -29369,7 +30665,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 21,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -29448,7 +30744,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 22,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -29545,7 +30841,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29606,7 +30902,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29655,7 +30951,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29704,7 +31000,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29764,7 +31060,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29812,7 +31108,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29860,7 +31156,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29920,7 +31216,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -29980,7 +31276,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -30013,7 +31309,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 24,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -30061,7 +31357,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -30140,7 +31436,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -30231,7 +31527,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 35,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -30310,7 +31606,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 36,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -30389,7 +31685,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 37,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -30468,7 +31764,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -40428,7 +41724,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by (scaler) (\n  label_replace(\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric, scaler) keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, scaledObject, metric_name) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ scaler }}",
                             "legendLink": null
@@ -40477,7 +41773,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by (scaler) (\n  label_replace(\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric, scaler) keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, scaledObject, metric_name) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
                             "format": "time_series",
                             "legendFormat": "{{ scaler }}",
                             "legendLink": null
@@ -40526,7 +41822,7 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by(cluster, namespace, scaler, metric, scaledObject) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\nlabel_replace(\n  label_replace(\n      # Using `max by ()` so that series churn doesn't break the promQL join\n      max by (cluster, namespace, metric, horizontalpodautoscaler) (kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"} * 0),\n      \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  ),\n  \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
                             "format": "time_series",
                             "legendFormat": "{{scaler}} failures",
                             "legendLink": null
@@ -40541,6 +41837,275 @@ data:
                 "repeatRowId": null,
                 "showTitle": true,
                 "title": "Distributor – autoscaling",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas (leader zone)\nThe minimum, maximum, and current number of replicas for the leader zone of ingesters.\nOther zones scale to follow this zone (with delay for downscale).\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Max .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Current .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byRegexp",
+                                  "options": "/Min .+/"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 17,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Max {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"}\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "Min {{ scaletargetref_name }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas (leader zone)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Replicas\nNumber of ingester replicas per zone.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 18,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (job) (up{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{ job }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Replicas",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold and multiplied by the current number of replicas.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 19,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (scaler) (\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, scaledObject, metric, scaler) (\n    label_replace(\n      keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".+\"},\n      \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n    )\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject, metric) (\n      label_replace(\n        label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"},\n          \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n        ),\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n  *\n  on(cluster, namespace, scaledObject) group_left\n    # Using `max by ()` so that series churn doesn't break the promQL join\n    max by (cluster, namespace, scaledObject) (\n      label_replace(\n        kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"},\n        \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      )\n    )\n)\n",
+                            "format": "time_series",
+                            "legendFormat": "{{ scaler }}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Desired replicas (leader zone)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 20,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by(cluster, namespace, metric, scaledObject, scaler) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\n  # Using `max by ()` so that series churn doesn't break the promQL join\n  max by (cluster, namespace, metric, scaledObject) (\n    label_replace(\n      label_replace(\n          kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ingester-zone-a\"} * 0,\n          \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n      ),\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    )\n  )\n",
+                            "format": "time_series",
+                            "legendFormat": "{{scaler}} failures",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Autoscaler failures rate",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ingester – autoscaling",
                 "titleSize": "h6"
              },
              {
@@ -40708,7 +42273,7 @@ data:
                             }
                          ]
                       },
-                      "id": 17,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40756,7 +42321,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 22,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -40983,7 +42548,7 @@ data:
                             }
                          ]
                       },
-                      "id": 19,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41031,7 +42596,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41258,7 +42823,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41306,7 +42871,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41429,7 +42994,7 @@ data:
                             }
                          ]
                       },
-                      "id": 23,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41484,7 +43049,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 28,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41607,7 +43172,7 @@ data:
                             }
                          ]
                       },
-                      "id": 25,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41662,7 +43227,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 30,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -41785,7 +43350,7 @@ data:
                             }
                          ]
                       },
-                      "id": 27,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41871,7 +43436,7 @@ data:
                             }
                          ]
                       },
-                      "id": 28,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41927,7 +43492,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42007,7 +43572,7 @@ data:
                             }
                          ]
                       },
-                      "id": 30,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42074,7 +43639,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42123,7 +43688,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42172,7 +43737,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42221,7 +43786,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42281,7 +43846,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -42329,7 +43894,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
