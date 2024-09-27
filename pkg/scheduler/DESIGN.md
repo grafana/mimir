@@ -549,7 +549,7 @@ gantt
 
 ### Benchmarks and Simulation
 
-The new solution was tested using both Go benchmarks and simulation in a live Mimir cluster.
+The Phase 2 solution was tested using both Go benchmarks and simulation in a live Mimir cluster.
 
 The measure of comparison is the time spent in queue by the queries for the non-degraded query component.
 All test scenarios slowed down the store-gateway queries and measured the time spent in queue by ingester-only queries.
@@ -571,7 +571,7 @@ As the queue backed up, both queries for all query components had:
 - 99th percentile time in queue near 2 minutes
 - 50th percentile time in queue over 1 minute
 
-After the new solution was enabled at 19:35, ingester-only queries were able to be dequeued and processed
+After the Phase 2 solution was enabled at 19:35, ingester-only queries were able to be dequeued and processed
 independently of the store-gateway queries, and queue latency for the ingester-only queries dropped significantly.
 
 While queue latency for store-gateway queries remained steadily high, ingester-only queries had:
@@ -579,6 +579,68 @@ While queue latency for store-gateway queries remained steadily high, ingester-o
 - 99th percentile time in queue around 2 seconds
 - 50th percentile time in queue around 200 ms
 
-The Mimir / Reads dashboard sections for the Query Scheduler illustrate the impact of the new solution:
+The Mimir / Reads dashboard sections for the Query Scheduler illustrate the impact of the Phase 2 solution:
 
 ![image Live Simulation](./images/request-queue-design-live-simulation.png)
+
+#### Benchmarks with Go Tests
+
+A unit-test-based benchmark `TestMultiDimensionalQueueAlgorithmSlowConsumerEffects` was created
+for more controlled simulation and comparison of the Phase 1 and Phase 2 solutions.
+
+The unit test approach allows for benchmarking of:
+
+- single-tenant and multi-tenant scenarios
+- varying distributions of requests between fast and slow query components
+- tenant-querier shuffle sharding
+
+The benchmark results showed that the Phase 2 solution massively outperformed the Phase 1 solution.
+
+Improvements for queue latency for the ingester-only queries range
+from around 5x improvement for scenarios with lower percentages of slow queries to the store-gateways,
+up to over 40x improvement for scenarios with high percentages of slow queries to the store-gateways.
+
+##### Sample Benchmark Results
+
+Results for the test scenarios are shown twice, once by query component and once by tenant ID.
+The `tenant-querier -> query component round-robin tree` is the Phase 1 solution
+and the `worker-queue prioritization -> tenant-querier tree` is the Phase 2 solution.
+
+```text
+Results by query component:
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 10pct slow queries: seconds in queue: [ingester: mean: 0.1046 stddev: 0.02 store-gateway: mean: 0.0079 stddev: 0.02]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 10pct slow queries: seconds in queue: [ingester: mean: 0.0194 stddev: 0.01 store-gateway: mean: 0.0271 stddev: 0.04]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 25pct slow queries: seconds in queue: [ingester: mean: 0.2738 stddev: 0.08 store-gateway: mean: 0.1084 stddev: 0.09]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 25pct slow queries: seconds in queue: [ingester: mean: 0.0159 stddev: 0.01 store-gateway: mean: 0.1177 stddev: 0.09]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 50pct slow queries: seconds in queue: [ingester: mean: 0.3894 stddev: 0.18 store-gateway: mean: 0.2471 stddev: 0.17]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 50pct slow queries: seconds in queue: [ingester: mean: 0.0118 stddev: 0.01 store-gateway: mean: 0.2530 stddev: 0.17]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 75pct slow queries: seconds in queue: [ingester: mean: 0.2608 stddev: 0.18 store-gateway: mean: 0.3999 stddev: 0.26]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 75pct slow queries: seconds in queue: [ingester: mean: 0.0053 stddev: 0.00 store-gateway: mean: 0.4056 stddev: 0.26]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 90pct slow queries: seconds in queue: [ingester: mean: 0.0780 stddev: 0.07 store-gateway: mean: 0.4917 stddev: 0.31]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 90pct slow queries: seconds in queue: [ingester: mean: 0.0026 stddev: 0.00 store-gateway: mean: 0.4929 stddev: 0.31]
+tree: tenant-querier -> query component round-robin tree, 2 tenants, first with 10pct slow queries, second with 90pct slow queries: seconds in queue: [ingester: mean: 0.1099 stddev: 0.04 store-gateway: mean: 0.2333 stddev: 0.17]
+tree: worker-queue prioritization -> tenant-querier tree, 2 tenants, first with 10pct slow queries, second with 90pct slow queries: seconds in queue: [ingester: mean: 0.0114 stddev: 0.00 store-gateway: mean: 0.2644 stddev: 0.18]
+tree: tenant-querier -> query component round-robin tree, 2 tenants, first with 25pct slow queries, second with 75pct slow queries: seconds in queue: [ingester: mean: 0.2402 stddev: 0.10 store-gateway: mean: 0.2277 stddev: 0.16]
+tree: worker-queue prioritization -> tenant-querier tree, 2 tenants, first with 25pct slow queries, second with 75pct slow queries: seconds in queue: [ingester: mean: 0.0101 stddev: 0.00 store-gateway: mean: 0.2447 stddev: 0.17]
+tree: tenant-querier -> query component round-robin tree, 2 tenants, first with 50pct slow queries, second with 50pct slow queries: seconds in queue: [ingester: mean: 0.3586 stddev: 0.18 store-gateway: mean: 0.2149 stddev: 0.15]
+tree: worker-queue prioritization -> tenant-querier tree, 2 tenants, first with 50pct slow queries, second with 50pct slow queries: seconds in queue: [ingester: mean: 0.0106 stddev: 0.01 store-gateway: mean: 0.2113 stddev: 0.15]
+
+Results for ingester-only queries by tenant ID:
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 10pct slow queries: seconds in queue:[tenant-0: mean: 0.1046 stddev: 0.02]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 10pct slow queries: seconds in queue:[tenant-0: mean: 0.0194 stddev: 0.01]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 25pct slow queries: seconds in queue:[tenant-0: mean: 0.2738 stddev: 0.08]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 25pct slow queries: seconds in queue:[tenant-0: mean: 0.0159 stddev: 0.01]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 50pct slow queries: seconds in queue:[tenant-0: mean: 0.3894 stddev: 0.18]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 50pct slow queries: seconds in queue:[tenant-0: mean: 0.0118 stddev: 0.01]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 75pct slow queries: seconds in queue:[tenant-0: mean: 0.2608 stddev: 0.18]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 75pct slow queries: seconds in queue:[tenant-0: mean: 0.0053 stddev: 0.00]
+tree: tenant-querier -> query component round-robin tree, 1 tenant, 90pct slow queries: seconds in queue:[tenant-0: mean: 0.0780 stddev: 0.07]
+tree: worker-queue prioritization -> tenant-querier tree, 1 tenant, 90pct slow queries: seconds in queue:[tenant-0: mean: 0.0026 stddev: 0.00]
+tree: tenant-querier -> query component round-robin tree, 2 tenants, first with 10pct slow queries, second with 90pct slow queries: seconds in queue:[tenant-0: mean: 0.1183 stddev: 0.02 tenant-1: mean: 0.0415 stddev: 0.05]
+tree: worker-queue prioritization -> tenant-querier tree, 2 tenants, first with 10pct slow queries, second with 90pct slow queries: seconds in queue:[tenant-0: mean: 0.0123 stddev: 0.00 tenant-1: mean: 0.0040 stddev: 0.00]
+tree: tenant-querier -> query component round-robin tree, 2 tenants, first with 25pct slow queries, second with 75pct slow queries: seconds in queue:[tenant-0: mean: 0.2639 stddev: 0.08 tenant-1: mean: 0.1662 stddev: 0.12]
+tree: worker-queue prioritization -> tenant-querier tree, 2 tenants, first with 25pct slow queries, second with 75pct slow queries: seconds in queue:[tenant-0: mean: 0.0118 stddev: 0.00 tenant-1: mean: 0.0047 stddev: 0.00]
+tree: tenant-querier -> query component round-robin tree, 2 tenants, first with 50pct slow queries, second with 50pct slow queries: seconds in queue:[tenant-0: mean: 0.3724 stddev: 0.17 tenant-1: mean: 0.3452 stddev: 0.19]
+tree: worker-queue prioritization -> tenant-querier tree, 2 tenants, first with 50pct slow queries, second with 50pct slow queries: seconds in queue:[tenant-0: mean: 0.0104 stddev: 0.01 tenant-1: mean: 0.0109 stddev: 0.00]
+
+```
