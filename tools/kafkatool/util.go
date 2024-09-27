@@ -9,7 +9,15 @@ import (
 )
 
 func CreateKafkaClient(kafkaAddress, kafkaClientID string) (*kgo.Client, error) {
-	return kgo.NewClient(kgo.SeedBrokers(kafkaAddress), kgo.ClientID(kafkaClientID))
+	return kgo.NewClient(
+		kgo.SeedBrokers(kafkaAddress),
+		kgo.ClientID(kafkaClientID),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		kgo.DisableIdempotentWrite(),
+		kgo.AllowAutoTopicCreation(),
+		kgo.BrokerMaxWriteBytes(268_435_456),
+		kgo.MaxBufferedBytes(268_435_456),
+	)
 }
 
 type Printer interface {
