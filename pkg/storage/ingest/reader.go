@@ -288,10 +288,8 @@ func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx conte
 
 		// If the target lag hasn't been reached with the first attempt (which stops once at least the max lag
 		// is honored) then we try to reach the (lower) target lag within a fixed time (best-effort).
-		// The timeout is equal to the max lag. This is done because we expect at least a 2x replay speed
-		// from Kafka (which means at most it takes 1s to ingest 2s of data): assuming new data is continuously
-		// written to the partition, we give the reader maxLag time to replay the backlog + ingest the new data
-		// written in the meanwhile.
+		// The timeout is equal to the max lag x2. This is done because the ongoing fetcher config reduces lag more slowly,
+		// but is better at keeping up with the partition and minimizing e2e lag.
 		func() (time.Duration, error) {
 			timedCtx, cancel := context.WithTimeoutCause(ctx, 2*maxLag, errWaitTargetLagDeadlineExceeded)
 			defer cancel()
