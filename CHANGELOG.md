@@ -34,7 +34,8 @@
 
 ### Jsonnet
 
-* [ENHANCEMENT] Added `ingest_storage_ingester_autoscaling_triggers` option to specify multiple triggers in ScaledObject created for ingest-store ingester autoscaling. #9422
+* [ENHANCEMENT] Add `ingest_storage_ingester_autoscaling_triggers` option to specify multiple triggers in ScaledObject created for ingest-store ingester autoscaling. #9422
+* [ENHANCEMENT] Add `ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds` and `ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds` config options to make stabilization window for ingester autoscaling when using ingest-storage configurable. #9445
 
 ### Mimirtool
 

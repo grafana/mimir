@@ -58,6 +58,13 @@
     // When set to false, metrics used by scaling triggers are only indexed if there is more than 1 trigger.
     // When set to true, they are always indexed.
     ingest_storage_ingester_autoscaling_index_metrics: false,
+
+    // Default stabilization windows for scaling up and down. This is the minimum time it takes for scaling event to start,
+    // rate and impact of scaling events is further limited by policies.
+    // Stabilization windows cannot be larger than 1 hour.
+    // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#stabilization-window
+    ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds: $.util.parseDuration('30m'),
+    ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds: $.util.parseDuration('1h'),
   },
 
   // Validate the configuration.
@@ -136,7 +143,7 @@
         advanced: {
           horizontalPodAutoscalerConfig: {
             behavior: {
-              // Allow 100% upscaling of pods every 10 minutes to the min value of desired replicas over last 30 minutes.
+              // Allow 100% upscaling of pods every 10 minutes to the min value of desired replicas over the stabilization window.
               scaleUp: {
                 policies: [
                   {
@@ -146,9 +153,9 @@
                   },
                 ],
                 selectPolicy: 'Min',  // This would only have effect if there were multiple policies.
-                stabilizationWindowSeconds: $.util.parseDuration('30m'),
+                stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds,
               },
-              // Allow 10% downscaling of pods every 30 minutes to the max value of desired replicas over last 60 minutes.
+              // Allow 10% downscaling of pods every 30 minutes to the max value of desired replicas over the stabilization window.
               scaleDown: {
                 policies: [{
                   type: 'Percent',
@@ -156,7 +163,7 @@
                   periodSeconds: $.util.parseDuration('30m'),
                 }],
                 selectPolicy: 'Max',  // This would only have effect if there were multiple policies.
-                stabilizationWindowSeconds: $.util.parseDuration('1h'),
+                stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds,
               },
             },
           },
