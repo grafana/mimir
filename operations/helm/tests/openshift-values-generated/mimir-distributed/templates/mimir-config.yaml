@@ -28,6 +28,9 @@ data:
       external_url: /alertmanager
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
     auth:
+      admin:
+        pass_access_policy_name: true
+        pass_token_name: true
       type: enterprise
     blocks_storage:
       backend: s3
@@ -55,6 +58,7 @@ data:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
     frontend:
+      log_query_request_headers: X-Access-Policy-Name,X-Token-Name
       parallelize_shardable_queries: true
       scheduler_address: openshift-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
