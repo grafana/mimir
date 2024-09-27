@@ -1248,9 +1248,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
-	defer func() {
-		level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
-	}()
+	defer level.Info(r.logger).Log("msg", "stopped concurrent fetchers")
 
 	wants := make(chan fetchWant)
 	defer close(wants)
