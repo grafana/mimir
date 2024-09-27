@@ -185,8 +185,8 @@ local filename = 'mimir-reads.json';
               max by (scaletargetref_name) (
                 kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
                 # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-                + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                  0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
               )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
@@ -197,8 +197,8 @@ local filename = 'mimir-reads.json';
               max by (scaletargetref_name) (
                 kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
                 # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-                + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                  0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
               )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
@@ -209,8 +209,8 @@ local filename = 'mimir-reads.json';
               max by (scaletargetref_name) (
                 kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
                 # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-                + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                  0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
               )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
@@ -261,10 +261,12 @@ local filename = 'mimir-reads.json';
                 )
                 /
                 on(%(aggregation_labels)s, scaledObject, metric) group_left
-                label_replace(label_replace(
-                    kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                    "metric", "$1", "metric_name", "(.+)"
-                ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
+                max by (%(aggregation_labels)s, scaledObject, metric) (
+                  label_replace(label_replace(
+                      kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                      "metric", "$1", "metric_name", "(.+)"
+                  ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
+                )
               )
             ||| % {
               aggregation_labels: $._config.alert_aggregation_labels,

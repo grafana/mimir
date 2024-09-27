@@ -1214,19 +1214,19 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_max_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"})\n)\n",
                         "format": "time_series",
                         "legendFormat": "Max {{ scaletargetref_name }}",
                         "legendLink": null
                      },
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"})\n)\n",
                         "format": "time_series",
                         "legendFormat": "Current {{ scaletargetref_name }}",
                         "legendLink": null
                      },
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  * on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    group by (cluster, namespace, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"})\n)\n",
                         "format": "time_series",
                         "legendFormat": "Min {{ scaletargetref_name }}",
                         "legendLink": null

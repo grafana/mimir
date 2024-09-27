@@ -628,8 +628,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           max by (scaletargetref_name) (
             kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
             # Add the scaletargetref_name label for readability
-            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
           )
         ||| % {
           namespace_matcher: $.namespaceMatcher(),
@@ -640,8 +640,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           max by (scaletargetref_name) (
             kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
             # Add the scaletargetref_name label for readability
-            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
           )
         ||| % {
           namespace_matcher: $.namespaceMatcher(),
@@ -652,8 +652,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           max by (scaletargetref_name) (
             kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
             # Add the scaletargetref_name label for readability
-            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
           )
         ||| % {
           namespace_matcher: $.namespaceMatcher(),
