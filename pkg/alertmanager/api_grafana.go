@@ -319,8 +319,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 
 	payload, err := io.ReadAll(input)
 	if err != nil {
-		maxBytesErr := &http.MaxBytesError{}
-		if errors.As(err, &maxBytesErr) {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
 			msg := fmt.Sprintf(errConfigurationTooBig, maxConfigSize)
 			level.Warn(logger).Log("msg", msg)
 			w.WriteHeader(http.StatusBadRequest)
