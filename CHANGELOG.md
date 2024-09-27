@@ -29,7 +29,7 @@
 
 ### Mixin
 
-* [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412
+* [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412 #9450
 * [BUGFIX] Alerts: Fix autoscaling metrics joins in `MimirAutoscalerNotActive` when series churn. #9412
 
 ### Jsonnet
