@@ -87,16 +87,6 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-// Stop implements fetcher
-func (r *PartitionReader) Stop() {
-	// Given the partition reader has no concurrency it doesn't support stopping anything.
-}
-
-// Update implements fetcher
-func (r *PartitionReader) Update(_ context.Context, _, _ int) {
-	// Given the partition reader has no concurrency it doesn't support updates.
-}
-
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	consumer := newPusherConsumer(pusher, util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), reg, logger)
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
@@ -117,6 +107,16 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
+}
+
+// Stop implements fetcher
+func (r *PartitionReader) Stop() {
+	// Given the partition reader has no concurrency it doesn't support stopping anything.
+}
+
+// Update implements fetcher
+func (r *PartitionReader) Update(_ context.Context, _, _ int) {
+	// Given the partition reader has no concurrency it doesn't support updates.
 }
 
 func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
