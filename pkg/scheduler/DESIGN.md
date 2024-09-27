@@ -294,6 +294,8 @@ as measured by inflight query processing time will grow asymptotically to be dom
 
 ### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
 
+#### Modeling the Problem
+
 To demonstrate the issue, we can simplify the system to two query components and four querier connections.
 Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
 The round-robin selection advances from fast to slow or vice versa with each dequeue.
@@ -305,7 +307,7 @@ In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
 - spends 8 ticks processing the fast queries
 - spends 56 ticks processing the slow queries
 
-#### Diagram: Query Processing Time Utilization with Round-Robin
+##### Diagram: Query Processing Time Utilization with Round-Robin
 
 ```mermaid
 ---
@@ -351,16 +353,46 @@ gantt
 <!--and rotated through a global list of active tenantIDs.-->
 <!--to select the next tenant sharded to the waiting querier.-->
 
-... [fill in in stuff about the new algorithm]
+### Solution: Query Component Partitioning by Querier-Worker
 
-In 16 ticks each for 4 querier connections (totaling 64 ticks), the system:
+This solution is inspired by a research paper from Brown University and Microsoft
+[Two-Dimensional Fair Queuing for Multi-Tenant Cloud Services](https://people.mpi-sws.org/~jcmace/papers/mace20162dfq.pdf).
+
+Querier-worker connections are partitioned evenly across up to four possible query-component nodes
+with a modulo of the querier-worker connection ID across the ordered list of nodes.
+
+Ex:
+Assume a query component node order of `[ingester, store-gateway, ingester-and-store-gateway, unknown]`.
+
+- querier-worker connection IDs `0`, `4`, `8`, etc. would be assigned to `ingester`
+- querier-worker connection IDs `1`, `5`, `9`, etc. would be assigned to `store-gateway`
+- etc. for `ingester-and-store-gateway`, and `unknown`
+
+We conservatively expect degradation of the store-gateway query component will cause high latency
+for the queries in the `store-gateway`, `ingester-and-store-gateway`, and `unknown` queues,
+but by partitioning the querier-worker connections evenly across the queues,
+25% of connections remain reserved to process queries from the `ingester` queue.
+
+The primary measure of success is the servicing of the queries to the non-degraded query component,
+In real-world scenarios, the slow queries are often slow enough to hit timeouts
+and the failure of the majority of those queries is an expected outcome until the component recovers.
+
+#### Modeling the Solution
+
+Again, we can simplify the system to two query components and four querier connections as before.
+Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
+
+In 16 ticks each for 4 querier connections (totaling 64 ticks), the new system:
 
 - dequeues and starts processing 36 queries: 32 fast, 4 slow
 - completes processing 36 queries: 32 fast, 4 slow
 - spends 32 ticks processing the fast queries
 - spends 32 ticks processing the slow queries
 
-#### Diagram: Query Processing Time Utilization with Querier-Worker Queue Prioritization
+Compare with the `Query Processing Time Utilization with Round-Robin` results and diagram above.
+The new system completes 8x more fast queries than the original system in the same time period.
+
+##### Diagram: Query Processing Time Utilization with Querier-Worker Queue Prioritization
 
 ```mermaid
 ---
