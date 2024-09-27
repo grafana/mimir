@@ -4868,111 +4868,113 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 &nbsp;
 
 ```yaml
-# Redis Server or Cluster configuration endpoint to use for caching. A
-# comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+# (deprecated) Redis Server or Cluster configuration endpoint to use for
+# caching. A comma-separated list of endpoints for Redis Cluster or Redis
+# Sentinel.
 # CLI flag: -<prefix>.redis.endpoint
 [endpoint: <string> | default = ""]
 
-# Username to use when connecting to Redis.
+# (deprecated) Username to use when connecting to Redis.
 # CLI flag: -<prefix>.redis.username
 [username: <string> | default = ""]
 
-# Password to use when connecting to Redis.
+# (deprecated) Password to use when connecting to Redis.
 # CLI flag: -<prefix>.redis.password
 [password: <string> | default = ""]
 
-# Database index.
+# (deprecated) Database index.
 # CLI flag: -<prefix>.redis.db
 [db: <int> | default = 0]
 
-# (advanced) Redis Sentinel master name. An empty string for Redis Server or
+# (deprecated) Redis Sentinel master name. An empty string for Redis Server or
 # Redis Cluster.
 # CLI flag: -<prefix>.redis.master-name
 [master_name: <string> | default = ""]
 
-# (advanced) Client dial timeout.
+# (deprecated) Client dial timeout.
 # CLI flag: -<prefix>.redis.dial-timeout
 [dial_timeout: <duration> | default = 5s]
 
-# (advanced) Client read timeout.
+# (deprecated) Client read timeout.
 # CLI flag: -<prefix>.redis.read-timeout
 [read_timeout: <duration> | default = 3s]
 
-# (advanced) Client write timeout.
+# (deprecated) Client write timeout.
 # CLI flag: -<prefix>.redis.write-timeout
 [write_timeout: <duration> | default = 3s]
 
-# (advanced) Maximum number of connections in the pool.
+# (deprecated) Maximum number of connections in the pool.
 # CLI flag: -<prefix>.redis.connection-pool-size
 [connection_pool_size: <int> | default = 100]
 
-# (advanced) Maximum duration to wait to get a connection from pool.
+# (deprecated) Maximum duration to wait to get a connection from pool.
 # CLI flag: -<prefix>.redis.connection-pool-timeout
 [connection_pool_timeout: <duration> | default = 4s]
 
-# (advanced) Minimum number of idle connections.
+# (deprecated) Minimum number of idle connections.
 # CLI flag: -<prefix>.redis.min-idle-connections
 [min_idle_connections: <int> | default = 10]
 
-# (advanced) Amount of time after which client closes idle connections.
+# (deprecated) Amount of time after which client closes idle connections.
 # CLI flag: -<prefix>.redis.idle-timeout
 [idle_timeout: <duration> | default = 5m]
 
-# (advanced) Close connections older than this duration. If the value is zero,
+# (deprecated) Close connections older than this duration. If the value is zero,
 # then the pool does not close connections based on age.
 # CLI flag: -<prefix>.redis.max-connection-age
 [max_connection_age: <duration> | default = 0s]
 
-# (advanced) The maximum size of an item stored in Redis. Bigger items are not
+# (deprecated) The maximum size of an item stored in Redis. Bigger items are not
 # stored. If set to 0, no maximum size is enforced.
 # CLI flag: -<prefix>.redis.max-item-size
 [max_item_size: <int> | default = 16777216]
 
-# (advanced) The maximum number of concurrent asynchronous operations can occur.
+# (deprecated) The maximum number of concurrent asynchronous operations can
+# occur.
 # CLI flag: -<prefix>.redis.max-async-concurrency
 [max_async_concurrency: <int> | default = 50]
 
-# (advanced) The maximum number of enqueued asynchronous operations allowed.
+# (deprecated) The maximum number of enqueued asynchronous operations allowed.
 # CLI flag: -<prefix>.redis.max-async-buffer-size
 [max_async_buffer_size: <int> | default = 25000]
 
-# (advanced) The maximum number of concurrent connections running get
+# (deprecated) The maximum number of concurrent connections running get
 # operations. If set to 0, concurrency is unlimited.
 # CLI flag: -<prefix>.redis.max-get-multi-concurrency
 [max_get_multi_concurrency: <int> | default = 100]
 
-# (advanced) The maximum size per batch for mget operations.
+# (deprecated) The maximum size per batch for mget operations.
 # CLI flag: -<prefix>.redis.max-get-multi-batch-size
 [max_get_multi_batch_size: <int> | default = 100]
 
-# (advanced) Enable connecting to Redis with TLS.
+# (deprecated) Enable connecting to Redis with TLS.
 # CLI flag: -<prefix>.redis.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate, which will be used for
+# (deprecated) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.redis.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key for the client certificate. Also requires the
+# (deprecated) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.redis.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates to validate server certificate against.
-# If not set, the host's root CA certificates are used.
+# (deprecated) Path to the CA certificates to validate server certificate
+# against. If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.redis.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
-# (advanced) Override the expected name on the server certificate.
+# (deprecated) Override the expected name on the server certificate.
 # CLI flag: -<prefix>.redis.tls-server-name
 [tls_server_name: <string> | default = ""]
 
-# (advanced) Skip validating server certificate.
+# (deprecated) Skip validating server certificate.
 # CLI flag: -<prefix>.redis.tls-insecure-skip-verify
 [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) Override the default cipher suite list (separated by commas).
+# (deprecated) Override the default cipher suite list (separated by commas).
 # Allowed values:
 #
 # Secure Ciphers:
@@ -5006,7 +5008,7 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # CLI flag: -<prefix>.redis.tls-cipher-suites
 [tls_cipher_suites: <string> | default = ""]
 
-# (advanced) Override the default minimum TLS version. Allowed values:
+# (deprecated) Override the default minimum TLS version. Allowed values:
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.redis.tls-min-version
 [tls_min_version: <string> | default = ""]

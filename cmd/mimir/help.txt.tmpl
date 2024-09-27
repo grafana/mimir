@@ -143,14 +143,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -blocks-storage.bucket-store.chunks-cache.redis.db int
-    	Database index.
-  -blocks-storage.bucket-store.chunks-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -blocks-storage.bucket-store.chunks-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -blocks-storage.bucket-store.chunks-cache.redis.username string
-    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
@@ -161,14 +153,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -blocks-storage.bucket-store.index-cache.redis.db int
-    	Database index.
-  -blocks-storage.bucket-store.index-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -blocks-storage.bucket-store.index-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -blocks-storage.bucket-store.index-cache.redis.username string
-    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
@@ -177,14 +161,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -blocks-storage.bucket-store.metadata-cache.redis.db int
-    	Database index.
-  -blocks-storage.bucket-store.metadata-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -blocks-storage.bucket-store.metadata-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -blocks-storage.bucket-store.metadata-cache.redis.username string
-    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.filesystem.dir string
@@ -609,14 +585,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -query-frontend.results-cache.redis.db int
-    	Database index.
-  -query-frontend.results-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -query-frontend.results-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -query-frontend.results-cache.redis.username string
-    	Username to use when connecting to Redis.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-scheduler.max-outstanding-requests-per-tenant int
@@ -655,14 +623,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -ruler-storage.cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -ruler-storage.cache.redis.db int
-    	Database index.
-  -ruler-storage.cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -ruler-storage.cache.redis.password string
-    	Password to use when connecting to Redis.
-  -ruler-storage.cache.redis.username string
-    	Username to use when connecting to Redis.
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
