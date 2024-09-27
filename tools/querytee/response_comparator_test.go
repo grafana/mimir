@@ -699,7 +699,7 @@ Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareMatrix(tc.expected, tc.actual, SampleComparisonOptions{})
+			err := compareMatrix(tc.expected, tc.actual, time.Now(), SampleComparisonOptions{})
 			if tc.err == "" {
 				require.NoError(t, err)
 				return
@@ -1078,7 +1078,7 @@ func TestCompareVector(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareVector(tc.expected, tc.actual, SampleComparisonOptions{})
+			err := compareVector(tc.expected, tc.actual, time.Now(), SampleComparisonOptions{})
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -1115,7 +1115,7 @@ func TestCompareScalar(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareScalar(tc.expected, tc.actual, SampleComparisonOptions{})
+			err := compareScalar(tc.expected, tc.actual, time.Now(), SampleComparisonOptions{})
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -1127,8 +1127,9 @@ func TestCompareScalar(t *testing.T) {
 }
 
 func TestCompareSamplesResponse(t *testing.T) {
-	now := model.Now().String()
-	overAnHourAgo := model.Now().Add(-61 * time.Minute).String()
+	nowT := model.TimeFromUnixNano(time.Date(2099, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano())
+	now := nowT.String()
+	overAnHourAgo := nowT.Add(-61 * time.Minute).String()
 
 	for _, tc := range []struct {
 		name              string
@@ -2172,7 +2173,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 				UseRelativeError:  tc.useRelativeError,
 				SkipRecentSamples: tc.skipRecentSamples,
 			})
-			result, err := samplesComparator.Compare(tc.expected, tc.actual)
+			result, err := samplesComparator.Compare(tc.expected, tc.actual, nowT.Time())
 			if tc.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, ComparisonSuccess, result)
@@ -2342,7 +2343,7 @@ func TestCompareSampleHistogramPair(t *testing.T) {
 					field.mutator(expected.Histogram, model.FloatString(testCase.expected))
 					field.mutator(actual.Histogram, model.FloatString(testCase.actual))
 
-					err := compareSampleHistogramPair(expected, actual, opts)
+					err := compareSampleHistogramPair(expected, actual, time.Now(), opts)
 
 					if testCase.shouldFail {
 						expectedError := field.expectedErrorMessageGenerator(&expected, &actual)
