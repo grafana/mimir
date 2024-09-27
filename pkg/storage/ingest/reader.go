@@ -1339,7 +1339,7 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 	case errors.Is(err, kerr.OffsetOutOfRange):
 		// We're either consuming from before the first offset or after the last offset.
 		partitionStart, err := partitionStartOffset.CachedOffset()
-		logger = log.With(logger, "partition_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
+		logger = log.With(logger, "log_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to find start offset to readjust on OffsetOutOfRange; retrying same records range", "err", err)
 			break
