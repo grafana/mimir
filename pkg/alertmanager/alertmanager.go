@@ -393,7 +393,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	am.templatesMtx.RLock()
-	tmpls := make([]string, len(am.templates))
+	tmpls := make([]string, 0, len(am.templates))
 	for _, tmpl := range am.templates {
 		tmpls = append(tmpls, tmpl.Template)
 	}
