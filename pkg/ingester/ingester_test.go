@@ -9754,7 +9754,9 @@ func testIngesterOutOfOrder(t *testing.T,
 		<-time.After(1500 * time.Millisecond)
 	}
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	registry := prometheus.NewRegistry()
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -9817,6 +9819,27 @@ func testIngesterOutOfOrder(t *testing.T,
 	assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
 	assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 
+	// no ooo samples appended, but the ooo delta is still calculated
+	expectedMetrics := `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 3300
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 10
+		`
+	metricNames := []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total", "cortex_ingester_tsdb_sample_out_of_order_delta_seconds"}
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// Increasing the OOO time window.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 
@@ -9824,13 +9847,72 @@ func testIngesterOutOfOrder(t *testing.T,
 	pushSamples(90, 99, false, "")
 	verifySamples(90, 100)
 
+	// 10 ooo samples appended and more observations for the ooo delta
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 10
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 6600
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 20
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
 	pushSamples(69, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(70, 100)
 
+	// 20 more ooo samples appended (between 70-89, the other 10 between 90-99 are discarded as dupes of previously ingested samples)
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 36360
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 51
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// All beyond the ooo time window. None ingested.
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(70, 100)
+
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 84960
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 71
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -9842,6 +9924,25 @@ func testIngesterOutOfOrder(t *testing.T,
 	pushSamples(50, 69, false, "")
 	verifySamples(50, 100)
 
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 133560
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 91
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 	assert.Equal(t, int64(60*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
@@ -9851,6 +9952,25 @@ func testIngesterOutOfOrder(t *testing.T,
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(50, 100)
+
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 182160
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 111
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
