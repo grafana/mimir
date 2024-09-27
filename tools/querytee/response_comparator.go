@@ -120,11 +120,18 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte, que
 
 var errorEquivalenceClasses = [][]*regexp.Regexp{
 	{
-		// Invalid expression type for range query: MQE and Prometheus' engine return different error messages.
+		// Range vector expression for range query: MQE and Prometheus' engine return different error messages.
 		// Prometheus' engine:
 		regexp.MustCompile(`invalid parameter "query": invalid expression type "range vector" for range query, must be Scalar or instant Vector`),
 		// MQE:
 		regexp.MustCompile(`invalid parameter "query": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar`),
+	},
+	{
+		// String expression for range query: MQE and Prometheus' engine return different error messages.
+		// Prometheus' engine:
+		regexp.MustCompile(`invalid parameter "query": invalid expression type "string" for range query, must be Scalar or instant Vector`),
+		// MQE:
+		regexp.MustCompile(`invalid parameter "query": query expression produces a string, but expression for range queries must produce an instant vector or scalar`),
 	},
 	{
 		// Binary operation conflict on right (one-to-one) / many (one-to-many/many-to-one) side: MQE and Prometheus' engine return different error messages, and there's no guarantee they'll pick the same series as examples.
