@@ -272,7 +272,7 @@ Additionally, the query component selection algorithm was a simple round-robin.
 
 This phase was a failure due to both of those design decisions.
 
-### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
+#### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
 
 The fact that the tenant selection was given priority over query-component selection
 meant that a tenant's query traffic profile could override the query component round-robin.
@@ -281,7 +281,7 @@ If the query component round-robin was set to dequeue a store-gateway query
 but the tenant rotation had selected `tenant-1` which was only sending ingester queries at the time,
 the system would dequeue an ingester query in order to prioritize dequeuing for `tenant-1`.
 
-### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
+#### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
 
 A vanilla round-robin algorithm does not sufficiently guard against a high-latency component
 saturating all or nearly all connections with queries stuck in the slow component.
