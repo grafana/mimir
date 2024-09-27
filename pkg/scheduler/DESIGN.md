@@ -24,6 +24,9 @@ and the depth-first traversal provides a familiar pattern for searching for a le
 
 ### Diagram: Dequeue Decision Tree (Simplified)
 
+For diagrams in this doc, we omit the `unknown` query component node and its subtree to save space.
+The system treats `unknown` the same as `ingester-and-store-gateway`.
+
 ```mermaid
 ---
 title: Dequeue Decision Tree (Simplified)
@@ -126,6 +129,7 @@ Each of the two non-leaf levels of the tree uses a different algorithm to select
    and selects the next query component child node to continue the search from.
 
 ### Diagram: Dequeue Decision Tree (Full)
+
 ```mermaid
 ---
 title: Dequeue Decision Tree (Full)
@@ -239,13 +243,13 @@ graph TB
 ### Original State: Queue Splitting by Tenant
 
 The `RequestQueue` originally utilized only a single dimension of queue splitting, by tenant.
-The structure and queue selection served to accomplish two purposes:
+This approach served two purposes:
 
 1. tenant fairness via a simple round-robin between all tenants with non-empty query request queues
-1. rudimentary tenant isolation via shuffle-sharding noisy tenants to only a subset of queriers
+1. rudimentary tenant isolation via shuffle-shard assignment of noisy tenants to only a subset of queriers
 
 While this inter-tenant Quality-Of-Service approach has worked well,
-we observed other QOS issues arising from the varying characteristics of Mimir's two "query components"
+other QOS issues have arisen from the varying characteristics of Mimir's two "query components"
 utilized by the queriers to fetch TSDB data for executing queries: ingesters and store-gateways.
 
 ### New Requirement: Queue Splitting by Query Component
@@ -260,11 +264,11 @@ causing high latency and timeouts for queries which could have been serviced by 
 
 ### Phase 1: Query Component Selection by Round-Robin
 
-In the first phase, we believed that it would be enough to duplicate the tenant queue splitting approach.
+In the first phase, we believed that it would be sufficient to duplicate the tenant queue splitting approach.
 We split the tenant queues further by query component, so that each tenant could have up to four queues.
 
-With the addition of another split, we introduced the "tree queue" structure, inspired by Loki's implementation.
-The tree queue allowed more clear management of the two dimensions of queue splitting rather than one.
+To enable more clear management of the two dimensions of queue splitting rather than one,
+we introduced the "tree queue" structure, inspired by Loki's implementation.
 
 For simplicity at this stage, the tenant selection algorithm was kept higher in the tree
 and therefore took priority over the query component queue selection algorithm.
@@ -277,15 +281,15 @@ This phase was a failure due to both of those design decisions.
 The fact that the tenant selection was given priority over query-component selection
 meant that a tenant's query traffic profile could override the query component round-robin.
 
-If the query component round-robin was set to dequeue a store-gateway query
-but the tenant rotation had selected `tenant-1` which was only sending ingester queries at the time,
-the system would dequeue an ingester query in order to prioritize dequeuing for `tenant-1`.
+If the tenant rotation had selected `tenant-1` which was only sending ingester queries at the time,
+the round-robin algorithm could only select the ingester queue from the child queue nodes for `tenant-1`,
+overriding the intended progression of the query component round-robin.
 
 #### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
 
 A vanilla round-robin algorithm does not sufficiently guard against a high-latency component
-saturating all or nearly all connections with queries stuck in the slow component.
-Despite alternating the which query component is dequeued for, utilization of the querier-worker connections
+saturating all or nearly all connections with requests in flight in the slow component.
+Despite rotating which query component is dequeued for, utilization of the querier-worker connection pool
 as measured by inflight query processing time will grow asymptotically to be dominated by the slow query component.
 
 ### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
