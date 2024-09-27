@@ -4577,6 +4577,16 @@
         },
         {
           "kind": "field",
+          "name": "alertmanager_max_grafana_config_size_bytes",
+          "required": false,
+          "desc": "Maximum size of the Grafana configuration file for Alertmanager that a tenant can upload via the Alertmanager API. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-grafana-config-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_max_config_size_bytes",
           "required": false,
           "desc": "Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.",

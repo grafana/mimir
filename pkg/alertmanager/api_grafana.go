@@ -309,8 +309,24 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxConfigSize := am.limits.AlertmanagerMaxGrafanaConfigSize(userID)
+	if maxConfigSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxConfigSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(errConfigurationTooBig, maxConfigSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: msg})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingGrafanaConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errReadingGrafanaConfig, err.Error())})
