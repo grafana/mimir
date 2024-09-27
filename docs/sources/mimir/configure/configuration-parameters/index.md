@@ -3269,8 +3269,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 [native_histograms_ingestion_enabled: <boolean> | default = false]
 
 # (experimental) Enable experimental out-of-order native histogram ingestion.
-# This will only take effect if ingester.out-of-order-time-window is > 0 and if
-# ingester.native-histograms-ingestion-enabled = true
+# This only takes effect if the `-ingester.out-of-order-time-window` value is
+# greater than zero and if `-ingester.native-histograms-ingestion-enabled =
+# true`
 # CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
 [ooo_native_histograms_ingestion_enabled: <boolean> | default = false]
 

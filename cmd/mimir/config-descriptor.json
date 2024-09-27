@@ -3944,7 +3944,7 @@
           "kind": "field",
           "name": "ooo_native_histograms_ingestion_enabled",
           "required": false,
-          "desc": "Enable experimental out-of-order native histogram ingestion. This will only take effect if ingester.out-of-order-time-window is \u003e 0 and if ingester.native-histograms-ingestion-enabled = true",
+          "desc": "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.ooo-native-histograms-ingestion-enabled",
