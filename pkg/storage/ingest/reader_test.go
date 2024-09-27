@@ -2410,20 +2410,167 @@ func TestConcurrentFetchers(t *testing.T) {
 
 	})
 
+	t.Run("update concurrency with continuous production", func(t *testing.T) {
+		t.Parallel()
+		const (
+			testDuration       = 10 * time.Second
+			produceInterval    = 10 * time.Millisecond
+			initialConcurrency = 2
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		produceCtx, cancelProduce := context.WithTimeout(context.Background(), testDuration)
+		defer cancelProduce()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		producedCount := atomic.NewInt64(0)
+
+		// Start producing records continuously
+		go func() {
+			ticker := time.NewTicker(produceInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-produceCtx.Done():
+					return
+				case <-ticker.C:
+					count := producedCount.Inc()
+					record := fmt.Sprintf("record-%d", count)
+					produceRecord(produceCtx, t, client, topicName, partitionID, []byte(record))
+				}
+			}
+		}()
+
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, initialConcurrency, recordsPerFetch)
+
+		fetchedRecords := make([]*kgo.Record, 0)
+		fetchedCount := atomic.NewInt64(0)
+
+		fetchRecords := func(duration time.Duration) {
+			deadline := time.Now().Add(duration)
+			for time.Now().Before(deadline) {
+				fetches, _ := fetchers.PollFetches(ctx)
+				fetches.EachRecord(func(r *kgo.Record) {
+					fetchedRecords = append(fetchedRecords, r)
+					fetchedCount.Inc()
+				})
+			}
+		}
+
+		// Initial fetch with starting concurrency
+		fetchRecords(2 * time.Second)
+		initialFetched := fetchedCount.Load()
+
+		// Update to higher concurrency
+		fetchers.Update(ctx, 4, recordsPerFetch)
+		fetchRecords(3 * time.Second)
+		highConcurrencyFetched := fetchedCount.Load() - initialFetched
+
+		// Update to lower concurrency
+		fetchers.Update(ctx, 1, recordsPerFetch)
+		fetchRecords(3 * time.Second)
+
+		cancelProduce()
+		// Produce everything that's left now.
+		fetchRecords(time.Second)
+		totalProduced := producedCount.Load()
+		totalFetched := fetchedCount.Load()
+
+		// Verify fetched records
+		assert.True(t, totalFetched > 0, "Expected to fetch some records")
+		assert.Equal(t, totalFetched, totalProduced, "Should not fetch more records than produced")
+		assert.True(t, highConcurrencyFetched > initialFetched, "Expected to fetch more records with higher concurrency")
+
+		// Verify record contents
+		for i, record := range fetchedRecords {
+			expectedContent := fmt.Sprintf("record-%d", i+1)
+			assert.Equal(t, expectedContent, string(record.Value),
+				"Record %d has unexpected content: %s", i, string(record.Value))
+		}
+
+		// Log some statistics
+		t.Logf("Total produced: %d, Total fetched: %d", totalProduced, totalFetched)
+		t.Logf("Fetched with initial concurrency: %d", initialFetched)
+		t.Logf("Fetched with high concurrency: %d", highConcurrencyFetched)
+		t.Logf("Fetched with low concurrency: %d", totalFetched-initialFetched-highConcurrencyFetched)
+	})
+
+	t.Run("consume from end and update immediately", func(t *testing.T) {
+		t.Parallel()
+		const (
+			initialRecords     = 100
+			additionalRecords  = 50
+			initialConcurrency = 2
+			updatedConcurrency = 4
+		)
+
+		ctx := context.Background()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Produce initial records
+		for i := 0; i < initialRecords; i++ {
+			record := fmt.Sprintf("initial-record-%d", i+1)
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(record))
+		}
+
+		// Start concurrent fetchers from the end
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, kafkaOffsetEnd, initialConcurrency, recordsPerFetch)
+
+		// Immediately update concurrency
+		fetchers.Update(ctx, updatedConcurrency, recordsPerFetch)
+
+		// Produce additional records
+		for i := 0; i < additionalRecords; i++ {
+			record := fmt.Sprintf("additional-record-%d", i+1)
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(record))
+		}
+
+		fetchedRecords := make([]*kgo.Record, 0, additionalRecords)
+		fetchDeadline := time.Now().Add(5 * time.Second)
+
+		// Fetch records
+		for len(fetchedRecords) < additionalRecords && time.Now().Before(fetchDeadline) {
+			fetches, _ := fetchers.PollFetches(ctx)
+			fetches.EachRecord(func(r *kgo.Record) {
+				fetchedRecords = append(fetchedRecords, r)
+			})
+		}
+
+		// Verify fetched records
+		assert.LessOrEqual(t, len(fetchedRecords), additionalRecords,
+			"Should not fetch more records than produced after start")
+
+		// Verify record contents
+		for i, record := range fetchedRecords {
+			expectedContent := fmt.Sprintf("additional-record-%d", i+1)
+			assert.Equal(t, expectedContent, string(record.Value),
+				"Record %d has unexpected content: %s", i, string(record.Value))
+		}
+
+		// Log some statistics
+		t.Logf("Total records produced: %d", initialRecords+additionalRecords)
+		t.Logf("Records produced after start: %d", additionalRecords)
+		t.Logf("Records fetched: %d", len(fetchedRecords))
+	})
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int) *concurrentFetchers {
 	logger := log.NewNopLogger()
-	metrics := newReaderMetrics(partition, prometheus.NewRegistry())
+	reg := prometheus.NewPedanticRegistry()
+	metrics := newReaderMetrics(partition, reg)
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
 	metrics.kprom.OnNewClient(client)
 
-	offsetReader := &partitionOffsetClient{
-		client: client,
-		topic:  topic,
-	}
+	offsetReader := newPartitionOffsetClient(client, topic, reg, logger)
 
 	startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
 		return offsetReader.FetchPartitionStartOffset(ctx, partition)
@@ -2445,6 +2592,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		&metrics,
 	)
 	require.NoError(t, err)
+	t.Cleanup(f.Stop)
 
 	return f
 }
