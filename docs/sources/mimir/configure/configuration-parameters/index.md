@@ -4826,8 +4826,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 ### redis
 
-Test
-
 The `redis` block configures the Redis-based caching backend. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `blocks-storage.bucket-store.chunks-cache`
