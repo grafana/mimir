@@ -293,10 +293,11 @@ func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx conte
 		// written to the partition, we give the reader maxLag time to replay the backlog + ingest the new data
 		// written in the meanwhile.
 		func() (time.Duration, error) {
-			timedCtx, cancel := context.WithTimeoutCause(ctx, maxLag, errWaitTargetLagDeadlineExceeded)
+			timedCtx, cancel := context.WithTimeoutCause(ctx, 2*maxLag, errWaitTargetLagDeadlineExceeded)
 			defer cancel()
 
 			// Don't use timedCtx because we want the fetchers to continue running
+			// At this point we're close enough to the end of the partition that we should switch to the more responsive fetcher.
 			r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
 
 			return r.processNextFetchesUntilLagHonored(timedCtx, targetLag, logger)
