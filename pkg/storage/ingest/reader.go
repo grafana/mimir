@@ -296,6 +296,9 @@ func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx conte
 			timedCtx, cancel := context.WithTimeoutCause(ctx, maxLag, errWaitTargetLagDeadlineExceeded)
 			defer cancel()
 
+			// Don't use timedCtx because we want the fetchers to continue running
+			r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
+
 			return r.processNextFetchesUntilLagHonored(timedCtx, targetLag, logger)
 		},
 
