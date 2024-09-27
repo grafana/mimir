@@ -24,6 +24,8 @@
   * `-query-scheduler.grpc-client-config.grpc-compression=s2`
   * `-ruler.client.grpc-compression=s2`
   * `-ruler.query-frontend.grpc-client-config.grpc-compression=s2`
+* [FEATURE] The following alertmanager limit was added: #9402
+  * User grafana config size (`-alertmanager.max-config-size-bytes`)
 * [ENHANCEMENT] Ruler: Support `exclude_alerts` parameter in `<prometheus-http-prefix>/api/v1/rules` endpoint. #9300
 * [ENHANCEMENT] Distributor: add a metric to track tenants who are sending newlines in their label values called `cortex_distributor_label_values_with_newlines_total`. #9400
 
