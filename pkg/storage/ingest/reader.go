@@ -944,23 +944,6 @@ func newConcurrentFetchers(
 	metrics *readerMetrics,
 ) (*concurrentFetchers, error) {
 
-	const noReturnedRecords = -1 // we still haven't returned the 0 offset.
-
-	f := &concurrentFetchers{
-		client:               client,
-		logger:               logger,
-		topicName:            topic,
-		partitionID:          partition,
-		metrics:              metrics,
-		minBytesWaitTime:     minBytesWaitTime,
-		lastReturnedRecord:   noReturnedRecords,
-		startOffsets:         startOffsetsReader,
-		trackCompressedBytes: trackCompressedBytes,
-		tracer:               recordsTracer(),
-		orderedFetches:       make(chan fetchResult),
-		done:                 make(chan struct{}),
-	}
-
 	var err error
 	switch startOffset {
 	case kafkaOffsetStart:
@@ -974,6 +957,20 @@ func newConcurrentFetchers(
 	if err != nil {
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
+	f := &concurrentFetchers{
+		client:               client,
+		logger:               logger,
+		topicName:            topic,
+		partitionID:          partition,
+		metrics:              metrics,
+		minBytesWaitTime:     minBytesWaitTime,
+		lastReturnedRecord:   startOffset - 1,
+		startOffsets:         startOffsetsReader,
+		trackCompressedBytes: trackCompressedBytes,
+		tracer:               recordsTracer(),
+		orderedFetches:       make(chan fetchResult),
+		done:                 make(chan struct{}),
+	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
 	if err != nil {
@@ -984,6 +981,7 @@ func newConcurrentFetchers(
 	}
 	f.topicID = topics[topic].ID
 
+	f.wg.Add(1 + concurrency) // one for start + concurrency for each fetcher; we do this here to make sure we don't race with Update
 	go f.start(ctx, startOffset, concurrency, recordsPerFetch)
 
 	return f, nil
@@ -993,7 +991,8 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records in
 	r.Stop()
 	r.done = make(chan struct{})
 
-	go r.start(ctx, r.lastReturnedRecord, concurrency, records)
+	r.wg.Add(1 + concurrency) // one for start + concurrency for each fetcher; we do this here to make sure we don't race with Update
+	go r.start(ctx, r.lastReturnedRecord+1, concurrency, records)
 }
 
 func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, context.Context) {
@@ -1248,7 +1247,8 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 }
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
-	r.wg.Add(concurrency)
+	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
+	defer level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 
 	wants := make(chan fetchWant)
 	defer close(wants)
@@ -1268,7 +1268,6 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	// We need to make sure we don't leak any goroutine given that start is called within a goroutine.
-	r.wg.Add(1)
 	defer r.wg.Done()
 	for {
 		refillBufferedResult := nextResult
@@ -1340,6 +1339,7 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 	case errors.Is(err, kerr.OffsetOutOfRange):
 		// We're either consuming from before the first offset or after the last offset.
 		partitionStart, err := partitionStartOffset.CachedOffset()
+		logger = log.With(logger, "partition_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to find start offset to readjust on OffsetOutOfRange; retrying same records range", "err", err)
 			break
@@ -1350,12 +1350,12 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 			if partitionStart >= fw.endOffset {
 				// The next fetch want is responsible for this range. We set startOffset=endOffset to effectively mark this fetch as complete.
 				fw.startOffset = fw.endOffset
-				level.Debug(logger).Log("msg", "we're too far behind aborting fetch", "log_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
+				level.Debug(logger).Log("msg", "we're too far behind aborting fetch")
 				break
 			}
 			// Only some of the offsets of our want are out of range, so let's fast-forward.
 			fw.startOffset = partitionStart
-			level.Debug(logger).Log("msg", "part of fetch want is outside of available offsets, adjusted start offset", "log_start_offset", partitionStart, "start_offset", fw.startOffset, "end_offset", fw.endOffset)
+			level.Debug(logger).Log("msg", "part of fetch want is outside of available offsets, adjusted start offset")
 		} else {
 			// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
 			// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
