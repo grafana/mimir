@@ -174,7 +174,7 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
-// Merge merges other with an older fetchResult. mergedWith keeps most of the fields of fr and assumes they are more up to date then other's.
+// Merge merges other with an older fetchResult. Merge keeps most of the fields of fr and assumes they are more up-to-date than older.
 func (fr *fetchResult) Merge(older fetchResult) fetchResult {
 	if older.ctx != nil {
 		level.Debug(spanlogger.FromContext(older.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
@@ -218,6 +218,7 @@ type concurrentFetchers struct {
 	trackCompressedBytes bool
 }
 
+// Stop implements fetcher
 func (r *concurrentFetchers) Stop() {
 	close(r.done)
 
@@ -285,6 +286,7 @@ func newConcurrentFetchers(
 	return f, nil
 }
 
+// Update implements fetcher
 func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records int) {
 	r.Stop()
 	r.done = make(chan struct{})
@@ -293,6 +295,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records in
 	go r.start(ctx, r.lastReturnedRecord+1, concurrency, records)
 }
 
+// PollFetches implements fetcher
 func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, context.Context) {
 	waitStartTime := time.Now()
 	select {

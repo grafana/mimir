@@ -178,7 +178,7 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 
 	if cfg.StartupFetchConcurrency > 0 && cfg.OngoingFetchConcurrency <= 0 {
-		return fmt.Errorf("ingest-storage.kafka.ongoing-fetch-concurrency must be greater than 0 when startup-fetch-concurrency is greater than 0")
+		return fmt.Errorf("ingest-storage.kafka.ongoing-fetch-concurrency must be greater than 0 when ingest-storage.kafka.startup-fetch-concurrency is greater than 0")
 	}
 
 	if cfg.StartupRecordsPerFetch <= 0 || cfg.OngoingRecordsPerFetch <= 0 {
