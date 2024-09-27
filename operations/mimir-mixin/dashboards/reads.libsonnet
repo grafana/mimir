@@ -261,10 +261,12 @@ local filename = 'mimir-reads.json';
                 )
                 /
                 on(%(aggregation_labels)s, scaledObject, metric) group_left
-                label_replace(label_replace(
-                    max by (%(aggregation_labels)s, horizontalpodautoscaler, metric) (kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"}),
-                    "metric", "$1", "metric_name", "(.+)"
-                ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
+                max by (%(aggregation_labels)s, scaledObject, metric) (
+                  label_replace(label_replace(
+                      kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                      "metric", "$1", "metric_name", "(.+)"
+                  ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
+                )
               )
             ||| % {
               aggregation_labels: $._config.alert_aggregation_labels,
