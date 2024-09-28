@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
