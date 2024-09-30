@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"github.com/grafana/mimir/integration/e2ehistograms"
 	"net/http"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/integration/e2ehistograms"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
