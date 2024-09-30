@@ -1678,37 +1678,88 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 	}
 }
 
-// TestPrometheusCodec_DecodeEncode_Labels tests that decoding and re-encoding a
-// labels query request does not lose relevant information about the original request.
-func TestPrometheusCodec_DecodeEncode_Labels(t *testing.T) {
+// TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
+// labels query request multiple times does not lose relevant information about the original request.
+func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 	codec := newTestPrometheusCodec().(prometheusCodec)
 	for _, tc := range []struct {
 		name     string
 		queryURL string
+		request  LabelsQueryRequest
 	}{
 		{
 			name:     "label names - minimal",
 			queryURL: "/api/v1/labels?end=1708588800&start=1708502400",
+			request: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400000,
+				End:   1708588800000,
+			},
 		},
 		{
 			name:     "label names - all",
 			queryURL: "/api/v1/labels?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400000,
+				End:   1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+				Limit: 10,
+			},
 		},
 		{
 			name:     "label values - minimal",
 			queryURL: "/api/v1/label/job/values?end=1708588800&start=1708502400",
+			request: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400000,
+				End:       1708588800000,
+			},
 		},
 		{
 			name:     "label values - all",
 			queryURL: "/api/v1/label/job/values?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400000,
+				End:       1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+				Limit: 10,
+			},
 		},
 		{
 			name:     "series - minimal",
 			queryURL: "/api/v1/series?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusSeriesQueryRequest{
+				Path:  "/api/v1/series",
+				Start: 1708502400000,
+				End:   1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
 		},
 		{
 			name:     "series - all",
 			queryURL: "/api/v1/series?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusSeriesQueryRequest{
+				Path:  "/api/v1/series",
+				Start: 1708502400000,
+				End:   1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+				Limit: 10,
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1718,17 +1769,26 @@ func TestPrometheusCodec_DecodeEncode_Labels(t *testing.T) {
 			require.NoError(t, err)
 			expected.Body = http.NoBody
 			expected.Header = make(http.Header)
-
 			// This header is set by EncodeLabelsQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
-
 			ctx := context.Background()
+
 			decoded, err := codec.DecodeLabelsQueryRequest(ctx, expected)
 			require.NoError(t, err)
+			assert.Equal(t, tc.request, decoded)
+
 			encoded, err := codec.EncodeLabelsQueryRequest(ctx, decoded)
 			require.NoError(t, err)
+			assert.Equal(t, expected.URL, encoded.URL)
+			assert.Equal(t, expected.Header, encoded.Header)
 
+			decoded, err = codec.DecodeLabelsQueryRequest(ctx, encoded)
+			require.NoError(t, err)
+			assert.Equal(t, tc.request, decoded)
+
+			encoded, err = codec.EncodeLabelsQueryRequest(ctx, decoded)
+			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
 		})
