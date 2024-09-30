@@ -41,7 +41,6 @@ type PusherCloser interface {
 	Close() []error
 }
 
-
 // pusherConsumer receives records from Kafka and pushes them to the storage.
 // Each time a batch of records is received from Kafka, we instantiate a new pusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
 type pusherConsumer struct {
