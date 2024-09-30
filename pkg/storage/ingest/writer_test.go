@@ -1036,6 +1036,27 @@ func mockPreallocTimeseries(metricName string) mimirpb.PreallocTimeseries {
 	}
 }
 
+func mockPreallocTimeseriesWithExemplar(metricName string) mimirpb.PreallocTimeseries {
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: metricName},
+			},
+			Samples: []mimirpb.Sample{{
+				TimestampMs: 1,
+				Value:       2,
+			}},
+			Exemplars: []mimirpb.Exemplar{{
+				TimestampMs: 2,
+				Value:       14,
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "trace_id", Value: metricName + "_trace"},
+				},
+			}},
+		},
+	}
+}
+
 func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 	count := 0
 
