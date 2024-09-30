@@ -284,6 +284,8 @@ moving through the queue and being processed, rather than waiting in the queue b
 
 In real-world scenarios queries to the degraded query component are often slow enough to hit timeouts,
 and the majority of those queries will be expected to fail until the component recovers.
+It is not a goal of the new design to solve the problem of latency in the degraded query component,
+whether through rate limiting of the queries dequeued to that component or through any other intervention.
 
 #### Constraints
 
