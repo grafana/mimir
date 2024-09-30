@@ -109,7 +109,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	// Parse the query.
 	queryExpr, err := parser.ParseExpr(r.GetQuery())
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
@@ -151,10 +151,14 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	annotationAccumulator := newAnnotationAccumulator()
-	shardedQueryable := newShardedQueryable(r, annotationAccumulator, s.next)
+	annotationAccumulator := NewAnnotationAccumulator()
+	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, nil)
 
-	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
+}
+
+func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
+	qry, err := newQuery(ctx, r, engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -169,12 +173,20 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	// query, so we pass in an empty string as the query so the positions will be hidden.
 	warn, info := res.Warnings.AsStrings("", 0, 0)
 
-	// Add any annotations returned by the sharded queries, and remove any duplicates.
-	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-	warn = append(warn, accumulatedWarnings...)
-	info = append(info, accumulatedInfos...)
-	warn = removeDuplicates(warn)
-	info = removeDuplicates(info)
+	if annotationAccumulator != nil {
+		// Add any annotations returned by the sharded queries, and remove any duplicates.
+		accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
+		warn = append(warn, accumulatedWarnings...)
+		info = append(info, accumulatedInfos...)
+		warn = removeDuplicates(warn)
+		info = removeDuplicates(info)
+	}
+
+	var headers []*PrometheusHeader
+	shardedQueryable, ok := queryable.(*shardedQueryable)
+	if ok {
+		headers = shardedQueryable.getResponseHeaders()
+	}
 
 	return &PrometheusResponse{
 		Status: statusSuccess,
@@ -182,7 +194,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Headers:  shardedQueryable.getResponseHeaders(),
+		Headers:  headers,
 		Warnings: warn,
 		Infos:    info,
 	}, nil
@@ -275,7 +287,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	// each time before passing it to the mapper.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return "", nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	shardedQuery, err := mapper.Map(expr)
@@ -490,14 +502,14 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 	return longest
 }
 
-// annotationAccumulator collects annotations returned by sharded queries.
-type annotationAccumulator struct {
+// AnnotationAccumulator collects annotations returned by sharded queries.
+type AnnotationAccumulator struct {
 	warnings *sync.Map
 	infos    *sync.Map
 }
 
-func newAnnotationAccumulator() *annotationAccumulator {
-	return &annotationAccumulator{
+func NewAnnotationAccumulator() *AnnotationAccumulator {
+	return &AnnotationAccumulator{
 		warnings: &sync.Map{},
 		infos:    &sync.Map{},
 	}
@@ -506,7 +518,7 @@ func newAnnotationAccumulator() *annotationAccumulator {
 // addWarning collects the warning annotation w.
 //
 // addWarning is safe to call from multiple goroutines.
-func (a *annotationAccumulator) addWarning(w string) {
+func (a *AnnotationAccumulator) addWarning(w string) {
 	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
 	a.warnings.LoadOrStore(w, struct{}{})
 }
@@ -514,7 +526,7 @@ func (a *annotationAccumulator) addWarning(w string) {
 // addWarnings collects all of the warning annotations in warnings.
 //
 // addWarnings is safe to call from multiple goroutines.
-func (a *annotationAccumulator) addWarnings(warnings []string) {
+func (a *AnnotationAccumulator) addWarnings(warnings []string) {
 	for _, w := range warnings {
 		a.addWarning(w)
 	}
@@ -523,7 +535,7 @@ func (a *annotationAccumulator) addWarnings(warnings []string) {
 // addInfo collects the info annotation i.
 //
 // addInfo is safe to call from multiple goroutines.
-func (a *annotationAccumulator) addInfo(i string) {
+func (a *AnnotationAccumulator) addInfo(i string) {
 	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
 	a.infos.LoadOrStore(i, struct{}{})
 }
@@ -531,7 +543,7 @@ func (a *annotationAccumulator) addInfo(i string) {
 // addInfos collects all of the info annotations in infos.
 //
 // addInfo is safe to call from multiple goroutines.
-func (a *annotationAccumulator) addInfos(infos []string) {
+func (a *AnnotationAccumulator) addInfos(infos []string) {
 	for _, i := range infos {
 		a.addInfo(i)
 	}
@@ -540,7 +552,7 @@ func (a *annotationAccumulator) addInfos(infos []string) {
 // getAll returns all annotations collected by this accumulator.
 //
 // getAll may return inconsistent or unexpected results if it is called concurrently with addInfo or addWarning.
-func (a *annotationAccumulator) getAll() (warnings, infos []string) {
+func (a *AnnotationAccumulator) getAll() (warnings, infos []string) {
 	return getAllKeys(a.warnings), getAllKeys(a.infos)
 }
 

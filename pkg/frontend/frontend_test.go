@@ -218,7 +218,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	if l != nil {
 		logger = l
 	}
-	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json")
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)

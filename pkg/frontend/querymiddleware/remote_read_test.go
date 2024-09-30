@@ -135,7 +135,7 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 				actualMiddleWareCalls++
 				return tc.handler
 			})
-			rr := newRemoteReadRoundTripper(roundTripper, middleware)
+			rr := NewRemoteReadRoundTripper(roundTripper, middleware)
 			_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest()))
 			if tc.expectError != "" {
 				require.Error(t, err)
@@ -195,7 +195,7 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToManipulateRequest(t *tes
 		},
 	}
 
-	rr := newRemoteReadRoundTripper(downstream, middleware)
+	rr := NewRemoteReadRoundTripper(downstream, middleware)
 	_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
 	require.NoError(t, err)
 	require.NotNil(t, downstreamReq)
@@ -255,7 +255,7 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *t
 		},
 	}
 
-	rr := newRemoteReadRoundTripper(downstream, middleware)
+	rr := NewRemoteReadRoundTripper(downstream, middleware)
 	origRemoteReadReq := makeTestRemoteReadRequest()
 
 	_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))

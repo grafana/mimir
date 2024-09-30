@@ -633,7 +633,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	for _, tc := range protobufCodecScenarios {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf, nil)
 
 			body, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -643,7 +643,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			decoded, err := codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 			if err != nil || tc.expectedDecodingError != nil {
 				require.Equal(t, tc.expectedDecodingError, err)
 				return
@@ -674,7 +674,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf, nil)
 
 			expectedBodyBytes, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -683,7 +683,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 				Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},
 			}
 
-			httpResponse, err := codec.EncodeResponse(context.Background(), httpRequest, tc.response)
+			httpResponse, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, tc.response)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, httpResponse.StatusCode)
 			require.Equal(t, mimirpb.QueryResponseMimeType, httpResponse.Header.Get("Content-Type"))
@@ -714,7 +714,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 	headers := http.Header{"Content-Type": []string{mimirpb.QueryResponseMimeType}}
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf, nil)
 
 	for _, tc := range protobufCodecScenarios {
 		body, err := tc.payload.Marshal()
@@ -728,7 +728,7 @@ func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 					ContentLength: int64(len(body)),
 				}
 
-				_, err = codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+				_, err = codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 				if err != nil || tc.expectedDecodingError != nil {
 					require.Equal(b, tc.expectedDecodingError, err)
 				}
@@ -739,7 +739,7 @@ func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 
 func BenchmarkProtobufFormat_EncodeResponse(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatProtobuf, nil)
 
 	req := &http.Request{
 		Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},
@@ -752,7 +752,7 @@ func BenchmarkProtobufFormat_EncodeResponse(b *testing.B) {
 
 		b.Run(tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := codec.EncodeResponse(context.Background(), req, tc.response)
+				_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, tc.response)
 
 				if err != nil {
 					require.NoError(b, err)

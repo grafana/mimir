@@ -37,7 +37,7 @@ type remoteReadRoundTripper struct {
 	middleware MetricsQueryMiddleware
 }
 
-func newRemoteReadRoundTripper(next http.RoundTripper, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewRemoteReadRoundTripper(next http.RoundTripper, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return &remoteReadRoundTripper{
 		next:       next,
 		middleware: MergeMetricsQueryMiddlewares(middlewares...),

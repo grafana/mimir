@@ -130,7 +130,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonParsingFailed).Inc()
-		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	instantSplitQuery, err := mapper.Map(expr)
@@ -180,8 +180,8 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 		return nil, err
 	}
 
-	annotationAccumulator := newAnnotationAccumulator()
-	shardedQueryable := newShardedQueryable(req, annotationAccumulator, s.next)
+	annotationAccumulator := NewAnnotationAccumulator()
+	shardedQueryable := NewShardedQueryable(req, annotationAccumulator, s.next, nil)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {

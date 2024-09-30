@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestPrometheusCodec_JSONResponse(t *testing.T) {
+func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
 	expectedRespHeaders := []*PrometheusHeader{
 		{
@@ -165,7 +165,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			decoded, err := codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 			if err != nil || tc.expectedErr != nil {
 				require.Equal(t, tc.expectedErr, err)
 				return
@@ -206,7 +206,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, decoded)
+			encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
 
 			expectedJSON, err := readResponseBody(httpResponse)
@@ -231,7 +231,118 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_JSONEncoding(t *testing.T) {
+func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
+	headers := http.Header{"Content-Type": []string{"application/json"}}
+	expectedRespHeaders := []*PrometheusHeader{
+		{
+			Name:   "Content-Type",
+			Values: []string{"application/json"},
+		},
+	}
+
+	for _, tc := range []struct {
+		name             string
+		request          LabelsQueryRequest
+		isSeriesResponse bool
+		responseHeaders  http.Header
+		resp             prometheusAPIResponse
+		expected         Response
+		expectedErr      error
+	}{
+		{
+			name:             "successful labels response",
+			request:          &PrometheusLabelNamesQueryRequest{},
+			isSeriesResponse: false,
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data:   []string{"foo", "bar"},
+			},
+			expected: &PrometheusLabelsResponse{
+				Status:  statusSuccess,
+				Data:    []string{"foo", "bar"},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name:             "successful series response",
+			request:          &PrometheusSeriesQueryRequest{},
+			isSeriesResponse: true,
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: []SeriesData{
+					{
+						"__name__": "series_1",
+						"foo":      "bar",
+					},
+					{
+						"__name__": "hist_series_1",
+						"hoo":      "hbar",
+					},
+				},
+			},
+			expected: &PrometheusSeriesResponse{
+				Status: statusSuccess,
+				Data: []SeriesData{
+					{
+						"__name__": "series_1",
+						"foo":      "bar",
+					},
+					{
+						"__name__": "hist_series_1",
+						"hoo":      "hbar",
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+
+			body, err := json.Marshal(tc.resp)
+			require.NoError(t, err)
+			httpResponse := &http.Response{
+				StatusCode:    200,
+				Header:        headers,
+				Body:          io.NopCloser(bytes.NewBuffer(body)),
+				ContentLength: int64(len(body)),
+			}
+			decoded, err := codec.DecodeLabelsQueryResponse(context.Background(), httpResponse, tc.request, log.NewNopLogger())
+			if err != nil || tc.expectedErr != nil {
+				require.Equal(t, tc.expectedErr, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, decoded)
+
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{jsonMimeType}},
+			}
+
+			// Reset response, as the above call will have consumed the body reader.
+			httpResponse = &http.Response{
+				StatusCode:    200,
+				Header:        headers,
+				Body:          io.NopCloser(bytes.NewBuffer(body)),
+				ContentLength: int64(len(body)),
+			}
+			encoded, err := codec.EncodeLabelsQueryResponse(context.Background(), httpRequest, decoded, tc.isSeriesResponse)
+			require.NoError(t, err)
+
+			expectedJSON, err := readResponseBody(httpResponse)
+			require.NoError(t, err)
+			encodedJSON, err := readResponseBody(encoded)
+			require.NoError(t, err)
+
+			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
+			require.Equal(t, httpResponse, encoded)
+		})
+	}
+}
+
+func TestPrometheusCodec_JSONEncoding_Metrics(t *testing.T) {
 	responseHistogram := mimirpb.FloatHistogram{
 		CounterResetHint: histogram.GaugeType,
 		Schema:           3,
@@ -353,12 +464,12 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
 
-			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, tc.response)
+			encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, tc.response)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, encoded.StatusCode)
 			require.Equal(t, "application/json", encoded.Header.Get("Content-Type"))
@@ -378,6 +489,80 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
 			require.Equal(t, float64(encoded.ContentLength), *payloadSizeHistogram.SampleSum)
+		})
+	}
+}
+
+func TestPrometheusCodec_JSONEncoding_Labels(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		expectedJSON     string
+		response         Response
+		isSeriesResponse bool
+	}{
+		{
+			name: "successful labels response",
+			response: &PrometheusLabelsResponse{
+				Status: statusSuccess,
+				Data: []string{
+					"foo",
+					"bar",
+				},
+			},
+			expectedJSON: `
+				{
+				  "status": "success",
+				  "data": ["foo", "bar"]
+				}
+			`,
+			isSeriesResponse: false,
+		},
+		{
+			name: "successful series response",
+			response: &PrometheusSeriesResponse{
+				Status: statusSuccess,
+				Data: []SeriesData{
+					{
+						"__name__": "series_1",
+						"foo":      "bar",
+					},
+					{
+						"__name__": "hist_series_1",
+						"hoo":      "hbar",
+					},
+				},
+			},
+			expectedJSON: `
+				{
+				  "status": "success",
+				  "data": [{
+					"__name__": "series_1",
+					"foo": "bar"
+				  }, {
+					"__name__": "hist_series_1",
+					"hoo": "hbar"
+				  }]
+				}
+			`,
+			isSeriesResponse: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{jsonMimeType}},
+			}
+
+			encoded, err := codec.EncodeLabelsQueryResponse(context.Background(), httpRequest, tc.response, tc.isSeriesResponse)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, encoded.StatusCode)
+			require.Equal(t, "application/json", encoded.Header.Get("Content-Type"))
+
+			encodedJSON, err := readResponseBody(encoded)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expectedJSON, string(encodedJSON))
+			require.Equal(t, len(encodedJSON), int(encoded.ContentLength))
 		})
 	}
 }

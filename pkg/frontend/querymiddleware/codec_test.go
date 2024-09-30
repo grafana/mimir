@@ -692,7 +692,7 @@ func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat)
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat, nil)
 			req := PrometheusInstantQueryRequest{}
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(context.Background(), &req)
 			require.NoError(t, err)
@@ -712,7 +712,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
-			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
 			ctx := api.ContextWithReadConsistencyLevel(context.Background(), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
@@ -724,7 +724,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T)
 func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
 	const notAllowedHeader = "X-Some-Name"
 
-	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
+	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf, nil)
 	expectedOffsets := map[int32]int64{0: 1, 1: 2}
 
 	req, err := codec.EncodeMetricsQueryRequest(context.Background(), &PrometheusInstantQueryRequest{
@@ -761,10 +761,10 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		Error:     "something went wrong",
 	}
 
-	jsonBody, err := jsonFormatter{}.EncodeResponse(testResponse)
+	jsonBody, err := jsonFormatter{}.EncodeQueryResponse(testResponse)
 	require.NoError(t, err)
 
-	protobufBody, err := protobufFormatter{}.EncodeResponse(testResponse)
+	protobufBody, err := protobufFormatter{}.EncodeQueryResponse(testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {
@@ -816,7 +816,7 @@ func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 			require.NoError(t, err)
 			req.Header.Set("Accept", scenario.acceptHeader)
 
-			encodedResponse, err := codec.EncodeResponse(context.Background(), req, testResponse)
+			encodedResponse, err := codec.EncodeMetricsQueryResponse(context.Background(), req, testResponse)
 			require.Equal(t, scenario.expectedError, err)
 
 			if scenario.expectedError == nil {
@@ -919,7 +919,7 @@ func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			codec := newTestPrometheusCodec()
 
-			_, err := codec.DecodeResponse(context.Background(), testCase.response, nil, testutil.NewTestingLogger(t))
+			_, err := codec.DecodeMetricsQueryResponse(context.Background(), testCase.response, nil, testutil.NewTestingLogger(t))
 			require.Error(t, err)
 			require.True(t, apierror.IsAPIError(err))
 			resp, ok := apierror.HTTPResponseFromError(err)
@@ -948,7 +948,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
 
 			resp := prometheusAPIResponse{}
 			body, err := json.Marshal(resp)
@@ -960,7 +960,7 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 				ContentLength: int64(len(body)),
 			}
 
-			_, err = codec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			_, err = codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 			require.Equal(t, tc.expectedErr, err)
 		})
 	}
@@ -1441,7 +1441,7 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
+		_, err := codec.DecodeMetricsQueryResponse(context.Background(), &http.Response{
 			StatusCode:    200,
 			Body:          io.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
@@ -1470,7 +1470,7 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := codec.EncodeResponse(context.Background(), req, res)
+		_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
 		require.NoError(b, err)
 	}
 }
@@ -1618,9 +1618,9 @@ func Test_DecodeOptions(t *testing.T) {
 	}
 }
 
-// TestPrometheusCodec_DecodeEncode tests that decoding and re-encoding a
-// request does not lose relevant information about the original request.
-func TestPrometheusCodec_DecodeEncode(t *testing.T) {
+// TestPrometheusCodec_DecodeEncode_Metrics tests that decoding and re-encoding a
+// metrics query request does not lose relevant information about the original request.
+func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 	codec := newTestPrometheusCodec().(prometheusCodec)
 	for _, tt := range []struct {
 		name    string
@@ -1672,6 +1672,123 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 			encoded, err := codec.EncodeMetricsQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 
+			assert.Equal(t, expected.URL, encoded.URL)
+			assert.Equal(t, expected.Header, encoded.Header)
+		})
+	}
+}
+
+// TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
+// labels query request multiple times does not lose relevant information about the original request.
+func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
+	codec := newTestPrometheusCodec().(prometheusCodec)
+	for _, tc := range []struct {
+		name     string
+		queryURL string
+		request  LabelsQueryRequest
+	}{
+		{
+			name:     "label names - minimal",
+			queryURL: "/api/v1/labels?end=1708588800&start=1708502400",
+			request: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400000,
+				End:   1708588800000,
+			},
+		},
+		{
+			name:     "label names - all",
+			queryURL: "/api/v1/labels?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400000,
+				End:   1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+				Limit: 10,
+			},
+		},
+		{
+			name:     "label values - minimal",
+			queryURL: "/api/v1/label/job/values?end=1708588800&start=1708502400",
+			request: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400000,
+				End:       1708588800000,
+			},
+		},
+		{
+			name:     "label values - all",
+			queryURL: "/api/v1/label/job/values?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusLabelValuesQueryRequest{
+				Path:      "/api/v1/label/job/values",
+				LabelName: "job",
+				Start:     1708502400000,
+				End:       1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+				Limit: 10,
+			},
+		},
+		{
+			name:     "series - minimal",
+			queryURL: "/api/v1/series?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusSeriesQueryRequest{
+				Path:  "/api/v1/series",
+				Start: 1708502400000,
+				End:   1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+			},
+		},
+		{
+			name:     "series - all",
+			queryURL: "/api/v1/series?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
+			request: &PrometheusSeriesQueryRequest{
+				Path:  "/api/v1/series",
+				Start: 1708502400000,
+				End:   1708588800000,
+				LabelMatcherSets: []string{
+					"go_goroutines{container=~\"quer.*\"}",
+					"go_goroutines{container!=\"query-scheduler\"}",
+				},
+				Limit: 10,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			expected, err := http.NewRequest("GET", tc.queryURL, nil)
+			require.NoError(t, err)
+			expected.Body = http.NoBody
+			expected.Header = make(http.Header)
+			// This header is set by EncodeLabelsQueryRequest according to the codec's config, so we
+			// should always expect it to be present on the re-encoded request.
+			expected.Header.Set("Accept", "application/json")
+			ctx := context.Background()
+
+			decoded, err := codec.DecodeLabelsQueryRequest(ctx, expected)
+			require.NoError(t, err)
+			assert.Equal(t, tc.request, decoded)
+
+			encoded, err := codec.EncodeLabelsQueryRequest(ctx, decoded)
+			require.NoError(t, err)
+			assert.Equal(t, expected.URL, encoded.URL)
+			assert.Equal(t, expected.Header, encoded.Header)
+
+			decoded, err = codec.DecodeLabelsQueryRequest(ctx, encoded)
+			require.NoError(t, err)
+			assert.Equal(t, tc.request, decoded)
+
+			encoded, err = codec.EncodeLabelsQueryRequest(ctx, decoded)
+			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
 		})
@@ -1731,7 +1848,7 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 }
 
 func newTestPrometheusCodec() Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON)
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, nil)
 }
 
 func mustSucceed[T any](value T, err error) T {

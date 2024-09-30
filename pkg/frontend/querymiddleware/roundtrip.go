@@ -38,6 +38,7 @@ const (
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
+	seriesPathSuffix                                  = "/api/v1/series"
 
 	queryTypeInstant                      = "query"
 	queryTypeRange                        = "query_range"
@@ -131,9 +132,22 @@ func (q HandlerFunc) Do(ctx context.Context, req MetricsQueryRequest) (Response,
 	return q(ctx, req)
 }
 
-// MetricsQueryHandler is like http.Handle, but specifically for Prometheus query and query_range calls.
+// MetricsQueryHandler is like http.Handler, but specifically for Prometheus query and query_range calls.
 type MetricsQueryHandler interface {
 	Do(context.Context, MetricsQueryRequest) (Response, error)
+}
+
+// LabelsHandlerFunc is like http.HandlerFunc, but for LabelsQueryHandler.
+type LabelsHandlerFunc func(context.Context, LabelsQueryRequest) (Response, error)
+
+// Do implements LabelsQueryHandler.
+func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsQueryRequest) (Response, error) {
+	return q(ctx, req)
+}
+
+// LabelsQueryHandler is like http.Handler, but specifically for Prometheus label names and values calls.
+type LabelsQueryHandler interface {
+	Do(context.Context, LabelsQueryRequest) (Response, error)
 }
 
 // MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.
@@ -245,14 +259,14 @@ func newQueryTripperware(
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
 
-		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
-		remoteRead := newRemoteReadRoundTripper(next, remoteReadMiddleware...)
+		queryrange := NewLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		instant := NewLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
 		// range and instant queries have more accurate logic for query details.
-		next = newQueryDetailsStartEndRoundTripper(next)
+		next = NewQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
 		activeSeries := next
 		activeNativeHistogramMetrics := next
@@ -442,8 +456,8 @@ func newQueryMiddlewares(
 	return
 }
 
-// newQueryDetailsStartEndRoundTripper parses "start" and "end" parameters from the query and sets same fields in the QueryDetails in the context.
-func newQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripper {
+// NewQueryDetailsStartEndRoundTripper parses "start" and "end" parameters from the query and sets same fields in the QueryDetails in the context.
+func NewQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		params, _ := util.ParseRequestFormWithoutConsumingBody(req)
 		if details := QueryDetailsFromContext(req.Context()); details != nil {
@@ -531,6 +545,10 @@ func IsLabelValuesQuery(path string) bool {
 
 func IsLabelsQuery(path string) bool {
 	return IsLabelNamesQuery(path) || IsLabelValuesQuery(path)
+}
+
+func IsSeriesQuery(path string) bool {
+	return strings.HasSuffix(path, seriesPathSuffix)
 }
 
 func IsActiveSeriesQuery(path string) bool {

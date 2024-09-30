@@ -118,7 +118,7 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			httpReq.Header.Set("X-Test-Header", "test-value")
 
-			c := NewPrometheusCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json")
+			c := NewPrometheusCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil)
 			originalReq, err := c.DecodeMetricsQueryRequest(context.Background(), httpReq)
 			require.NoError(t, err)
 

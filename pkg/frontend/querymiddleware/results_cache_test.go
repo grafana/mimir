@@ -566,7 +566,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
 
 	ctx := context.Background()
 
