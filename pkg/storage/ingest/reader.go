@@ -24,7 +24,6 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -58,7 +57,17 @@ type recordConsumer interface {
 	// Consume consumes the given records in the order they are provided. We need this as samples that will be ingested,
 	// are also needed to be in order to avoid ingesting samples out of order.
 	// The function is expected to be idempotent and incremental, meaning that it can be called multiple times with the same records, and it won't respond to context cancellation.
-	consume(context.Context, []record) error
+	Consume(context.Context, []record) error
+}
+
+type consumerFactory interface {
+	consumer() recordConsumer
+}
+
+type consumerFactoryFunc func() recordConsumer
+
+func (c consumerFactoryFunc) consumer() recordConsumer {
+	return c()
 }
 
 type PartitionReader struct {
@@ -73,8 +82,8 @@ type PartitionReader struct {
 	client  *kgo.Client
 	fetcher fetcher
 
-	consumer recordConsumer
-	metrics  readerMetrics
+	newConsumer consumerFactory
+	metrics     readerMetrics
 
 	committer *partitionCommitter
 
@@ -88,15 +97,18 @@ type PartitionReader struct {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	consumer := newPusherConsumer(pusher, util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), reg, logger)
-	return newPartitionReader(kafkaCfg, partitionID, instanceID, consumer, logger, reg)
+	metrics := newPusherConsumerMetrics(reg)
+	factory := consumerFactoryFunc(func() recordConsumer {
+		return newPusherConsumer(pusher, kafkaCfg, metrics, logger)
+	})
+	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer recordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer consumerFactory, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:                              kafkaCfg,
 		partitionID:                           partitionID,
-		consumer:                              consumer,
+		newConsumer:                           consumer,
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		metrics:                               newReaderMetrics(partitionID, reg),
 		consumedOffsetWatcher:                 newPartitionOffsetWatcher(),
@@ -478,16 +490,18 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 	logger := spanlogger.FromContext(ctx, r.logger)
 
 	for boff.Ongoing() {
+		// We instantiate the consumer on each iteration because it is stateful, and we can't reuse it after closing.
+		consumer := r.newConsumer.consumer()
 		// If the PartitionReader is stopping and the ctx was cancelled, we don't want to interrupt the in-flight
 		// processing midway. Instead, we let it finish, assuming it'll succeed.
 		// If the processing fails while stopping, we log the error and let the backoff stop and bail out.
 		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
 		// we expect the infrastructure (e.g. k8s) to eventually kill the process.
 		consumeCtx := context.WithoutCancel(ctx)
-		err := r.consumer.consume(consumeCtx, records)
+		err := consumer.Consume(consumeCtx, records)
 		if err == nil {
 			level.Debug(logger).Log("msg", "closing consumer after successful consumption")
-			return nil
+			break
 		}
 		level.Error(logger).Log(
 			"msg", "encountered error while ingesting data from Kafka; should retry",

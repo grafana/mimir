@@ -6678,6 +6678,26 @@
               "fieldDefaultValue": true,
               "fieldFlag": "ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency",
+              "required": false,
+              "desc": "The number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_batch_size",
+              "required": false,
+              "desc": "The number of timeseries to batch together before ingesting into TSDB. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 150,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-batch-size",
+              "fieldType": "int"
             }
           ],
           "fieldValue": null,

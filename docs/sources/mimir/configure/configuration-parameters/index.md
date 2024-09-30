@@ -3873,6 +3873,17 @@ kafka:
   # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
 
+  # The number of concurrent ingestion streams to the TSDB head. Every tenant
+  # has their own set of streams. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency
+  [ingestion_concurrency: <int> | default = 0]
+
+  # The number of timeseries to batch together before ingesting into TSDB. This
+  # is only used when -ingest-storage.kafka.ingestion-concurrency is greater
+  # than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-batch-size
+  [ingestion_concurrency_batch_size: <int> | default = 150]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when
