@@ -24,6 +24,11 @@
     // to rollout ingesters autoscaling with no downtime.
     ingest_storage_ingester_autoscaling_ingester_annotations_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
 
+    // Make label selector in ReplicaTemplate configurable. This mostly doesn't matter, but from our experience if the selector
+    // doesn't match correct pods, HPA in GKE will display wrong usage in "kubectl describe hpa". This is harmless, but can
+    // easily be fixed by using name=ingester-zone-a. (We will roll out that change internally, and then upstream).
+    ingest_storage_replica_template_label_selector: 'name=unused',
+
     // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
     ingest_storage_ingester_autoscaling_triggers: [
       {
@@ -75,7 +80,7 @@
   assert !$._config.ingest_storage_ingester_autoscaling_enabled || $.rollout_operator_deployment != null : 'partitions ingester autoscaling requires rollout-operator in namespace %s' % $._config.namespace,
 
   // Create resource that will be targetted by ScaledObject.
-  ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector='name=unused'),
+  ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector=$._config.ingest_storage_replica_template_label_selector),
 
   //
   // Configure prepare-shutdown endpoint in all ingesters.
