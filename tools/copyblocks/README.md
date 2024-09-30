@@ -11,7 +11,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 - Prevents copying blocks multiple times to the same destination bucket by uploading block marker files to the source bucket
 - Runs continuously with periodic checks when supplied a time duration with `--copy-period`, otherwise runs one check then exits
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
-- Configurable minimum block duration (`--min-block-duration`) to avoid copying blocks that will be compacted
+- Configurable minimum block duration (`--min-block-duration`) and (`--skip-no-compact-block-duration-check`) to target blocks that are not awaiting compaction
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
 - Log what would be copied without actually copying anything with `--dry-run`
 

@@ -13,6 +13,7 @@
   * `cortex_alertmanager_state_replication_failed_total`
   * `cortex_alertmanager_alerts`
   * `cortex_alertmanager_silences`
+* [CHANGE] Cache: Deprecate experimental support for Redis as a cache backend. #9453
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #9367 #9368 #9398 #9399 #9403 #9417 #9418 #9419 #9420
 * [FEATURE] Query-frontend: added experimental configuration options `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` to allow non-transient responses to be cached. When set to `true` error responses from hitting limits or bad data are cached for a short TTL. #9028
 * [FEATURE] gRPC: Support S2 compression. #9322
@@ -24,6 +25,7 @@
   * `-query-scheduler.grpc-client-config.grpc-compression=s2`
   * `-ruler.client.grpc-compression=s2`
   * `-ruler.query-frontend.grpc-client-config.grpc-compression=s2`
+* [FEATURE] Alertmanager: limit added for maximum size of the Grafana configuration (`-alertmanager.max-config-size-bytes`). #9402
 * [FEATURE] Ingester: Experimental support for ingesting out-of-order native histograms. This is disabled by default and can be enabled by setting `-ingester.ooo-native-histograms-ingestion-enabled` to `true`. #7175
 * [ENHANCEMENT] Ruler: Support `exclude_alerts` parameter in `<prometheus-http-prefix>/api/v1/rules` endpoint. #9300
 * [ENHANCEMENT] Distributor: add a metric to track tenants who are sending newlines in their label values called `cortex_distributor_label_values_with_newlines_total`. #9400
@@ -47,6 +49,8 @@
 ### Documentation
 
 ### Tools
+
+* [ENHANCEMENT] `copyblocks`: Added `--skip-no-compact-block-duration-check`, which defaults to `false`, to simplify targeting blocks that are not awaiting compaction. #9439
 
 ## v2.14.0-rc.0
 
