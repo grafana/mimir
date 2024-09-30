@@ -59,7 +59,7 @@ func (c *DumpCommand) doExport(*kingpin.ParseContext) error {
 	go func() {
 		for {
 			time.Sleep(time.Second)
-			c.printer.PrintLine(fmt.Sprintf("produced records: %d, offset %d", recordCount.Load(), consumedOffset.Load()))
+			c.printer.PrintLine(fmt.Sprintf("consumed records: %d, offset %d", recordCount.Load(), consumedOffset.Load()))
 		}
 	}()
 
