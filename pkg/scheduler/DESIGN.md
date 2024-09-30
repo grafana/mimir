@@ -126,7 +126,7 @@ will be enqueued at the leaf node reached by the path `root -> ingester -> tenan
 This results in `O(m * n)` queues in the tree structure:
 
 - `m` is the number of active query component nodes; `m` is always `<= 4`
-- `n` is the number of active tenant nodes; `n` is unbounded
+- `n` is the number of active tenant nodes; `n` is only bounded by the total active tenant count in a multi-tenant Mimir deployment
 
 ### Dequeuing from the Tree Queue
 
