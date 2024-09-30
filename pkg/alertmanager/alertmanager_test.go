@@ -644,8 +644,8 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 	var got struct {
 		Message string `json:"message"`
 	}
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&got)
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
 		defer func() {
 			require.NoError(t, r.Body.Close())
 		}()
