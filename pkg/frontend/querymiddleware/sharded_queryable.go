@@ -37,7 +37,7 @@ type HandleEmbeddedQueryFunc func(ctx context.Context, queryString string, query
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
 	req                   MetricsQueryRequest
-	annotationAccumulator *annotationAccumulator
+	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
 	responseHeaders       *responseHeadersTracker
 	handleEmbeddedQuery   HandleEmbeddedQueryFunc
@@ -46,7 +46,7 @@ type shardedQueryable struct {
 // NewShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *annotationAccumulator, next MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
+func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
 	if handleEmbeddedQuery == nil {
 		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc
 	}
@@ -75,7 +75,7 @@ func (q *shardedQueryable) getResponseHeaders() []*PrometheusHeader {
 // through the downstream handler.
 type shardedQuerier struct {
 	req                   MetricsQueryRequest
-	annotationAccumulator *annotationAccumulator
+	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
 
 	// Keep track of response headers received when running embedded queries.

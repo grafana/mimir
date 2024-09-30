@@ -132,7 +132,7 @@ func (q HandlerFunc) Do(ctx context.Context, req MetricsQueryRequest) (Response,
 	return q(ctx, req)
 }
 
-// MetricsQueryHandler is like http.Handle, but specifically for Prometheus query and query_range calls.
+// MetricsQueryHandler is like http.Handler, but specifically for Prometheus query and query_range calls.
 type MetricsQueryHandler interface {
 	Do(context.Context, MetricsQueryRequest) (Response, error)
 }
@@ -145,7 +145,7 @@ func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsQueryRequest) (Resp
 	return q(ctx, req)
 }
 
-// LabelsQueryHandler is like http.Handle, but specifically for Prometheus label names and values calls.
+// LabelsQueryHandler is like http.Handler, but specifically for Prometheus label names and values calls.
 type LabelsQueryHandler interface {
 	Do(context.Context, LabelsQueryRequest) (Response, error)
 }
