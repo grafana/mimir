@@ -134,6 +134,8 @@ type Limits struct {
 	IgnoreOOOExemplars        bool `yaml:"ignore_ooo_exemplars" json:"ignore_ooo_exemplars" category:"experimental"`
 	// Native histograms
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
+	// OOO native histograms
+	OOONativeHistogramsIngestionEnabled bool `yaml:"ooo_native_histograms_ingestion_enabled" json:"ooo_native_histograms_ingestion_enabled" category:"experimental"`
 	// Active series custom trackers
 	ActiveSeriesCustomTrackersConfig asmodel.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
 	// Max allowed time window for out-of-order samples.
@@ -280,6 +282,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
+	f.BoolVar(&l.OOONativeHistogramsIngestionEnabled, "ingester.ooo-native-histograms-ingestion-enabled", false, "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
@@ -852,6 +855,11 @@ func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
 // NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
 func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
+}
+
+// OOONativeHistogramsIngestionEnabled returns whether to ingest OOO native histograms in the ingester
+func (o *Overrides) OOONativeHistogramsIngestionEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).OOONativeHistogramsIngestionEnabled
 }
 
 func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {

@@ -9720,10 +9720,21 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 // The correctness of changed runtime is already tested in Prometheus, so we only check if the
 // change is being applied here.
 func Test_Ingester_OutOfOrder(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrder(t, tc.makeWriteRequest, tc.makeExpectedSamples)
+		})
+	}
+}
+
+func testIngesterOutOfOrder(t *testing.T,
+	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
 	l := defaultLimitsTestConfig()
+	l.NativeHistogramsIngestionEnabled = true
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", "test").Return(nil)
 	override, err := validation.NewOverrides(l, tenantOverride)
@@ -9732,13 +9743,20 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	setOOOTimeWindow := func(oooTW model.Duration) {
 		tenantOverride.ExpectedCalls = nil
 		tenantOverride.On("ByUserID", "test").Return(&validation.Limits{
-			OutOfOrderTimeWindow: oooTW,
+			OutOfOrderTimeWindow:                oooTW,
+			OOONativeHistogramsIngestionEnabled: true,
+
+			// Need to set this in the tenant limits even though it's already set in the global config as once the
+			// tenant limits is not nil, all configs are read from the tenant limits rather than the global one.
+			NativeHistogramsIngestionEnabled: true,
 		})
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
 	}
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	registry := prometheus.NewRegistry()
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -9755,17 +9773,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		end = end * time.Minute.Milliseconds()
 
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
-		var samples []mimirpb.Sample
-		var lbls [][]mimirpb.LabelAdapter
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: ts,
-				Value:       float64(ts),
-			})
-			lbls = append(lbls, s)
-		}
-
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
 			require.Error(t, err, "should have failed on push")
@@ -9779,17 +9787,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		var expSamples []model.SamplePair
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			expSamples = append(expSamples, model.SamplePair{
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
-			})
-		}
-		expMatrix := model.Matrix{{
-			Metric: model.Metric{"__name__": "test_1", "status": "200"},
-			Values: expSamples,
-		}}
+		expMatrix := makeExpectedSamples(start, end, model.Metric{"__name__": "test_1", "status": "200"})
 
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
@@ -9821,6 +9819,27 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
 	assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 
+	// no ooo samples appended, but the ooo delta is still calculated
+	expectedMetrics := `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 3300
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 10
+		`
+	metricNames := []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total", "cortex_ingester_tsdb_sample_out_of_order_delta_seconds"}
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// Increasing the OOO time window.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 
@@ -9828,13 +9847,72 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(90, 99, false, "")
 	verifySamples(90, 100)
 
+	// 10 ooo samples appended and more observations for the ooo delta
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 10
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 6600
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 20
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
 	pushSamples(69, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(70, 100)
 
+	// 20 more ooo samples appended (between 70-89, the other 10 between 90-99 are discarded as dupes of previously ingested samples)
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 36360
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 51
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// All beyond the ooo time window. None ingested.
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(70, 100)
+
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 84960
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 71
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -9846,6 +9924,25 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(50, 69, false, "")
 	verifySamples(50, 100)
 
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 133560
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 91
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 	assert.Equal(t, int64(60*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
@@ -9856,6 +9953,25 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(50, 100)
 
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 182160
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 111
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
@@ -9865,15 +9981,27 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 // Test_Ingester_OutOfOrder_CompactHead tests that the OOO head is compacted
 // when the compaction is forced or when the TSDB is idle.
 func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrderCompactHead(t, tc.makeWriteRequest, tc.makeExpectedSamples)
+		})
+	}
+}
+
+func testIngesterOutOfOrderCompactHead(t *testing.T,
+	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	// Set the OOO window to 30 minutes
+	// Set the OOO window to 30 minutes and enable native histograms.
 	limits := map[string]*validation.Limits{
 		userID: {
-			OutOfOrderTimeWindow: model.Duration(30 * time.Minute),
+			OutOfOrderTimeWindow:                model.Duration(30 * time.Minute),
+			OOONativeHistogramsIngestionEnabled: true,
+			NativeHistogramsIngestionEnabled:    true,
 		},
 	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
@@ -9896,17 +10024,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		end = end * time.Minute.Milliseconds()
 
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
-		var samples []mimirpb.Sample
-		var lbls [][]mimirpb.LabelAdapter
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: ts,
-				Value:       float64(ts),
-			})
-			lbls = append(lbls, s)
-		}
-
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
@@ -9915,17 +10033,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		var expSamples []model.SamplePair
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			expSamples = append(expSamples, model.SamplePair{
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
-			})
-		}
-		expMatrix := model.Matrix{{
-			Metric: model.Metric{"__name__": "test_1", "status": "200"},
-			Values: expSamples,
-		}}
+		expMatrix := makeExpectedSamples(start, end, model.Metric{"__name__": "test_1", "status": "200"})
 
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
@@ -9962,11 +10070,29 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 // Test_Ingester_OutOfOrder_CompactHead_StillActive tests that active series correctly tracks OOO series after compaction.
 func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrderCompactHeadStillActive(t,
+				func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+					return tc.makeWriteRequest(ts, ts, s)
+				})
+		})
+	}
+}
+
+func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
+	makeWriteRequest func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	// Set the OOO window to 10h.
-	limits := map[string]*validation.Limits{userID: {OutOfOrderTimeWindow: model.Duration(10 * time.Hour)}}
+	// Set the OOO window to 10h and enable native histograms.
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow:                model.Duration(10 * time.Hour),
+			NativeHistogramsIngestionEnabled:    true,
+			OOONativeHistogramsIngestionEnabled: true,
+		},
+	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
@@ -9981,9 +10107,8 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
-		samples := []mimirpb.Sample{{TimestampMs: ts * time.Minute.Milliseconds(), Value: float64(ts)}}
-		lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}}}
-		_, err = i.Push(ctx, mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API))
+		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
+		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
 
@@ -11375,4 +11500,87 @@ func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb
 	defer i.FinishPushRequest(ctx)
 
 	return i.Push(ctx, req)
+}
+
+var ingesterSampleTypeScenarios = map[string]struct {
+	makeWriteRequest    func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix
+}{
+	"float": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var samples []mimirpb.Sample
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: ts,
+					Value:       float64(ts),
+				})
+				lbls = append(lbls, s)
+			}
+			return mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SamplePair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SamplePair{
+					Timestamp: model.Time(ts),
+					Value:     model.SampleValue(ts),
+				})
+			}
+			return model.Matrix{{
+				Metric: m,
+				Values: expSamples,
+			}}
+		},
+	},
+	"int histogram": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var histograms []mimirpb.Histogram
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				h := util_test.GenerateTestHistogram(int(ts))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, h))
+				lbls = append(lbls, s)
+			}
+			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SampleHistogramPair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SampleHistogramPair{
+					Timestamp: model.Time(ts),
+					Histogram: mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(int(ts)))),
+				})
+			}
+			return model.Matrix{{
+				Metric:     m,
+				Histograms: expSamples,
+			}}
+		},
+	},
+	"float histogram": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var histograms []mimirpb.Histogram
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				h := util_test.GenerateTestFloatHistogram(int(ts))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, h))
+				lbls = append(lbls, s)
+			}
+			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SampleHistogramPair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SampleHistogramPair{
+					Timestamp: model.Time(ts),
+					Histogram: mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(int(ts)))),
+				})
+			}
+			return model.Matrix{{
+				Metric:     m,
+				Histograms: expSamples,
+			}}
+		},
+	},
 }
