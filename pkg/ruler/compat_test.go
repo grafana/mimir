@@ -529,7 +529,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// Ensure the result has been written.
 			require.EventuallyWithT(t, func(collect *assert.CollectT) {
-				pusher.AssertCalled(&collectWithLogf{collect}, "Push", mock.Anything, mock.Anything)
+				pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
 			}, 5*time.Second, 100*time.Millisecond)
 
 			manager.Stop()
@@ -593,7 +593,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			if writeEnabled {
 				// Ensure the result has been written.
 				require.EventuallyWithT(t, func(collect *assert.CollectT) {
-					pusher.AssertCalled(&collectWithLogf{collect}, "Push", mock.Anything, mock.Anything)
+					pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
 				}, 5*time.Second, 100*time.Millisecond)
 			} else {
 				// Ensure no write occurred within a reasonable amount of time.
@@ -846,9 +846,3 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 	}
 	return s
 }
-
-type collectWithLogf struct {
-	*assert.CollectT
-}
-
-func (c *collectWithLogf) Logf(_ string, _ ...interface{}) {}
