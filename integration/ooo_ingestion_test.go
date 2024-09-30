@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"github.com/grafana/mimir/integration/e2ehistograms"
 	"net/http"
 	"testing"
 	"time"
@@ -89,19 +90,19 @@ func TestOOOIngestion(t *testing.T) {
 	intHistogramSeriesName := "ooo_int_histogram_series"
 
 	// Push in-order sample.
-	series, expectedVector, _ = generateHistogramSeries(intHistogramSeriesName, nowTS)
+	series, expectedVector, _ = e2ehistograms.GenerateHistogramSeries(intHistogramSeriesName, nowTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Push out-of-order sample.
-	series, _, expectedMatrix = generateHistogramSeries(intHistogramSeriesName, oooTS)
+	series, _, expectedMatrix = e2ehistograms.GenerateHistogramSeries(intHistogramSeriesName, oooTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Push sample that's older than the out-of-order time window.
-	series, _, _ = generateHistogramSeries(intHistogramSeriesName, tooOldTS)
+	series, _, _ = e2ehistograms.GenerateHistogramSeries(intHistogramSeriesName, tooOldTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
@@ -118,13 +119,13 @@ func TestOOOIngestion(t *testing.T) {
 	floatHistogramSeriesName := "ooo_float_histogram_series"
 
 	// Push in-order sample.
-	series, expectedVector, _ = GenerateFloatHistogramSeries(floatHistogramSeriesName, nowTS)
+	series, expectedVector, _ = e2ehistograms.GenerateFloatHistogramSeries(floatHistogramSeriesName, nowTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Push out-of-order sample.
-	series, _, expectedMatrix = GenerateFloatHistogramSeries(floatHistogramSeriesName, oooTS)
+	series, _, expectedMatrix = e2ehistograms.GenerateFloatHistogramSeries(floatHistogramSeriesName, oooTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
@@ -198,13 +199,13 @@ func TestOOOHistogramIngestionDisabled(t *testing.T) {
 	intHistogramSeriesName := "ooo_int_histogram_series"
 
 	// Push in-order sample.
-	series, _, _ = generateHistogramSeries(intHistogramSeriesName, nowTS)
+	series, _, _ = e2ehistograms.GenerateHistogramSeries(intHistogramSeriesName, nowTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Push out-of-order sample.
-	series, _, _ = generateHistogramSeries(intHistogramSeriesName, oooTS)
+	series, _, _ = e2ehistograms.GenerateHistogramSeries(intHistogramSeriesName, oooTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
@@ -213,13 +214,13 @@ func TestOOOHistogramIngestionDisabled(t *testing.T) {
 	floatHistogramSeriesName := "ooo_float_histogram_series"
 
 	// Push in-order sample.
-	series, _, _ = GenerateFloatHistogramSeries(floatHistogramSeriesName, nowTS)
+	series, _, _ = e2ehistograms.GenerateFloatHistogramSeries(floatHistogramSeriesName, nowTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Push out-of-order sample.
-	series, _, _ = GenerateFloatHistogramSeries(floatHistogramSeriesName, oooTS)
+	series, _, _ = e2ehistograms.GenerateFloatHistogramSeries(floatHistogramSeriesName, oooTS)
 	res, err = c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
