@@ -11,7 +11,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -433,9 +432,9 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) error {
-	templates := make([]io.Reader, 0, len(tmpls))
+	templates := make([]string, 0, len(tmpls))
 	for _, tmpl := range tmpls {
-		templates = append(templates, strings.NewReader(tmpl.Template))
+		templates = append(templates, tmpl.Template)
 	}
 
 	tmpl, err := loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
@@ -592,7 +591,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []io.Reader, staticHeaders map[string]string) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []string, staticHeaders map[string]string) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
