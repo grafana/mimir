@@ -641,14 +641,17 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 	defer am.StopAndWait()
 
 	// The webhook message should contain the executed Grafana template.
-	var got struct {
+	type notification struct {
 		Message string `json:"message"`
 	}
+	c := make(chan notification)
 	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		var got notification
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
 		defer func() {
 			require.NoError(t, r.Body.Close())
 		}()
+		c <- got
 	}))
 	defer s.Close()
 
@@ -695,6 +698,11 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 	require.NoError(t, am.alerts.Put(&alert))
 	require.Equal(t, am.templates[0], testTemplate)
 	require.Eventually(t, func() bool {
-		return got.Message == expMessage
+		select {
+		case got := <-c:
+			return got.Message == expMessage
+		default:
+			return false
+		}
 	}, 5*time.Second, 100*time.Millisecond)
 }
