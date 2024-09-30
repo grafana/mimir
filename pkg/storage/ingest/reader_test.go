@@ -121,7 +121,7 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 	consumer := consumerFunc(func(ctx context.Context, records []record) error {
 		invocations.Inc()
 		if !returnErrors.Load() {
-			return trackingConsumer.consume(ctx, records)
+			return trackingConsumer.Consume(ctx, records)
 		}
 		// There may be more records, but we only care that the one we failed to consume in the first place is still there.
 		assert.Equal(t, "1", string(records[0].content))
@@ -1770,7 +1770,7 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 type readerTestCfg struct {
 	kafka       KafkaConfig
 	partitionID int32
-	consumer    recordConsumer
+	consumer    consumerFactory
 	registry    *prometheus.Registry
 	logger      log.Logger
 }
@@ -1835,7 +1835,9 @@ func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partit
 		logger:      testingLogger.WithT(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
-		consumer:    consumer,
+		consumer: consumerFactoryFunc(func() recordConsumer {
+			return consumer
+		}),
 	}
 }
 
@@ -1981,7 +1983,7 @@ func newTestConsumer(capacity int) testConsumer {
 	}
 }
 
-func (t testConsumer) consume(ctx context.Context, records []record) error {
+func (t testConsumer) Consume(ctx context.Context, records []record) error {
 	for _, r := range records {
 		select {
 		case <-ctx.Done():
@@ -2022,7 +2024,7 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 
 type consumerFunc func(ctx context.Context, records []record) error
 
-func (c consumerFunc) consume(ctx context.Context, records []record) error {
+func (c consumerFunc) Consume(ctx context.Context, records []record) error {
 	return c(ctx, records)
 }
 
