@@ -5,7 +5,9 @@
 
 package querymiddleware
 
-import v1 "github.com/prometheus/prometheus/web/api/v1"
+import (
+	v1 "github.com/prometheus/prometheus/web/api/v1"
+)
 
 const jsonMimeType = "application/json"
 
@@ -17,6 +19,34 @@ func (j jsonFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, error) 
 
 func (j jsonFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp PrometheusResponse
+
+	if err := json.Unmarshal(buf, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+func (j jsonFormatter) EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error) {
+	return json.Marshal(resp)
+}
+
+func (j jsonFormatter) DecodeLabelsResponse(buf []byte) (*PrometheusLabelsResponse, error) {
+	var resp PrometheusLabelsResponse
+
+	if err := json.Unmarshal(buf, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+func (j jsonFormatter) EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error) {
+	return json.Marshal(resp)
+}
+
+func (j jsonFormatter) DecodeSeriesResponse(buf []byte) (*PrometheusSeriesResponse, error) {
+	var resp PrometheusSeriesResponse
 
 	if err := json.Unmarshal(buf, &resp); err != nil {
 		return nil, err

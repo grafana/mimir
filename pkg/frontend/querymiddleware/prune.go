@@ -59,7 +59,7 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 	// Parse the query.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", false, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return "", false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 	origQueryString := expr.String()
 

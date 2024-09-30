@@ -257,7 +257,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 }
 
 func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
-	queryable := newShardedQueryable(&PrometheusRangeQueryRequest{}, nil, nil)
+	queryable := NewShardedQueryable(&PrometheusRangeQueryRequest{}, nil, nil, nil)
 	assert.Empty(t, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 1st querier.
@@ -288,7 +288,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 }
 
 func mkShardedQuerier(handler MetricsQueryHandler) *shardedQuerier {
-	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
+	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker(), handleEmbeddedQuery: defaultHandleEmbeddedQueryFunc()}
 }
 
 func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
@@ -418,7 +418,7 @@ func TestResponseToSamples(t *testing.T) {
 		},
 	}
 
-	streams, err := responseToSamples(input)
+	streams, err := ResponseToSamples(input)
 	require.NoError(t, err)
 	assertEqualSampleStream(t, input.Data.Result, streams)
 }

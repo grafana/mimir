@@ -326,6 +326,22 @@ func (f protobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*Promethe
 	}, nil
 }
 
+func (f protobufFormatter) EncodeLabelsResponse(*PrometheusLabelsResponse) ([]byte, error) {
+	return nil, errors.New("protobuf labels encoding is not supported")
+}
+
+func (f protobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error) {
+	return nil, errors.New("protobuf labels decoding is not supported")
+}
+
+func (f protobufFormatter) EncodeSeriesResponse(*PrometheusSeriesResponse) ([]byte, error) {
+	return nil, errors.New("protobuf series encoding is not supported")
+}
+
+func (f protobufFormatter) DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error) {
+	return nil, errors.New("protobuf series decoding is not supported")
+}
+
 func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {
 	if len(s)%2 != 0 {
 		return nil, fmt.Errorf("metric is malformed: expected even number of symbols, but got %v", len(s))

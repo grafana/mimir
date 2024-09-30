@@ -198,7 +198,7 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, hints *stor
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	if name == m.idLabelName {
 		labelValues := make([]string, 0, len(matchedIDs))
@@ -237,7 +237,7 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
 		return m.upstream.LabelNames(ctx, id, hints, filteredMatchers...)
@@ -349,7 +349,7 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	jobs := make([]string, 0, len(matchedIDs))
 	seriesSets := make([]storage.SeriesSet, len(matchedIDs))

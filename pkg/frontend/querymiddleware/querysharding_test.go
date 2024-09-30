@@ -75,9 +75,9 @@ func approximatelyEqualsSamples(t *testing.T, a, b *PrometheusResponse) {
 	require.Equal(t, statusSuccess, a.Status)
 	require.Equal(t, statusSuccess, b.Status)
 
-	as, err := responseToSamples(a)
+	as, err := ResponseToSamples(a)
 	require.Nil(t, err)
-	bs, err := responseToSamples(b)
+	bs, err := ResponseToSamples(b)
 	require.Nil(t, err)
 
 	require.Equalf(t, len(as), len(bs), "expected same number of series: one contains %v, other %v", sampleStreamsStrings(as), sampleStreamsStrings(bs))
@@ -923,7 +923,7 @@ func TestQueryshardingDeterminism(t *testing.T) {
 
 		shardedPrometheusRes := shardedRes.(*PrometheusResponse)
 
-		sampleStreams, err := responseToSamples(shardedPrometheusRes)
+		sampleStreams, err := ResponseToSamples(shardedPrometheusRes)
 		require.NoError(t, err)
 
 		require.Lenf(t, sampleStreams, 1, "There should be 1 samples stream (query %d)", i)

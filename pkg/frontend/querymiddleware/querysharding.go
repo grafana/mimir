@@ -109,7 +109,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	// Parse the query.
 	queryExpr, err := parser.ParseExpr(r.GetQuery())
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
@@ -151,10 +151,14 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	annotationAccumulator := newAnnotationAccumulator()
-	shardedQueryable := newShardedQueryable(r, annotationAccumulator, s.next)
+	annotationAccumulator := NewAnnotationAccumulator()
+	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, nil)
 
-	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
+}
+
+func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable, annotationAccumulator *annotationAccumulator) (Response, error) {
+	qry, err := newQuery(ctx, r, engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -169,12 +173,20 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	// query, so we pass in an empty string as the query so the positions will be hidden.
 	warn, info := res.Warnings.AsStrings("", 0, 0)
 
-	// Add any annotations returned by the sharded queries, and remove any duplicates.
-	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-	warn = append(warn, accumulatedWarnings...)
-	info = append(info, accumulatedInfos...)
-	warn = removeDuplicates(warn)
-	info = removeDuplicates(info)
+	if annotationAccumulator != nil {
+		// Add any annotations returned by the sharded queries, and remove any duplicates.
+		accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
+		warn = append(warn, accumulatedWarnings...)
+		info = append(info, accumulatedInfos...)
+		warn = removeDuplicates(warn)
+		info = removeDuplicates(info)
+	}
+
+	var headers []*PrometheusHeader
+	shardedQueryable, ok := queryable.(*shardedQueryable)
+	if ok {
+		headers = shardedQueryable.getResponseHeaders()
+	}
 
 	return &PrometheusResponse{
 		Status: statusSuccess,
@@ -182,7 +194,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Headers:  shardedQueryable.getResponseHeaders(),
+		Headers:  headers,
 		Warnings: warn,
 		Infos:    info,
 	}, nil
@@ -275,7 +287,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	// each time before passing it to the mapper.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return "", nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	shardedQuery, err := mapper.Map(expr)
@@ -496,7 +508,7 @@ type annotationAccumulator struct {
 	infos    *sync.Map
 }
 
-func newAnnotationAccumulator() *annotationAccumulator {
+func NewAnnotationAccumulator() *annotationAccumulator { //nolint:revive
 	return &annotationAccumulator{
 		warnings: &sync.Map{},
 		infos:    &sync.Map{},
