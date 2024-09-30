@@ -154,7 +154,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 			return nil, err
 		}
 
-		return codec.EncodeResponse(r.Context(), r, &PrometheusResponse{
+		return codec.EncodeMetricsQueryResponse(r.Context(), r, &PrometheusResponse{
 			Status: "success",
 			Data: &PrometheusData{
 				ResultType: "vector",
@@ -899,7 +899,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		}),
 		log.NewNopLogger(),
 		mockLimits{},
-		NewPrometheusCodec(nil, 0, formatJSON),
+		NewPrometheusCodec(nil, 0, formatJSON, nil),
 		nil,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),

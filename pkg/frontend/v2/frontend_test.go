@@ -76,7 +76,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json")
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
 	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
 	require.NoError(t, err)

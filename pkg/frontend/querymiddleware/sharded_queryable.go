@@ -48,7 +48,7 @@ type shardedQueryable struct {
 // headers for all queries run through the queryable and never reset them.
 func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *annotationAccumulator, next MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
 	if handleEmbeddedQuery == nil {
-		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc()
+		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc
 	}
 	return &shardedQueryable{
 		req:                   req,
@@ -115,29 +115,27 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
-func defaultHandleEmbeddedQueryFunc() HandleEmbeddedQueryFunc {
-	return func(ctx context.Context, queryString string, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
-		query, err := query.WithQuery(queryString)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		resp, err := handler.Do(ctx, query)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		promRes, ok := resp.(*PrometheusResponse)
-		if !ok {
-			return nil, nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
-		}
-		resStreams, err := ResponseToSamples(promRes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return resStreams, promRes, nil
+func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryString string, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+	query, err := query.WithQuery(queryString)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	resp, err := handler.Do(ctx, query)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	promRes, ok := resp.(*PrometheusResponse)
+	if !ok {
+		return nil, nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+	}
+	resStreams, err := ResponseToSamples(promRes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resStreams, promRes, nil
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.

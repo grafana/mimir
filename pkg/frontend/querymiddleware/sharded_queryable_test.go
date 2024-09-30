@@ -288,7 +288,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 }
 
 func mkShardedQuerier(handler MetricsQueryHandler) *shardedQuerier {
-	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker(), handleEmbeddedQuery: defaultHandleEmbeddedQueryFunc()}
+	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker(), handleEmbeddedQuery: defaultHandleEmbeddedQueryFunc}
 }
 
 func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {

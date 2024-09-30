@@ -22,7 +22,7 @@ func (f protobufFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
-func (f protobufFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
+func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
 	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (protobufFormatter) encodeMatrixData(data []SampleStream) mimirpb.MatrixDat
 	return mimirpb.MatrixData{Series: series}
 }
 
-func (f protobufFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
+func (f protobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp mimirpb.QueryResponse
 
 	if err := resp.Unmarshal(buf); err != nil {

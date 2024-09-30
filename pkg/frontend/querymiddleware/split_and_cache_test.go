@@ -1699,7 +1699,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	return q.codec.EncodeResponse(r.Context(), r, response)
+	return q.codec.EncodeMetricsQueryResponse(r.Context(), r, response)
 }
 
 const seconds = 1e3 // 1e3 milliseconds per second.

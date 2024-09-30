@@ -511,7 +511,7 @@ func (r *PrometheusSeriesQueryRequest) GetHeaders() []*PrometheusHeader {
 
 // WithLabelName clones the current `PrometheusLabelNamesQueryRequest` with a new label name param.
 func (r *PrometheusLabelNamesQueryRequest) WithLabelName(string) (LabelsQueryRequest, error) {
-	return nil, fmt.Errorf("not implemented")
+	panic("PrometheusLabelNamesQueryRequest.WithLabelName is not implemented")
 }
 
 // WithLabelName clones the current `PrometheusLabelValuesQueryRequest` with a new label name param.
@@ -524,7 +524,7 @@ func (r *PrometheusLabelValuesQueryRequest) WithLabelName(name string) (LabelsQu
 
 // WithLabelName clones the current `PrometheusSeriesQueryRequest` with a new label name param.
 func (r *PrometheusSeriesQueryRequest) WithLabelName(string) (LabelsQueryRequest, error) {
-	return nil, fmt.Errorf("not implemented")
+	panic("PrometheusSeriesQueryRequest.WithLabelName is not implemented")
 }
 
 // WithLabelMatcherSets clones the current `PrometheusLabelNamesQueryRequest` with new label matcher sets.

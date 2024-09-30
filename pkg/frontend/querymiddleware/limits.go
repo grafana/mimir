@@ -248,7 +248,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	return rt.codec.EncodeResponse(ctx, r, response)
+	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
 // roundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
@@ -276,7 +276,7 @@ func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (R
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	return rth.codec.DecodeResponse(ctx, response, r, rth.logger)
+	return rth.codec.DecodeMetricsQueryResponse(ctx, response, r, rth.logger)
 }
 
 // smallestPositiveNonZeroDuration returns the smallest positive and non-zero value

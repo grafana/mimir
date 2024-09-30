@@ -49,9 +49,8 @@ var (
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
-	clusterNameHeader                     = "X-Cluster-Name"
-	prometheusCodecPropagateHeaders       = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, clusterNameHeader}
-	prometheusCodecLabelsPropagateHeaders = []string{clusterNameHeader}
+	prometheusCodecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
+	prometheusCodecPropagateHeadersLabels  = []string{}
 )
 
 const (
@@ -79,22 +78,22 @@ type Codec interface {
 	DecodeMetricsQueryRequest(context.Context, *http.Request) (MetricsQueryRequest, error)
 	// DecodeLabelsQueryRequest decodes a LabelsQueryRequest from an http request.
 	DecodeLabelsQueryRequest(context.Context, *http.Request) (LabelsQueryRequest, error)
-	// DecodeResponse decodes a Response from an http response.
+	// DecodeMetricsQueryResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
-	// DecodeLabelsResponse decodes a Response from an http response.
+	DecodeMetricsQueryResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
+	// DecodeLabelsQueryResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeLabelsResponse(context.Context, *http.Response, LabelsQueryRequest, log.Logger) (Response, error)
+	DecodeLabelsQueryResponse(context.Context, *http.Response, LabelsQueryRequest, log.Logger) (Response, error)
 	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
 	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
 	// EncodeLabelsQueryRequest encodes a LabelsQueryRequest into an http request.
 	EncodeLabelsQueryRequest(context.Context, LabelsQueryRequest) (*http.Request, error)
-	// EncodeResponse encodes a Response into an http response.
-	EncodeResponse(context.Context, *http.Request, Response) (*http.Response, error)
-	// EncodeLabelsResponse encodes a Response into an http response.
-	EncodeLabelsResponse(context.Context, *http.Request, Response, LabelsQueryRequest) (*http.Response, error)
+	// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
+	EncodeMetricsQueryResponse(context.Context, *http.Request, Response) (*http.Response, error)
+	// EncodeLabelsQueryResponse encodes a Response from a LabelsQueryRequest into an http response.
+	EncodeLabelsQueryResponse(context.Context, *http.Request, Response, bool) (*http.Response, error)
 }
 
 // Merger is used by middlewares making multiple requests to merge back all responses into a single one.
@@ -220,16 +219,17 @@ func newPrometheusCodecMetrics(registerer prometheus.Registerer) *prometheusCode
 }
 
 type prometheusCodec struct {
-	metrics                            *prometheusCodecMetrics
-	lookbackDelta                      time.Duration
-	preferredQueryResultResponseFormat string
+	metrics                                         *prometheusCodecMetrics
+	lookbackDelta                                   time.Duration
+	preferredQueryResultResponseFormat              string
+	propagateHeadersMetrics, propagateHeadersLabels []string
 }
 
 type formatter interface {
-	EncodeResponse(resp *PrometheusResponse) ([]byte, error)
+	EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error)
 	EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error)
 	EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error)
-	DecodeResponse([]byte) (*PrometheusResponse, error)
+	DecodeQueryResponse([]byte) (*PrometheusResponse, error)
 	DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error)
 	DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error)
 	Name() string
@@ -247,11 +247,14 @@ func NewPrometheusCodec(
 	registerer prometheus.Registerer,
 	lookbackDelta time.Duration,
 	queryResultResponseFormat string,
+	propagateHeaders []string,
 ) Codec {
 	return prometheusCodec{
 		metrics:                            newPrometheusCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
+		propagateHeadersMetrics:            append(prometheusCodecPropagateHeadersMetrics, propagateHeaders...),
+		propagateHeadersLabels:             append(prometheusCodecPropagateHeadersLabels, propagateHeaders...),
 	}
 }
 
@@ -627,7 +630,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 
 	// Propagate allowed HTTP headers.
 	for _, h := range r.GetHeaders() {
-		if !slices.Contains(prometheusCodecPropagateHeaders, h.Name) {
+		if !slices.Contains(c.propagateHeadersMetrics, h.Name) {
 			continue
 		}
 
@@ -727,7 +730,7 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 
 	// Propagate allowed HTTP headers.
 	for _, h := range req.GetHeaders() {
-		if !slices.Contains(prometheusCodecLabelsPropagateHeaders, h.Name) {
+		if !slices.Contains(c.propagateHeadersLabels, h.Name) {
 			continue
 		}
 
@@ -758,7 +761,7 @@ func encodeOptions(req *http.Request, o Options) {
 	}
 }
 
-func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
+func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
 	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
@@ -796,7 +799,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	}
 
 	start := time.Now()
-	resp, err := formatter.DecodeResponse(buf)
+	resp, err := formatter.DecodeQueryResponse(buf)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
@@ -814,7 +817,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	return resp, nil
 }
 
-func (c prometheusCodec) DecodeLabelsResponse(ctx context.Context, r *http.Response, lr LabelsQueryRequest, logger log.Logger) (Response, error) {
+func (c prometheusCodec) DecodeLabelsQueryResponse(ctx context.Context, r *http.Response, lr LabelsQueryRequest, logger log.Logger) (Response, error) {
 	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
@@ -908,7 +911,7 @@ func findFormatter(contentType string) formatter {
 	return nil
 }
 
-func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
+func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 
@@ -926,7 +929,7 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 	}
 
 	start := time.Now()
-	b, err := formatter.EncodeResponse(a)
+	b, err := formatter.EncodeQueryResponse(a)
 	if err != nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
@@ -950,7 +953,7 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 	return &resp, nil
 }
 
-func (c prometheusCodec) EncodeLabelsResponse(ctx context.Context, req *http.Request, res Response, lr LabelsQueryRequest) (*http.Response, error) {
+func (c prometheusCodec) EncodeLabelsQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 
@@ -962,8 +965,8 @@ func (c prometheusCodec) EncodeLabelsResponse(ctx context.Context, req *http.Req
 	var start time.Time
 	var b []byte
 
-	switch lr.(type) {
-	case *PrometheusLabelNamesQueryRequest, *PrometheusLabelValuesQueryRequest:
+	switch isSeriesResponse {
+	case false:
 		a, ok := res.(*PrometheusLabelsResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -978,7 +981,7 @@ func (c prometheusCodec) EncodeLabelsResponse(ctx context.Context, req *http.Req
 		if err != nil {
 			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 		}
-	case *PrometheusSeriesQueryRequest:
+	case true:
 		a, ok := res.(*PrometheusSeriesResponse)
 		if !ok {
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
@@ -993,8 +996,6 @@ func (c prometheusCodec) EncodeLabelsResponse(ctx context.Context, req *http.Req
 		if err != nil {
 			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 		}
-	default:
-		return nil, apierror.Newf(apierror.TypeInternal, "unsupported request type %T", lr)
 	}
 
 	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
