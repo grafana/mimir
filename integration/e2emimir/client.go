@@ -413,11 +413,11 @@ func (c *Client) LabelValues(label string, start, end time.Time, matches []strin
 }
 
 // LabelNames gets label names
-func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
+func (c *Client) LabelNames(start, end time.Time, matches []string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelNames(ctx, nil, start, end)
+	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end)
 	return result, err
 }
 
