@@ -49,7 +49,7 @@ require (
 	golang.org/x/net v0.29.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/time v0.6.0
-	google.golang.org/grpc v1.66.0
+	google.golang.org/grpc v1.67.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -111,7 +111,7 @@ require (
 	github.com/go-test/deep v1.1.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
-	github.com/golang/glog v1.2.1 // indirect
+	github.com/golang/glog v1.2.2 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
@@ -320,4 +320,4 @@ replace github.com/twmb/franz-go => github.com/dimitarvdimitrov/franz-go v0.0.0-
 
 // Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
-replace google.golang.org/grpc => google.golang.org/grpc v1.65.0
+replace google.golang.org/grpc => google.golang.org/grpc v1.67.0
