@@ -240,6 +240,9 @@ type Limits interface {
 	// AlertmanagerMaxConfigSize returns max size of configuration file that user is allowed to upload. If 0, there is no limit.
 	AlertmanagerMaxConfigSize(tenant string) int
 
+	// AlertmanagerMaxGrafanaStateSize returns the max size of the grafana state in bytes. If 0, there is no limit.
+	AlertmanagerMaxGrafanaStateSize(tenant string) int
+
 	// AlertmanagerMaxSilencesCount returns the max number of silences, including expired silences. If negative or 0, there is no limit.
 	AlertmanagerMaxSilencesCount(tenant string) int
 

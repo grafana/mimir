@@ -3294,6 +3294,7 @@ type mockAlertManagerLimits struct {
 	emailNotificationBurst         int
 	maxConfigSize                  int
 	maxGrafanaConfigSize           int
+	maxGrafanaStateSize            int
 	maxSilencesCount               int
 	maxSilenceSizeBytes            int
 	maxTemplatesCount              int
@@ -3309,6 +3310,10 @@ func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxGrafanaConfigSize(string) int {
 	return m.maxGrafanaConfigSize
+}
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxGrafanaStateSize(string) int {
+	return m.maxGrafanaStateSize
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxSilencesCount(string) int { return m.maxSilencesCount }

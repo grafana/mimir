@@ -169,8 +169,24 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxStateSize := am.limits.AlertmanagerMaxGrafanaStateSize(userID)
+	if maxStateSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxStateSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(errStateTooBig, maxStateSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: msg})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingState, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{
