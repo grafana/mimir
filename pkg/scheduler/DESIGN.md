@@ -8,15 +8,22 @@ the queuing logic is isolated into a "tree queue" structure and its associated q
 
 ## Tree Queue: What and Why
 
-The "tree queue" structure serves the purpose of a discrete priority queue.
-The requests are split into many queues, each of which is located at a leaf node in the tree structure.
+The "tree queue" structure serves as a discrete priority queue.
+Requests are split into many queues, each of which is located at a leaf node in the tree structure.
 
 The tree structure enables some of the specific requirements of our queue selection algorithms:
 
-- we must select a queue to dequeue from based on two independent algorithms, each with their own state
-- there is a hierarchy of importance between the two algorithms - one is primary, the other secondary
-- one of the algorithms (tenant-querier shuffle shard) can reject all queue options presented to it,
-  requiring us to return back up to the previous level of queue selection to continue searching.
+1. The system must select a queue to dequeue from based on two independent algorithms, each with their own state:
+   1. A query component selection for isolation of query component latency effects
+   1. A global tenant rotation for tenant fairness, with configurable shuffle-sharding
+1. There is a decision hierarchy between the two queue selection algorithms
+   1. For the same inputs, queue selection first by query component, then by tenant
+      will often result in a different outcome than queue selection first by tenant, then by query component
+   1. In order to effectively isolate query component latency effects,
+      the query component selection algorithm must take precedence over tenant rotation
+1. The tenant rotation algorithm can reject all queue options presented to it when shuffle-sharding is enabled;
+   1. In order to minimize idle querier capacity, the system must be able to
+      return up to the query component selection level to continue the search
 
 These requirements lend themselves to a search tree or decision tree structure;
 the levels of the tree express a clear hierarchy of decisonmaking between the two algorithms,
@@ -24,8 +31,9 @@ and the depth-first traversal provides a familiar pattern for searching for a le
 
 ### Diagram: Dequeue Decision Tree (Simplified)
 
-For diagrams in this doc, we omit the `unknown` query component node and its subtree to save space.
-The system treats `unknown` the same as `ingester-and-store-gateway`.
+> [!NOTE]
+> The system maintains a fourth query component, `unknown`, which is treated the same as `ingester-and-store-gateway`.
+> The `unknown` query component node and its subtree are omitted from diagrams in this doc for simplicity.
 
 ```mermaid
 ---
@@ -115,9 +123,14 @@ These properties are used to place the request into a queue at a leaf node.
 A request from `tenant-1` which is expected to only utilize ingesters
 will be enqueued at the leaf node reached by the path `root -> ingester -> tenant-1`.
 
+This results in `O(m * n)` queues in the tree structure:
+
+- `m` is the number of active query component nodes; `m` is always `<= 4`
+- `n` is the number of active tenant nodes; `n` is unbounded
+
 ### Dequeuing from the Tree Queue
 
-On dequeue, we perform a depth-first search of the tree structure to select a leaf node to dequeue from.
+On dequeue, we perform a depth-first search of the tree to select a leaf node to dequeue from.
 Each of the two non-leaf levels of the tree uses a different algorithm to select the next child node.
 
 1. At the root node level, one algorithm selects one of four possible query component child nodes.
@@ -248,35 +261,54 @@ This approach served two purposes:
 1. tenant fairness via a simple round-robin between all tenants with non-empty query request queues
 1. rudimentary tenant isolation via shuffle-shard assignment of noisy tenants to only a subset of queriers
 
-While this inter-tenant Quality-Of-Service approach has worked well,
-other QOS issues have arisen from the varying characteristics of Mimir's two "query components"
+While this inter-tenant Quality-of-Service approach has worked well,
+other QoS issues have arisen from the varying characteristics of Mimir's two "query components"
 utilized by the queriers to fetch TSDB data for executing queries: ingesters and store-gateways.
 
-### New Requirement: Queue Splitting by Query Component
+### New Requirement: Isolating Query Component Latency Effects
 
 Ingesters serve requests for recent data, and store-gateways serve requests for older data.
-While queries can overlap the time periods of data fetched by both query components,
+While queries can span the time periods served by both query components,
 many requests are served by only one of the two components.
 
 Ingesters and store-gateways tend to experience issues independently of each other,
 but when one component was in a degraded state, _all_ queries would wait in the queue behind the slow queries,
 causing high latency and timeouts for queries which could have been serviced by the non-degraded query component.
 
-### Phase 1: Query Component Selection by Round-Robin
+#### Goals
 
-In the first phase, we believed that it would be sufficient to duplicate the tenant queue splitting approach.
-We split the tenant queues further by query component, so that each tenant could have up to four queues.
+The primary goal of the new design solution is to keep queries which only require the non-degraded query component
+moving through the queue and being processed, rather than waiting in the queue behind the slow queries.
 
-To enable more clear management of the two dimensions of queue splitting rather than one,
+#### Non-Goals
+
+In real-world scenarios queries to the degraded query component are often slow enough to hit timeouts,
+and the majority of those queries will be expected to fail until the component recovers.
+
+#### Constraints
+
+The solution should maintain high utilization of queriers while there are still any requests in the queue.
+Querier capacity should not be permanently "reserved" for any query type;
+as there is no guarantee of when that query type will be enqueued again,
+permanent capacity reservation could result resource under-utilization and waste.
+
+### Solution 1: Queue Splitting by Query Component and Query Component Selection by Round-Robin
+
+Tenant queues were split again by query component, resulting in up to four queues per tenant.
+
+With queues now split and selected by two dimensions rather than one,
 we introduced the "tree queue" structure, inspired by Loki's implementation.
 
-For simplicity at this stage, the tenant selection algorithm was kept higher in the tree
-and therefore took priority over the query component queue selection algorithm.
-Additionally, the query component selection algorithm was a simple round-robin.
+This solution attempted to minimize the complexity of changes:
 
-This phase was a failure due to both of those design decisions.
+1. the tenant selection algorithm was kept higher in the tree
+   and therefore took priority over the query component queue selection algorithm.
+1. the query component selection algorithm was a simple round-robin.
 
-#### Failure 1: Tenant Selection Priority over Query Component Selection (minor)
+These design decisions resulted in severe limitations in Solution 1's ability to isolate query component latency,
+as determined through benchmarks, simulations, and observation in production environments.
+
+#### Limitation 1 (minor): Tenant Selection Priority over Query Component Selection
 
 The fact that the tenant selection was given priority over query-component selection
 meant that a tenant's query traffic profile could override the query component round-robin.
@@ -285,18 +317,22 @@ If the tenant rotation had selected `tenant-1` which was only sending ingester q
 the round-robin algorithm could only select the ingester queue from the child queue nodes for `tenant-1`,
 overriding the intended progression of the query component round-robin.
 
-#### Failure 2: Inability to Prevent Processing Time Dominance by Slow Queries (major)
+#### Limitation 2 (major): Inability to Prevent Processing Time Dominance by Slow Queries
 
 A vanilla round-robin algorithm does not sufficiently guard against a high-latency component
 saturating all or nearly all connections with requests in flight in the slow component.
 Despite rotating which query component is dequeued for, utilization of the querier-worker connection pool
 as measured by inflight query processing time will grow asymptotically to be dominated by the slow query component.
 
-### Phase 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
+### Solution 2: Query Component Selection to Solve Processing Time Dominance by Slow Queries
+
+Limitation 1 was addressed by inverting the decision hierarchy of the two queue selection algorithms in the tree.
+
+Limitation 2 required more analysis and a new approach to the query component selection.
 
 #### Modeling the Problem
 
-To demonstrate the issue, we can simplify the system to two query components and four querier connections.
+To demonstrate the issue, we simplify the system to two query components and four querier connections.
 Queries to the "slow" query component take 8 ticks to process while queries to the "fast" query component take 1 tick.
 The round-robin selection advances from fast to slow or vice versa with each dequeue.
 
@@ -371,11 +407,9 @@ Assume a query component node order of `[ingester, store-gateway, ingester-and-s
 We conservatively expect degradation of the store-gateway query component will cause high latency
 for the queries in the `store-gateway`, `ingester-and-store-gateway`, and `unknown` queues,
 but by partitioning the querier-worker connections evenly across the four queues,
-25% of connections remain reserved to process queries from the `ingester` queue.
+25% of connections remain "reserved" to process queries from the `ingester` queue.
 
 The primary measure of success is the servicing of the queries to the non-degraded query component,
-In real-world scenarios the slow queries are often slow enough to hit timeouts,
-and the majority of those queries will be expected to fail until the component recovers.
 
 #### Modeling the Solution
 
@@ -460,15 +494,16 @@ gantt
 
 ##### Distribution of Querier-Worker Connections Across Query Component Nodes
 
-**At least 4 querier-worker connections per querier are required to avoid starving a query component node.**
+**If there are fewer than 4 querier-worker connections per querier to the request queue, a query-component
+node can be starved of connections.**
 To prevent this, the querier has been updated to create at least 4 connections to each scheduler,
 ignoring any `-querier.max-concurrent` value below 4.
 
 **When the total number of querier-worker connections is not evenly divisible by the number of query component nodes,
 the modulo distribution will be uneven, with some nodes being assigned one extra connection**.
 This is not considered to be an issue.
-Queue nodes are deleted as queues are cleared, then recreated in whichever order the queries arrive in.
-As the node count and order changes over time, it in turn shuffles which node(s) receive the extra connections.
+Queue nodes are deleted as queues are cleared, then recreated in whichever order new queries arrive.
+Changes in node count and order over time in turn shuffle which node(s) receive the extra connections.
 
 ##### Empty Queue Node Deletion Can Cause Temporary Starvation
 
@@ -485,7 +520,11 @@ This can result in the following scenario:
 5. More ingester-only queries arrive and are enqueued at the `ingester` node,
    but no querier-worker connections are available to dequeue them.
 
-This scenario is not desirable, but it is considered an acceptable tradeoff against the alternatives.
+This scenario is suboptimal for the goal of processing the ingester-only queries,
+but it is considered an acceptable tradeoff against the alternative -
+if querier connections were not re-distributed across the query component nodes when the `ingester` node was deleted,
+the system would be holding idle querier capacity indefinitely until ingester-only queries were enqueued again.
+
 As soon as the connections which would be partitioned to the `ingester` node become available again,
 they will return to working on the ingester-only queries.
 
@@ -549,7 +588,7 @@ gantt
 
 ### Benchmarks and Simulation
 
-The Phase 2 solution was tested using both Go benchmarks and simulation in a live Mimir cluster.
+Solutions 1 and 2 were tested using both Go benchmarks and simulation in a live Mimir cluster.
 
 The measure of comparison is the time spent in queue by the queries for the non-degraded query component.
 All test scenarios slowed down the store-gateway queries and measured the time spent in queue by ingester-only queries.
@@ -571,7 +610,7 @@ As the queue backed up, both queries for all query components had:
 - 99th percentile time in queue near 2 minutes
 - 50th percentile time in queue over 1 minute
 
-After the Phase 2 solution was enabled at 19:35, ingester-only queries were able to be dequeued and processed
+After the Solution 2 configuration was enabled at 19:35, ingester-only queries were able to be dequeued and processed
 independently of the store-gateway queries, and queue latency for the ingester-only queries dropped significantly.
 
 While queue latency for store-gateway queries remained steadily high, ingester-only queries had:
@@ -579,14 +618,14 @@ While queue latency for store-gateway queries remained steadily high, ingester-o
 - 99th percentile time in queue around 2 seconds
 - 50th percentile time in queue around 200 ms
 
-The Mimir / Reads dashboard sections for the Query Scheduler illustrate the impact of the Phase 2 solution:
+The Mimir / Reads dashboard sections for the Query Scheduler illustrate the impact of Solution 2:
 
 ![image Live Simulation](./images/request-queue-design-live-simulation.png)
 
 #### Benchmarks with Go Tests
 
 A unit-test-based benchmark `TestMultiDimensionalQueueAlgorithmSlowConsumerEffects` was created
-for more controlled simulation and comparison of the Phase 1 and Phase 2 solutions.
+for more controlled simulation and comparison of the Solutions 1 and 2.
 
 The unit test approach allows for benchmarking of:
 
@@ -594,7 +633,7 @@ The unit test approach allows for benchmarking of:
 - varying distributions of requests between fast and slow query components
 - tenant-querier shuffle sharding
 
-The benchmark results showed that the Phase 2 solution massively outperformed the Phase 1 solution.
+The benchmark results showed that Solution 2 massively outperformed Solution 1.
 
 Improvements for queue latency for the ingester-only queries range
 from around 5x improvement for scenarios with lower percentages of slow queries to the store-gateways,
@@ -603,8 +642,8 @@ up to over 40x improvement for scenarios with high percentages of slow queries t
 ##### Sample Benchmark Results
 
 Results for the test scenarios are shown twice, once by query component and once by tenant ID.
-The `tenant-querier -> query component round-robin tree` is the Phase 1 solution
-and the `worker-queue prioritization -> tenant-querier tree` is the Phase 2 solution.
+The `tenant-querier -> query component round-robin tree` is Solution 1
+and the `worker-queue prioritization -> tenant-querier tree` Solution 2.
 
 ```text
 Results by query component:
