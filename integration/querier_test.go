@@ -760,7 +760,7 @@ func testMetadataQueriesWithBlocksStorage(
 				require.Equal(t, exp, labelsRes, lvt)
 			}
 
-			labelNames, err := c.LabelNames(tc.from, tc.to)
+			labelNames, err := c.LabelNames(tc.from, tc.to, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.labelNames, labelNames)
 		})
