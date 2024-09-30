@@ -24,7 +24,7 @@ import (
 )
 
 // batchingQueueCapacity controls how many batches can be enqueued for flushing.
-// We don't want to push any batches in parallel and instead want to prepare the next one while the current one finishes, hence the buffer of 1.
+// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
 // For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
 // This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
 // If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
@@ -35,12 +35,14 @@ type Pusher interface {
 }
 
 type PusherCloser interface {
+	// PushToStorage pushes the write request to the storage.
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
-	// Calls to close are safe and will not be called concurrenctly.
+	// Close tells the PusherCloser that no more records are coming and it should flush any remaining records.
 	Close() []error
 }
 
-// pusherConsumer receivers records from Kafka and pushes them to the storage.
+
+// pusherConsumer receives records from Kafka and pushes them to the storage.
 // Each time a batch of records is received from Kafka, we instantiate a new pusherConsumer, this is to ensure we can retry if necessary and know whether we have completed that batch or not.
 type pusherConsumer struct {
 	metrics *pusherConsumerMetrics
@@ -340,7 +342,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 		shard %= p.numShards
 	}
 
-	// We might some data left in some of the queues in the shards, but they will be flushed eventually once Stop is called, and we're certain that no more data is coming.
+	// We might have some data left in some of the queues in the shards, but they will be flushed eventually once Stop is called, and we're certain that no more data is coming.
 	// So far we didn't find any non-client errors that are worth aborting for.
 	// We'll call Close eventually and collect the rest.
 	return nil
