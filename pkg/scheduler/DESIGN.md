@@ -262,8 +262,8 @@ This approach served two purposes:
 1. rudimentary tenant isolation via shuffle-shard assignment of noisy tenants to only a subset of queriers
 
 While this inter-tenant Quality-of-Service approach has worked well,
-other QoS issues have arisen from the varying characteristics of Mimir's two "query components"
-utilized by the queriers to fetch TSDB data for executing queries: ingesters and store-gateways.
+other QoS issues have arisen from the varying characteristics of Mimir's two "query components":
+ingesters and store-gateways, which are called by the queriers to fetch TSDB data for executing queries: .
 
 ### New Requirement: Isolating Query Component Latency Effects
 
@@ -271,7 +271,7 @@ Ingesters serve requests for recent data, and store-gateways serve requests for 
 While queries can span the time periods served by both query components,
 many requests are served by only one of the two components.
 
-Ingesters and store-gateways tend to experience issues independently of each other,
+Ingesters and store-gateways tend to experience issues independently of one another,
 but when one component was in a degraded state, _all_ queries would wait in the queue behind the slow queries,
 causing high latency and timeouts for queries which could have been serviced by the non-degraded query component.
 
@@ -292,7 +292,7 @@ whether through rate limiting of the queries dequeued to that component or throu
 The solution should maintain high utilization of queriers while there are still any requests in the queue.
 Querier capacity should not be permanently "reserved" for any query type;
 as there is no guarantee of when that query type will be enqueued again,
-permanent capacity reservation could result resource under-utilization and waste.
+permanent capacity reservation could result in resource under-utilization and waste.
 
 ### Solution 1: Queue Splitting by Query Component and Query Component Selection by Round-Robin
 
@@ -494,15 +494,17 @@ gantt
 
 #### Caveats: Corner Cases and Things to Know
 
-##### Distribution of Querier-Worker Connections Across Query Component Nodes
+###### Queue Starvation Due to Low `-querier.max-concurrent` Values
 
-**If there are fewer than 4 querier-worker connections per querier to the request queue, a query-component
-node can be starved of connections.**
+If there are fewer than 4 querier-worker connections per querier to the request queue, a query-component
+node can be starved of connections.
 To prevent this, the querier has been updated to create at least 4 connections to each scheduler,
 ignoring any `-querier.max-concurrent` value below 4.
 
-**When the total number of querier-worker connections is not evenly divisible by the number of query component nodes,
-the modulo distribution will be uneven, with some nodes being assigned one extra connection**.
+##### Uneven Distribution Querier-Worker Connections Across Query Component Nodes
+
+When the total number of querier-worker connections is not evenly divisible by the number of query component nodes,
+the modulo distribution will be uneven, with some nodes being assigned one extra connection.
 This is not considered to be an issue.
 Queue nodes are deleted as queues are cleared, then recreated in whichever order new queries arrive.
 Changes in node count and order over time in turn shuffle which node(s) receive the extra connections.
