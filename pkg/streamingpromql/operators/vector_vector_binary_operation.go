@@ -386,6 +386,8 @@ func (b *VectorVectorBinaryOperation) groupKeyFunc() func(labels.Labels) []byte 
 	buf := make([]byte, 0, 1024)
 
 	if b.VectorMatching.On {
+		slices.Sort(b.VectorMatching.MatchingLabels)
+
 		return func(l labels.Labels) []byte {
 			return l.BytesWithLabels(buf, b.VectorMatching.MatchingLabels...)
 		}
