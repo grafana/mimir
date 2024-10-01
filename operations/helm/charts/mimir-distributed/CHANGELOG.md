@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.5.0-rc.0
+
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
@@ -44,11 +46,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for setting resource requests and limits in the Grafana Agent pods used for metamonitoring. #8715
 * [ENHANCEMENT] Add support for setting namespace for dashboard config maps. #8813
 * [ENHANCEMENT] Add support for string `extraObjects` for better support with templating. #8825
-* [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #8741
-* [ENHANCEMENT] Add support for running continuous-test with GEM #8837
+* [ENHANCEMENT] Allow setting read and write urls in continous-test. #8741
+* [ENHANCEMENT] Add support for running continuous-test with GEM. #8837
 * [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
-* [ENHANCEMENT] Ingester: set GOMAXPROCS to help with golang scheduling overhead when running on machines with a lot of cores. #9283
-* [ENHANCEMENT] GEM: enable logging of access-policy-name and token-name that run query in query-frontend. #9348
+* [ENHANCEMENT] Add support for sigv4 authentication for remote write in metamonitoring. #9279
+* [ENHANCEMENT] Ingester: set GOMAXPROCS to help with Go scheduling overhead when running on machines with lots of CPU cores. #9283
+* [ENHANCEMENT] GEM: enable logging of access policy name and token name that execute query in query-frontend. #9348
 * [ENHANCEMENT] Update rollout-operator to `v0.19.1` (Helm chart version `v0.18.0`). #9388
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
@@ -56,7 +59,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 * [BUGFIX] Helm: fix second relabeling in ServiceMonitor and PVC template in compactor to not show diff in ArgoCD. #9195
 * [BUGFIX] Helm: create query-scheduler `PodDisruptionBudget` only when the component is enabled. #9270
-* [ENHANCEMENT] Add support for sigv4 authentication for remote write in metamonitoring. #9279
 
 ## 5.4.1
 
