@@ -98,6 +98,9 @@ eval range from 0 to 24m step 6m left_side - on(env, pod) right_side
   {env="test", pod="a"} -9 -18 -27
   {env="test", pod="b"} -36 -45 -54
 
+# Test the same thing again with the grouping labels in a different order.
+# (The implementation of binary operations relies on grouping labels being sorted in some places,
+# so this test exists to ensure this is done correctly.)
 eval range from 0 to 24m step 6m left_side - on(pod, env) right_side
   {env="prod", pod="a"} -63 -72 -81
   {env="test", pod="a"} -9 -18 -27
@@ -108,6 +111,9 @@ eval range from 0 to 24m step 6m left_side - ignoring(env, pod) right_side
   {group="bar"} -6 -15 -24
   {group="foo"} -69 -78 -87
 
+# Test the same thing again with the grouping labels in a different order.
+# (The implementation of binary operations relies on grouping labels being sorted in some places,
+# so this test exists to ensure this is done correctly.)
 eval range from 0 to 24m step 6m left_side - ignoring(pod, env) right_side
   {group="baz"} -33 -42 -51
   {group="bar"} -6 -15 -24
