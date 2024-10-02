@@ -1251,19 +1251,18 @@ instance_limits:
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 10]
 
-# (experimental) When enabled, only series currently owned by ingester according
-# to the ring are used when checking user per-tenant series limit.
+# When enabled, only series currently owned by ingester according to the ring
+# are used when checking user per-tenant series limit.
 # CLI flag: -ingester.use-ingester-owned-series-for-limits
-[use_ingester_owned_series_for_limits: <boolean> | default = false]
+[use_ingester_owned_series_for_limits: <boolean> | default = true]
 
-# (experimental) This option enables tracking of ingester-owned series based on
-# ring state, even if -ingester.use-ingester-owned-series-for-limits is
-# disabled.
+# This option enables tracking of ingester-owned series based on ring state,
+# even if -ingester.use-ingester-owned-series-for-limits is disabled.
 # CLI flag: -ingester.track-ingester-owned-series
-[track_ingester_owned_series: <boolean> | default = false]
+[track_ingester_owned_series: <boolean> | default = true]
 
-# (experimental) How often to check for ring changes and possibly recompute
-# owned series as a result of detected change.
+# How often to check for ring changes and possibly recompute owned series as a
+# result of detected change.
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 

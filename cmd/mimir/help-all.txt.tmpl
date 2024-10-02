@@ -1492,7 +1492,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.out-of-order-time-window duration
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.owned-series-update-interval duration
-    	[experimental] How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
+    	How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
   -ingester.partition-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.partition-ring.consul.cas-retry-delay duration
@@ -1680,11 +1680,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.stream-chunks-when-using-blocks
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.track-ingester-owned-series
-    	[experimental] This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.
+    	This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled. (default true)
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -ingester.use-ingester-owned-series-for-limits
-    	[experimental] When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.
+    	When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit. (default true)
   -log.format string
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
