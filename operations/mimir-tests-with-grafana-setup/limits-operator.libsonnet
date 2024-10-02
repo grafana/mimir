@@ -38,6 +38,7 @@ local removeVolume(name) =
       overrides_path: '%s/%s' % [$._config.limits_operator.overrides_mountpoint, $._config.limits_operator.overrides_configmap_filename],
 
       trigger_enabled: false,
+      use_partitions: $._config.ingest_storage_enabled,
     },
 
     configmaps+:
@@ -119,6 +120,7 @@ local removeVolume(name) =
 
       // sigyn cells have a different series target.
       'cell-observer.default-target-series': '%d' % (if $._config.ingest_storage_enabled then 1.5e6 else 2e6),
+      [if $._config.limits_operator.use_partitions then 'cell-observer.use-partitions']: true,
     },
 
     container::

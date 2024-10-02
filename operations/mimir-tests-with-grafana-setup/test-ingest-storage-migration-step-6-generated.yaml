@@ -2362,6 +2362,7 @@ spec:
       - args:
         - -cell-observer.default-target-series=2000000
         - -cell-observer.namespace=default
+        - -cell-observer.use-partitions=true
         - -common.kafka.brokers=limitskafka.default.svc.cluster.local.:9092
         - -common.kafka.topic-prefix=mlo-default-
         - -config-api.address=http://config-api.default.svc.cluster.local./prometheus
