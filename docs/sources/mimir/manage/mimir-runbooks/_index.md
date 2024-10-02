@@ -2393,7 +2393,7 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 
 ### err-mimir-alertmanager-max-grafana-state-size
 
-This non-critical error occurs when the Alertmanager receives a set state request that contains a state which exceeds the configured size limit.
+This non-critical error occurs when the Alertmanager receives Grafana Alertmanager state larger than the configured size limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `alertmanager.max-grafana-state-size-bytes` option.
 
 ## Mimir routes by path
