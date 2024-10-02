@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -167,7 +168,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedMetadataRefresh: true,
 		},
 		"unknown broker": {
-			err: fmt.Errorf(unknownBrokerFranzGoErrorString),
+			err: errors.New(unknownBrokerFranzGoErrorString),
 			lso: 5,
 			fw: fetchWant{
 				startOffset: 11,
@@ -181,7 +182,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedMetadataRefresh: false,
 		},
 		"closed broker": {
-			err: fmt.Errorf(chosenBrokerDiedFranzGoErrorString),
+			err: errors.New(chosenBrokerDiedFranzGoErrorString),
 			lso: 5,
 			fw: fetchWant{
 				startOffset: 11,
@@ -729,14 +730,3 @@ func (w waiterFunc) Wait() { w() }
 type refresherFunc func()
 
 func (r refresherFunc) ForceMetadataRefresh() { r() }
-
-func newKafkaConsumeClient(t *testing.T, addrs string) *kgo.Client {
-	writeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(addrs),
-		// We will choose the partition of each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
-	require.NoError(t, err)
-	t.Cleanup(writeClient.Close)
-	return writeClient
-}
