@@ -18163,6 +18163,16 @@
     },
     {
       "kind": "field",
+      "name": "custom_registry_path",
+      "required": false,
+      "desc": "",
+      "fieldValue": null,
+      "fieldDefaultValue": "",
+      "fieldType": "string",
+      "fieldCategory": "advanced"
+    },
+    {
+      "kind": "field",
       "name": "timeseries_unmarshal_caching_optimization_enabled",
       "required": false,
       "desc": "Enables optimized marshaling of timeseries.",

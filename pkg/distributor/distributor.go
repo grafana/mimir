@@ -358,7 +358,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_received_samples_total",
 			Help: "The total number of received samples, excluding rejected and deduped samples.",
 		}, []string{"user", "attrib"}),
-
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
 			Help: "The total number of received exemplars, excluding rejected and deduped exemplars.",
@@ -1684,7 +1683,7 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 		if costAttributionLabel != "" {
-			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels).Get(costAttributionLabel), now)
+			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
 			costAttribution[attribution]++
 		}
 	}

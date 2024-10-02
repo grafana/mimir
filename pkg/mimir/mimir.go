@@ -145,7 +145,8 @@ type Config struct {
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
-	Common CommonConfig `yaml:"common"`
+	Common             CommonConfig `yaml:"common"`
+	CustomRegistryPath string       `yaml:"custom_registry_path" category:"advanced"`
 
 	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 }

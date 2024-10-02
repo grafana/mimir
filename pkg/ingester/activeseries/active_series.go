@@ -50,14 +50,12 @@ type ActiveSeries struct {
 	matchers           *asmodel.Matchers
 	lastMatchersUpdate time.Time
 
-	costAttributionLabel string
-	costAttributionSvc   *costattribution.CostAttributionCleanupService
+	costAttributionSvc *costattribution.CostAttributionCleanupService
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
-	timeout                   time.Duration
-	userID                    string
-	maxCostAttributionPerUser int
+	timeout time.Duration
+	userID  string
 }
 
 // seriesStripe holds a subset of the series timestamps for a single tenant.
@@ -80,7 +78,6 @@ type seriesStripe struct {
 	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 	userID                               string
-	costAttributionLabel                 string
 	// here the attribution values map, it maps the attribute value to its index, so we can increment the counter directly,
 	// so in each entry, we keep the index of the value only, instead of keeping the string value
 	costAttributionValues map[string]uint32
@@ -100,20 +97,16 @@ func NewActiveSeries(
 	asm *asmodel.Matchers,
 	timeout time.Duration,
 	userID string,
-	costAttributionLabel string,
 	costAttributionSvc *costattribution.CostAttributionCleanupService,
-	maxCostAttributionPerUser int,
 ) *ActiveSeries {
 	c := &ActiveSeries{
 		matchers: asm, timeout: timeout, userID: userID,
-		costAttributionLabel:      costAttributionLabel,
-		costAttributionSvc:        costAttributionSvc,
-		maxCostAttributionPerUser: maxCostAttributionPerUser,
+		costAttributionSvc: costAttributionSvc,
 	}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, userID, costAttributionLabel, costAttributionSvc)
+		c.stripes[i].reinitialize(asm, &c.deleted, userID, costAttributionSvc)
 	}
 
 	return c
@@ -130,7 +123,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, c.userID, c.costAttributionLabel, c.costAttributionSvc)
+		c.stripes[i].reinitialize(asm, &c.deleted, c.userID, c.costAttributionSvc)
 	}
 	c.matchers = asm
 	c.lastMatchersUpdate = now
@@ -237,7 +230,7 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 }
 
 func (c *ActiveSeries) ActiveByAttributionValue() map[string]uint32 {
-	total := make(map[string]uint32, c.maxCostAttributionPerUser)
+	total := make(map[string]uint32, c.costAttributionSvc.GetUserAttributionLimit(c.userID))
 	for s := 0; s < numStripes; s++ {
 		c.stripes[s].mu.RLock()
 		for k, v := range c.stripes[s].costAttributionValues {
@@ -433,8 +426,8 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 
 	// here if we have a cost attribution label, we can split the serie count based on the value of the label
 	// we also set the reference to the value of the label in the entry, so when remove, we can decrease the counter accordingly
-	if s.costAttributionLabel != "" {
-		attributionValue := s.costAttributionSvc.UpdateAttributionTimestamp(s.userID, series.Get(s.costAttributionLabel), time.Unix(0, nowNanos))
+	if s.costAttributionSvc != nil && s.costAttributionSvc.GetUserAttributionLabel(s.userID) != "" {
+		attributionValue := s.costAttributionSvc.UpdateAttributionTimestamp(s.userID, series, time.Unix(0, nowNanos))
 		s.costAttributionValues[attributionValue]++
 		e.attributionValue = attributionValue
 	}
@@ -466,7 +459,6 @@ func (s *seriesStripe) reinitialize(
 	asm *asmodel.Matchers,
 	deleted *deletedSeries,
 	userID string,
-	costAttributionLabel string,
 	costAttributionSvc *costattribution.CostAttributionCleanupService,
 ) {
 	s.mu.Lock()
@@ -483,7 +475,6 @@ func (s *seriesStripe) reinitialize(
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
-	s.costAttributionLabel = costAttributionLabel
 	s.costAttributionSvc = costAttributionSvc
 }
 

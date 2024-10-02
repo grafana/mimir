@@ -1299,15 +1299,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	costLabel := i.limits.CostAttributionLabel(userID)
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
 		if costLabel != "" {
-			costAttrib := ""
-			for _, label := range labels {
-				if label.Name == costLabel {
-					costAttrib = label.Value
-				}
-			}
 			// get the label value and update the timestamp,
 			// if the cordianlity is reached or we are currently in cooldown period, function would returned __unaccounted__
-			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend)
+			costAttrib := i.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(labels), startAppend)
 			stats.failedSamplesAttribution[costAttrib]++
 		}
 
@@ -1418,12 +1412,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		var costAttrib string
 		// when cost attribution label is set
 		if costLabel != "" {
-			for _, label := range ts.Labels {
-				if label.Name == costLabel {
-					costAttrib = label.Value
-				}
-			}
-			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, costAttrib, startAppend)
+			costAttrib = i.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend)
 		}
 
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -2680,9 +2669,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			asmodel.NewMatchers(matchersConfig),
 			i.cfg.ActiveSeriesMetrics.IdleTimeout,
 			userID,
-			i.limits.CostAttributionLabel(userID),
 			i.costAttributionSvc,
-			i.limits.MaxCostAttributionPerUser(userID),
 		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

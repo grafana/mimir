@@ -66,6 +66,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
 	"github.com/grafana/mimir/pkg/vault"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // The various modules that make up Mimir.
@@ -473,10 +474,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 		t.ActiveGroupsCleanup.Register(t.Distributor)
 	}
 
-	if t.CostAttributionCleanup != nil {
-		t.CostAttributionCleanup.Register(t.Distributor)
-	}
-
 	return t.Distributor, nil
 }
 
@@ -651,7 +648,16 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 }
 
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
-	t.CostAttributionCleanup = costattribution.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides)
+	if t.Cfg.CustomRegistryPath != "" {
+		customRegistry := prometheus.NewRegistry()
+		// Register the custom registry with the provided URL.
+		// This allows users to expose custom metrics on a separate endpoint.
+		// This is useful when users want to expose metrics that are not part of the default Mimir metrics.
+		http.Handle(t.Cfg.CustomRegistryPath, promhttp.HandlerFor(customRegistry, promhttp.HandlerOpts{Registry: customRegistry}))
+		t.CostAttributionCleanup = costattribution.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, customRegistry)
+		return t.CostAttributionCleanup, nil
+	}
+	t.CostAttributionCleanup = costattribution.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, t.Registerer)
 	return t.CostAttributionCleanup, nil
 }
 
@@ -675,9 +681,6 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
 
-	if t.CostAttributionCleanup != nil {
-		t.CostAttributionCleanup.Register(t.Ingester)
-	}
 	return t.Ingester, nil
 }
 
