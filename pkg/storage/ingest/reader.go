@@ -503,7 +503,8 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		err := consumer.Consume(consumeCtx, records)
 		if err == nil {
 			level.Debug(logger).Log("msg", "closing consumer after successful consumption")
-			break
+			// The context might have been cancelled in the meantime, so we return here instead of breaking the loop and returning the context error
+			return nil
 		}
 		level.Error(logger).Log(
 			"msg", "encountered error while ingesting data from Kafka; should retry",
