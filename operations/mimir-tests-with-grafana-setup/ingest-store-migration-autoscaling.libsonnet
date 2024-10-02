@@ -51,9 +51,17 @@
     local statefulSet = $.apps.v1.statefulSet;
 
     if !enabled then {} else (
-      // Remove scaling labels and annotations.
-      statefulSet.mixin.metadata.withLabels({}) +
-      statefulSet.mixin.metadata.withAnnotations({})
+      // Remove scaling labels and annotations, and keep only annotations to support proper shutdown.
+      statefulSet.mixin.metadata.withLabels({
+        'grafana.com/min-time-between-zones-downscale': '0',
+        'grafana.com/prepare-downscale': 'true',
+        'rollout-group': 'ingester',
+      }) +
+      statefulSet.mixin.metadata.withAnnotations({
+        'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',
+        'grafana.com/prepare-downscale-http-port': '80',
+        'rollout-max-unavailable': std.toString($._config.multi_zone_ingester_max_unavailable),
+      })
     )
   ),
 
