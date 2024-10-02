@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,11 @@ import (
 	"github.com/twmb/franz-go/plugin/kotel"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+)
+
+const (
+	unknownBrokerFranzGoErrorString    = "unknown broker"
+	chosenBrokerDiedFranzGoErrorString = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
 )
 
 type fetcher interface {
@@ -634,6 +640,11 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 	// Hopefully the backoff that will follow is enough to get the latest metadata.
 	// If not, the fetcher will end up here again on the next attempt.
 	triggerMetadataRefresh := refresher.ForceMetadataRefresh
+	var errString string
+	if err != nil {
+		errString = err.Error()
+
+	}
 
 	switch {
 	case err == nil:
@@ -705,6 +716,16 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, &kgo.ErrFirstReadEOF{}):
+		longBackoff.Wait()
+	case strings.Contains(errString, unknownBrokerFranzGoErrorString):
+		// The client's metadata refreshed after we called Broker(). It should already be refreshed, so we can retry immediately.
+	case strings.Contains(errString, chosenBrokerDiedFranzGoErrorString):
+		// The client's metadata refreshed after we called Broker(). It should already be refreshed, so we can retry immediately.
+	case strings.Contains(errString, "use of closed network connection"):
+		// The client usually immediately handles closed connections, so we can retry immediately.
+	case strings.Contains(errString, "i/o timeout"):
+		// Maybe the broker went away ungracefully; let's refresh our metadata and try again.
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 
 	default:
