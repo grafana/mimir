@@ -115,7 +115,7 @@ graph TB
 
 On enqueue, we partition requests into separate queues based on two static properties of the query request:
 
-- the "expected query component"
+- the "expected query component", determined by the time range of the query and the Mimir deployment configuration
   - `ingester`, `store-gateway`, `ingester-and-store-gateway`, or `unknown`
 - the tenant ID of the request
 
@@ -263,7 +263,7 @@ This approach served two purposes:
 
 While this inter-tenant Quality-of-Service approach has worked well,
 other QoS issues have arisen from the varying characteristics of Mimir's two "query components":
-ingesters and store-gateways, which are called by the queriers to fetch TSDB data for executing queries: .
+ingesters and store-gateways, which are called by the queriers to fetch TSDB data for executing queries.
 
 ### New Requirement: Isolating Query Component Latency Effects
 
