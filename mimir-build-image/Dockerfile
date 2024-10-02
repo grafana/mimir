@@ -5,7 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
 FROM alpine/helm:3.14.4 as helm
-FROM golang:1.23.1-bookworm
+FROM golang:1.23.2-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -23,16 +23,16 @@ RUN npm install -g prettier@2.3.2
 
 ENV SHFMT_VERSION=3.2.4
 RUN GOARCH=$(go env GOARCH) && \
-	if [ "$GOARCH" = "amd64" ]; then \
-    	DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
+    if [ "$GOARCH" = "amd64" ]; then \
+    DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
     elif [ "$GOARCH" = "arm64" ]; then \
-    	DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
+    DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
     fi && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
-	echo "$DIGEST shfmt" | sha256sum -c && \
-	chmod +x shfmt && \
-	mv shfmt /usr/bin
+    echo "$DIGEST shfmt" | sha256sum -c && \
+    chmod +x shfmt && \
+    mv shfmt /usr/bin
 
 ENV TANKA_VERSION=0.26.0
 RUN GOARCH=$(go env GOARCH) && \
@@ -47,21 +47,21 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
     rm -rf /go/pkg /go/src /root/.cache
 
 RUN GO111MODULE=on \
-	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
-	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0 && \
-	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
-	go install github.com/fatih/faillint@v1.12.0 && \
-	go install github.com/campoy/embedmd@v1.0.0 && \
-	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
-	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
-	go install github.com/mikefarah/yq/v4@v4.13.4 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.19.1 && \
-	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.19.1 && \
-	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
-	go install github.com/open-policy-agent/conftest@v0.42.1 && \
-	go install github.com/uber-go/gopatch@v0.4.0 && \
-	rm -rf /go/pkg /go/src /root/.cache
+    go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
+    go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
+    go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0 && \
+    go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
+    go install github.com/fatih/faillint@v1.12.0 && \
+    go install github.com/campoy/embedmd@v1.0.0 && \
+    go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
+    go install github.com/monitoring-mixins/mixtool/cmd/mixtool@b97ae11 && \
+    go install github.com/mikefarah/yq/v4@v4.13.4 && \
+    go install github.com/google/go-jsonnet/cmd/jsonnet@v0.19.1 && \
+    go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.19.1 && \
+    go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
+    go install github.com/open-policy-agent/conftest@v0.42.1 && \
+    go install github.com/uber-go/gopatch@v0.4.0 && \
+    rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
 COPY --from=kustomize /app/kustomize /usr/bin/kustomize
@@ -72,5 +72,5 @@ ENTRYPOINT ["/build.sh"]
 
 ARG revision
 LABEL org.opencontainers.image.title="mimir-build-image" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/mimir-build-image" \
-      org.opencontainers.image.revision="${revision}"
+    org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/mimir-build-image" \
+    org.opencontainers.image.revision="${revision}"
