@@ -42,7 +42,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} or other_metric{}":                   "binary expression with many-to-many matching",
+		"metric{} or other_metric{}":                   "binary expression with 'or'",
+		"metric{} unless other_metric{}":               "binary expression with 'unless'",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
@@ -93,6 +94,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
 		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
 		requireQueryIsSupported(t, featureToggles, "2 + 1")
+		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
 	})
 
 	t.Run("vector/scalar binary expressions with comparison operation", func(t *testing.T) {
@@ -109,6 +111,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
 		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
 		requireQueryIsSupported(t, featureToggles, "2 + 1")
+		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
 	})
 
 	t.Run("scalar/scalar binary expressions with comparison operation", func(t *testing.T) {
@@ -125,6 +128,26 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
 		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
 		requireQueryIsSupported(t, featureToggles, "2 + 1")
+		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+	})
+
+	t.Run("binary expressions with logical operations", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableBinaryLogicalOperations = false
+
+		requireQueryIsUnsupported(t, featureToggles, "metric{} and other_metric{}", "binary expression with 'and'")
+		requireQueryIsUnsupported(t, featureToggles, "metric{} or other_metric{}", "binary expression with 'or'")
+		requireQueryIsUnsupported(t, featureToggles, "metric{} unless other_metric{}", "binary expression with 'unless'")
+
+		// Other operations should still be supported.
+		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
+		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
+		requireQueryIsSupported(t, featureToggles, "2 + 1")
+		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
+		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
+		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
 	})
 
 	t.Run("scalars", func(t *testing.T) {

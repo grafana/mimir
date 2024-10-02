@@ -2013,6 +2013,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_binary_logical_operations",
+              "required": false,
+              "desc": "Enable support for binary logical operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-binary-logical-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_scalars",
               "required": false,
               "desc": "Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.",
