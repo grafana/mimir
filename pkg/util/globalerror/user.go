@@ -85,6 +85,10 @@ const (
 	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
+
+	// Alertmanager errors
+	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
+	AlertmanagerMaxGrafanaStateSize  ID = "alertmanager-max-grafana-state-size"
 )
 
 // Message returns the provided msg, appending the error id.

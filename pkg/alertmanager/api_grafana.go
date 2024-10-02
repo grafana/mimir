@@ -17,7 +17,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -36,6 +38,17 @@ const (
 
 	statusSuccess = "success"
 	statusError   = "error"
+)
+
+var (
+	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager configuration is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
+	)
+	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager state is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaStateSizeFlag,
+	)
 )
 
 type GrafanaAlertmanagerConfig struct {
@@ -180,10 +193,13 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 	payload, err := io.ReadAll(input)
 	if err != nil {
 		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
-			msg := fmt.Sprintf(errStateTooBig, maxStateSize)
+			msg := fmt.Sprintf(maxGrafanaStateSizeMsgFormat, maxStateSize)
 			level.Warn(logger).Log("msg", msg)
 			w.WriteHeader(http.StatusBadRequest)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: msg})
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
 			return
 		}
 
@@ -336,10 +352,13 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 	payload, err := io.ReadAll(input)
 	if err != nil {
 		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
-			msg := fmt.Sprintf(errConfigurationTooBig, maxConfigSize)
+			msg := fmt.Sprintf(maxGrafanaConfigSizeMsgFormat, maxConfigSize)
 			level.Warn(logger).Log("msg", msg)
 			w.WriteHeader(http.StatusBadRequest)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: msg})
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
 			return
 		}
 

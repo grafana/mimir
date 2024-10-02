@@ -342,7 +342,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			expStatusCode: http.StatusBadRequest,
 			expResponseBody: `
 			{
-			"error": "Alertmanager configuration is too big, limit: 10 bytes",
+				"error": "Alertmanager configuration is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-config-size). To adjust the related per-tenant limit, configure -alertmanager.max-grafana-config-size-bytes, or contact your service administrator.",
 				"status": "error"
 			}
 			`,
@@ -459,7 +459,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 			expStatusCode: http.StatusBadRequest,
 			expResponseBody: `
 			{
-				"error": "Alertmanager state is too big, limit: 10 bytes",
+				"error": "Alertmanager state is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-state-size). To adjust the related per-tenant limit, configure -alertmanager.max-grafana-state-size-bytes, or contact your service administrator.",
 				"status": "error"
 			}
 			`,

@@ -37,7 +37,6 @@ const (
 	errNoOrgID               = "unable to determine the OrgID"
 	errListAllUser           = "unable to list the Alertmanager users"
 	errConfigurationTooBig   = "Alertmanager configuration is too big, limit: %d bytes"
-	errStateTooBig           = "Alertmanager state is too big, limit: %d bytes"
 	errTooManyTemplates      = "too many templates in the configuration: %d (limit: %d)"
 	errTemplateTooBig        = "template %s is too big: %d bytes (limit: %d bytes)"
 
