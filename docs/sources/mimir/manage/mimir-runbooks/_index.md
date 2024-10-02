@@ -2386,6 +2386,16 @@ How to **fix** it:
 
 This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
 
+### err-mimir-alertmanager-max-grafana-config-size
+
+This non-critical error occurs when the Alertmanager receives a set configuration request that contains a configuration which exceeds the configured size limit.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `alertmanager.max-grafana-config-size-bytes` option.
+
+### err-mimir-alertmanager-max-grafana-state-size
+
+This non-critical error occurs when the Alertmanager receives a set state request that contains a state which exceeds the configured size limit.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `alertmanager.max-grafana-state-size-bytes` option.
+
 ## Mimir routes by path
 
 **Write path**:
