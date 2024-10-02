@@ -446,9 +446,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 				ctx := context.Background()
 				require.NoError(t, queue.starting(ctx))
-				t.Cleanup(func() {
-					require.NoError(t, queue.stop(nil))
-				})
 
 				// configure queue producers to enqueue requests with the query component
 				// randomly assigned according to the distribution defined in the test case
@@ -487,6 +484,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseNames = append(testCaseNames, testCaseName)
 				testCaseReports[testCaseName] = report
 
+				require.NoError(t, queue.stop(nil))
 				// ensure everything was dequeued
 				path, val := scenario.tree.Dequeue(&DequeueArgs{querierID: scenario.tqa.currentQuerier})
 				assert.Nil(t, val)
