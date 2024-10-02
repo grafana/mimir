@@ -14,5 +14,9 @@
     ingest_storage_ingester_migration_classic_ingesters_remove_downscaling_annotations: true,
     // Don't scale down to 0 anymore.
     ingest_storage_ingester_migration_classic_ingesters_scale_down: false,
+
+    // Keep ingester downscaling v2 + hpa enabled, until we are ready to switch to ingest-storage autoscaling.
+    ingester_automated_downscale_v2_enabled: true,
+    new_ingester_hpa_enabled: true,
   },
 }

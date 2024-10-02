@@ -11,9 +11,14 @@
 
     // Configure features required by ingest storage migration.
     ruler_remote_evaluation_enabled: true,
-    ingester_automated_downscale_enabled: false,
-    ingester_automated_downscale_v2_enabled: true,
-    new_ingester_hpa_enabled: true,
+
+    // Copied from grafana-mimir.libsonnet.
+    // Enable v2 ingester automated downscale unless ingest storage or read-write mode are enabled (they are incompatible).
+    ingester_automated_downscale_v2_enabled: !$._config.ingest_storage_enabled && !$._config.is_read_write_deployment_mode,
+    // Deploy an HPA in cells with ingester_automated_downscale_v2_enabled enabled
+    new_ingester_hpa_enabled: $._config.ingester_automated_downscale_v2_enabled,
+    // Disable v1 ingester automated downscale if v2 is enabled, or ingest storage autoscaling is enabled.
+    ingester_automated_downscale_enabled: !$._config.ingester_automated_downscale_v2_enabled && !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled,
 
     _config+:: {
       config_api_enabled: true,

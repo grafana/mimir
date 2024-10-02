@@ -4,12 +4,8 @@
 // This is initial state + final state, without importing ingest-store-migration-autoscaling.libsonnet file.
 (import 'test-ingest-storage-migration-step-0.jsonnet') {
   _config+:: {
-
     // Disable other scaling features.
     multi_zone_ingester_replicas: 0,
-    new_ingester_hpa_enabled: false,
-    ingester_automated_downscale_enabled: false,
-    ingester_automated_downscale_v2_enabled: false,
 
     // Ingest storage configuration
     ingest_storage_enabled: true,
