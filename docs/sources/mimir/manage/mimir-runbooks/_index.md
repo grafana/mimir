@@ -2388,7 +2388,7 @@ This error only occurs when an administrator has explicitly define a blocked lis
 
 ### err-mimir-alertmanager-max-grafana-config-size
 
-This non-critical error occurs when the Alertmanager receives a set configuration request that contains a configuration which exceeds the configured size limit.
+This non-critical error occurs when the Alertmanager receives a Grafana Alertmanager configuration larger than the configured size limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `alertmanager.max-grafana-config-size-bytes` option.
 
 ### err-mimir-alertmanager-max-grafana-state-size
