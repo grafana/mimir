@@ -26,8 +26,11 @@ import (
 )
 
 const (
-	unknownBrokerFranzGoErrorString    = "unknown broker"
-	chosenBrokerDiedFranzGoErrorString = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
+	// unknownBroker duplicates a constant from franz-go because it isn't exported.
+	unknownBroker = "unknown broker"
+
+	// chosenBrokerDied duplicates a constant from franz-go because it isn't exported.
+	chosenBrokerDied = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
 )
 
 type fetcher interface {
@@ -717,9 +720,9 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 		longBackoff.Wait()
 	case errors.Is(err, &kgo.ErrFirstReadEOF{}):
 		longBackoff.Wait()
-	case strings.Contains(errString, unknownBrokerFranzGoErrorString):
+	case strings.Contains(errString, unknownBroker):
 		// The client's metadata refreshed after we called Broker(). It should already be refreshed, so we can retry immediately.
-	case strings.Contains(errString, chosenBrokerDiedFranzGoErrorString):
+	case strings.Contains(errString, chosenBrokerDied):
 		// The client's metadata refreshed after we called Broker(). It should already be refreshed, so we can retry immediately.
 	case strings.Contains(errString, "use of closed network connection"):
 		// The client usually immediately handles closed connections, so we can retry immediately.

@@ -168,7 +168,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedMetadataRefresh: true,
 		},
 		"unknown broker": {
-			err: errors.New(unknownBrokerFranzGoErrorString),
+			err: errors.New(unknownBroker),
 			lso: 5,
 			fw: fetchWant{
 				startOffset: 11,
@@ -182,7 +182,7 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedMetadataRefresh: false,
 		},
 		"closed broker": {
-			err: errors.New(chosenBrokerDiedFranzGoErrorString),
+			err: errors.New(chosenBrokerDied),
 			lso: 5,
 			fw: fetchWant{
 				startOffset: 11,
@@ -264,7 +264,7 @@ func TestFranzGoErrorStrings(t *testing.T) {
 
 	req := kmsg.NewPtrMetadataRequest()
 	_, unknownBrokerError := client.Broker(128).Request(context.Background(), req)
-	assert.ErrorContains(t, unknownBrokerError, unknownBrokerFranzGoErrorString)
+	assert.ErrorContains(t, unknownBrokerError, unknownBroker)
 }
 
 func TestConcurrentFetchers(t *testing.T) {
