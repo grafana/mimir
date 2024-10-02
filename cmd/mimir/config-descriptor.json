@@ -4600,7 +4600,7 @@
           "kind": "field",
           "name": "alertmanager_max_config_size_bytes",
           "required": false,
-          "desc": "Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.",
+          "desc": "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-config-size-bytes",
