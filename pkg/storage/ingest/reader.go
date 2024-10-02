@@ -285,10 +285,6 @@ func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(lastConsumed + 1)},
 		})
 	}
-
-	if r.kafkaCfg.StartupFetchConcurrency == 0 && r.kafkaCfg.OngoingFetchConcurrency > 0 {
-		panic("this shouldn't have been allowed through config validation; we can only use concurrent fetchers for ongoing fetches if they're also used for startup fetches")
-	}
 }
 
 func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
