@@ -233,7 +233,7 @@ func (r *PartitionReader) stopDependencies() error {
 }
 
 func (r *PartitionReader) run(ctx context.Context) error {
-	r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
+	r.switchToOngoingFetcher(ctx)
 
 	for ctx.Err() == nil {
 		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
@@ -244,6 +244,51 @@ func (r *PartitionReader) run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
+	if r.kafkaCfg.StartupFetchConcurrency == r.kafkaCfg.OngoingFetchConcurrency && r.kafkaCfg.StartupRecordsPerFetch == r.kafkaCfg.OngoingRecordsPerFetch {
+		// we're already using the same settings, no need to switch
+		return
+	}
+
+	if r.kafkaCfg.StartupFetchConcurrency > 0 && r.kafkaCfg.OngoingFetchConcurrency > 0 {
+		// No need to switch the fetcher, just update the records per fetch.
+		r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
+		return
+	}
+
+	if r.kafkaCfg.StartupFetchConcurrency > 0 && r.kafkaCfg.OngoingFetchConcurrency == 0 {
+		if r.fetcher == r {
+			// This method has been called before, no need to switch the fetcher.
+			return
+		}
+		// We need to switch to franz-go for ongoing fetches.
+		// If we've already fetched some records, we should discard them from franz-go and start from the last consumed offset.
+		r.fetcher = r
+
+		lastConsumed := r.consumedOffsetWatcher.LastConsumedOffset()
+		if lastConsumed == -1 {
+			// We haven't consumed any records yet with the other fetcher.
+			// The franz-go client is initialized to start consuming from the same place as the other fetcher.
+			// We can just use the client.
+			return
+		}
+
+		// The client might have some buffered records already while we were using the other fetcher.
+		// Remove the buffered records.
+		r.client.RemoveConsumePartitions(map[string][]int32{
+			r.kafkaCfg.Topic: {r.partitionID},
+		})
+		// Resume from the next unconsumed offset.
+		r.client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(lastConsumed + 1)},
+		})
+	}
+
+	if r.kafkaCfg.StartupFetchConcurrency == 0 && r.kafkaCfg.OngoingFetchConcurrency > 0 {
+		panic("this shouldn't have been allowed through config validation; we can only use concurrent fetchers for ongoing fetches if they're also used for startup fetches")
+	}
 }
 
 func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
@@ -286,7 +331,7 @@ func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx conte
 
 			// Don't use timedCtx because we want the fetchers to continue running
 			// At this point we're close enough to the end of the partition that we should switch to the more responsive fetcher.
-			r.fetcher.Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
+			r.switchToOngoingFetcher(ctx)
 
 			return r.processNextFetchesUntilLagHonored(timedCtx, targetLag, logger)
 		},
