@@ -1315,7 +1315,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		assert.Equal(t, services.Starting, reader.State())
 		cancelReaderCtx()
 
-		test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
+		// franz-go has internal retries that can last up to 10s
+		test.Poll(t, 15*time.Second, services.Failed, func() interface{} {
 			return reader.State()
 		})
 	})
