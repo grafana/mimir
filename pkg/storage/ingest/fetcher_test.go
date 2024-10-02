@@ -4,26 +4,27 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestHandleKafkaFetchErr(t *testing.T) {
-	logger := log.NewNopLogger()
-
 	tests := map[string]struct {
 		err error
 		lso int64
@@ -166,6 +167,62 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
+		"unknown broker": {
+			err: errors.New(unknownBroker),
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         false,
+			expectedMetadataRefresh: false,
+		},
+		"closed broker": {
+			err: errors.New(chosenBrokerDied),
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         false,
+			expectedMetadataRefresh: false,
+		},
+		"closed network connection": {
+			err: fmt.Errorf("read tcp 10.0.227.72:37486->10.0.29.4:9092: use of closed network connection"), // this isn't exposed by the standard library so we just make one of our own
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         false,
+			expectedMetadataRefresh: false,
+		},
+		"network timeout": {
+			err: fmt.Errorf("read tcp 127.0.0.1:62984->127.0.0.1:9092: i/o timeout"),
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         true,
+			expectedMetadataRefresh: true,
+		},
 	}
 
 	for testName, testCase := range tests {
@@ -174,6 +231,9 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			backoff := waiterFunc(func() { waitedBackoff = true })
 			refreshed := false
 			refresher := refresherFunc(func() { refreshed = true })
+
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
 
 			offsetR := newGenericOffsetReader(func(_ context.Context) (int64, error) {
 				return testCase.lso, nil
@@ -187,8 +247,24 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			assert.Equal(t, testCase.expectedFw, actualFw)
 			assert.Equal(t, testCase.expectedBackoff, waitedBackoff)
 			assert.Equal(t, testCase.expectedMetadataRefresh, refreshed)
+			assert.NotContains(t, logs.String(), "received an error we're not prepared to handle")
 		})
 	}
+}
+
+// TestFranzGoErrorStrings asserts that the strings of some errors in franz-go don't change.
+// The errors themselves are not exported, but we rely on their strings not changing.
+func TestFranzGoErrorStrings(t *testing.T) {
+	const (
+		topicName = "test-topic"
+		partition = 1
+	)
+	_, clusterAddr := testkafka.CreateCluster(t, partition+1, topicName)
+	client := newKafkaProduceClient(t, clusterAddr)
+
+	req := kmsg.NewPtrMetadataRequest()
+	_, unknownBrokerError := client.Broker(128).Request(context.Background(), req)
+	assert.ErrorContains(t, unknownBrokerError, unknownBroker)
 }
 
 func TestConcurrentFetchers(t *testing.T) {
