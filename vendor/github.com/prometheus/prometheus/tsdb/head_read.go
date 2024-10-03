@@ -202,7 +202,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	if s == nil {
 		h.head.metrics.seriesNotFound.Inc()
-		return storage.ErrNotFound
+		return fmt.Errorf("%w error: series is missing", storage.ErrNotFound)
 	}
 	builder.Assign(s.labels())
 
@@ -386,7 +386,7 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 	s := h.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, 0, storage.ErrNotFound
+		return nil, 0, fmt.Errorf("%w error: series was garbage collected", storage.ErrNotFound)
 	}
 
 	s.Lock()
@@ -420,7 +420,7 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(mint, maxt) {
-		return nil, 0, storage.ErrNotFound
+		return nil, 0, fmt.Errorf("%w error: chunk is outside the range %d, %d", storage.ErrNotFound, mint, maxt)
 	}
 
 	chk, maxTime := c.chunk, c.maxTime
@@ -470,7 +470,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	}
 
 	if ix < 0 || ix > len(s.mmappedChunks)+headChunksLen-1 {
-		return nil, false, false, storage.ErrNotFound
+		return nil, false, false, fmt.Errorf("%w error: chunk id %d outside mmapped range %d, %d, %d", storage.ErrNotFound, int(id), int(s.firstChunkID), int(s.firstChunkID)+len(s.mmappedChunks), int(s.firstChunkID)+len(s.mmappedChunks)+headChunksLen-1)
 	}
 
 	if ix < len(s.mmappedChunks) {
@@ -500,7 +500,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	if elem == nil {
 		// This should never really happen and would mean that headChunksLen value is NOT equal
 		// to the length of the headChunks list.
-		return nil, false, false, storage.ErrNotFound
+		return nil, false, false, fmt.Errorf("%w error: less head chunks than length %d", storage.ErrNotFound, headChunksLen)
 	}
 	return elem, true, offset == 0, nil
 }
@@ -513,7 +513,7 @@ func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.Chun
 	ix := int(id) - int(s.ooo.firstOOOChunkID)
 
 	if ix < 0 || ix >= len(s.ooo.oooMmappedChunks) {
-		return nil, 0, storage.ErrNotFound
+		return nil, 0, fmt.Errorf("%w error: ooo chunk id %d outside mmaped range %d, %d", storage.ErrNotFound, int(id), int(s.ooo.firstOOOChunkID), int(s.ooo.firstOOOChunkID)+len(s.ooo.oooMmappedChunks)-1)
 	}
 
 	chk, err := chunkDiskMapper.Chunk(s.ooo.oooMmappedChunks[ix].ref)

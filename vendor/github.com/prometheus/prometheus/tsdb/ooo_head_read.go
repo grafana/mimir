@@ -64,7 +64,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 
 	if s == nil {
 		oh.head.metrics.seriesNotFound.Inc()
-		return storage.ErrNotFound
+		return fmt.Errorf("%w error: ooo series is missing", storage.ErrNotFound)
 	}
 	builder.Assign(s.labels())
 
@@ -247,7 +247,7 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, nil, 0, storage.ErrNotFound
+		return nil, nil, 0, fmt.Errorf("%w error: ooo series was garbage collected", storage.ErrNotFound)
 	}
 	var isoState *isolationState
 	if cr.cr != nil {
@@ -481,7 +481,7 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 
 	if s == nil {
 		ir.ch.head.metrics.seriesNotFound.Inc()
-		return storage.ErrNotFound
+		return fmt.Errorf("%w error: ooo series is missing in compaction head", storage.ErrNotFound)
 	}
 	builder.Assign(s.labels())
 
