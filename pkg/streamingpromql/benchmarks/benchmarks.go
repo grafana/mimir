@@ -167,18 +167,18 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: `a_2000 - b_2000{l="1234"}`,
 		},
-		//{
-		//	Expr: "a_X and b_X{l=~'.*[0-4]$'}",
-		//},
+		{
+			Expr: "a_X and b_X{l=~'.*[0-4]$'}",
+		},
 		//{
 		//	Expr: "a_X or b_X{l=~'.*[0-4]$'}",
 		//},
 		//{
 		//	Expr: "a_X unless b_X{l=~'.*[0-4]$'}",
 		//},
-		//{
-		//	Expr: "a_X and b_X{l='notfound'}",
-		//},
+		{
+			Expr: "a_X and b_X{l='notfound'}",
+		},
 		//// Simple functions.
 		//{
 		//	Expr: "abs(a_X)",
