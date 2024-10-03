@@ -40,6 +40,7 @@
 * [ENHANCEMENT] Add `ingest_storage_ingester_autoscaling_triggers` option to specify multiple triggers in ScaledObject created for ingest-store ingester autoscaling. #9422
 * [ENHANCEMENT] Add `ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds` and `ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds` config options to make stabilization window for ingester autoscaling when using ingest-storage configurable. #9445
 * [ENHANCEMENT] Make label-selector in ReplicaTemplate/ingester-zone-a object configurable when using ingest-storage. #9480
+* [ENHANCEMENT] Add `querier_only_args` option to specify CLI flags that apply only to queriers but not ruler-queriers. #9503
 
 ### Mimirtool
 
