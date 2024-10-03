@@ -3664,15 +3664,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
-# Maximum size of the Grafana configuration file for Alertmanager that a tenant
-# can upload via the Alertmanager API. 0 = no limit.
+# Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no
+# limit.
 # CLI flag: -alertmanager.max-grafana-config-size-bytes
 [alertmanager_max_grafana_config_size_bytes: <int> | default = 0]
 
-# Maximum size of configuration file for Alertmanager that tenant can upload via
-# Alertmanager API. 0 = no limit.
+# Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
+
+# Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
+# CLI flag: -alertmanager.max-grafana-state-size-bytes
+[alertmanager_max_grafana_state_size_bytes: <int> | default = 0]
 
 # Maximum number of silences, including expired silences, that a tenant can have
 # at once. 0 = no limit.

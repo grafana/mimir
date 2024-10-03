@@ -342,7 +342,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			expStatusCode: http.StatusBadRequest,
 			expResponseBody: `
 			{
-			"error": "Alertmanager configuration is too big, limit: 10 bytes",
+				"error": "Alertmanager configuration is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-config-size). To adjust the related per-tenant limit, configure -alertmanager.max-grafana-config-size-bytes, or contact your service administrator.",
 				"status": "error"
 			}
 			`,
@@ -434,62 +434,100 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
 	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
-	am := &MultitenantAlertmanager{
-		store:  alertstore,
-		logger: test.NewTestingLogger(t),
+	cases := []struct {
+		name            string
+		maxStateSize    int
+		orgID           string
+		body            string
+		expStatusCode   int
+		expResponseBody string
+		expStorageKey   string
+	}{
+		{
+			name:          "missing org id",
+			expStatusCode: http.StatusUnauthorized,
+		},
+		{
+			name: "state size > max size",
+			body: `
+			{
+				"state": "ChEKBW5mbG9nEghzb21lZGF0YQ=="
+			}
+			`,
+			orgID:         "test_user",
+			maxStateSize:  10,
+			expStatusCode: http.StatusBadRequest,
+			expResponseBody: `
+			{
+				"error": "Alertmanager state is too big, limit: 10 bytes (err-mimir-alertmanager-max-grafana-state-size). To adjust the related per-tenant limit, configure -alertmanager.max-grafana-state-size-bytes, or contact your service administrator.",
+				"status": "error"
+			}
+			`,
+		},
+		{
+			name:          "invalid config",
+			body:          `{}`,
+			orgID:         "test_user",
+			expStatusCode: http.StatusBadRequest,
+			expResponseBody: `
+			{
+				"error": "error marshalling JSON Grafana Alertmanager state: no state specified",
+				"status": "error"
+			}
+			`,
+		},
+		{
+			name: "with valid state",
+			body: `
+			{
+				"state": "ChEKBW5mbG9nEghzb21lZGF0YQ=="
+			}
+			`,
+			orgID:           "test_user",
+			expStatusCode:   http.StatusCreated,
+			expResponseBody: successJSON,
+			expStorageKey:   "grafana_alertmanager/test_user/grafana_fullstate",
+		},
 	}
 
-	require.Len(t, storage.Objects(), 0)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/grafana/state", nil)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			am := &MultitenantAlertmanager{
+				store:  alertstore,
+				logger: test.NewTestingLogger(t),
+				limits: &mockAlertManagerLimits{
+					maxGrafanaStateSize: tc.maxStateSize,
+				},
+			}
+			rec := httptest.NewRecorder()
+			ctx := context.Background()
+			if tc.orgID != "" {
+				ctx = user.InjectOrgID(ctx, "test_user")
+			}
 
-	{
-		rec := httptest.NewRecorder()
-		am.SetUserGrafanaState(rec, req)
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
-		require.Len(t, storage.Objects(), 0)
-	}
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/grafana/state",
+				io.NopCloser(strings.NewReader(tc.body)),
+			).WithContext(ctx)
 
-	ctx := user.InjectOrgID(context.Background(), "test_user")
-	req = req.WithContext(ctx)
-	{
-		// First, try with invalid state payload.
-		rec := httptest.NewRecorder()
-		json := `
-		{
-		}
-		`
-		req.Body = io.NopCloser(strings.NewReader(json))
-		am.SetUserGrafanaState(rec, req)
+			am.SetUserGrafanaState(rec, req)
+			require.Equal(t, tc.expStatusCode, rec.Code)
 
-		require.Equal(t, http.StatusBadRequest, rec.Code)
-		body, err := io.ReadAll(rec.Body)
-		require.NoError(t, err)
-		failureJSON := `
-		{
-			"error": "error marshalling JSON Grafana Alertmanager state: no state specified",
-			"status": "error"
-		}
-		`
-		require.JSONEq(t, failureJSON, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-		// Now, with a valid one.
-		rec = httptest.NewRecorder()
-		json = `
-		{
-			"state": "ChEKBW5mbG9nEghzb21lZGF0YQ=="
-		}
-		`
-		req.Body = io.NopCloser(strings.NewReader(json))
-		am.SetUserGrafanaState(rec, req)
+			if tc.expResponseBody != "" {
+				body, err := io.ReadAll(rec.Body)
+				require.NoError(t, err)
 
-		require.Equal(t, http.StatusCreated, rec.Code)
-		body, err = io.ReadAll(rec.Body)
-		require.NoError(t, err)
-		require.JSONEq(t, successJSON, string(body))
-		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+				require.JSONEq(t, tc.expResponseBody, string(body))
+			}
 
-		require.Len(t, storage.Objects(), 1)
-		_, ok := storage.Objects()["grafana_alertmanager/test_user/grafana_fullstate"]
-		require.True(t, ok)
+			if tc.expStorageKey == "" {
+				require.Len(t, storage.Objects(), 0)
+			} else {
+				require.Len(t, storage.Objects(), 1)
+				_, ok := storage.Objects()[tc.expStorageKey]
+				require.True(t, ok)
+			}
+		})
 	}
 }

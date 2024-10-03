@@ -17,7 +17,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -36,6 +38,17 @@ const (
 
 	statusSuccess = "success"
 	statusError   = "error"
+)
+
+var (
+	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager configuration is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
+	)
+	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager state is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaStateSizeFlag,
+	)
 )
 
 type GrafanaAlertmanagerConfig struct {
@@ -169,8 +182,27 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxStateSize := am.limits.AlertmanagerMaxGrafanaStateSize(userID)
+	if maxStateSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxStateSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(maxGrafanaStateSizeMsgFormat, maxStateSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingState, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{
@@ -320,10 +352,13 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 	payload, err := io.ReadAll(input)
 	if err != nil {
 		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
-			msg := fmt.Sprintf(errConfigurationTooBig, maxConfigSize)
+			msg := fmt.Sprintf(maxGrafanaConfigSizeMsgFormat, maxConfigSize)
 			level.Warn(logger).Log("msg", msg)
 			w.WriteHeader(http.StatusBadRequest)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: msg})
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
 			return
 		}
 
