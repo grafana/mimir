@@ -15,16 +15,14 @@ import (
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, checkAnnotations bool) {
+func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) {
 	require.Equal(t, expected.Err, actual.Err)
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
-	if checkAnnotations {
-		expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
-		actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
-		require.ElementsMatch(t, expectedWarnings, actualWarnings)
-		require.ElementsMatch(t, expectedInfos, actualInfos)
-	}
+	expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
+	actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
+	require.ElementsMatch(t, expectedWarnings, actualWarnings)
+	require.ElementsMatch(t, expectedInfos, actualInfos)
 
 	switch expected.Value.Type() {
 	case parser.ValueTypeVector:
