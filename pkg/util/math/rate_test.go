@@ -12,11 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type tickTest struct {
+	events int
+	want   float64
+}
+
 func TestRate(t *testing.T) {
-	ticks := []struct {
-		events int
-		want   float64
-	}{
+	ticks := populateWarmupSamples()
+	ticks = append(ticks, []tickTest{
 		{60, 1},
 		{30, 0.9},
 		{0, 0.72},
@@ -28,7 +31,7 @@ func TestRate(t *testing.T) {
 		{0, 0.25427968},
 		{0, 0.203423744},
 		{0, 0.1627389952},
-	}
+	}...)
 	r := NewEWMARate(0.2, time.Minute)
 
 	for _, tick := range ticks {
@@ -49,4 +52,12 @@ func TestRate(t *testing.T) {
 		r.Tick()
 		require.InDelta(t, tick.want, r.Rate(), 0.0000000001, "unexpected rate")
 	}
+}
+
+func populateWarmupSamples() []tickTest {
+	samples := make([]tickTest, 0, warmupSamples-1)
+	for range warmupSamples - 1 {
+		samples = append(samples, tickTest{60, 0})
+	}
+	return samples
 }
