@@ -106,6 +106,7 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		Tolerance:              cfg.ProxyConfig.ValueComparisonTolerance,
 		UseRelativeError:       cfg.ProxyConfig.UseRelativeError,
 		SkipRecentSamples:      cfg.ProxyConfig.SkipRecentSamples,
+		SkipSamplesBefore:      cfg.ProxyConfig.SkipSamplesBefore * 1000,
 		RequireExactErrorMatch: cfg.ProxyConfig.RequireExactErrorMatch,
 	})
 

@@ -39,6 +39,7 @@ type ProxyConfig struct {
 	UseRelativeError                    bool
 	PassThroughNonRegisteredRoutes      bool
 	SkipRecentSamples                   time.Duration
+	SkipSamplesBefore                   int64
 	RequireExactErrorMatch              bool
 	BackendSkipTLSVerify                bool
 	AddMissingTimeParamToInstantQueries bool
@@ -65,6 +66,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&cfg.ValueComparisonTolerance, "proxy.value-comparison-tolerance", 0.000001, "The tolerance to apply when comparing floating point values in the responses. 0 to disable tolerance and require exact match (not recommended).")
 	f.BoolVar(&cfg.UseRelativeError, "proxy.compare-use-relative-error", false, "Use relative error tolerance when comparing floating point values.")
 	f.DurationVar(&cfg.SkipRecentSamples, "proxy.compare-skip-recent-samples", 2*time.Minute, "The window from now to skip comparing samples. 0 to disable.")
+	f.Int64Var(&cfg.SkipSamplesBefore, "proxy.compare-skip-samples-before", 0, "Skip the samples before the given unix timestamp in seconds for comparison.")
 	f.BoolVar(&cfg.RequireExactErrorMatch, "proxy.compare-exact-error-matching", false, "If true, errors will be considered the same only if they are exactly the same. If false, errors will be considered the same if they are considered equivalent.")
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
