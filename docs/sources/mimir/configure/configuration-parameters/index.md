@@ -3868,8 +3868,8 @@ kafka:
 
   # The number of concurrent fetch requests that the ingester makes when reading
   # data continuously from Kafka after startup. Is disabled unless
-  # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. It must be
-  # greater than 0.
+  # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to
+  # disable.
   # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
   [ongoing_fetch_concurrency: <int> | default = 0]
 
