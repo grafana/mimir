@@ -71,6 +71,8 @@ func sampleStreamsStrings(ss []SampleStream) []string {
 // approximatelyEqualsSamples ensures two responses are approximately equal, up to 6 decimals precision per sample,
 // but only checks the samples and not the warning/info annotations.
 func approximatelyEqualsSamples(t *testing.T, a, b *PrometheusResponse) {
+	t.Helper()
+
 	// Ensure both queries succeeded.
 	require.Equal(t, statusSuccess, a.Status)
 	require.Equal(t, statusSuccess, b.Status)
@@ -304,7 +306,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query: `
 				sum by(unique) (metric_counter)
 				*
-				on (unique) group_left (group_1) 
+				on (unique) group_left (group_1)
 				avg by (unique, group_1) (metric_counter)`,
 			expectedShardedQueries: 3,
 		},
