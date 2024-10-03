@@ -37,6 +37,9 @@ const (
 
 	memoryPoolContextKey         contextKey = 0
 	cacheLookupEnabledContextKey contextKey = 1
+
+	invalidationLockTTL     = 15 * time.Second
+	invalidationLockContent = "locked"
 )
 
 var errObjNotFound = errors.Errorf("object not found")
@@ -159,10 +162,27 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
-// invalidate invalidates content, existence, and attribute caches for the given object.
-// Note that this is best-effort and errors invalidating the cache are ignored.
-func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
+// TODO: Docs
+func (cb *CachingBucket) invalidatePre(ctx context.Context, name string) (*getConfig, *attributesConfig) {
 	_, getCfg := cb.cfg.findGetConfig(name)
+	if getCfg != nil && getCfg.invalidateOnMutation {
+		contentLockKey := cachingKeyContentLock(cb.bucketID, name)
+		// TODO: How do we handle this error? Retries?
+		_ = getCfg.cache.Set(ctx, contentLockKey, []byte(invalidationLockContent), invalidationLockTTL)
+	}
+
+	_, attrCfg := cb.cfg.findAttributesConfig(name)
+	if attrCfg != nil && attrCfg.invalidateOnMutation {
+		attrLockKey := cachingKeyAttributes(cb.bucketID, name)
+		// TODO: How do we handle this error? Retries?
+		_ = attrCfg.cache.Set(ctx, attrLockKey, []byte(invalidationLockContent), invalidationLockTTL)
+	}
+
+	return getCfg, attrCfg
+}
+
+// TODO: Docs
+func (cb *CachingBucket) invalidatePost(ctx context.Context, name string, getCfg *getConfig, attrCfg *attributesConfig) {
 	if getCfg != nil && getCfg.invalidateOnMutation {
 		// Get config includes an embedded Exists config and the Get() method
 		// caches if an object exists or doesn't. Because of that, we invalidate
@@ -175,7 +195,6 @@ func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
 		_ = getCfg.cache.Delete(ctx, existsKey)
 	}
 
-	_, attrCfg := cb.cfg.findAttributesConfig(name)
 	if attrCfg != nil && attrCfg.invalidateOnMutation {
 		attrKey := cachingKeyAttributes(cb.bucketID, name)
 		_ = attrCfg.cache.Delete(ctx, attrKey)
@@ -183,18 +202,20 @@ func (cb *CachingBucket) invalidate(ctx context.Context, name string) {
 }
 
 func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+	getCfg, attrCfg := cb.invalidatePre(ctx, name)
 	err := cb.Bucket.Upload(ctx, name, r)
 	if err == nil {
-		cb.invalidate(ctx, name)
+		cb.invalidatePost(ctx, name, getCfg, attrCfg)
 	}
 
 	return err
 }
 
 func (cb *CachingBucket) Delete(ctx context.Context, name string) error {
+	getCfg, attrCfg := cb.invalidatePre(ctx, name)
 	err := cb.Bucket.Delete(ctx, name)
 	if err == nil {
-		cb.invalidate(ctx, name)
+		cb.invalidatePost(ctx, name, getCfg, attrCfg)
 	}
 
 	return err
@@ -321,6 +342,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		return cb.Bucket.Get(ctx, name)
 	}
 
+	contentLockKey := cachingKeyContentLock(cb.bucketID, name)
 	contentKey := cachingKeyContent(cb.bucketID, name)
 	existsKey := cachingKeyExists(cb.bucketID, name)
 
@@ -384,6 +406,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		buf:       new(bytes.Buffer),
 		startTime: getTime,
 		ttl:       cfg.contentTTL,
+		lockKey:   contentLockKey,
 		cacheKey:  contentKey,
 		maxSize:   cfg.maxCacheableSize,
 	}, nil
@@ -416,6 +439,7 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 }
 
 func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
+	lockKey := cachingKeyAttributesLock(cb.bucketID, name)
 	key := cachingKeyAttributes(cb.bucketID, name)
 
 	// Lookup the cache.
@@ -441,7 +465,13 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	}
 
 	if raw, err := json.Marshal(attrs); err == nil {
-		cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
+		// Attempt to add a "lock" key to the cache if it does not already exist. Only cache this
+		// content when we were able to insert the lock key meaning this object isn't being updated
+		// by another request.
+		addErr := cache.Add(ctx, lockKey, []byte(invalidationLockContent), invalidationLockTTL)
+		if addErr == nil {
+			cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
+		}
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
 	}
@@ -641,6 +671,10 @@ func cachingKeyAttributes(bucketID, name string) string {
 	return composeCachingKey("attrs", bucketID, name)
 }
 
+func cachingKeyAttributesLock(bucketID, name string) string {
+	return composeCachingKey("attrs", bucketID, name, "lock")
+}
+
 func cachingKeyObjectSubrange(bucketID, name string, start, end int64) string {
 	return composeCachingKey("subrange", bucketID, name, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10))
 }
@@ -661,6 +695,10 @@ func cachingKeyExists(bucketID, name string) string {
 
 func cachingKeyContent(bucketID, name string) string {
 	return composeCachingKey("content", bucketID, name)
+}
+
+func cachingKeyContentLock(bucketID, name string) string {
+	return composeCachingKey("content", bucketID, name, "lock")
 }
 
 func composeCachingKey(op, bucketID string, values ...string) string {
@@ -774,6 +812,7 @@ type getReader struct {
 	startTime time.Time
 	ttl       time.Duration
 	cacheKey  string
+	lockKey   string
 	maxSize   int
 }
 
@@ -797,7 +836,13 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 	if errors.Is(err, io.EOF) && g.buf != nil {
 		remainingTTL := g.ttl - time.Since(g.startTime)
 		if remainingTTL > 0 {
-			g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			// Attempt to add a "lock" key to the cache if it does not already exist. Only cache this
+			// content when we were able to insert the lock key meaning this object isn't being updated
+			// by another request.
+			addErr := g.c.Add(context.Background(), g.lockKey, []byte(invalidationLockContent), invalidationLockTTL)
+			if addErr == nil {
+				g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			}
 		}
 		// Clear reference, to avoid doing another Store on next read.
 		g.buf = nil

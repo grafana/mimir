@@ -28,6 +28,7 @@ import (
 
 const (
 	dnsProviderUpdateInterval = 30 * time.Second
+	maxTTL                    = 30 * 24 * time.Hour
 )
 
 var (
@@ -43,6 +44,7 @@ var (
 type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
+	Add(item *memcache.Item) error
 	Delete(key string) error
 	Decrement(key string, delta uint64) (uint64, error)
 	Increment(key string, delta uint64) (uint64, error)
@@ -322,14 +324,47 @@ func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) 
 	c.setAsync(key, value, ttl, c.setSingleItem)
 }
 
+func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opSet, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return c.setSingleItem(key, value, ttl)
+		}
+	})
+}
+
+func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			ttlSeconds, ok := toSeconds(ttl)
+			if !ok {
+				return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
+			}
+
+			err := c.client.Add(&memcache.Item{
+				Key:        key,
+				Value:      value,
+				Expiration: ttlSeconds,
+			})
+
+			if errors.Is(err, memcache.ErrNotStored) {
+				return fmt.Errorf("%w: for add operation on %s", ErrNotStored, key)
+			}
+
+			return err
+		}
+	})
+}
+
 func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Duration) error {
-	ttlSeconds := int32(ttl.Seconds())
-	// If a TTL of exactly 0 is passed, we honor it and pass it to Memcached which will
-	// interpret it as an infinite TTL. However, if we get a non-zero TTL that is truncated
-	// to 0 seconds, we discard the update since the caller didn't intend to set an infinite
-	// TTL.
-	if ttl != 0 && ttlSeconds <= 0 {
-		return nil
+	ttlSeconds, ok := toSeconds(ttl)
+	if !ok {
+		return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
 	}
 
 	return c.client.Set(&memcache.Item{
@@ -337,6 +372,20 @@ func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Durat
 		Value:      value,
 		Expiration: ttlSeconds,
 	})
+}
+
+// TODO: Docs
+func toSeconds(d time.Duration) (int32, bool) {
+	if d > maxTTL {
+		return 0, false
+	}
+
+	secs := int32(d.Seconds())
+	if d != 0 && secs <= 0 {
+		return 0, false
+	}
+
+	return secs, true
 }
 
 func toMemcacheOptions(opts ...Option) []memcache.Option {

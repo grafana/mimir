@@ -611,7 +611,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20240925193654-7c41a4057319
+# github.com/grafana/dskit v0.0.0-20240925193654-7c41a4057319 => github.com/grafana/dskit v0.0.0-20241003174309-ebcbf7befc39
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1664,6 +1664,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
+# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20241003174309-ebcbf7befc39
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240925112120-6046bf43c9b2
 # github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.19.1
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
