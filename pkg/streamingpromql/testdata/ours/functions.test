@@ -218,11 +218,13 @@ load 6m
   metric{series="float"} 1 2 3 4 -5 0 NaN -NaN
   metric{series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
 
-# Unary negation of a native histogram currently does nothing in Prometheus' engine, which seems incorrect, but we mirror its behaviour for consistency.
-# See https://github.com/prometheus/prometheus/pull/14821 for more discussion.
 eval range from 0 to 42m step 6m -metric
   {series="float"} -1 -2 -3 -4 5 0 -NaN NaN
-  {series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
+  {series="histogram"} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}} {{schema:3 sum:-14 count:-27 buckets:[-1 -2 -6] n_buckets:[-3 -5 -10]}}
+
+# Ensure unary negation of histograms behaves correctly when lookback is involved.
+eval range from 0 to 1m step 1m -metric{series="histogram"}
+  {series="histogram"} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}}
 
 clear
 
