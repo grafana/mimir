@@ -303,7 +303,7 @@ func newIngesterMetrics(
 		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
-		}, []string{"user", "attrib"}),
+		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
@@ -407,11 +407,6 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 	m.discarded.DeleteLabelValues(userID, group)
 }
 
-func (m *ingesterMetrics) deletePerAttributionMetricsForUser(userID, attribution string) {
-	m.activeSeriesPerUser.DeleteLabelValues(userID, attribution)
-	m.discarded.samplesPerAttribution.DeleteLabelValues(userID, attribution)
-}
-
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
@@ -434,7 +429,6 @@ type discardedMetrics struct {
 	perUserSeriesLimit     *prometheus.CounterVec
 	perMetricSeriesLimit   *prometheus.CounterVec
 	invalidNativeHistogram *prometheus.CounterVec
-	samplesPerAttribution  *prometheus.CounterVec
 }
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
@@ -447,10 +441,6 @@ func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 		perUserSeriesLimit:     validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
 		perMetricSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 		invalidNativeHistogram: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogram),
-		samplesPerAttribution: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_discarded_samples_attribution_total",
-			Help: "The total number of samples that were discarded per attribution.",
-		}, []string{"user", "attrib"}),
 	}
 }
 
@@ -463,7 +453,6 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
 	m.invalidNativeHistogram.DeletePartialMatch(filter)
-	m.samplesPerAttribution.DeletePartialMatch(filter)
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {

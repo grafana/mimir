@@ -260,6 +260,10 @@ func (s *CostAttributionCleanupService) GetUserAttributionLabel(userID string) s
 	return ""
 }
 
+func (s *CostAttributionCleanupService) EnabledForUser(userID string) bool {
+	return s.costAttribution.limits.CostAttributionLabel(userID) != ""
+}
+
 func (s *CostAttributionCleanupService) GetUserAttributionLimit(userID string) int {
 	return s.costAttribution.limits.MaxCostAttributionPerUser(userID)
 }

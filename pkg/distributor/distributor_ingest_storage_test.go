@@ -209,7 +209,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 
 					# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 					# TYPE cortex_distributor_received_samples_total counter
-					cortex_distributor_received_samples_total{attrib="", user="user"} 5
+					cortex_distributor_received_samples_total{ user="user"} 5
 
 					# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
 					# TYPE cortex_distributor_metadata_in_total counter

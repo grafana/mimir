@@ -788,14 +788,14 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
-				costAttribLabel := i.limits.CostAttributionLabel(userID)
-				if costAttribLabel != "" {
+				caEnabled := i.costAttributionSvc != nil && i.costAttributionSvc.EnabledForUser(userID)
+				if caEnabled {
 					labelAttributions := userDB.activeSeries.ActiveByAttributionValue()
 					for label, count := range labelAttributions {
-						i.metrics.activeSeriesPerUser.WithLabelValues(userID, label).Set(float64(count))
+						i.costAttributionSvc.SetActiveSeries(userID, label, float64(count))
 					}
 				} else {
-					i.metrics.activeSeriesPerUser.WithLabelValues(userID, "").Set(float64(allActive))
+					i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 				}
 			} else {
 				i.metrics.activeSeriesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
@@ -1283,8 +1283,10 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
-	for label, count := range stats.failedSamplesAttribution {
-		discarded.samplesPerAttribution.WithLabelValues(userID, label).Add(float64(count))
+	if i.costAttributionSvc != nil && i.costAttributionSvc.EnabledForUser(userID) {
+		for label, count := range stats.failedSamplesAttribution {
+			i.costAttributionSvc.IncrementDiscardedSamples(userID, label, float64(count))
+		}
 	}
 }
 
@@ -3427,10 +3429,6 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 func (i *Ingester) RemoveGroupMetricsForUser(userID, group string) {
 	i.metrics.deletePerGroupMetricsForUser(userID, group)
-}
-
-func (i *Ingester) RemoveAttributionMetricsForUser(userID, attribution string) {
-	i.metrics.deletePerAttributionMetricsForUser(userID, attribution)
 }
 
 // TransferOut implements ring.FlushTransferer.

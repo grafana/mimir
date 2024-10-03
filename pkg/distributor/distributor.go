@@ -357,7 +357,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
 			Help: "The total number of received samples, excluding rejected and deduped samples.",
-		}, []string{"user", "attrib"}),
+		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
 			Help: "The total number of received exemplars, excluding rejected and deduped exemplars.",
@@ -645,6 +645,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
 	d.receivedRequests.DeleteLabelValues(userID)
+	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingRequests.DeleteLabelValues(userID)
@@ -661,7 +662,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
-	d.receivedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
@@ -678,11 +678,6 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
 	d.sampleValidationMetrics.deleteUserMetricsForGroup(userID, group)
-}
-
-func (d *Distributor) RemoveAttributionMetricsForUser(userID, attribution string) {
-	d.receivedSamples.DeleteLabelValues(userID, attribution)
-	//TODO @ying: Remove attribution metrics
 }
 
 // Called after distributor is asked to stop via StopAsync.
@@ -1441,7 +1436,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	now := mtime.Now()
 
-	d.updateReceivedMetrics(req, userID, d.limits.CostAttributionLabel(userID), now)
+	d.updateReceivedMetrics(req, userID, now)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -1672,28 +1667,30 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, costAttributionLabel string, now time.Time) {
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, now time.Time) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
 	costAttributionSize := 0
-	if costAttributionLabel != "" {
-		costAttributionSize = d.limits.MaxCostAttributionPerUser(userID)
+	caEnabled := d.costAttributionSvc != nil && d.costAttributionSvc.EnabledForUser(userID)
+	if caEnabled {
+		costAttributionSize = d.costAttributionSvc.GetUserAttributionLimit(userID)
 	}
 	costAttribution := make(map[string]int, costAttributionSize)
+
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
-		if costAttributionLabel != "" {
+		if caEnabled {
 			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
 			costAttribution[attribution]++
 		}
 	}
 	receivedMetadata = len(req.Metadata)
-	if costAttributionLabel != "" {
+	if caEnabled {
 		for lv, count := range costAttribution {
-			d.receivedSamples.WithLabelValues(userID, lv).Add(float64(count))
+			d.costAttributionSvc.IncrementReceivedSamples(userID, lv, float64(count))
 		}
 	} else {
-		d.receivedSamples.WithLabelValues(userID, "").Add(float64(receivedSamples))
+		d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
 	}
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
