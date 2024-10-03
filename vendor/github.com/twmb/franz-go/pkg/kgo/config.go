@@ -16,6 +16,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
+
+	"github.com/twmb/franz-go/pkg/kgo/internal/pool"
 )
 
 // Opt is an option to configure a client.
@@ -150,6 +152,9 @@ type cfg struct {
 	topics     map[string]*regexp.Regexp   // topics to consume; if regex is true, values are compiled regular expressions
 	partitions map[string]map[int32]Offset // partitions to directly consume from
 	regex      bool
+
+	recordsPool          *recordsPool
+	decompressBufferPool *pool.BucketedPool[byte]
 
 	////////////////////////////
 	// CONSUMER GROUP SECTION //
@@ -389,6 +394,11 @@ func (cfg *cfg) validate() error {
 	}
 	cfg.hooks = processedHooks
 
+	// Assume a 2x compression ratio.
+	maxDecompressedBatchSize := int(cfg.maxBytes.load()) * 2
+	cfg.decompressBufferPool = pool.NewBucketedPool[byte](4096, maxDecompressedBatchSize, 2, func(sz int) []byte {
+		return make([]byte, sz)
+	})
 	return nil
 }
 
@@ -1345,6 +1355,18 @@ func ConsumePartitions(partitions map[string]map[int32]Offset) ConsumerOpt {
 // permanently is known to match, or is permanently known to not match.
 func ConsumeRegex() ConsumerOpt {
 	return consumerOpt{func(cfg *cfg) { cfg.regex = true }}
+}
+
+// EnableRecordsPool sets the client to obtain the *kgo.Record objects from a pool,
+// in order to minimize the number of allocations.
+//
+// By enabling this option, the records returned by PollFetches/PollRecords
+// can be sent back to the pool via ReuseRecords method in order to be recycled.
+//
+// This option is particularly useful for use cases where the volume of generated records is very high,
+// as it can negatively impact performance due to the extra GC overhead.
+func EnableRecordsPool() ConsumerOpt {
+	return consumerOpt{func(cfg *cfg) { cfg.recordsPool = newRecordsPool() }}
 }
 
 // DisableFetchSessions sets the client to not use fetch sessions (Kafka 1.0+).
