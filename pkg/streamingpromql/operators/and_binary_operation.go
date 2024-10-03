@@ -212,7 +212,7 @@ func (a *AndBinaryOperation) Close() {
 type andGroup struct {
 	leftSeriesCount      int
 	lastRightSeriesIndex int
-	rightSamplePresence  []bool // TODO: use a bitmap here
+	rightSamplePresence  []bool // FIXME: this would be a good candidate for a bitmap type
 }
 
 // AccumulateRightSeriesPresence records the presence of samples on the right-hand side.
