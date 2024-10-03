@@ -510,6 +510,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			}
 			// Next attempt will be from the last record onwards.
 			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
+			w = w.UpdateBytesPerRecord(f.fetchedBytes, len(f.Records)) // This takes into account the previousFetch too. This should give us a better average than using just the records from the last attempt.
 
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
 			// We don't want to slow down until we hit a larger error.
