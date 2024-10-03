@@ -165,10 +165,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	case *parser.Call:
 		return q.convertFunctionCallToInstantVectorOperator(e)
 	case *parser.BinaryExpr:
-		if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableBinaryComparisonOperations {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
-		}
-
 		// We only need to handle three combinations of types here:
 		// Scalar on left, vector on right
 		// Vector on left, scalar on right
@@ -177,6 +173,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 		// We don't need to handle scalars on both sides here, as that would produce a scalar and so is handled in convertToScalarOperator.
 
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
+			if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableVectorScalarBinaryComparisonOperations {
+				return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/scalar binary expression with '%v'", e.Op))
+			}
+
 			var scalar types.ScalarOperator
 			var vector types.InstantVectorOperator
 			var err error
@@ -214,6 +214,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 		}
 
 		// Vectors on both sides.
+		if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableVectorVectorBinaryComparisonOperations {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/vector binary expression with '%v'", e.Op))
+		}
 
 		if e.VectorMatching.Card != parser.CardOneToOne {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
@@ -342,8 +345,8 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	case *parser.ParenExpr:
 		return q.convertToScalarOperator(e.Expr)
 	case *parser.BinaryExpr:
-		if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableBinaryComparisonOperations {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
+		if e.Op.IsComparisonOperator() && !q.engine.featureToggles.EnableScalarScalarBinaryComparisonOperations {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("scalar/scalar binary expression with '%v'", e.Op))
 		}
 
 		lhs, err := q.convertToScalarOperator(e.LHS)
