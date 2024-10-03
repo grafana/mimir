@@ -416,7 +416,29 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 	defer func() {
 		logger := spanlogger.FromContext(ctx, q.engine.logger)
-		level.Info(logger).Log("msg", "query stats", "estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes)
+		msg := make([]interface{}, 0, 2*(3+4)) // 3 fields for all query types, plus worst case of 4 fields for range queries
+
+		msg = append(msg,
+			"msg", "query stats",
+			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes,
+			"expr", q.qs,
+		)
+
+		if q.IsInstant() {
+			msg = append(msg,
+				"queryType", "instant",
+				"time", q.timeRange.StartT,
+			)
+		} else {
+			msg = append(msg,
+				"queryType", "range",
+				"start", q.timeRange.StartT,
+				"end", q.timeRange.EndT,
+				"step", q.timeRange.IntervalMilliseconds,
+			)
+		}
+
+		level.Info(logger).Log(msg...)
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
 	}()
 

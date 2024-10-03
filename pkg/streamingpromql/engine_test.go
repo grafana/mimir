@@ -1137,34 +1137,54 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		return engine, reg, span, ctx
 	}
 
-	assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span opentracing.Span, expectedMemoryConsumptionEstimate uint64) {
-		peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
-		require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
-
-		jaegerSpan, ok := span.(*jaeger.Span)
-		require.True(t, ok)
-		require.Len(t, jaegerSpan.Logs(), 1)
-		traceLog := jaegerSpan.Logs()[0]
-		expectedFields := []otlog.Field{
-			otlog.String("level", "info"),
-			otlog.String("msg", "query stats"),
-			otlog.Uint64("estimatedPeakMemoryConsumption", expectedMemoryConsumptionEstimate),
-		}
-		require.Equal(t, expectedFields, traceLog.Fields)
-	}
-
 	start := timestamp.Time(0)
+	end := start.Add(4 * time.Minute)
+	step := time.Minute
 
 	for name, testCase := range testCases {
+		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span opentracing.Span, expectedMemoryConsumptionEstimate uint64, queryType string) {
+			peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
+			require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
+
+			jaegerSpan, ok := span.(*jaeger.Span)
+			require.True(t, ok)
+			require.Len(t, jaegerSpan.Logs(), 1)
+			traceLog := jaegerSpan.Logs()[0]
+			expectedFields := []otlog.Field{
+				otlog.String("level", "info"),
+				otlog.String("msg", "query stats"),
+				otlog.Uint64("estimatedPeakMemoryConsumption", expectedMemoryConsumptionEstimate),
+				otlog.String("expr", testCase.expr),
+				otlog.String("queryType", queryType),
+			}
+
+			switch queryType {
+			case "instant":
+				expectedFields = append(expectedFields,
+					otlog.Int64("time", start.UnixMilli()),
+				)
+			case "range":
+				expectedFields = append(expectedFields,
+					otlog.Int64("start", start.UnixMilli()),
+					otlog.Int64("end", end.UnixMilli()),
+					otlog.Int64("step", step.Milliseconds()),
+				)
+			default:
+				panic(fmt.Sprintf("unknown query type: %s", queryType))
+			}
+
+			require.Equal(t, expectedFields, traceLog.Fields)
+		}
+
 		t.Run(name, func(t *testing.T) {
 			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64){
-				"range query": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
+				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
 					engine, reg, span, ctx := createEngine(t, testCase.rangeQueryLimit)
-					q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, start.Add(4*time.Minute), time.Minute)
+					q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, end, step)
 					require.NoError(t, err)
 					return q, reg, span, ctx, testCase.rangeQueryExpectedPeak
 				},
-				"instant query": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
+				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
 					engine, reg, span, ctx := createEngine(t, testCase.instantQueryLimit)
 					q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
 					require.NoError(t, err)
@@ -1187,7 +1207,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 						require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
 					}
 
-					assertEstimatedPeakMemoryConsumption(t, reg, span, expectedPeakMemoryConsumption)
+					assertEstimatedPeakMemoryConsumption(t, reg, span, expectedPeakMemoryConsumption, queryType)
 				})
 			}
 		})
