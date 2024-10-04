@@ -232,6 +232,17 @@ func (s sample) Type() chunkenc.ValueType {
 	}
 }
 
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
+}
+
 func must[T any](v T, err error) T {
 	if err != nil {
 		panic(err)

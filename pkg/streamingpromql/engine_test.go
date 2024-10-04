@@ -1707,8 +1707,6 @@ func TestAnnotations(t *testing.T) {
 			expr:                       fmt.Sprintf("%s(series[45s])", function),
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
-			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
 		}
 		testCases[fmt.Sprintf("%s() over one point in range", function)] = testCase{
 			data: `
@@ -1717,8 +1715,6 @@ func TestAnnotations(t *testing.T) {
 			expr:                       fmt.Sprintf("%s(series[1m])", function),
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
-			// This can be removed once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-			skipComparisonWithPrometheusReason: "Prometheus only considers the type of the last point in the vector selector rather than the output value",
 		}
 	}
 
@@ -1866,9 +1862,7 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 				defer q.Close()
 				mimirResults := q.Exec(context.Background())
 
-				// We currently omit checking the annotations due to a difference between the engines.
-				// This can be re-enabled once https://github.com/prometheus/prometheus/pull/14910 is vendored.
-				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults, false)
+				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults)
 			})
 		}
 	}

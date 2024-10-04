@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1668,6 +1669,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 func defaultLimitsConfig() validation.Limits {
