@@ -255,7 +255,7 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 		}
 	}
 
-	allMetadata := make([]types.SeriesMetadata, 0, len(outputSeriesMap))
+	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)

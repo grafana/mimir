@@ -113,7 +113,7 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 	}
 
 	// Iterate through the left-hand series again, and build the list of output series based on those that matched at least one series on the right.
-	outputSeries := make([]types.SeriesMetadata, 0, outputSeriesCount)
+	outputSeries := types.GetSeriesMetadataSlice(outputSeriesCount)
 
 	for seriesIdx, group := range a.leftSeriesGroups {
 		if group.lastRightSeriesIndex == -1 {
