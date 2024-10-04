@@ -723,8 +723,7 @@ type Mimir struct {
 	QueryFrontendTopicOffsetsReader *ingest.TopicOffsetsReader
 	QueryFrontendCodec              querymiddleware.Codec
 	Ruler                           *ruler.Ruler
-	RulerDirectStorage              rulestore.RuleStore
-	RulerCachedStorage              rulestore.RuleStore
+	RulerStorage                    rulestore.RuleStore
 	Alertmanager                    *alertmanager.MultitenantAlertmanager
 	Compactor                       *compactor.MultitenantCompactor
 	StoreGateway                    *storegateway.StoreGateway

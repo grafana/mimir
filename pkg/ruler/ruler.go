@@ -38,7 +38,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -314,13 +313,12 @@ type MultiTenantManager interface {
 type Ruler struct {
 	services.Service
 
-	cfg         Config
-	lifecycler  *ring.BasicLifecycler
-	ring        *ring.Ring
-	directStore rulestore.RuleStore
-	cachedStore rulestore.RuleStore
-	manager     MultiTenantManager
-	limits      RulesLimits
+	cfg        Config
+	lifecycler *ring.BasicLifecycler
+	ring       *ring.Ring
+	store      rulestore.RuleStore
+	manager    MultiTenantManager
+	limits     RulesLimits
 
 	metrics *rulerMetrics
 
@@ -346,20 +344,14 @@ type Ruler struct {
 }
 
 // NewRuler creates a new ruler from a distributor and chunk store.
-func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, directStore, cachedStore rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
-	// If the cached store is not configured, just fallback to the direct one.
-	if cachedStore == nil {
-		cachedStore = directStore
-	}
-
-	return newRuler(cfg, manager, reg, logger, directStore, cachedStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
+func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, store rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
+	return newRuler(cfg, manager, reg, logger, store, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
 }
 
-func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, directStore, cachedStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
+func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, store rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:               cfg,
-		directStore:       directStore,
-		cachedStore:       cachedStore,
+		store:             store,
 		manager:           manager,
 		registry:          reg,
 		logger:            logger,
@@ -633,7 +625,7 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rulespb.RuleGroupList) (map[string]rulespb.RuleGroupList, error) {
 	// Load rule groups.
 	start := time.Now()
-	missing, err := r.directStore.LoadRuleGroups(ctx, configs)
+	missing, err := r.store.LoadRuleGroups(ctx, configs)
 	r.metrics.loadRuleGroups.Observe(time.Since(start).Seconds())
 
 	if err != nil {
@@ -660,7 +652,12 @@ func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rule
 
 	// In order to reduce API calls to the object storage among all ruler replicas,
 	// we support lookup of stale data for a short period.
-	users, err := r.cachedStore.ListAllUsers(bucketcache.WithCacheLookupEnabled(ctx, cacheLookupEnabled))
+	var opts []rulestore.Option
+	if !cacheLookupEnabled {
+		opts = append(opts, rulestore.WithCacheDisabled())
+	}
+
+	users, err := r.store.ListAllUsers(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
 	}
@@ -711,11 +708,16 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 		concurrency = len(userRings)
 	}
 
+	var opts []rulestore.Option
+	if !cacheLookupEnabled {
+		opts = append(opts, rulestore.WithCacheDisabled())
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	for i := 0; i < concurrency; i++ {
 		g.Go(func() error {
 			for userID := range userCh {
-				groups, err := r.cachedStore.ListRuleGroupsForUserAndNamespace(bucketcache.WithCacheLookupEnabled(gctx, cacheLookupEnabled), userID, "")
+				groups, err := r.store.ListRuleGroupsForUserAndNamespace(gctx, userID, "", opts...)
 				if err != nil {
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
@@ -1224,7 +1226,7 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	err = r.directStore.DeleteNamespace(req.Context(), userID, "") // Empty namespace = delete all rule groups.
+	err = r.store.DeleteNamespace(req.Context(), userID, "") // Empty namespace = delete all rule groups.
 	if err != nil && !errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 		respondServerError(logger, w, err.Error())
 		return
@@ -1238,8 +1240,8 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 
 func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	logger := util_log.WithContext(req.Context(), r.logger)
-
-	userIDs, err := r.directStore.ListAllUsers(req.Context())
+	// Disable caching when getting a list of users since this API is expected to be strongly consistent.
+	userIDs, err := r.store.ListAllUsers(req.Context(), rulestore.WithCacheDisabled())
 	if err != nil {
 		level.Error(logger).Log("msg", errListAllUser, "err", err)
 		http.Error(w, fmt.Sprintf("%s: %s", errListAllUser, err.Error()), http.StatusInternalServerError)
@@ -1255,12 +1257,14 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	err = concurrency.ForEachUser(req.Context(), userIDs, fetchRulesConcurrency, func(ctx context.Context, userID string) error {
-		rg, err := r.directStore.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		// Disable any caching when getting list of all rule groups since listing results
+		// are cached and not invalidated and this API is expected to be strongly consistent.
+		rg, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
 		if err != nil {
 			return errors.Wrapf(err, "failed to fetch ruler config for user %s", userID)
 		}
 		userRules := map[string]rulespb.RuleGroupList{userID: rg}
-		if missing, err := r.directStore.LoadRuleGroups(ctx, userRules); err != nil {
+		if missing, err := r.store.LoadRuleGroups(ctx, userRules); err != nil {
 			return errors.Wrapf(err, "failed to load ruler config for user %s", userID)
 		} else if len(missing) > 0 {
 			// This API is expected to be strongly consistent, so it's an error if any rule group was missing.
