@@ -103,7 +103,7 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 
 	// Block between 00:00 and 24:00 the next day (24 hours)
 	blockAtTheBoundary := validMeta
-	blockAtTheBoundary.MinTime = now.Truncate(24 * time.Hour).UnixMilli()
+	blockAtTheBoundary.MinTime = now.Add(-48 * time.Hour).Truncate(24 * time.Hour).UnixMilli()
 	blockAtTheBoundary.MaxTime = timestamp.Time(blockAtTheBoundary.MinTime).Add(24 * time.Hour).UnixMilli()
 
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
@@ -118,15 +118,19 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 		bkt.MockUpload(uploadingMetaPath, nil)
 	}
 
-	verifyUpload := func(t *testing.T, bkt *bucket.ClientMock, labels map[string]string) {
+	verifyUploadWithMeta := func(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta, labels map[string]string) {
 		t.Helper()
 
-		expMeta := validMeta
 		expMeta.Compaction.Parents = nil
 		expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
 		expMeta.Thanos.Source = "upload"
 		expMeta.Thanos.Labels = labels
 		verifyUploadedMeta(t, bkt, expMeta)
+	}
+
+	verifyUpload := func(t *testing.T, bkt *bucket.ClientMock, labels map[string]string) {
+		t.Helper()
+		verifyUploadWithMeta(t, bkt, validMeta, labels)
 	}
 
 	testCases := []struct {
@@ -487,6 +491,18 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			setUpBucketMock:        setUpPartialBlock,
 			meta:                   &blockCrossingDayBoundary,
 			expUnprocessableEntity: "block time range crosses boundary of configured compactor time range (1d)",
+		},
+		{
+			name:            "block spanning entire max time range",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpUpload,
+			meta:            &blockAtTheBoundary,
+			verifyUpload: func(t *testing.T, bkt *bucket.ClientMock) {
+				verifyUploadWithMeta(t, bkt, blockAtTheBoundary, map[string]string{
+					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
+				})
+			},
 		},
 		{
 			name:            "valid request",
