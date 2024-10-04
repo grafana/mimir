@@ -216,7 +216,12 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID s
 			return errors.Wrap(err, "failed while splitting block")
 		}
 
-		level.Info(logger).Log("msg", "created block from split", "splitID", splitID)
+		splitMeta, err := block.ReadMetaFromDir(path.Join(tenantDir, splitID.String()))
+		if err != nil {
+			return errors.Wrap(err, "failed while reading meta.json from split block")
+		}
+
+		level.Info(logger).Log("msg", "created block from split", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime), "splitID", splitID, "series", splitMeta.Stats.NumSeries, "chunks", splitMeta.Stats.NumChunks, "samples", splitMeta.Stats.NumSamples)
 		minTime = maxTime
 	}
 
