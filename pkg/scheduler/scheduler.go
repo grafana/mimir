@@ -9,6 +9,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/opentracing/opentracing-go/ext"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"io"
 	"net/http"
 	"strings"
@@ -497,6 +499,9 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	// monitor the contexts in a select and cancel things appropriately.
 	errCh := make(chan error, 1)
 	go func() {
+		span, _ := opentracing.StartSpanFromContext(req.Ctx, "forwardRequestToQuerier")
+		span.SetTag("querier_id", querierID)
+
 		err := querier.Send(&schedulerpb.SchedulerToQuerier{
 			UserID:          req.UserID,
 			QueryID:         req.QueryID,
@@ -505,10 +510,16 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
+
 		if err != nil {
 			errCh <- fmt.Errorf("failed to send query to querier '%v': %w", querierID, err)
+			span.LogFields(otlog.Message("sending query to querier failed"), otlog.Error(err))
+			ext.Error.Set(span, true)
+			span.Finish()
 			return
 		}
+
+		span.Finish()
 
 		_, err = querier.Recv()
 		if err != nil {
