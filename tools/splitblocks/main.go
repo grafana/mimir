@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -160,7 +161,7 @@ func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
 				return nil
 			}
 
-			if err := splitBlock(ctx, cfg, bkt, tenantID, blockMeta, cfg.maxDuration, logger); err != nil {
+			if err := splitBlock(ctx, cfg, bkt, tenantID, blockMeta, logger); err != nil {
 				level.Error(logger).Log("msg", "failed to split block", "err", err)
 				return err
 			}
@@ -188,19 +189,23 @@ func listBlocksForTenant(ctx context.Context, bkt objstore.Bucket, tenantID stri
 
 // splitBlock downloads the source block to the output directory, then generates new blocks that are within cfg.blockRanges durations.
 // After all the splits succeed the original source block is removed from the output directory.
-func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID string, meta block.Meta, maxDuration time.Duration, logger log.Logger) error {
-	tenantDir := path.Join(cfg.outputDir, tenantID)
+func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID string, meta block.Meta, logger log.Logger) error {
+	tenantDir := filepath.Join(cfg.outputDir, tenantID)
 
-	originalBlockDir := path.Join(tenantDir, meta.ULID.String())
+	originalBlockDir := filepath.Join(tenantDir, meta.ULID.String())
 	if err := block.Download(ctx, logger, bkt, meta.ULID, originalBlockDir); err != nil {
 		return err
 	}
 
+	return splitLocalBlock(ctx, tenantDir, originalBlockDir, meta, cfg.maxDuration, logger)
+}
+
+func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block.Meta, maxDuration time.Duration, logger log.Logger) error {
 	origBlockMaxTime := meta.MaxTime
 	minTime := meta.MinTime
 	for minTime < origBlockMaxTime {
 		// Max time cannot cross maxDuration boundary, but also should not be greater than original max time.
-		maxTime := min(timestamp.Time(minTime).Truncate(cfg.maxDuration).Add(cfg.maxDuration).UnixMilli(), origBlockMaxTime)
+		maxTime := min(timestamp.Time(minTime).Truncate(maxDuration).Add(maxDuration).UnixMilli(), origBlockMaxTime)
 
 		level.Info(logger).Log("msg", "splitting block", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime))
 
@@ -208,15 +213,15 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID s
 		// Chunks that cross boundaries are included in multiple blocks.
 		meta.MinTime = minTime
 		meta.MaxTime = maxTime
-		if err := meta.WriteToDir(logger, originalBlockDir); err != nil {
+		if err := meta.WriteToDir(logger, blockDir); err != nil {
 			return errors.Wrap(err, "failed injecting meta for split")
 		}
-		splitID, err := block.Repair(ctx, logger, tenantDir, meta.ULID, block.SplitBlocksSource, block.IgnoreCompleteOutsideChunk, block.IgnoreIssue347OutsideChunk)
+		splitID, err := block.Repair(ctx, logger, parentDir, meta.ULID, block.SplitBlocksSource, block.IgnoreCompleteOutsideChunk, block.IgnoreIssue347OutsideChunk)
 		if err != nil {
 			return errors.Wrap(err, "failed while splitting block")
 		}
 
-		splitMeta, err := block.ReadMetaFromDir(path.Join(tenantDir, splitID.String()))
+		splitMeta, err := block.ReadMetaFromDir(path.Join(parentDir, splitID.String()))
 		if err != nil {
 			return errors.Wrap(err, "failed while reading meta.json from split block")
 		}
@@ -225,7 +230,7 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID s
 		minTime = maxTime
 	}
 
-	if err := os.RemoveAll(originalBlockDir); err != nil {
+	if err := os.RemoveAll(blockDir); err != nil {
 		return errors.Wrap(err, "failed to clean up original block directory after splitting block")
 	}
 
