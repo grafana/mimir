@@ -252,6 +252,7 @@ func NewAPI(
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled bool,
 	enableCTZeroIngestion bool,
+	validIntervalCTZeroIngestion time.Duration,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -296,7 +297,7 @@ func NewAPI(
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
 	}
 	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc, enableCTZeroIngestion)
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc, enableCTZeroIngestion, validIntervalCTZeroIngestion)
 	}
 
 	return a
