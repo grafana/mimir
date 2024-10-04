@@ -23,48 +23,46 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type config struct {
-	bucket            bucket.Config
-	outputDir         string
-	tenantConcurrency int
-	blockConcurrency  int
-	includeTenants    flagext.StringSliceCSV
-	excludeTenants    flagext.StringSliceCSV
-	dryRun            bool
-	maxDuration       time.Duration
+	bucket           bucket.Config
+	blocks           flagext.StringSliceCSV
+	bucketPrefix     string
+	outputDir        string
+	blockConcurrency int
+	dryRun           bool
+	maxBlockDuration time.Duration
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
-	c.bucket.RegisterFlags(flag.CommandLine)
-	f.StringVar(&c.outputDir, "output-dir", "", "The output directory where split blocks will be written")
-	f.IntVar(&c.blockConcurrency, "block-concurrency", 5, "How many blocks can be split at once per tenant")
-	f.IntVar(&c.tenantConcurrency, "tenant-concurrency", 1, "How many tenants can be processed concurrently")
-	f.Var(&c.includeTenants, "include-tenants", "A comma separated list of what tenants to target")
-	f.Var(&c.excludeTenants, "exclude-tenants", "A comma separated list of what tenants to ignore. Has precedence over included tenants")
-	f.BoolVar(&c.dryRun, "dry-run", false, "If set blocks are not downloaded and splits are not performed; only what would happen is logged")
-	f.DurationVar(&c.maxDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing duration boundary are split.")
+	c.bucket.RegisterFlags(f)
+	f.Var(&c.blocks, "blocks", "An optional comma separated list of blocks to target. If not provided, or empty, all blocks are considered.")
+	f.StringVar(&c.bucketPrefix, "bucket-prefix", "", "An optional prefix applied to the bucket path")
+	f.StringVar(&c.outputDir, "output.dir", "", "The output directory where split blocks will be written")
+	f.IntVar(&c.blockConcurrency, "block-concurrency", 5, "How many blocks can be split at once")
+	f.BoolVar(&c.dryRun, "dry-run", false, "If set blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged")
+	f.DurationVar(&c.maxBlockDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing a duration boundary are split.")
 }
 
 func (c *config) validate() error {
-	if c.maxDuration < 2*time.Hour {
+	for _, blockID := range c.blocks {
+		if _, err := ulid.Parse(blockID); err != nil {
+			return errors.Wrap(err, "blocks contained an invalid block ID")
+		}
+	}
+	if c.maxBlockDuration < 2*time.Hour {
 		return fmt.Errorf("max-block-duration must be at least 2 hours")
 	}
-	if c.maxDuration.Truncate(time.Hour) != c.maxDuration {
+	if c.maxBlockDuration.Truncate(time.Hour) != c.maxBlockDuration {
 		return fmt.Errorf("max-block-duration should be aligned to hours")
 	}
-	if 24*time.Hour%c.maxDuration.Truncate(time.Hour) != 0 {
+	if 24*time.Hour%c.maxBlockDuration.Truncate(time.Hour) != 0 {
 		return fmt.Errorf("max-block-duration should divide 24h without remainder")
 	}
 	if c.outputDir == "" {
 		return fmt.Errorf("output-dir is required")
-	}
-	if c.tenantConcurrency < 1 {
-		return fmt.Errorf("tenant-concurrency must be positive")
 	}
 	if c.blockConcurrency < 1 {
 		return fmt.Errorf("block-concurrency must be positive")
@@ -103,78 +101,73 @@ func main() {
 }
 
 func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
-	allowedTenants := util.NewAllowedTenants(cfg.includeTenants, cfg.excludeTenants)
-
 	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket")
 	}
-	tenants, err := tsdb.ListUsers(ctx, bkt)
-	if err != nil {
-		return errors.Wrap(err, "failed to list tenants")
+
+	// Helpful when not specifying -backend=filesystem (since it can use -filesystem.dir)
+	if cfg.bucketPrefix != "" {
+		bkt = bucket.NewPrefixedBucketClient(bkt, cfg.bucketPrefix)
 	}
 
-	return concurrency.ForEachUser(ctx, tenants, cfg.tenantConcurrency, func(ctx context.Context, tenantID string) error {
-		if !allowedTenants.IsAllowed(tenantID) {
-			return nil
-		}
-		logger := log.With(logger, "tenantID", tenantID)
-
-		blocks, err := listBlocksForTenant(ctx, bkt, tenantID)
+	var blocks []string
+	if len(cfg.blocks) > 0 {
+		blocks = cfg.blocks
+	} else {
+		blocks, err = listBlocks(ctx, bkt)
 		if err != nil {
-			level.Error(logger).Log("msg", "failed to list blocks for tenant", "err", err)
-			return errors.Wrapf(err, "failed to list blocks for tenant %s", tenantID)
+			level.Error(logger).Log("msg", "failed to list blocks", "err", err)
+			return errors.Wrapf(err, "failed to list blocks")
+		}
+	}
+
+	return concurrency.ForEachUser(ctx, blocks, cfg.blockConcurrency, func(ctx context.Context, blockString string) error {
+		blockID, err := ulid.Parse(blockString)
+		if err != nil {
+			return err
 		}
 
-		bkt := objstore.NewPrefixedBucket(bkt, tenantID)
+		logger := log.With(logger, "block", blockString)
+		blockMeta, err := block.DownloadMeta(ctx, logger, bkt, blockID)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to read block's meta.json file", "err", err)
+			return err
+		}
 
-		return concurrency.ForEachUser(ctx, blocks, cfg.blockConcurrency, func(ctx context.Context, blockString string) error {
-			blockID, err := ulid.Parse(blockString)
-			if err != nil {
-				return err
-			}
+		blockMinTime := timestamp.Time(blockMeta.MinTime)
+		blockMaxTime := timestamp.Time(blockMeta.MaxTime)
+		level.Info(logger).Log("block_min_time", blockMinTime, "block_max_time", blockMaxTime)
 
-			logger := log.With(logger, "block", blockString)
-			blockMeta, err := block.DownloadMeta(ctx, logger, bkt, blockID)
-			if err != nil {
-				level.Error(logger).Log("msg", "failed to read block's meta.json file", "err", err)
-				return err
-			}
+		if blockMinTime.After(blockMaxTime) {
+			level.Error(logger).Log("msg", "block has an invalid minTime greater than maxTime")
+			return fmt.Errorf("block has an invalid minTime greater than maxTime")
+		}
 
-			blockMinTime := timestamp.Time(blockMeta.MinTime)
-			blockMaxTime := timestamp.Time(blockMeta.MaxTime)
-			level.Info(logger).Log("block_min_time", blockMinTime, "block_max_time", blockMaxTime)
-
-			if blockMinTime.After(blockMaxTime) {
-				level.Error(logger).Log("msg", "block has an invalid minTime greater than maxTime")
-				return fmt.Errorf("block has an invalid minTime greater than maxTime")
-			}
-
-			allowedMaxTime := blockMinTime.Truncate(cfg.maxDuration).Add(cfg.maxDuration)
-			if !blockMaxTime.After(allowedMaxTime) {
-				level.Info(logger).Log("msg", "block does not need to be split")
-				return nil
-			}
-
-			if cfg.dryRun {
-				level.Info(logger).Log("msg", "dry run: would split block")
-				return nil
-			}
-
-			if err := splitBlock(ctx, cfg, bkt, tenantID, blockMeta, logger); err != nil {
-				level.Error(logger).Log("msg", "failed to split block", "err", err)
-				return err
-			}
-
-			level.Info(logger).Log("msg", "block split successfully", "dryRun", cfg.dryRun)
+		allowedMaxTime := blockMinTime.Truncate(cfg.maxBlockDuration).Add(cfg.maxBlockDuration)
+		if !blockMaxTime.After(allowedMaxTime) {
+			level.Info(logger).Log("msg", "block does not need to be split")
 			return nil
-		})
+		}
+
+		if cfg.dryRun {
+			level.Info(logger).Log("msg", "dry run: would split block")
+			return nil
+		}
+
+		if err := splitBlock(ctx, cfg, bkt, blockMeta, logger); err != nil {
+			level.Error(logger).Log("msg", "failed to split block", "err", err)
+			return err
+		}
+
+		level.Info(logger).Log("msg", "block split successfully")
+		return nil
 	})
 }
 
-func listBlocksForTenant(ctx context.Context, bkt objstore.Bucket, tenantID string) ([]string, error) {
+func listBlocks(ctx context.Context, bkt objstore.Bucket) ([]string, error) {
 	var blocks []string
-	err := bkt.Iter(ctx, tenantID+objstore.DirDelim, func(name string) error {
+	err := bkt.Iter(ctx, "", func(name string) error {
 		if block, ok := block.IsBlockDir(name); ok {
 			blocks = append(blocks, block.String())
 		}
@@ -189,15 +182,13 @@ func listBlocksForTenant(ctx context.Context, bkt objstore.Bucket, tenantID stri
 
 // splitBlock downloads the source block to the output directory, then generates new blocks that are within cfg.blockRanges durations.
 // After all the splits succeed the original source block is removed from the output directory.
-func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID string, meta block.Meta, logger log.Logger) error {
-	tenantDir := filepath.Join(cfg.outputDir, tenantID)
-
-	originalBlockDir := filepath.Join(tenantDir, meta.ULID.String())
+func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, meta block.Meta, logger log.Logger) error {
+	originalBlockDir := filepath.Join(cfg.outputDir, meta.ULID.String())
 	if err := block.Download(ctx, logger, bkt, meta.ULID, originalBlockDir); err != nil {
 		return err
 	}
 
-	_, err := splitLocalBlock(ctx, tenantDir, originalBlockDir, meta, cfg.maxDuration, logger)
+	_, err := splitLocalBlock(ctx, cfg.outputDir, originalBlockDir, meta, cfg.maxBlockDuration, logger)
 	return err
 }
 
