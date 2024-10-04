@@ -52,10 +52,9 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(leftMetadata)
-
 	if len(leftMetadata) == 0 {
 		// We can't produce any series, we are done.
+		types.PutSeriesMetadataSlice(leftMetadata)
 		return nil, nil
 	}
 
@@ -92,19 +91,12 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 
 	// Iterate through the right-hand series, and find groups for each based on the matching labels.
 	a.rightSeriesGroups = make([]*andGroup, 0, len(rightMetadata))
-	outputSeriesCount := 0
 
 	for idx, s := range rightMetadata {
 		groupKey := groupKeyFunc(s.Labels)
 		group, exists := groupMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if exists {
-			if group.lastRightSeriesIndex == -1 {
-				// First time a right-hand series has matched this group.
-				// We'll return all left-hand series matching this group, so add the count to the running total of output series.
-				outputSeriesCount += group.leftSeriesCount
-			}
-
 			group.lastRightSeriesIndex = idx
 		}
 
@@ -113,7 +105,8 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 	}
 
 	// Iterate through the left-hand series again, and build the list of output series based on those that matched at least one series on the right.
-	outputSeries := types.GetSeriesMetadataSlice(outputSeriesCount)
+	// It's safe to reuse the left metadata slice as we'll return series in the same order, and only ever return fewer series than the left operator produces.
+	nextOutputSeriesIndex := 0
 
 	for seriesIdx, group := range a.leftSeriesGroups {
 		if group.lastRightSeriesIndex == -1 {
@@ -121,11 +114,12 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 			// Discard the group.
 			a.leftSeriesGroups[seriesIdx] = nil
 		} else {
-			outputSeries = append(outputSeries, leftMetadata[seriesIdx])
+			leftMetadata[nextOutputSeriesIndex] = leftMetadata[seriesIdx]
+			nextOutputSeriesIndex++
 		}
 	}
 
-	return outputSeries, nil
+	return leftMetadata[:nextOutputSeriesIndex], nil
 }
 
 func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
