@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"slices"
 	"syscall"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -29,35 +29,35 @@ import (
 
 type config struct {
 	bucket            bucket.Config
-	blockRanges       tsdb.DurationList
 	outputDir         string
 	tenantConcurrency int
 	blockConcurrency  int
 	includeTenants    flagext.StringSliceCSV
 	excludeTenants    flagext.StringSliceCSV
 	dryRun            bool
+	maxDuration       time.Duration
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
 	c.bucket.RegisterFlags(flag.CommandLine)
-	c.blockRanges = tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-	flag.Var(&c.blockRanges, "block-ranges", "List of compaction time ranges")
 	f.StringVar(&c.outputDir, "output-dir", "", "The output directory where split blocks will be written")
 	f.IntVar(&c.blockConcurrency, "block-concurrency", 5, "How many blocks can be split at once per tenant")
 	f.IntVar(&c.tenantConcurrency, "tenant-concurrency", 1, "How many tenants can be processed concurrently")
 	f.Var(&c.includeTenants, "include-tenants", "A comma separated list of what tenants to target")
 	f.Var(&c.excludeTenants, "exclude-tenants", "A comma separated list of what tenants to ignore. Has precedence over included tenants")
 	f.BoolVar(&c.dryRun, "dry-run", false, "If set blocks are not downloaded and splits are not performed; only what would happen is logged")
+	f.DurationVar(&c.maxDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing duration boundary are split.")
 }
 
 func (c *config) validate() error {
-	if len(c.blockRanges) == 0 {
-		return fmt.Errorf("block-ranges must not be empty")
+	if c.maxDuration < 2*time.Hour {
+		return fmt.Errorf("max-block-duration must be at least 2 hours")
 	}
-	for _, blockRange := range c.blockRanges {
-		if blockRange <= 0 {
-			return fmt.Errorf("block-ranges must only contain positive durations")
-		}
+	if c.maxDuration.Truncate(time.Hour) != c.maxDuration {
+		return fmt.Errorf("max-block-duration should be aligned to hours")
+	}
+	if 24*time.Hour%c.maxDuration.Truncate(time.Hour) != 0 {
+		return fmt.Errorf("max-block-duration should divide 24h without remainder")
 	}
 	if c.outputDir == "" {
 		return fmt.Errorf("output-dir is required")
@@ -103,8 +103,6 @@ func main() {
 
 func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
 	allowedTenants := util.NewAllowedTenants(cfg.includeTenants, cfg.excludeTenants)
-	slices.Sort(cfg.blockRanges)
-	maxDuration := cfg.blockRanges[len(cfg.blockRanges)-1]
 
 	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
@@ -142,28 +140,27 @@ func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
 				return err
 			}
 
-			blockMinTime := time.Unix(0, blockMeta.MinTime*int64(time.Millisecond)).UTC()
-			blockMaxTime := time.Unix(0, blockMeta.MaxTime*int64(time.Millisecond)).UTC()
-			logger = log.With(logger, "block_min_time", blockMinTime, "block_max_time", blockMaxTime)
+			blockMinTime := timestamp.Time(blockMeta.MinTime)
+			blockMaxTime := timestamp.Time(blockMeta.MaxTime)
+			level.Info(logger).Log("block_min_time", blockMinTime, "block_max_time", blockMaxTime)
 
-			blockDuration := blockMaxTime.Sub(blockMinTime)
-			if blockDuration < 0 {
+			if blockMinTime.After(blockMaxTime) {
 				level.Error(logger).Log("msg", "block has an invalid minTime greater than maxTime")
 				return fmt.Errorf("block has an invalid minTime greater than maxTime")
 			}
-			if blockDuration <= maxDuration {
-				level.Debug(logger).Log("msg", "block does not need to be split")
+
+			allowedMaxTime := blockMinTime.Truncate(cfg.maxDuration).Add(cfg.maxDuration)
+			if !blockMaxTime.After(allowedMaxTime) {
+				level.Info(logger).Log("msg", "block does not need to be split")
 				return nil
 			}
-
-			splits := splitDuration(blockDuration, cfg.blockRanges)
 
 			if cfg.dryRun {
-				level.Info(logger).Log("msg", "dry run: would split block", "splits", splits)
+				level.Info(logger).Log("msg", "dry run: would split block")
 				return nil
 			}
 
-			if err := splitBlock(ctx, cfg, bkt, tenantID, blockMeta, splits, logger); err != nil {
+			if err := splitBlock(ctx, cfg, bkt, tenantID, blockMeta, cfg.maxDuration, logger); err != nil {
 				level.Error(logger).Log("msg", "failed to split block", "err", err)
 				return err
 			}
@@ -189,24 +186,9 @@ func listBlocksForTenant(ctx context.Context, bkt objstore.Bucket, tenantID stri
 	return blocks, nil
 }
 
-// TODO: Boundary alignment? Confusing with configurable block ranges that may differ
-func splitDuration(blockDuration time.Duration, ranges []time.Duration) []time.Duration {
-	var durations []time.Duration
-	rangeIndex := len(ranges) - 1
-	for blockDuration > 0 {
-		for ranges[rangeIndex] > blockDuration && rangeIndex > 0 {
-			rangeIndex--
-		}
-		duration := min(blockDuration, ranges[rangeIndex])
-		durations = append(durations, duration)
-		blockDuration -= duration
-	}
-	return durations
-}
-
 // splitBlock downloads the source block to the output directory, then generates new blocks that are within cfg.blockRanges durations.
 // After all the splits succeed the original source block is removed from the output directory.
-func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID string, meta block.Meta, splits []time.Duration, logger log.Logger) error {
+func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID string, meta block.Meta, maxDuration time.Duration, logger log.Logger) error {
 	tenantDir := path.Join(cfg.outputDir, tenantID)
 
 	originalBlockDir := path.Join(tenantDir, meta.ULID.String())
@@ -214,12 +196,16 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID s
 		return err
 	}
 
+	origBlockMaxTime := meta.MaxTime
 	minTime := meta.MinTime
-	for _, split := range splits {
-		maxTime := minTime + split.Milliseconds()
+	for minTime < origBlockMaxTime {
+		// Max time cannot cross maxDuration boundary, but also should not be greater than original max time.
+		maxTime := min(timestamp.Time(minTime).Truncate(cfg.maxDuration).Add(cfg.maxDuration).UnixMilli(), origBlockMaxTime)
 
-		// TODO: I'm not sure if this works because chunks can cross block min/max boundaries
-		// The idea was to inject a modified meta to try to abuse the repair into removing the now "outside" chunks
+		level.Info(logger).Log("msg", "splitting block", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime))
+
+		// Inject a modified meta and abuse the repair into removing the now "outside" chunks.
+		// Chunks that cross boundaries are included in multiple blocks.
 		meta.MinTime = minTime
 		meta.MaxTime = maxTime
 		if err := meta.WriteToDir(logger, originalBlockDir); err != nil {
@@ -231,7 +217,7 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID s
 		}
 
 		level.Info(logger).Log("msg", "created block from split", "splitID", splitID)
-		minTime = maxTime + 1
+		minTime = maxTime
 	}
 
 	if err := os.RemoveAll(originalBlockDir); err != nil {
