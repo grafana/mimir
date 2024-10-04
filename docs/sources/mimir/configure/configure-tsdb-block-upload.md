@@ -23,6 +23,24 @@ limits:
   compactor_block_upload_enabled: true
 ```
 
+### Validation of blocks
+
+Before upload of block data starts, Grafana Mimir performs following checks on `meta.json` file:
+
+* Only TSDB "v1" blocks are supported. This is format used by Prometheus v2, Grafana Mimir or Thanos.
+* Blocks with invalid MinTime or MaxTime are rejected (negative values or MaxTime < MinTime)
+* Blocks where MinTime or MaxTime is in the future are rejected
+* Blocks that are outside of retention period are rejected
+* Blocks covering time range larger than maximum compaction range (`-compactor.block-ranges` option, maximum defaults to 24h) are rejected
+* Blocks which cross the boundary of maximum compaction range are rejected. For example if largest compaction range is 24h, blocks that start before midnight and finish after midnight would be rejected.
+* Blocks with Thanos downsampling configuration are rejected
+* Blocks that are bigger than `compactor_block_upload_max_block_size_bytes` (per-tenant override) are rejected.
+* Blocks with "external labels" (Thanos feature) are rejected. (Some Mimir-specific labels are allowed)
+
+After block index and chunks are uploaded, Grafana Mimir performs additional block validation of block index and chunks to verify that blocks are well-formed, and they cannot possibly cause problems for Mimir operation.
+These "full block" validations can be disabled via `compactor_block_upload_validation_enabled` per-tenant override.
+To disable chunks validation only but keep index-validation `compactor_block_upload_verify_chunks` per-tenant override can be used instead.
+
 ## Enable TSDB block upload per tenant
 
 If your Grafana Mimir has multi-tenancy enabled, you can still use the preceding method to enable
@@ -47,15 +65,9 @@ Because Thanos blocks contain unsupported labels among their metadata, they cann
 For information about limitations that relate to importing blocks from Thanos as well as existing workarounds, see
 [Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../set-up/migrate/migrate-from-thanos-or-prometheus" >}}).
 
-### No validation on imported blocks
-
-Grafana Mimir does not validate that the uploaded blocks are well-formed. This means that users could upload malformed blocks to Grafana Mimir. These malformed blocks could potentially cause problems on the Mimir query path or for the operation of Mimir's compactor component.
-
-We intend to add validation of uploaded blocks in a future release, which would allow us to identify and reject malformed blocks at upload time and prevent any downstream impact to Grafana Mimir.
-
 ### The results-cache needs flushing
 
-Grafana Mimir caches query results for queries that don't require the most recent 10 minutes of data.
+Grafana Mimir caches samples older than 10 minute (configurable via -query-frontend.max-cache-freshness) in the range query results.
 After uploading blocks however, queries may return different results – because new data was uploaded.
 This means that cached results may be wrong.
 To fix the cache results, Mimir operator can manually flush the results cache.
