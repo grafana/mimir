@@ -26,11 +26,13 @@ func NewSharding(shardSummer ASTMapper) ASTMapper {
 	)
 }
 
-type Squasher = func(...parser.Expr) (parser.Expr, error)
+type Squasher = func(...EmbeddedQuery) (parser.Expr, error)
 
 type ShardLabeller interface {
 	GetLabelName() string
 	GetLabelValue(shard int) string
+	GetLabelMatcher(shard int) (*labels.Matcher, error)
+	GetParams(shard int) map[string]string
 }
 
 // queryShardLabeller implements ShardLabeller for query sharding.
@@ -48,6 +50,14 @@ func (lbl *queryShardLabeller) GetLabelName() string {
 
 func (lbl *queryShardLabeller) GetLabelValue(shard int) string {
 	return sharding.ShardSelector{ShardIndex: uint64(shard), ShardCount: uint64(lbl.shards)}.LabelValue()
+}
+
+func (lbl *queryShardLabeller) GetLabelMatcher(shard int) (*labels.Matcher, error) {
+	return labels.NewMatcher(labels.MatchEqual, lbl.GetLabelName(), lbl.GetLabelValue(shard))
+}
+
+func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
+	return nil
 }
 
 // NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
@@ -251,7 +261,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(expr *parser.Call) (mapped par
 		To find the most outer matrix/vector selector, we need to traverse the AST by using each function arguments.
 	*/
 
-	children := make([]parser.Expr, 0, summer.shards)
+	children := make([]EmbeddedQuery, 0, summer.shards)
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
@@ -282,7 +292,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(expr *parser.Call) (mapped par
 			}
 		}
 
-		children = append(children, clonedCall)
+		children = append(children, NewEmbeddedQuery(clonedCall.String(), summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -477,7 +487,7 @@ func (summer *shardSummer) shardAvg(expr *parser.AggregateExpr) (result parser.E
 // queries, where N is the number of shards and each sub-query queries a different shard
 // with the given "op" aggregation operation.
 func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExpr, op parser.ItemType) (parser.Expr, error) {
-	children := make([]parser.Expr, 0, summer.shards)
+	children := make([]EmbeddedQuery, 0, summer.shards)
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
@@ -489,12 +499,13 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
-		children = append(children, &parser.AggregateExpr{
+		var aggExpr parser.Expr = &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
 			Grouping: expr.Grouping,
 			Without:  expr.Without,
-		})
+		}
+		children = append(children, NewEmbeddedQuery(aggExpr.String(), summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -530,7 +541,7 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
 	}
 
-	children := make([]parser.Expr, 0, summer.shards)
+	children := make([]EmbeddedQuery, 0, summer.shards)
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
 		shardedLHS, err := cloneAndMap(NewASTExprMapper(summer.CopyWithCurShard(i)), expr.LHS)
@@ -542,12 +553,13 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 			return nil, err
 		}
 
-		children = append(children, &parser.BinaryExpr{
+		var binExpr parser.Expr = &parser.BinaryExpr{
 			LHS:        shardedLHS,
 			Op:         expr.Op,
 			RHS:        shardedRHS,
 			ReturnBool: expr.ReturnBool,
-		})
+		}
+		children = append(children, NewEmbeddedQuery(binExpr.String(), summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -557,9 +569,12 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 }
 
 func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) (parser.Expr, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, summer.shardLabeller.GetLabelName(), summer.shardLabeller.GetLabelValue(*summer.currentShard))
+	shardMatcher, err := summer.shardLabeller.GetLabelMatcher(*summer.currentShard)
 	if err != nil {
 		return nil, err
+	}
+	if shardMatcher == nil {
+		return selector, nil
 	}
 	return &parser.VectorSelector{
 		Name:                 selector.Name,
