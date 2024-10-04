@@ -131,7 +131,7 @@ func TestSplitLocalBlock(t *testing.T) {
 		require.Equal(t, startOfDay.Add(10*time.Minute).UnixMilli(), spec[0].Chunks[0].MinTime)
 		require.Equal(t, startOfDay.Add(48*time.Hour).UnixMilli(), spec[0].Chunks[0].MaxTime)
 
-		// Series 2 has only last chunk in the first block
+		// Series 2 has only last chunk in the last block
 		require.Equal(t, spec[1].Labels, labels.FromStrings("__name__", "2_series_with_multiple_chunks_not_crossing_24h_boundary"))
 		require.Len(t, spec[1].Chunks, 1)
 		require.Equal(t, startOfDay.Add(48*time.Hour).UnixMilli(), spec[1].Chunks[0].MinTime)
