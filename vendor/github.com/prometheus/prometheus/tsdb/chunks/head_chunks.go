@@ -27,6 +27,8 @@ import (
 	"sync"
 
 	"github.com/dennwc/varint"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
@@ -229,6 +231,7 @@ type ChunkDiskMapper struct {
 	writeQueue *chunkWriteQueue
 
 	closed bool
+	l      log.Logger
 }
 
 // mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
@@ -241,7 +244,7 @@ type mmappedChunkFile struct {
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all files.
-func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Pool, writeBufferSize, writeQueueSize int) (*ChunkDiskMapper, error) {
+func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Pool, writeBufferSize, writeQueueSize int, l log.Logger) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
 		return nil, fmt.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxWriteBufferSize, writeBufferSize)
@@ -257,6 +260,9 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 	if err != nil {
 		return nil, err
 	}
+	if l == nil {
+		l = log.NewNopLogger()
+	}
 
 	m := &ChunkDiskMapper{
 		dir:             dirFile,
@@ -264,6 +270,7 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 		writeBufferSize: writeBufferSize,
 		crc32:           newCRC32(),
 		chunkBuffer:     newChunkBuffer(),
+		l:               l,
 	}
 
 	if writeQueueSize > 0 {
@@ -935,6 +942,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 // Truncate deletes the head chunk files with numbers less than the given fileNo.
 func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	cdm.readPathMtx.RLock()
+	level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "truncating head chunk files", "fileNo", fileNo)
 
 	// Sort the file indices, else if files deletion fails in between,
 	// it can lead to unsequential files as the map is not sorted.
@@ -959,6 +967,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		// There is a known race condition here because between the check of curFileSize() and the call to CutNewFile()
 		// a new file could already be cut, this is acceptable because it will simply result in an empty file which
 		// won't do any harm.
+		level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "cutting new file")
 		errs.Add(cdm.CutNewFile())
 	}
 	pendingDeletes, err := cdm.deleteFiles(removedFiles)
@@ -974,16 +983,22 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		//
 		// The queueIsEmpty() function must be called while holding the cdm.evtlPosMtx to avoid
 		// a race condition with WriteChunk().
-		if cdm.writeQueue == nil || cdm.writeQueue.queueIsEmpty() {
+		if queueIsNil := cdm.writeQueue == nil; queueIsNil || cdm.writeQueue.queueIsEmpty() {
 			if err == nil {
+				level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "resetting evtlPos to 0", "queueIsNil", queueIsNil)
 				cdm.evtlPos.setSeq(0)
 			} else {
 				// In case of error, set it to the last file number on the disk that was not deleted.
+				level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "setting evtlPos to last file number on disk", "fileNo", pendingDeletes[len(pendingDeletes)-1], "err", err)
 				cdm.evtlPos.setSeq(uint64(pendingDeletes[len(pendingDeletes)-1]))
 			}
+		} else {
+			level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "not resetting evtlPos to 0 as write queue is not empty")
 		}
 
 		cdm.evtlPosMtx.Unlock()
+	} else {
+		level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "not resetting evtlPos to 0 as not all files were deleted", "removedFiles", fmt.Sprintf("%v", removedFiles), "pendingDeletes", fmt.Sprintf("%v", pendingDeletes))
 	}
 
 	return errs.Err()
@@ -1006,7 +1021,9 @@ func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) ([]int, error) {
 
 	// We actually delete the files separately to not block the readPathMtx for long.
 	for i, seq := range removedFiles {
-		if err := os.Remove(segmentFile(cdm.dir.Name(), seq)); err != nil {
+		filePath := segmentFile(cdm.dir.Name(), seq)
+		level.Info(cdm.l).Log("tag", "missing_chunks", "msg", "deleting chunk file", "file", filePath, "seq", seq)
+		if err := os.Remove(filePath); err != nil {
 			return removedFiles[i:], err
 		}
 	}

@@ -2163,7 +2163,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 
 	if overlapsOOO {
 		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
-		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
+		lastGarbageCollectedMmapRef := db.lastGarbageCollectedMmapRef
+		isoState := db.head.oooIso.TrackReadAfter(lastGarbageCollectedMmapRef)
+		level.Info(db.logger).Log("tag", "missing_chunks", "msg", "got iso state for ooo head", "mint", mint, "maxt", maxt, "lastGarbageCollectedMmapRef", lastGarbageCollectedMmapRef)
 		headQuerier = NewHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
 	}
 

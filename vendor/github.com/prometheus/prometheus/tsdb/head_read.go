@@ -423,6 +423,7 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(mint, maxt) {
 		truncateTime := h.lastMemoryTruncationTime.Load()
+		level.Info(h.logger).Log("tag", "missing_chunks", "msg", "chunk is outside the range", "minT", mint, "maxT", maxt, "lastTruncT", truncateTime)
 		return nil, 0, fmt.Errorf("%w error: chunk is outside the range minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, mint, maxt, truncateTime)
 	}
 

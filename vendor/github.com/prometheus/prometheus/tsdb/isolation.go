@@ -16,6 +16,9 @@ package tsdb
 import (
 	"math"
 	"sync"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 // isolationState holds the isolation information.
@@ -36,6 +39,7 @@ type isolationState struct {
 func (i *isolationState) Close() {
 	i.isolation.readMtx.Lock()
 	defer i.isolation.readMtx.Unlock()
+	defer level.Info(i.isolation.logger).Log("tag", "missing_chunks", "msg", "closed iso state", "mint", i.mint, "maxt", i.maxt)
 	i.next.prev = i.prev
 	i.prev.next = i.next
 }
@@ -71,9 +75,10 @@ type isolation struct {
 	readsOpen *isolationState
 	// If true, writes are not tracked while reads are still tracked.
 	disabled bool
+	logger   log.Logger
 }
 
-func newIsolation(disabled bool) *isolation {
+func newIsolation(disabled bool, logger log.Logger) *isolation {
 	isoState := &isolationState{}
 	isoState.next = isoState
 	isoState.prev = isoState
@@ -82,7 +87,12 @@ func newIsolation(disabled bool) *isolation {
 	appender.next = appender
 	appender.prev = appender
 
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	return &isolation{
+		logger:          logger,
 		appendsOpen:     map[uint64]*isolationAppender{},
 		appendsOpenList: appender,
 		readsOpen:       isoState,
@@ -155,6 +165,9 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 
 	i.readMtx.Lock()
 	defer i.readMtx.Unlock()
+
+	defer level.Info(i.logger).Log("tag", "missing_chunks", "msg", "created iso state", "mint", mint, "maxt", maxt)
+
 	isoState.prev = i.readsOpen
 	isoState.next = i.readsOpen.next
 	i.readsOpen.next.prev = isoState

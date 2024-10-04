@@ -17,12 +17,16 @@ import (
 	"container/list"
 	"sync"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 type oooIsolation struct {
 	mtx       sync.RWMutex
 	openReads *list.List
+	logger    log.Logger
 }
 
 type oooIsolationState struct {
@@ -32,9 +36,13 @@ type oooIsolationState struct {
 	minRef chunks.ChunkDiskMapperRef
 }
 
-func newOOOIsolation() *oooIsolation {
+func newOOOIsolation(logger log.Logger) *oooIsolation {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 	return &oooIsolation{
 		openReads: list.New(),
+		logger:    logger,
 	}
 }
 
@@ -48,10 +56,12 @@ func (i *oooIsolation) HasOpenReadsAtOrBefore(ref chunks.ChunkDiskMapperRef) boo
 		s := e.Value.(*oooIsolationState)
 
 		if ref.GreaterThan(s.minRef) {
+			level.Info(i.logger).Log("tag", "missing_chunks", "msg", "found open ooo read before ooo head truncation", "truncation_ref", ref, "read_min_ref", s.minRef)
 			return true
 		}
 	}
 
+	level.Info(i.logger).Log("tag", "missing_chunks", "msg", "no open ooo reads before ooo head truncation", "truncation_ref", ref)
 	return false
 }
 
@@ -67,6 +77,7 @@ func (i *oooIsolation) TrackReadAfter(minRef chunks.ChunkDiskMapperRef) *oooIsol
 
 	i.mtx.Lock()
 	s.e = i.openReads.PushBack(s)
+	level.Info(s.i.logger).Log("tag", "missing_chunks", "msg", "appended to ooo isolation state", "minRef", minRef)
 	i.mtx.Unlock()
 
 	return s
@@ -75,5 +86,6 @@ func (i *oooIsolation) TrackReadAfter(minRef chunks.ChunkDiskMapperRef) *oooIsol
 func (s oooIsolationState) Close() {
 	s.i.mtx.Lock()
 	s.i.openReads.Remove(s.e)
+	level.Info(s.i.logger).Log("tag", "missing_chunks", "msg", "closed ooo iso state", "minRef", s.minRef)
 	s.i.mtx.Unlock()
 }

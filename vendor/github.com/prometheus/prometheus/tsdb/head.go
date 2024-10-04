@@ -315,6 +315,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		opts.ChunkPool,
 		opts.ChunkWriteBufferSize,
 		opts.ChunkWriteQueueSize,
+		l,
 	)
 	if err != nil {
 		return nil, err
@@ -352,8 +353,8 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
-	h.iso = newIsolation(h.opts.IsolationDisabled)
-	h.oooIso = newOOOIsolation()
+	h.iso = newIsolation(h.opts.IsolationDisabled, h.logger)
+	h.oooIso = newOOOIsolation(h.logger)
 	h.numSeries.Store(0)
 	h.exemplarMetrics = em
 	h.exemplars = es
@@ -1172,6 +1173,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	h.minTime.Store(mint)
 	h.minValidTime.Store(mint)
+	level.Info(h.logger).Log("tag", "missing_chunks", "msg", "updated head minTime/minValidTime", "mint", mint, "lastMemoryTruncationTime", mint)
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
@@ -1197,12 +1199,16 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 		o := false
 		h.iso.TraverseOpenReads(func(s *isolationState) bool {
 			if s.mint <= maxt && mint <= s.maxt {
+				level.Info(h.logger).Log("tag", "missing_chunks", "msg", "found overlapping query; not truncating", "query_mint", s.mint, "query_maxt", s.maxt, "mint", mint, "maxt", maxt, "original_maxt", maxt+1)
 				// Overlaps with the truncation range.
 				o = true
 				return false
 			}
 			return true
 		})
+		if !o {
+			level.Info(h.logger).Log("tag", "missing_chunks", "msg", "no overlapping query found before truncation", "mint", mint, "maxt", maxt, "original_maxt", maxt+1)
+		}
 		return o
 	}
 	for overlaps() {
@@ -1232,6 +1238,7 @@ func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 // NOTE: The querier should already be taken before calling this.
 func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose, getNew bool, newMint int64) {
 	if !h.memTruncationInProcess.Load() {
+		level.Info(h.logger).Log("tag", "missing_chunks", "msg", "no truncation in process", "querierMint", querierMint, "querierMaxt", querierMaxt)
 		return false, false, 0
 	}
 	// Head truncation is in process. It also means that the block that was
@@ -1248,6 +1255,7 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 		//   |---query---|
 		// 2.     |------truncation------|
 		//              |---query---|
+		level.Info(h.logger).Log("tag", "missing_chunks", "msg", "query is before truncation", "querierMint", querierMint, "querierMaxt", querierMaxt, "truncationTime", memTruncTime)
 		return true, false, 0
 	}
 	if querierMint < memTruncTime {
@@ -1263,12 +1271,14 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 		// Turns into
 		//      |------truncation------|
 		//                             |---qu---|
+		level.Info(h.logger).Log("tag", "missing_chunks", "msg", "query overlaps with truncation", "querierMint", querierMint, "querierMaxt", querierMaxt, "truncationTime", memTruncTime)
 		return true, true, memTruncTime
 	}
 
 	// Other case is this, which is a no-op
 	//      |------truncation------|
 	//                              |---query---|
+	level.Info(h.logger).Log("tag", "missing_chunks", "msg", "query is after truncation", "querierMint", querierMint, "querierMaxt", querierMaxt, "truncationTime", memTruncTime)
 	return false, false, 0
 }
 
@@ -1388,7 +1398,8 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 	start := time.Now()
 	headMaxt := h.MaxTime()
 	actualMint, minOOOTime, minMmapFile := h.gc()
-	level.Info(h.logger).Log("msg", "Head GC completed", "caller", caller, "duration", time.Since(start))
+	logger := log.With(h.logger, "caller", caller, "actualMint", actualMint, "minOOOTime", minOOOTime)
+	level.Info(logger).Log("msg", "Head GC completed", "caller", caller, "duration", time.Since(start))
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
 	if actualMint > h.minTime.Load() {
@@ -1397,11 +1408,14 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 		if actualMint < appendableMinValidTime {
 			h.minTime.Store(actualMint)
 			h.minValidTime.Store(actualMint)
+
+			level.Info(logger).Log("tag", "missing_chunks", "msg", "updated minTime/minValidTime", "minTime", actualMint, "minValidTime", actualMint, "appendableMinValidTime", appendableMinValidTime)
 		} else {
 			// The actual min time is in the appendable window.
 			// So we set the mint to the appendableMinValidTime.
 			h.minTime.Store(appendableMinValidTime)
 			h.minValidTime.Store(appendableMinValidTime)
+			level.Info(logger).Log("tag", "missing_chunks", "msg", "updated minTime/minValidTime", "minTime", appendableMinValidTime, "minValidTime", appendableMinValidTime, "appendableMinValidTime", appendableMinValidTime)
 		}
 	}
 	if headMaxt-h.opts.OutOfOrderTimeWindow.Load() < minOOOTime {
@@ -1411,6 +1425,7 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 		minOOOTime = headMaxt - h.opts.OutOfOrderTimeWindow.Load()
 	}
 	h.minOOOTime.Store(minOOOTime)
+	level.Info(logger).Log("tag", "missing_chunks", "msg", "updated minOOOTime", "minOOOTime", minOOOTime, "headMaxt", headMaxt, "opts.OutOfOrderTimeWindow", h.opts.OutOfOrderTimeWindow.Load())
 
 	// Truncate the chunk m-mapper.
 	if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
