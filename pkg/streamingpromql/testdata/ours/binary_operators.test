@@ -808,7 +808,7 @@ eval range from 0 to 24m step 6m left_side and on(cluster, env) right_side
   left_side{env="test", cluster="food", pod="a"}  _  _  _  20
 
 # Same thing again, with labels in different order.
-eval range from 0 to 24m step 6m left_side and on(cluster, env) right_side
+eval range from 0 to 24m step 6m left_side and on(env, cluster) right_side
   left_side{env="test", cluster="blah", pod="a"}  1  2  3  _
   left_side{env="test", cluster="blah", pod="b"}  _  6  7  _
   left_side{env="prod", cluster="blah", pod="a"}  _  10 _  12
