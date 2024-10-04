@@ -185,3 +185,15 @@ load 6m
 # T=18: compatible
 eval_warn range from 0 to 18m step 6m sum(metric)
   {} _ {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2 4]}} _ {{schema:-53 sum:3.8 count:6 custom_values:[3] buckets:[6]}}
+
+clear
+
+# Test rate() and increase() over native histograms with changing schemas.
+load 1m
+  metric {{schema:4 sum:2 count:2 buckets:[2]}} {{schema:2 sum:6 count:12 buckets:[12]}} {{schema:3 sum:12 count:24 buckets:[24]}} {{schema:4 sum:164 count:326 buckets:[326]}}
+
+eval instant at 3m rate(metric[3m])
+  {} {{schema:2 sum:1 count:2 buckets:[2] counter_reset_hint:gauge}}
+
+eval instant at 3m increase(metric[3m])
+  {} {{schema:2 sum:180 count:360 buckets:[360] counter_reset_hint:gauge}}
