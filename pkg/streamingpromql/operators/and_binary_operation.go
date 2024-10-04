@@ -139,7 +139,7 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 		a.leftSeriesGroups = a.leftSeriesGroups[1:]
 
 		if thisSeriesGroup == nil {
-			// The next series from the left side has no matching series on the right side.
+			// This series from the left side has no matching series on the right side.
 			// Read it, discard it, and move on to the next series.
 			d, err := a.Left.NextSeries(ctx)
 			if err != nil {
@@ -154,6 +154,8 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 			return types.InstantVectorSeriesData{}, err
 		}
 
+		// Only read the left series after we've finished reading right series, to minimise the number of series we're
+		// holding in memory at once.
 		originalData, err := a.Left.NextSeries(ctx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
