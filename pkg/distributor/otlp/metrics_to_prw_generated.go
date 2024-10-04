@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
@@ -36,20 +37,21 @@ import (
 )
 
 type Settings struct {
-	Namespace                           string
-	ExternalLabels                      map[string]string
-	DisableTargetInfo                   bool
-	ExportCreatedMetric                 bool
-	AddMetricSuffixes                   bool
-	SendMetadata                        bool
-	PromoteResourceAttributes           []string
-	EnableCreatedTimestampZeroIngestion bool
+	ExternalLabels                             map[string]string
+	Namespace                                  string
+	PromoteResourceAttributes                  []string
+	DisableTargetInfo                          bool
+	ExportCreatedMetric                        bool
+	AddMetricSuffixes                          bool
+	SendMetadata                               bool
+	EnableCreatedTimestampZeroIngestion        bool
+	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
 
 type StartTsAndTs struct {
+	Labels  []mimirpb.LabelAdapter
 	StartTs int64
 	Ts      int64
-	Labels  []mimirpb.LabelAdapter
 }
 
 // MimirConverter converts from OTel write format to Mimir remote write format.
