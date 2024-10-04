@@ -156,6 +156,7 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 
 		// Only read the left series after we've finished reading right series, to minimise the number of series we're
 		// holding in memory at once.
+		// We deliberately don't return this data to the pool, as FilterLeftSeries reuses the slices.
 		originalData, err := a.Left.NextSeries(ctx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
@@ -166,7 +167,6 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		types.PutInstantVectorSeriesData(originalData, a.MemoryConsumptionTracker)
 		thisSeriesGroup.leftSeriesCount--
 
 		if thisSeriesGroup.leftSeriesCount == 0 {
@@ -242,48 +242,51 @@ func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesD
 }
 
 // FilterLeftSeries returns leftData filtered based on samples seen for the right-hand side.
+// The return value reuses the slices from leftData, and returns any unused slices to the pool.
 func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	filteredData := types.InstantVectorSeriesData{}
+	nextOutputFloatIndex := 0
 
-	for idx, p := range leftData.Floats {
+	for _, p := range leftData.Floats {
 		if !g.rightSamplePresence[timeRange.PointIndex(p.T)] {
 			continue
 		}
 
-		if filteredData.Floats == nil {
-			// First time we've seen a float sample that we should return, create a slice for the return values.
-			// We can reduce the length of the slice based on how many samples are left to check in the original series.
-
-			var err error
-			filteredData.Floats, err = types.FPointSlicePool.Get(len(leftData.Floats)-idx, memoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, nil
-			}
-		}
-
-		filteredData.Floats = append(filteredData.Floats, p)
+		leftData.Floats[nextOutputFloatIndex] = p
+		nextOutputFloatIndex++
 	}
+
+	if nextOutputFloatIndex > 0 {
+		// We have at least one output float point to return.
+		filteredData.Floats = leftData.Floats[:nextOutputFloatIndex]
+	} else {
+		// We don't have any float points to return, return the original slice to the pool.
+		types.FPointSlicePool.Put(leftData.Floats, memoryConsumptionTracker)
+	}
+
+	nextOutputHistogramIndex := 0
 
 	for idx, p := range leftData.Histograms {
 		if !g.rightSamplePresence[timeRange.PointIndex(p.T)] {
 			continue
 		}
 
-		if filteredData.Histograms == nil {
-			// First time we've seen a histogram sample that we should return, create a slice for the return values.
-			// We can reduce the length of the slice based on how many samples are left to check in the original series.
+		leftData.Histograms[nextOutputHistogramIndex] = p
 
-			var err error
-			filteredData.Histograms, err = types.HPointSlicePool.Get(len(leftData.Histograms)-idx, memoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, nil
-			}
+		if idx > nextOutputHistogramIndex {
+			// Remove the histogram from the original point to ensure that it's not mutated unexpectedly when the HPoint slice is reused.
+			leftData.Histograms[idx].H = nil
 		}
 
-		filteredData.Histograms = append(filteredData.Histograms, p)
+		nextOutputHistogramIndex++
+	}
 
-		// Remove the original histogram from the original series to ensure that it's not mutated when the HPoint slice is reused.
-		leftData.Histograms[idx].H = nil
+	if nextOutputHistogramIndex > 0 {
+		// We have at least one output histogram point to return.
+		filteredData.Histograms = leftData.Histograms[:nextOutputHistogramIndex]
+	} else {
+		// We don't have any histogram points to return, return the original slice to the pool.
+		types.HPointSlicePool.Put(leftData.Histograms, memoryConsumptionTracker)
 	}
 
 	return filteredData, nil
