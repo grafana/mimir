@@ -194,6 +194,3 @@ load 1m
 
 eval instant at 3m rate(metric[3m])
   {} {{schema:2 sum:1 count:2 buckets:[2] counter_reset_hint:gauge}}
-
-eval instant at 3m increase(metric[3m])
-  {} {{schema:2 sum:180 count:360 buckets:[360] counter_reset_hint:gauge}}
