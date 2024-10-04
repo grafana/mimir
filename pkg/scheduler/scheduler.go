@@ -8,6 +8,7 @@ package scheduler
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -471,7 +472,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			continue
 		}
 
-		if err := s.forwardRequestToQuerier(querier, schedulerReq, queueTime); err != nil {
+		if err := s.forwardRequestToQuerier(querier, querierID, schedulerReq, queueTime); err != nil {
 			return err
 		}
 	}
@@ -487,7 +488,7 @@ func (s *Scheduler) NotifyQuerierShutdown(ctx context.Context, req *schedulerpb.
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, querierID string, req *queue.SchedulerRequest, queueTime time.Duration) error {
 	s.requestQueue.QueryComponentUtilization.MarkRequestSent(req)
 	defer s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(req)
 	defer s.cancelRequestAndRemoveFromPending(req.Key(), "request complete")
@@ -505,12 +506,17 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
 		if err != nil {
-			errCh <- err
+			errCh <- fmt.Errorf("failed to send query to querier '%v': %w", querierID, err)
 			return
 		}
 
 		_, err = querier.Recv()
-		errCh <- err
+		if err != nil {
+			errCh <- fmt.Errorf("failed to receive response from querier '%v': %w", querierID, err)
+			return
+		}
+
+		errCh <- nil
 	}()
 
 	select {
