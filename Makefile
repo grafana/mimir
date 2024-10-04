@@ -340,6 +340,8 @@ lint: ## Run lints to check for style issues.
 lint: check-makefiles
 	misspell -error $(DOC_SOURCES_PATH)
 
+	./tools/find-unpooled-slice-creation.sh
+
 	# Configured via .golangci.yml.
 	golangci-lint run
 

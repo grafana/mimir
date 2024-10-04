@@ -218,7 +218,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/vector binary expression with '%v'", e.Op))
 		}
 
-		if e.VectorMatching.Card != parser.CardOneToOne {
+		if e.Op.IsSetOperator() && !q.engine.featureToggles.EnableBinaryLogicalOperations {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
+		}
+
+		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
 		}
 
@@ -232,7 +236,13 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+		switch e.Op {
+		case parser.LAND:
+			return operators.NewAndBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, q.timeRange, e.PositionRange()), nil
+		default:
+			return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+		}
+
 	case *parser.UnaryExpr:
 		if e.Op != parser.SUB {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))

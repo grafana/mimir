@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"sort"
 	"time"
 
@@ -199,7 +198,7 @@ func (b *VectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (b
 // - a list indicating which series from the right side are needed to compute the output
 func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
 	labelsFunc := b.groupLabelsFunc()
-	groupKeyFunc := b.groupKeyFunc()
+	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
 	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
 
 	// Use the smaller side to populate the map of possible output series first.
@@ -256,7 +255,7 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 		}
 	}
 
-	allMetadata := make([]types.SeriesMetadata, 0, len(outputSeriesMap))
+	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
@@ -394,35 +393,6 @@ func (b *VectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labe
 		lb.Del(labels.MetricName)
 		lb.Del(b.VectorMatching.MatchingLabels...)
 		return lb.Labels()
-	}
-}
-
-// groupKeyFunc returns a function that computes the grouping key of the output group this series belongs to.
-func (b *VectorVectorBinaryOperation) groupKeyFunc() func(labels.Labels) []byte {
-	buf := make([]byte, 0, 1024)
-
-	if b.VectorMatching.On {
-		slices.Sort(b.VectorMatching.MatchingLabels)
-
-		return func(l labels.Labels) []byte {
-			return l.BytesWithLabels(buf, b.VectorMatching.MatchingLabels...)
-		}
-	}
-
-	if len(b.VectorMatching.MatchingLabels) == 0 {
-		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
-		return func(l labels.Labels) []byte {
-			return l.BytesWithoutLabels(buf, labels.MetricName)
-		}
-	}
-
-	lbls := make([]string, 0, len(b.VectorMatching.MatchingLabels)+1)
-	lbls = append(lbls, labels.MetricName)
-	lbls = append(lbls, b.VectorMatching.MatchingLabels...)
-	slices.Sort(lbls)
-
-	return func(l labels.Labels) []byte {
-		return l.BytesWithoutLabels(buf, lbls...)
 	}
 }
 
