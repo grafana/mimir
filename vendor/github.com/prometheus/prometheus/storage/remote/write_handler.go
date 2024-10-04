@@ -482,25 +482,27 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger log.Logger, appendable storage.Appendable, configFunc func() config.Config, enableCTZeroIngestion bool) http.Handler {
+func NewOTLPWriteHandler(logger log.Logger, appendable storage.Appendable, configFunc func() config.Config, enableCTZeroIngestion bool, validIntervalCTZeroIngestion time.Duration) http.Handler {
 	rwHandler := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
 	}
 
 	return &otlpWriteHandler{
-		logger:                logger,
-		rwHandler:             rwHandler,
-		configFunc:            configFunc,
-		enableCTZeroIngestion: enableCTZeroIngestion,
+		logger:                       logger,
+		rwHandler:                    rwHandler,
+		configFunc:                   configFunc,
+		enableCTZeroIngestion:        enableCTZeroIngestion,
+		validIntervalCTZeroIngestion: validIntervalCTZeroIngestion,
 	}
 }
 
 type otlpWriteHandler struct {
-	logger                log.Logger
-	rwHandler             *writeHandler
-	configFunc            func() config.Config
-	enableCTZeroIngestion bool
+	logger                       log.Logger
+	rwHandler                    *writeHandler
+	configFunc                   func() config.Config
+	enableCTZeroIngestion        bool
+	validIntervalCTZeroIngestion time.Duration
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -515,9 +517,10 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	converter := otlptranslator.NewPrometheusConverter()
 	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
-		AddMetricSuffixes:                   true,
-		PromoteResourceAttributes:           otlpCfg.PromoteResourceAttributes,
-		EnableCreatedTimestampZeroIngestion: h.enableCTZeroIngestion,
+		AddMetricSuffixes:                          true,
+		PromoteResourceAttributes:                  otlpCfg.PromoteResourceAttributes,
+		EnableCreatedTimestampZeroIngestion:        h.enableCTZeroIngestion,
+		ValidIntervalCreatedTimestampZeroIngestion: h.validIntervalCTZeroIngestion,
 	}, h.logger)
 	if err != nil {
 		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", err)
