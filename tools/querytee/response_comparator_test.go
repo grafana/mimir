@@ -2419,7 +2419,7 @@ Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]`),
 				Tolerance:         tc.tolerance,
 				UseRelativeError:  tc.useRelativeError,
 				SkipRecentSamples: tc.skipRecentSamples,
-				SkipSamplesBefore: tc.skipSamplesBefore,
+				SkipSamplesBefore: model.Time(tc.skipSamplesBefore),
 			})
 			result, err := samplesComparator.Compare(tc.expected, tc.actual, nowT.Time())
 			if tc.err == nil {

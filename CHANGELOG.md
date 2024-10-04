@@ -48,7 +48,7 @@
 
 ### Query-tee
 
-* [FEATURE] Added `-proxy.compare-skip-samples-before` to skip samples before a given unix timestamp in seconds when comparing responses. #9515
+* [FEATURE] Added `-proxy.compare-skip-samples-before` to skip samples before the given time when comparing responses. The time must be in RFC3339 format. #9515
 
 ### Documentation
 
