@@ -197,12 +197,14 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, tenantID s
 		return err
 	}
 
-	return splitLocalBlock(ctx, tenantDir, originalBlockDir, meta, cfg.maxDuration, logger)
+	_, err := splitLocalBlock(ctx, tenantDir, originalBlockDir, meta, cfg.maxDuration, logger)
+	return err
 }
 
-func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block.Meta, maxDuration time.Duration, logger log.Logger) error {
+func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block.Meta, maxDuration time.Duration, logger log.Logger) ([]ulid.ULID, error) {
 	origBlockMaxTime := meta.MaxTime
 	minTime := meta.MinTime
+	result := []ulid.ULID(nil)
 	for minTime < origBlockMaxTime {
 		// Max time cannot cross maxDuration boundary, but also should not be greater than original max time.
 		maxTime := min(timestamp.Time(minTime).Truncate(maxDuration).Add(maxDuration).UnixMilli(), origBlockMaxTime)
@@ -214,25 +216,26 @@ func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block
 		meta.MinTime = minTime
 		meta.MaxTime = maxTime
 		if err := meta.WriteToDir(logger, blockDir); err != nil {
-			return errors.Wrap(err, "failed injecting meta for split")
+			return nil, errors.Wrap(err, "failed injecting meta for split")
 		}
 		splitID, err := block.Repair(ctx, logger, parentDir, meta.ULID, block.SplitBlocksSource, block.IgnoreCompleteOutsideChunk, block.IgnoreIssue347OutsideChunk)
 		if err != nil {
-			return errors.Wrap(err, "failed while splitting block")
+			return nil, errors.Wrap(err, "failed while splitting block")
 		}
 
 		splitMeta, err := block.ReadMetaFromDir(path.Join(parentDir, splitID.String()))
 		if err != nil {
-			return errors.Wrap(err, "failed while reading meta.json from split block")
+			return nil, errors.Wrap(err, "failed while reading meta.json from split block")
 		}
 
 		level.Info(logger).Log("msg", "created block from split", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime), "splitID", splitID, "series", splitMeta.Stats.NumSeries, "chunks", splitMeta.Stats.NumChunks, "samples", splitMeta.Stats.NumSamples)
+		result = append(result, splitID)
 		minTime = maxTime
 	}
 
 	if err := os.RemoveAll(blockDir); err != nil {
-		return errors.Wrap(err, "failed to clean up original block directory after splitting block")
+		return nil, errors.Wrap(err, "failed to clean up original block directory after splitting block")
 	}
 
-	return nil
+	return result, nil
 }
