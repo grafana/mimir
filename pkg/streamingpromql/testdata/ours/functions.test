@@ -233,3 +233,42 @@ load 1m
 
 eval range from 0 to 7m step 1m -metric
   {} -1 -1 -1 -3 -3 _ -4 -4
+
+clear
+
+# label_replace() tests
+load 5m
+		series{label="a"} 1.1
+		series{label="b"} 2.9
+		series{label="c"} NaN
+
+eval instant at 0m label_replace(series, "export", "$1", "label", "(.*)")
+		series{label="a", export="a"} 1.1
+		series{label="b", export="b"} 2.9
+		series{label="c", export="c"} NaN
+
+eval instant at 0m label_replace(series, "__name__", "$1", "label", "(.*)")
+		a{label="a"} 1.1
+		b{label="b"} 2.9
+		c{label="c"} NaN
+
+# Replacing the labels until duplicate series
+eval_fail instant at 0m label_replace(label_replace(series, "__name__", "n", "label", "(.*)"), "label", "a1", "label", "(.*)")
+
+# Bad regex
+eval_fail instant at 0m label_replace(series, "export", "$1", "label", "[.*")
+
+# Invalid destination label name
+eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
+
+# Make sure label name exists after it was dropped
+eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
+		a{label="a"} 1
+		b{label="b"} 2
+		c{label="c"} NaN
+
+# Label name is dropped by floor after it is set
+eval instant at 0m floor(label_replace(series, "__name__", "$1", "label", "(.*)"))
+		{label="a"} 1
+		{label="b"} 2
+		{label="c"} NaN

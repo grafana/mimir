@@ -108,8 +108,28 @@ func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
 		return q.convertToInstantVectorOperator(expr)
 	case parser.ValueTypeScalar:
 		return q.convertToScalarOperator(expr)
+	case parser.ValueTypeString:
+		return q.convertToStringOperator(expr)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
+	}
+}
+
+func (q *Query) convertToStringOperator(expr parser.Expr) (types.StringOperator, error) {
+	if expr.Type() != parser.ValueTypeString {
+		return nil, fmt.Errorf("cannot create string operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
+	}
+
+	switch e := expr.(type) {
+	case *parser.StringLiteral:
+		return operators.NewStringLiteral(e.Val, e.PositionRange()), nil
+	case *parser.StepInvariantExpr:
+		// One day, we'll do something smarter here.
+		return q.convertToStringOperator(e.Expr)
+	case *parser.ParenExpr:
+		return q.convertToStringOperator(e.Expr)
+	default:
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for string", e))
 	}
 }
 

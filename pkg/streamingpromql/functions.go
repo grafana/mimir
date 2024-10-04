@@ -141,6 +141,55 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 	return operators.NewScalarToInstantVector(inner, expressionPosition), nil
 }
 
+func LabelReplaceFunctionOperatorFactory(name string) InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+		if len(args) != 5 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 5 argument for %s, got %v", name, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a range vector for 1st argument for %s, got %T", name, args[0])
+		}
+
+		dstLabel, ok := args[1].(types.StringOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a string for 2nd argument for %s, got %T", name, args[1])
+		}
+
+		replacement, ok := args[2].(types.StringOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a string for 3rd argument for %s, got %T", name, args[2])
+		}
+
+		srcLabel, ok := args[3].(types.StringOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a string for 4th argument for %s, got %T", name, args[3])
+		}
+
+		regex, ok := args[4].(types.StringOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a string for 5th argument for %s, got %T", name, args[4])
+		}
+
+		f := functions.FunctionOverInstantVector{
+			SeriesDataFunc:           functions.PassthroughData,
+			SeriesMetadataFunc:       functions.LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
+			NeedsSeriesDeduplication: false,
+		}
+
+		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+
+		return o, nil
+	}
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
@@ -163,6 +212,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"histogram_count":   InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_sum":     InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
 	"increase":          FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
+	"label_replace":     LabelReplaceFunctionOperatorFactory("label_replace"),
 	"last_over_time":    FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
 	"max_over_time":     FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
 	"min_over_time":     FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),

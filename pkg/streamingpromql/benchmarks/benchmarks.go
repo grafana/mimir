@@ -179,13 +179,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "a_X and b_X{l='notfound'}",
 		},
-		//// Simple functions.
-		//{
-		//	Expr: "abs(a_X)",
-		//},
-		//{
-		//	Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
-		//},
+		// Simple functions.
+		{
+			Expr: "abs(a_X)",
+		},
+		{
+			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
+		},
 		//{
 		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
 		//},
