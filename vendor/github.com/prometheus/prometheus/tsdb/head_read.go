@@ -202,7 +202,8 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	if s == nil {
 		h.head.metrics.seriesNotFound.Inc()
-		return fmt.Errorf("%w error: series is missing", storage.ErrNotFound)
+		truncateTime := h.head.lastMemoryTruncationTime.Load()
+		return fmt.Errorf("%w error: series is missing minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, h.mint, h.maxt, truncateTime)
 	}
 	builder.Assign(s.labels())
 
@@ -386,7 +387,8 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 	s := h.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, 0, fmt.Errorf("%w error: series was garbage collected", storage.ErrNotFound)
+		truncateTime := h.head.lastMemoryTruncationTime.Load()
+		return nil, 0, fmt.Errorf("%w error: series was garbage collected minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, h.mint, h.maxt, truncateTime)
 	}
 
 	s.Lock()
@@ -402,10 +404,10 @@ type wrapOOOHeadChunk struct {
 // Call with s locked.
 func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool, mint, maxt int64, isoState *isolationState, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
 	if isOOO {
-		chk, maxTime, err := s.oooChunk(cid, h.chunkDiskMapper, &h.memChunkPool)
+		chk, maxTime, err := s.oooChunk(cid, h.chunkDiskMapper, &h.memChunkPool, mint, maxt, h.lastMemoryTruncationTime.Load())
 		return wrapOOOHeadChunk{chk}, maxTime, err
 	}
-	c, headChunk, isOpen, err := s.chunk(cid, h.chunkDiskMapper, &h.memChunkPool)
+	c, headChunk, isOpen, err := s.chunk(cid, h.chunkDiskMapper, &h.memChunkPool, mint, maxt, h.lastMemoryTruncationTime.Load())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -420,7 +422,8 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(mint, maxt) {
-		return nil, 0, fmt.Errorf("%w error: chunk is outside the range %d, %d", storage.ErrNotFound, mint, maxt)
+		truncateTime := h.lastMemoryTruncationTime.Load()
+		return nil, 0, fmt.Errorf("%w error: chunk is outside the range minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, mint, maxt, truncateTime)
 	}
 
 	chk, maxTime := c.chunk, c.maxTime
@@ -449,7 +452,7 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 // If headChunk is false, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 // if isOpen is true, it means that the returned *memChunk is used for appends.
-func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk *memChunk, headChunk, isOpen bool, err error) {
+func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, mint, maxt, truncateTime int64) (chunk *memChunk, headChunk, isOpen bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
@@ -470,7 +473,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	}
 
 	if ix < 0 || ix > len(s.mmappedChunks)+headChunksLen-1 {
-		return nil, false, false, fmt.Errorf("%w error: chunk id %d outside mmapped range %d, %d, %d", storage.ErrNotFound, int(id), int(s.firstChunkID), int(s.firstChunkID)+len(s.mmappedChunks), int(s.firstChunkID)+len(s.mmappedChunks)+headChunksLen-1)
+		return nil, false, false, fmt.Errorf("%w error: chunk id %d outside mmapped range %d, %d, %d minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, int(id), int(s.firstChunkID), int(s.firstChunkID)+len(s.mmappedChunks), int(s.firstChunkID)+len(s.mmappedChunks)+headChunksLen-1, mint, maxt, truncateTime)
 	}
 
 	if ix < len(s.mmappedChunks) {
@@ -500,20 +503,20 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	if elem == nil {
 		// This should never really happen and would mean that headChunksLen value is NOT equal
 		// to the length of the headChunks list.
-		return nil, false, false, fmt.Errorf("%w error: less head chunks than length %d", storage.ErrNotFound, headChunksLen)
+		return nil, false, false, fmt.Errorf("%w error: less head chunks than length=%d, minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, headChunksLen, mint, maxt, truncateTime)
 	}
 	return elem, true, offset == 0, nil
 }
 
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
 // It never returns the head OOO chunk.
-func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
+func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, mint, maxt, truncateTime int64) (chunk chunkenc.Chunk, maxTime int64, err error) {
 	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstOOOChunkID) gives the slice index.
 	ix := int(id) - int(s.ooo.firstOOOChunkID)
 
 	if ix < 0 || ix >= len(s.ooo.oooMmappedChunks) {
-		return nil, 0, fmt.Errorf("%w error: ooo chunk id %d outside mmaped range %d, %d", storage.ErrNotFound, int(id), int(s.ooo.firstOOOChunkID), int(s.ooo.firstOOOChunkID)+len(s.ooo.oooMmappedChunks)-1)
+		return nil, 0, fmt.Errorf("%w error: ooo chunk id %d outside mmaped range %d, %d minT=%d, maxT=%d, lastTruncT=%d", storage.ErrNotFound, int(id), int(s.ooo.firstOOOChunkID), int(s.ooo.firstOOOChunkID)+len(s.ooo.oooMmappedChunks)-1, mint, maxt, truncateTime)
 	}
 
 	chk, err := chunkDiskMapper.Chunk(s.ooo.oooMmappedChunks[ix].ref)
