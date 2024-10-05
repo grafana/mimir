@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -60,13 +61,11 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/costattribution"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
 	"github.com/grafana/mimir/pkg/vault"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // The various modules that make up Mimir.
@@ -464,7 +463,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
-		t.ActiveGroupsCleanup, t.CostAttributionCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing,
+		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
 		canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
@@ -648,17 +647,18 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 }
 
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
+	// The cost attribution service is only initilized if the custom registry path is provided.
 	if t.Cfg.CustomRegistryPath != "" {
+		// if custom registry path is provided, create a custom registry and use it for cost attribution service
 		customRegistry := prometheus.NewRegistry()
 		// Register the custom registry with the provided URL.
 		// This allows users to expose custom metrics on a separate endpoint.
 		// This is useful when users want to expose metrics that are not part of the default Mimir metrics.
 		http.Handle(t.Cfg.CustomRegistryPath, promhttp.HandlerFor(customRegistry, promhttp.HandlerOpts{Registry: customRegistry}))
-		t.CostAttributionCleanup = costattribution.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, customRegistry)
-		return t.CostAttributionCleanup, nil
+		err := customRegistry.Register(t.CostAttributionManager)
+		return t.CostAttributionManager, err
 	}
-	t.CostAttributionCleanup = costattribution.NewCostAttributionCleanupService(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, t.Registerer)
-	return t.CostAttributionCleanup, nil
+	return nil, nil
 }
 
 func (t *Mimir) tsdbIngesterConfig() {
@@ -672,7 +672,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}

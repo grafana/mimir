@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -74,7 +75,6 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/costattribution"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
@@ -110,7 +110,6 @@ type Config struct {
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
 	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"advanced"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
-	CostAttributionEvictionInterval time.Duration          `yaml:"cost_attribution_eviction_interval" category:"experimental"`
 	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
@@ -148,7 +147,9 @@ type Config struct {
 	Common             CommonConfig `yaml:"common"`
 	CustomRegistryPath string       `yaml:"custom_registry_path" category:"advanced"`
 
-	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
+	TimeseriesUnmarshalCachingOptimizationEnabled bool          `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
+	CostAttributionEvictionInterval               time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
+	CostAttributionCoolDownDuration               time.Duration `yaml:"cost_attribution_cool_down_duration" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -171,11 +172,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
-	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution-eviction-interval", 10*time.Minute, "Interval at which to evict inactive cost attributions.")
+	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution-eviction-interval", 30*time.Minute, "Interval at which to evict inactive cost attributions.")
+	f.DurationVar(&c.CostAttributionCoolDownDuration, "cost-attribution-cool-down-duration", 20*time.Minute, "Duration for which to keep the cost attribution active after the last update.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
-
+	f.StringVar(&c.CustomRegistryPath, "custom-registry-path", "", "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.")
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
@@ -714,7 +716,7 @@ type Mimir struct {
 	TenantLimits                  validation.TenantLimits
 	Overrides                     *validation.Overrides
 	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	CostAttributionCleanup        *costattribution.CostAttributionCleanupService
+	CostAttributionManager        costattribution.Manager
 
 	Distributor                     *distributor.Distributor
 	Ingester                        *ingester.Ingester

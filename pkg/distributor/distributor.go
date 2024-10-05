@@ -48,12 +48,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/costattribution"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -106,7 +106,7 @@ type Distributor struct {
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
-	costAttributionSvc     *costattribution.CostAttributionCleanupService
+	costAttributionMng     costattribution.Manager
 	// For handling HA replicas.
 	HATracker *haTracker
 
@@ -307,7 +307,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionClenaupService *costattribution.CostAttributionCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMng costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -342,7 +342,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
 		HATracker:             haTracker,
-		costAttributionSvc:    costAttributionClenaupService,
+		costAttributionMng:    costAttributionMng,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -1669,29 +1669,28 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, now time.Time) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
-	costAttributionSize := 0
-	caEnabled := d.costAttributionSvc != nil && d.costAttributionSvc.EnabledForUser(userID)
+	costattributionLimit := 0
+	caEnabled := d.costAttributionMng != nil && d.costAttributionMng.EnabledForUser(userID)
 	if caEnabled {
-		costAttributionSize = d.costAttributionSvc.GetUserAttributionLimit(userID)
+		costattributionLimit = d.costAttributionMng.GetUserAttributionLimit(userID)
 	}
-	costAttribution := make(map[string]int, costAttributionSize)
+	costAttribution := make(map[string]int, costattributionLimit)
 
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 		if caEnabled {
-			attribution := d.costAttributionSvc.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
+			attribution := d.costAttributionMng.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
 			costAttribution[attribution]++
 		}
 	}
 	receivedMetadata = len(req.Metadata)
 	if caEnabled {
 		for lv, count := range costAttribution {
-			d.costAttributionSvc.IncrementReceivedSamples(userID, lv, float64(count))
+			d.costAttributionMng.IncrementReceivedSamples(userID, lv, float64(count))
 		}
-	} else {
-		d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
 	}
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }

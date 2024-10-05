@@ -59,17 +59,6 @@
     },
     {
       "kind": "field",
-      "name": "cost_attribution_eviction_interval",
-      "required": false,
-      "desc": "Interval at which to evict inactive cost attributions.",
-      "fieldValue": null,
-      "fieldDefaultValue": 600000000000,
-      "fieldFlag": "cost-attribution-eviction-interval",
-      "fieldType": "duration",
-      "fieldCategory": "experimental"
-    },
-    {
-      "kind": "field",
       "name": "enable_go_runtime_metrics",
       "required": false,
       "desc": "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.",
@@ -3997,28 +3986,6 @@
         },
         {
           "kind": "field",
-          "name": "cost_attribution_label",
-          "required": false,
-          "desc": "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'attrib' cost attribution's label's value. Applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "validation.cost-attribution-label",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "max_cost_attribution_per_user",
-          "required": false,
-          "desc": "The maximum number of cost attribution labels per user, across the cluster. 0 to disable cost attribution.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "validation.max-cost-attribution-per-user",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "max_fetched_chunks_per_query",
           "required": false,
           "desc": "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.",
@@ -4322,6 +4289,28 @@
           "fieldValue": null,
           "fieldDefaultValue": 419430400,
           "fieldFlag": "querier.active-series-results-max-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_label",
+          "required": false,
+          "desc": "Label used to define the cost attribution label. For each write request, the cost attribution is obtained from the first non-empty cost attribution label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'attrib' cost attribution's label's value. Applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.cost-attribution-label",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_per_user",
+          "required": false,
+          "desc": "The maximum number of cost attribution labels per user, across the cluster. 0 to disable cost attribution.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.max-cost-attribution-per-user",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -18165,9 +18154,10 @@
       "kind": "field",
       "name": "custom_registry_path",
       "required": false,
-      "desc": "",
+      "desc": "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.",
       "fieldValue": null,
       "fieldDefaultValue": "",
+      "fieldFlag": "custom-registry-path",
       "fieldType": "string",
       "fieldCategory": "advanced"
     },
@@ -18180,6 +18170,28 @@
       "fieldDefaultValue": true,
       "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
       "fieldType": "boolean",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_eviction_interval",
+      "required": false,
+      "desc": "Interval at which to evict inactive cost attributions.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1800000000000,
+      "fieldFlag": "cost-attribution-eviction-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_cool_down_duration",
+      "required": false,
+      "desc": "Duration for which to keep the cost attribution active after the last update.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1200000000000,
+      "fieldFlag": "cost-attribution-cool-down-duration",
+      "fieldType": "duration",
       "fieldCategory": "experimental"
     }
   ],

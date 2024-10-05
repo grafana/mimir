@@ -6953,6 +6953,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			exemplarsIn:       10,
 			metadataIn:        10,
 			receivedRequests:  1,
+			receivedSamples:   0,
 			receivedExemplars: 0,
 			receivedMetadata:  10})
 

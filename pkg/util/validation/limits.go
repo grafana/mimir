@@ -143,10 +143,6 @@ type Limits struct {
 	// User defined label to give the option of subdividing specific metrics by another label
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
-	// User defined label to give the cost distribution by values of the label
-	CostAttributionLabel      string `yaml:"cost_attribution_label" json:"cost_attribution_label" category:"experimental"`
-	MaxCostAttributionPerUser int    `yaml:"max_cost_attribution_per_user" json:"max_cost_attribution_per_user" category:"experimental"`
-
 	// Querier enforced limits.
 	MaxChunksPerQuery                     int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
 	MaxEstimatedChunksPerQueryMultiplier  float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
@@ -182,6 +178,10 @@ type Limits struct {
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
+
+	// Cost attribution and limit.
+	CostAttributionLabel      string `yaml:"cost_attribution_label" json:"cost_attribution_label" category:"experimental"`
+	MaxCostAttributionPerUser int    `yaml:"max_cost_attribution_per_user" json:"max_cost_attribution_per_user" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration         `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`

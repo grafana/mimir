@@ -1133,8 +1133,12 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
+  -cost-attribution-cool-down-duration duration
+    	[experimental] Duration for which to keep the cost attribution active after the last update. (default 20m0s)
   -cost-attribution-eviction-interval duration
-    	[experimental] Interval at which to evict inactive cost attributions. (default 10m0s)
+    	[experimental] Interval at which to evict inactive cost attributions. (default 30m0s)
+  -custom-registry-path string
+    	Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
