@@ -380,6 +380,7 @@ func TestIngester_Push(t *testing.T) {
 		expectedExemplarsIngested []mimirpb.TimeSeries
 		expectedExemplarsDropped  []mimirpb.TimeSeries
 		expectedMetrics           string
+		expectedMissingMetrics    []string
 		additionalMetrics         []string
 		disableActiveSeries       bool
 		maxExemplars              int
@@ -463,6 +464,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should succeed on valid series with histograms and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -540,7 +542,8 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.002
 			`,
-			nativeHistograms: true,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
+			nativeHistograms:       true,
 		},
 		"should succeed on new float series with an exemplar": {
 			maxExemplars: 2,
@@ -644,6 +647,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should succeed on new float series and an exemplar": {
 			maxExemplars: 2,
@@ -746,6 +750,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should succeed on existing float series with an exemplar": {
 			maxExemplars: 2,
@@ -856,6 +861,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on new float series and an exemplar and an out of order exemplar": {
 			maxExemplars: 2,
@@ -982,6 +988,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should succeed on new float series and an exemplar and an out of order exemplar but OOO exemplars are ignored": {
 			maxExemplars:       2,
@@ -1109,6 +1116,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should succeed on new histogram series with an exemplar": {
 			maxExemplars:     2,
@@ -1217,6 +1225,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"should succeed on new histogram series and an exemplar": {
 			maxExemplars:     2,
@@ -1338,6 +1347,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"should succeed on existing histogram series with an exemplar": {
 			maxExemplars:     2,
@@ -1454,6 +1464,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"should succeed on existing histogram series with multiple exemplars": {
 			maxExemplars:     2,
@@ -1582,6 +1593,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"should succeed on existing histogram series with partial updated exemplars": {
 			maxExemplars:     2,
@@ -1750,6 +1762,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"should soft fail if histogram has a bucket count vs overall count mismatch": {
 			nativeHistograms: true,
@@ -1791,6 +1804,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail if histogram has a bucket count higher than overall count and sum NaN": {
 			nativeHistograms: true,
@@ -1832,6 +1846,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail if histogram has a negative span offset": {
 			nativeHistograms: true,
@@ -1873,8 +1888,9 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
-		"should soft fail if histogram has different number of buckets then encoded in spans": {
+		"should soft fail if histogram has different number of buckets than encoded in spans": {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
@@ -1914,6 +1930,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail if histogram has a negative bucket count": {
 			nativeHistograms: true,
@@ -1955,6 +1972,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on existing histogram series if all exemplars are out of order": {
 			maxExemplars:     2,
@@ -2098,6 +2116,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 2
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"should succeed on existing histogram series if all exemplars are out of order but OOO exemplars are ignored": {
 			maxExemplars:       2,
@@ -2242,6 +2261,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 2
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total"},
 		},
 		"successful push, active series disabled": {
 			disableActiveSeries: true,
@@ -2289,6 +2309,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2343,6 +2364,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on all samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2401,6 +2423,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on all samples with histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2460,7 +2483,8 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
-			nativeHistograms: true,
+			expectedMissingMetrics: []string{"cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
+			nativeHistograms:       true,
 		},
 		"should succeed if histograms are out of bound but samples are not and histograms are not accepted": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2517,7 +2541,8 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575044.969
 			`,
-			nativeHistograms: false,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
+			nativeHistograms:       false,
 		},
 		"should soft fail on some samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2579,6 +2604,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.970
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2641,6 +2667,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli()+1)/1000) + `
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
 			nativeHistograms: true,
@@ -2778,6 +2805,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
@@ -2832,6 +2860,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 1575043.969
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on exemplar with unknown series": {
 			maxExemplars: 1,
@@ -2923,6 +2952,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should soft fail on exemplar with series later in the same write request": {
 			maxExemplars: 1,
@@ -3025,6 +3055,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
+			expectedMissingMetrics: []string{"cortex_discarded_samples_total", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should succeed with a request containing only metadata": {
 			maxExemplars: 1,
@@ -3062,6 +3093,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total", "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_discarded_samples_total", "cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should discard metadata when max metadata per user exceeded": {
 			maxMetadataPerUser:   1,
@@ -3116,6 +3148,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total", "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_discarded_samples_total", "cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 		"should discard metadata when max metadata per metric exceeded": {
 			maxMetadataPerUser:   0,
@@ -3170,6 +3203,7 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0
 			`,
+			expectedMissingMetrics: []string{"cortex_ingester_ingested_samples_total", "cortex_ingester_ingested_samples_failures_total", "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_discarded_samples_total", "cortex_ingester_active_series", "cortex_ingester_active_native_histogram_series", "cortex_ingester_active_native_histogram_buckets"},
 		},
 	}
 
@@ -3276,9 +3310,18 @@ func TestIngester_Push(t *testing.T) {
 			// Append additional metrics to assert on.
 			mn := append(metricNames, testData.additionalMetrics...)
 
+			var expectedErr error
+			if len(testData.expectedMissingMetrics) > 0 {
+				expectedErr = fmt.Errorf("expected metric name(s) not found: [%s]", strings.Join(testData.expectedMissingMetrics, " "))
+			}
+
 			// Check tracked Prometheus metrics
 			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), mn...)
-			assert.NoError(t, err)
+			if expectedErr == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, expectedErr.Error())
+			}
 
 			// Check anonymous usage stats.
 			expectedTenantsCount := 0
@@ -3502,7 +3545,10 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 		cortex_ingester_memory_series_removed_total{user="test-2"} 0
 	`
 
-	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+	assert.EqualError(
+		t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...),
+		"expected metric name(s) not found: [cortex_ingester_active_series cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_buckets]",
+	)
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
@@ -7199,7 +7245,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
 		"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
 
-	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
+	require.EqualError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 		# TYPE cortex_ingester_memory_series_created_total counter
 		cortex_ingester_memory_series_created_total{user="1"} 1
@@ -7223,7 +7269,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 		# TYPE cortex_ingester_memory_metadata_created_total counter
 		cortex_ingester_memory_metadata_created_total{user="1"} 1
-    `), metricsToCheck...))
+    `), metricsToCheck...), "expected metric name(s) not found: [cortex_ingester_memory_metadata_removed_total]")
 
 	// Wait until TSDB has been closed and removed.
 	test.Poll(t, 20*time.Second, 0, func() interface{} {
@@ -7237,31 +7283,22 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
-	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
-		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
-		# TYPE cortex_ingester_memory_series_created_total counter
-
-		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
-		# TYPE cortex_ingester_memory_series_removed_total counter
-
+	require.EqualError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 0
 
-		# HELP cortex_ingester_active_series Number of currently active series per user.
-		# TYPE cortex_ingester_active_series gauge
-
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
 		cortex_ingester_memory_metadata 0
-    `), metricsToCheck...))
+    `), metricsToCheck...), "expected metric name(s) not found: [cortex_ingester_memory_series_created_total cortex_ingester_memory_series_removed_total cortex_ingester_active_series cortex_ingester_memory_metadata_created_total cortex_ingester_memory_metadata_removed_total]")
 
 	// Pushing another sample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
 	i.updateActiveSeries(time.Now())
 
 	// User is back.
-	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
+	require.EqualError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 		# TYPE cortex_ingester_memory_series_created_total counter
 		cortex_ingester_memory_series_created_total{user="1"} 1
@@ -7285,7 +7322,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 		# TYPE cortex_ingester_memory_metadata_created_total counter
 		cortex_ingester_memory_metadata_created_total{user="1"} 1
-    `), metricsToCheck...))
+    `), metricsToCheck...), "expected metric name(s) not found: [cortex_ingester_memory_metadata_removed_total]")
 }
 
 func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
@@ -8431,7 +8468,7 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 		"cortex_ingester_memory_metadata",
 	}
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.EqualError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
 		cortex_ingester_memory_metadata 90
@@ -8440,7 +8477,7 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 		cortex_ingester_memory_metadata_created_total{user="1"} 30
 		cortex_ingester_memory_metadata_created_total{user="2"} 30
 		cortex_ingester_memory_metadata_created_total{user="3"} 30
-	`), metricNames...))
+	`), metricNames...), "expected metric name(s) not found: [cortex_ingester_memory_metadata_removed_total]")
 
 	time.Sleep(40 * time.Millisecond)
 	ing.purgeUserMetricsMetadata()
@@ -8959,7 +8996,10 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// close tsdbs and check for cleanup
 				ingester.closeAllTSDB()
 				expectedMetrics = ""
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series cortex_ingester_active_series_custom_tracker cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_series_custom_tracker cortex_ingester_active_native_histogram_buckets cortex_ingester_active_native_histogram_buckets_custom_tracker]",
+				)
 			},
 		},
 		"should track custom matchers, removing when zero": {
@@ -9050,7 +9090,9 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Update active series again in a further future where no series are active anymore.
 				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series cortex_ingester_active_series_custom_tracker cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_series_custom_tracker cortex_ingester_active_native_histogram_buckets cortex_ingester_active_native_histogram_buckets_custom_tracker]")
 			},
 		},
 		"successful push, active series disabled": {
@@ -9067,7 +9109,10 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := ``
 
 				// Check tracked Prometheus metrics
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series cortex_ingester_active_series_custom_tracker cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_series_custom_tracker cortex_ingester_active_native_histogram_buckets cortex_ingester_active_native_histogram_buckets_custom_tracker]",
+				)
 
 				// Check that no active series are returned
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "team", "a")}
@@ -9273,7 +9318,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 
 				// Add new runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
@@ -9357,7 +9405,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
             	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 			},
 		},
 		"remove runtime overwrite and revert to flag based config": {
@@ -9407,7 +9458,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
             	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 
 				// Remove runtime configs
 				limits := defaultLimitsTestConfig()
@@ -9486,7 +9540,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 16
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 			},
 		},
 		"changing runtime override should result in new metrics": {
@@ -9524,7 +9581,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 
 				// Change runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
@@ -9546,7 +9606,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series cortex_ingester_active_series_custom_tracker cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_series_custom_tracker cortex_ingester_active_native_histogram_buckets cortex_ingester_active_native_histogram_buckets_custom_tracker]",
+				)
 
 				// Saving time before second push to avoid purging it before exposing.
 				currentTime = time.Now()
@@ -9585,7 +9648,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_c",user="test_user"} 16
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_d",user="test_user"} 16
 				`
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 			},
 		},
 		"should cleanup loading metric at close": {
@@ -9635,7 +9701,10 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading]",
+				)
 
 				// Remove all configs
 				limits := defaultLimitsTestConfig()
@@ -9649,11 +9718,17 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series_loading{user="test_user"} 1
 					cortex_ingester_active_series_loading{user="other_test_user"} 1
 				`
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series cortex_ingester_active_series_custom_tracker cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_series_custom_tracker cortex_ingester_active_native_histogram_buckets cortex_ingester_active_native_histogram_buckets_custom_tracker]",
+				)
 				ingester.closeAllTSDB()
 				expectedMetrics = `
 				`
-				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+				require.EqualError(
+					t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...),
+					"expected metric name(s) not found: [cortex_ingester_active_series_loading cortex_ingester_active_series cortex_ingester_active_series_custom_tracker cortex_ingester_active_native_histogram_series cortex_ingester_active_native_histogram_series_custom_tracker cortex_ingester_active_native_histogram_buckets cortex_ingester_active_native_histogram_buckets_custom_tracker]",
+				)
 			},
 		},
 	}
@@ -10881,7 +10956,11 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 
 			// Check tracked Prometheus metrics
 			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), metricNames...)
-			assert.NoError(t, err)
+			if testData.expectedMetrics != "" {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, "expected metric name(s) not found: [cortex_discarded_samples_total]")
+			}
 		})
 	}
 }

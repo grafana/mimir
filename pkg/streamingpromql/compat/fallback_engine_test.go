@@ -45,11 +45,12 @@ func TestEngineWithFallback(t *testing.T) {
 				require.Equal(t, preferredEngine.query, query, "should return query from preferred engine")
 				require.False(t, fallbackEngine.wasCalled, "should not call fallback engine if expression is supported by preferred engine")
 
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+				require.EqualError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_mimir_query_engine_supported_queries_total Total number of queries that were supported by the Mimir query engine.
 					# TYPE cortex_mimir_query_engine_supported_queries_total counter
 					cortex_mimir_query_engine_supported_queries_total 1
-				`), "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total"))
+				`), "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total"),
+					"expected metric name(s) not found: [cortex_mimir_query_engine_unsupported_queries_total]")
 			})
 
 			t.Run("should fall back for unsupported expressions", func(t *testing.T) {
