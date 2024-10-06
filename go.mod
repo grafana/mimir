@@ -34,7 +34,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.27.0
-	github.com/prometheus/client_golang v1.20.3
+	github.com/prometheus/client_golang v1.20.4
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.59.1
 	github.com/prometheus/prometheus v1.99.0
@@ -286,7 +286,7 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 
 // client_golang v1.20.3 has some data races in histogram exemplars.
 // Stick to v1.19.1 until they are fixed.
-replace github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.19.1
+replace github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.20.4
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
