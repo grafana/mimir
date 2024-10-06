@@ -159,11 +159,9 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 			require.NoError(t, err)
 
 			if testData.expectedInit {
-				assert.NotNil(t, mimir.RulerDirectStorage)
-				assert.NotNil(t, mimir.RulerCachedStorage)
+				assert.NotNil(t, mimir.RulerStorage)
 			} else {
-				assert.Nil(t, mimir.RulerDirectStorage)
-				assert.Nil(t, mimir.RulerCachedStorage)
+				assert.Nil(t, mimir.RulerStorage)
 			}
 		})
 	}

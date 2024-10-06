@@ -574,9 +574,10 @@ func (c *PrometheusConverter) addTimeSeriesIfNeeded(lbls []prompb.Label, startTi
 	}
 }
 
-// validIntervalForStartTimestamps is hardcoded to 2 minutes in milliseconds. We can't know in advance whats the scrape
-// interval of a series.
-const validIntervalForStartTimestamps = 120_000
+// defaultIntervalForStartTimestamps is hardcoded to 5 minutes in milliseconds.
+// Assuming a DPM of 1 and knowing that Grafana's $__rate_interval is typically 4 times the write interval that would give
+// us 4 minutes. We add an extra minute for delays.
+const defaultIntervalForStartTimestamps = int64(300_000)
 
 // handleStartTime adds a zero sample at startTs only if startTs is within validIntervalForStartTimestamps of the sample timestamp.
 // The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
@@ -595,8 +596,13 @@ func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb
 		return
 	}
 
+	threshold := defaultIntervalForStartTimestamps
+	if settings.ValidIntervalCreatedTimestampZeroIngestion != 0 {
+		threshold = settings.ValidIntervalCreatedTimestampZeroIngestion.Milliseconds()
+	}
+
 	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
-	if ts-startTs > validIntervalForStartTimestamps {
+	if ts-startTs > threshold {
 		return
 	}
 
@@ -619,8 +625,13 @@ func (c *PrometheusConverter) handleHistogramStartTime(startTs, sampleTs int64, 
 		return
 	}
 
+	threshold := defaultIntervalForStartTimestamps
+	if settings.ValidIntervalCreatedTimestampZeroIngestion != 0 {
+		threshold = settings.ValidIntervalCreatedTimestampZeroIngestion.Milliseconds()
+	}
+
 	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
-	if sampleTs-startTs > validIntervalForStartTimestamps {
+	if sampleTs-startTs > threshold {
 		return
 	}
 

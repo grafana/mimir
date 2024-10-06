@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -25,14 +26,14 @@ import (
 )
 
 // NewRuleStore returns a rule store backend client based on the provided cfg.
-func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (directStore, cachedStore rulestore.RuleStore, _ error) {
+func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (store rulestore.RuleStore, _ error) {
 	if cfg.Backend == rulestore.BackendLocal {
 		store, err := local.NewLocalRulesClient(cfg.Local, loader)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		return store, store, nil
+		return store, nil
 	}
 
 	if cfg.Backend == bucket.Filesystem {
@@ -41,18 +42,15 @@ func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.
 
 	directBucketClient, err := bucket.NewClient(ctx, cfg.Config, "ruler-storage", logger, reg)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	cachedBucketClient, err := wrapBucketWithCache(directBucketClient, cfg, cacheTTL, logger, reg)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	directStore = bucketclient.NewBucketRuleStore(directBucketClient, cfgProvider, logger)
-	cachedStore = bucketclient.NewBucketRuleStore(cachedBucketClient, cfgProvider, logger)
-
-	return directStore, cachedStore, nil
+	return bucketclient.NewBucketRuleStore(cachedBucketClient, cfgProvider, logger), nil
 }
 
 func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
@@ -84,4 +82,8 @@ func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL tim
 
 func isNotTenantsDir(name string) bool {
 	return name != ""
+}
+
+func isRuleGroup(name string) bool {
+	return strings.HasPrefix(name, "rules/")
 }

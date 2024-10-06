@@ -54,12 +54,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/util"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestMain(m *testing.M) {
-	util_test.VerifyNoLeakTestMain(m)
+	utiltest.VerifyNoLeakTestMain(m)
 }
 
 func defaultRulerConfig(t testing.TB) Config {
@@ -210,7 +210,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
-	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
 	if options.rulerAddrAutoMap {
@@ -1571,7 +1571,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	ctx := context.Background()
 
 	t.Run("ListRuleGroupsForUserAndNamespace()", func(t *testing.T) {
-		list, err := r.directStore.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
 		require.NoError(t, err)
 
 		if expectedDeleted {
