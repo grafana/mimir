@@ -238,28 +238,31 @@ clear
 
 # label_replace() tests
 load 5m
-		series{label="a"} 1.1
-		series{label="b"} 2.9
-		series{label="c"} NaN
+  series{label="a"} 1.1
+  series{label="b"} 2.9
+  series{label="c"} NaN
 
 eval instant at 0m label_replace(series, "export", "$1", "label", "(.*)")
-		series{label="a", export="a"} 1.1
-		series{label="b", export="b"} 2.9
-		series{label="c", export="c"} NaN
+  series{label="a", export="a"} 1.1
+  series{label="b", export="b"} 2.9
+  series{label="c", export="c"} NaN
 
 eval instant at 0m label_replace(series, "__name__", "$1", "label", "(.*)")
-		a{label="a"} 1.1
-		b{label="b"} 2.9
-		c{label="c"} NaN
+  a{label="a"} 1.1
+  b{label="b"} 2.9
+  c{label="c"} NaN
 
 # Replacing the labels until duplicate series
-eval_fail instant at 0m label_replace(label_replace(series, "__name__", "n", "label", "(.*)"), "label", "a1", "label", "(.*)")
+eval_fail instant at 0m label_replace(series, "label", "replaced", "label", ".*")
+  expected_fail_message vector cannot contain metrics with the same labelset
 
 # Bad regex
 eval_fail instant at 0m label_replace(series, "export", "$1", "label", "[.*")
+  expected_fail_message invalid regular expression in label_replace(): [.*
 
 # Invalid destination label name
 eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
+  expected_fail_message invalid destination label name in label_replace(): (export)
 
 # Make sure label name exists after it was dropped
 eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
