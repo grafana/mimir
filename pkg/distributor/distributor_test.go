@@ -377,7 +377,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 	d.labelValuesWithNewlinesPerUser.WithLabelValues("userA").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	util_test.AssertGatherAndCompare(t, reg, `
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 		cortex_distributor_deduped_samples_total{cluster="cluster1",user="userA"} 1
@@ -420,11 +420,11 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
 		# TYPE cortex_distributor_label_values_with_newlines_total counter
 		cortex_distributor_label_values_with_newlines_total{user="userA"} 1
-		`), metrics...))
+		`, metrics...)
 
 	d.cleanupInactiveUser("userA")
 
-	require.EqualError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	util_test.AssertGatherAndCompare(t, reg, `
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
 		cortex_distributor_received_metadata_total{user="userB"} 10
@@ -436,7 +436,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userB"} 10
-		`), metrics...), "expected metric name(s) not found: [cortex_distributor_deduped_samples_total cortex_distributor_samples_in_total cortex_distributor_exemplars_in_total cortex_distributor_metadata_in_total cortex_distributor_non_ha_samples_received_total cortex_distributor_latest_seen_sample_timestamp_seconds cortex_distributor_label_values_with_newlines_total]")
+		`, metrics...)
 }
 
 func TestDistributor_PushRequestRateLimiter(t *testing.T) {
@@ -1666,9 +1666,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			}
 
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
-			if tc.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), "cortex_discarded_exemplars_total"))
-			}
+			util_test.AssertGatherAndCompare(t, regs[0], tc.expectedMetrics, "cortex_discarded_exemplars_total")
 		})
 	}
 }
@@ -7171,7 +7169,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			happyIngesters:    3,
 			replicationFactor: 3,
 		})
-		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+		util_test.AssertGatherAndCompare(t, regs[0], `
 			# HELP cortex_distributor_replication_factor The configured replication factor.
 			# TYPE cortex_distributor_replication_factor gauge
 			cortex_distributor_replication_factor 3
@@ -7179,7 +7177,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
 			# TYPE cortex_distributor_ingest_storage_enabled gauge
 			cortex_distributor_ingest_storage_enabled 0
-		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
+		`, "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled")
 	})
 
 	t.Run("migration to ingest storage", func(t *testing.T) {
@@ -7192,7 +7190,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			happyIngesters:                3,
 			replicationFactor:             3,
 		})
-		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+		util_test.AssertGatherAndCompare(t, regs[0], `
 			# HELP cortex_distributor_replication_factor The configured replication factor.
 			# TYPE cortex_distributor_replication_factor gauge
 			cortex_distributor_replication_factor 3
@@ -7200,7 +7198,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
 			# TYPE cortex_distributor_ingest_storage_enabled gauge
 			cortex_distributor_ingest_storage_enabled 1
-		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"))
+		`, "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled")
 	})
 
 	t.Run("ingest storage", func(t *testing.T) {
@@ -7212,12 +7210,11 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			happyIngesters:       3,
 			replicationFactor:    3,
 		})
-		require.EqualError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+		util_test.AssertGatherAndCompare(t, regs[0], `
 			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
 			# TYPE cortex_distributor_ingest_storage_enabled gauge
 			cortex_distributor_ingest_storage_enabled 1
-		`), "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled"),
-			"expected metric name(s) not found: [cortex_distributor_replication_factor]")
+		`, "cortex_distributor_replication_factor", "cortex_distributor_ingest_storage_enabled")
 	})
 }
 

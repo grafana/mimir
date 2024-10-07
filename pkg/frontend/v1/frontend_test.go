@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -222,10 +223,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 
 		fr.cleanupInactiveUserMetrics("1")
 
-		require.EqualError(
-			t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_query_frontend_queue_length"),
-			"expected metric name(s) not found: [cortex_query_frontend_queue_length]",
-		)
+		util_test.AssertGatherAndCompare(t, reg, "", "cortex_query_frontend_queue_length")
 	}
 
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)

@@ -464,9 +464,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
 
 	// But there are no metrics for any user, because we did not in fact clean them.
-	require.EqualError(t, testutil.GatherAndCompare(reg, strings.NewReader(""),
-		"cortex_bucket_blocks_count",
-	), "expected metric name(s) not found: [cortex_bucket_blocks_count]")
+	test.AssertGatherAndCompare(t, reg, "", "cortex_bucket_blocks_count")
 
 	// Running cleanUsers again will see that users are no longer owned.
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
