@@ -266,15 +266,15 @@ eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
 
 # Make sure label name exists after it was dropped
 eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
-		a{label="a"} 1
-		b{label="b"} 2
-		c{label="c"} NaN
+  a{label="a"} 1
+  b{label="b"} 2
+  c{label="c"} NaN
 
 # Label name is dropped by floor after it is set
 eval instant at 0m floor(label_replace(series, "__name__", "$1", "label", "(.*)"))
-		{label="a"} 1
-		{label="b"} 2
-		{label="c"} NaN
+  {label="a"} 1
+  {label="b"} 2
+  {label="c"} NaN
 
 clear
 
@@ -282,19 +282,19 @@ clear
 # (As tested in upstream/name_label_dropping.test).
 # Otherwise they fail both engines.
 load 5m
-	metric{env="1"}	0 60 120
-	another_metric{env="1"}	60 120 180
+  metric{env="1"}	0 60 120
+  another_metric{env="1"}	60 120 180
 
 # Allows relabeling (to-be-dropped) __name__  via label_replace
 eval_fail instant at 15m label_replace(rate({env="1"}[10m]), "my_name", "rate_$1", "__name__", "(.+)")
   expected_fail_message vector cannot contain metrics with the same labelset
-#	{my_name="rate_metric", env="1"} 0.2
-#	{my_name="rate_another_metric", env="1"} 0.2
+#  {my_name="rate_metric", env="1"} 0.2
+#  {my_name="rate_another_metric", env="1"} 0.2
 
 # Allows preserving __name__ via label_replace
 eval_fail instant at 15m label_replace(rate({env="1"}[10m]), "__name__", "rate_$1", "__name__", "(.+)")
   expected_fail_message vector cannot contain metrics with the same labelset
-#	rate_metric{env="1"} 0.2
-#	rate_another_metric{env="1"} 0.2
+#  rate_metric{env="1"} 0.2
+#  rate_another_metric{env="1"} 0.2
 
 clear
