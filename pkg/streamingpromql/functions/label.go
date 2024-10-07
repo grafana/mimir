@@ -7,7 +7,6 @@
 package functions
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 
@@ -43,10 +42,6 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 				lb.Set(dst, string(res))
 				seriesMetadata[i].Labels = lb.Labels()
 			}
-		}
-
-		if types.HasDuplicateSeries(seriesMetadata) {
-			return nil, errors.New("vector cannot contain metrics with the same labelset")
 		}
 
 		return seriesMetadata, nil

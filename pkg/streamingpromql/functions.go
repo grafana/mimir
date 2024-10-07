@@ -181,12 +181,12 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 		f := functions.FunctionOverInstantVector{
 			SeriesDataFunc:           functions.PassthroughData,
 			SeriesMetadataFunc:       functions.LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
-			NeedsSeriesDeduplication: false,
+			NeedsSeriesDeduplication: true,
 		}
 
 		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
 
-		return o, nil
+		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 	}
 }
 
