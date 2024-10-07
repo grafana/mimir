@@ -51,7 +51,7 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 		actualMatrix, err := actual.Matrix()
 		require.NoError(t, err)
 
-		require.Len(t, actualMatrix, len(expectedMatrix))
+		require.Lenf(t, actualMatrix, len(expectedMatrix), "expected result %v", expectedMatrix)
 
 		for i, expectedSeries := range expectedMatrix {
 			actualSeries := actualMatrix[i]

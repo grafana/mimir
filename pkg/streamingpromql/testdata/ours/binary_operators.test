@@ -766,13 +766,28 @@ clear
 # Single matching series on each side.
 load 6m
   left_side{env="test", pod="a"}  1  2  3  4                 {{count:5 sum:5}}
-  left_side{env="test", pod="b"}  6  7  8  _                 10
+  left_side{env="test", pod="b"}  6  7  8  _                 {{count:10 sum:10}}
   left_side{env="prod", pod="a"}  11 12 13 14                15
   left_side{env="prod", pod="b"}  16 17 18 _                 _
   right_side{env="test", pod="a"} 0  0  0  {{count:0 sum:0}} {{count:0 sum:0}}
   right_side{env="test", pod="b"} _  0  _  0                 _
   right_side{env="prod", pod="b"} _  _  _  0                 0
   right_side{env="foo", pod="a"}  0  0  0  0                 0
+
+eval range from 0 to 24m step 6m left_side and does_not_match
+  # Should return no results.
+
+eval range from 0 to 24m step 6m does_not_match and right_side
+  # Should return no results.
+
+eval range from 0 to 24m step 6m left_side unless does_not_match
+  left_side{env="test", pod="a"}  1  2  3  4  {{count:5 sum:5}}
+  left_side{env="test", pod="b"}  6  7  8  _  {{count:10 sum:10}}
+  left_side{env="prod", pod="a"}  11 12 13 14 15
+  left_side{env="prod", pod="b"}  16 17 18 _  _
+
+eval range from 0 to 24m step 6m does_not_match unless right_side
+  # Should return no results.
 
 # {env="test", pod="a"}: Matching series, all samples align
 # {env="test", pod="b"}: Matching series, only some samples align
@@ -782,6 +797,11 @@ load 6m
 eval range from 0 to 24m step 6m left_side and right_side
   left_side{env="test", pod="a"} 1 2 3 4 {{count:5 sum:5}}
   left_side{env="test", pod="b"} _ 7 _ _ _
+
+eval range from 0 to 24m step 6m left_side unless right_side
+  left_side{env="test", pod="b"} 6 _ 8 _ {{count:10 sum:10}}
+  left_side{env="prod", pod="a"} 11 12 13 14 15
+  left_side{env="prod", pod="b"} 16 17 18 _ _
 
 clear
 
@@ -800,32 +820,67 @@ load 6m
 eval range from 0 to 24m step 6m left_side and right_side
   # Should return no results.
 
+eval range from 0 to 24m step 6m left_side unless right_side
+  left_side{env="test", cluster="blah", pod="a"} 1  2  3  4
+  left_side{env="test", cluster="blah", pod="b"} _  6  7  8
+  left_side{env="prod", cluster="blah", pod="a"} 9  10 11 12
+  left_side{env="prod", cluster="blah", pod="b"} 13 14 15 16
+  left_side{env="test", cluster="food", pod="a"} 17 18 19 20
+
 eval range from 0 to 24m step 6m left_side and on(cluster, env) right_side
-  left_side{env="test", cluster="blah", pod="a"}  1  2  3  _
-  left_side{env="test", cluster="blah", pod="b"}  _  6  7  _
-  left_side{env="prod", cluster="blah", pod="a"}  _  10 _  12
-  left_side{env="prod", cluster="blah", pod="b"}  _  14 _  16
-  left_side{env="test", cluster="food", pod="a"}  _  _  _  20
+  left_side{env="test", cluster="blah", pod="a"} 1  2  3  _
+  left_side{env="test", cluster="blah", pod="b"} _  6  7  _
+  left_side{env="prod", cluster="blah", pod="a"} _  10 _  12
+  left_side{env="prod", cluster="blah", pod="b"} _  14 _  16
+  left_side{env="test", cluster="food", pod="a"} _  _  _  20
+
+eval range from 0 to 24m step 6m left_side unless on(cluster, env) right_side
+  left_side{env="test", cluster="blah", pod="a"} _  _  _  4
+  left_side{env="test", cluster="blah", pod="b"} _  _  _  8
+  left_side{env="prod", cluster="blah", pod="a"} 9  _  11 _
+  left_side{env="prod", cluster="blah", pod="b"} 13 _  15 _
+  left_side{env="test", cluster="food", pod="a"} 17 18 19 _
 
 # Same thing again, with labels in different order.
 eval range from 0 to 24m step 6m left_side and on(env, cluster) right_side
-  left_side{env="test", cluster="blah", pod="a"}  1  2  3  _
-  left_side{env="test", cluster="blah", pod="b"}  _  6  7  _
-  left_side{env="prod", cluster="blah", pod="a"}  _  10 _  12
-  left_side{env="prod", cluster="blah", pod="b"}  _  14 _  16
-  left_side{env="test", cluster="food", pod="a"}  _  _  _  20
+  left_side{env="test", cluster="blah", pod="a"} 1  2  3  _
+  left_side{env="test", cluster="blah", pod="b"} _  6  7  _
+  left_side{env="prod", cluster="blah", pod="a"} _  10 _  12
+  left_side{env="prod", cluster="blah", pod="b"} _  14 _  16
+  left_side{env="test", cluster="food", pod="a"} _  _  _  20
+
+eval range from 0 to 24m step 6m left_side unless on(env, cluster) right_side
+  left_side{env="test", cluster="blah", pod="a"} _  _  _  4
+  left_side{env="test", cluster="blah", pod="b"} _  _  _  8
+  left_side{env="prod", cluster="blah", pod="a"} 9  _  11 _
+  left_side{env="prod", cluster="blah", pod="b"} 13 _  15 _
+  left_side{env="test", cluster="food", pod="a"} 17 18 19 _
 
 eval range from 0 to 24m step 6m left_side and ignoring(idx, pod) right_side
-  left_side{env="test", cluster="blah", pod="a"}  1  2  3  _
-  left_side{env="test", cluster="blah", pod="b"}  _  6  7  _
-  left_side{env="prod", cluster="blah", pod="a"}  _  10 _  12
-  left_side{env="prod", cluster="blah", pod="b"}  _  14 _  16
-  left_side{env="test", cluster="food", pod="a"}  _  _  _  20
+  left_side{env="test", cluster="blah", pod="a"} 1  2  3  _
+  left_side{env="test", cluster="blah", pod="b"} _  6  7  _
+  left_side{env="prod", cluster="blah", pod="a"} _  10 _  12
+  left_side{env="prod", cluster="blah", pod="b"} _  14 _  16
+  left_side{env="test", cluster="food", pod="a"} _  _  _  20
+
+eval range from 0 to 24m step 6m left_side unless ignoring(idx, pod) right_side
+  left_side{env="test", cluster="blah", pod="a"} _  _  _  4
+  left_side{env="test", cluster="blah", pod="b"} _  _  _  8
+  left_side{env="prod", cluster="blah", pod="a"} 9  _  11 _
+  left_side{env="prod", cluster="blah", pod="b"} 13 _  15 _
+  left_side{env="test", cluster="food", pod="a"} 17 18 19 _
 
 # Same thing again, with labels in different order.
 eval range from 0 to 24m step 6m left_side and ignoring(pod, idx) right_side
-  left_side{env="test", cluster="blah", pod="a"}  1  2  3  _
-  left_side{env="test", cluster="blah", pod="b"}  _  6  7  _
-  left_side{env="prod", cluster="blah", pod="a"}  _  10 _  12
-  left_side{env="prod", cluster="blah", pod="b"}  _  14 _  16
-  left_side{env="test", cluster="food", pod="a"}  _  _  _  20
+  left_side{env="test", cluster="blah", pod="a"} 1  2  3  _
+  left_side{env="test", cluster="blah", pod="b"} _  6  7  _
+  left_side{env="prod", cluster="blah", pod="a"} _  10 _  12
+  left_side{env="prod", cluster="blah", pod="b"} _  14 _  16
+  left_side{env="test", cluster="food", pod="a"} _  _  _  20
+
+eval range from 0 to 24m step 6m left_side unless ignoring(pod, idx) right_side
+  left_side{env="test", cluster="blah", pod="a"} _  _  _  4
+  left_side{env="test", cluster="blah", pod="b"} _  _  _  8
+  left_side{env="prod", cluster="blah", pod="a"} 9  _  11 _
+  left_side{env="prod", cluster="blah", pod="b"} 13 _  15 _
+  left_side{env="test", cluster="food", pod="a"} 17 18 19 _

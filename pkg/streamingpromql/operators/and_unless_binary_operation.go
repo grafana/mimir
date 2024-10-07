@@ -12,12 +12,13 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// AndBinaryOperation represents a logical 'and' between two vectors.
-type AndBinaryOperation struct {
+// AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
+type AndUnlessBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	VectorMatching           parser.VectorMatching
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	IsUnless                 bool // If true, this operator represents an 'unless', if false, this operator represents an 'and'
 
 	timeRange            types.QueryTimeRange
 	expressionPosition   posrange.PositionRange
@@ -26,27 +27,29 @@ type AndBinaryOperation struct {
 	nextRightSeriesIndex int
 }
 
-var _ types.InstantVectorOperator = &AndBinaryOperation{}
+var _ types.InstantVectorOperator = &AndUnlessBinaryOperation{}
 
-func NewAndBinaryOperation(
+func NewAndUnlessBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	isUnless bool,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
-) *AndBinaryOperation {
-	return &AndBinaryOperation{
+) *AndUnlessBinaryOperation {
+	return &AndUnlessBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		VectorMatching:           vectorMatching,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
+		IsUnless:                 isUnless,
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
 	}
 }
 
-func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	leftMetadata, err := a.Left.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -65,7 +68,7 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 
 	defer types.PutSeriesMetadataSlice(rightMetadata)
 
-	if len(rightMetadata) == 0 {
+	if len(rightMetadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
 		return nil, nil
 	}
@@ -104,6 +107,14 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 		a.rightSeriesGroups = append(a.rightSeriesGroups, group)
 	}
 
+	if a.IsUnless {
+		return a.computeUnlessSeriesMetadata(leftMetadata), nil
+	}
+
+	return a.computeAndSeriesMetadata(leftMetadata), nil
+}
+
+func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types.SeriesMetadata) []types.SeriesMetadata {
 	// Iterate through the left-hand series again, and build the list of output series based on those that matched at least one series on the right.
 	// It's safe to reuse the left metadata slice as we'll return series in the same order, and only ever return fewer series than the left operator produces.
 	nextOutputSeriesIndex := 0
@@ -119,10 +130,22 @@ func (a *AndBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.Series
 		}
 	}
 
-	return leftMetadata[:nextOutputSeriesIndex], nil
+	return leftMetadata[:nextOutputSeriesIndex]
 }
 
-func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (a *AndUnlessBinaryOperation) computeUnlessSeriesMetadata(leftMetadata []types.SeriesMetadata) []types.SeriesMetadata {
+	// Iterate through the left-hand series again, and remove references to any groups that don't match any series from the right side:
+	// we can just return the left-hand series as-is if it does not match anything from the right side.
+	for seriesIdx, group := range a.leftSeriesGroups {
+		if group.lastRightSeriesIndex == -1 {
+			a.leftSeriesGroups[seriesIdx] = nil
+		}
+	}
+
+	return leftMetadata
+}
+
+func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	for {
 		if len(a.leftSeriesGroups) == 0 {
 			// No more series to return.
@@ -134,12 +157,17 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 
 		if thisSeriesGroup == nil {
 			// This series from the left side has no matching series on the right side.
-			// Read it, discard it, and move on to the next series.
 			d, err := a.Left.NextSeries(ctx)
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 
+			if a.IsUnless {
+				// If this is an 'unless' operation, we should return the series as-is, as this series can't be filtered by anything on the right.
+				return d, nil
+			}
+
+			// If this is an 'and' operation, we should discard it and move on to the next series, as this series can't contribute to the result.
 			types.PutInstantVectorSeriesData(d, a.MemoryConsumptionTracker)
 			continue
 		}
@@ -156,7 +184,7 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		filteredData, err := thisSeriesGroup.FilterLeftSeries(originalData, a.MemoryConsumptionTracker, a.timeRange)
+		filteredData, err := thisSeriesGroup.FilterLeftSeries(originalData, a.MemoryConsumptionTracker, a.timeRange, a.IsUnless)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -173,7 +201,7 @@ func (a *AndBinaryOperation) NextSeries(ctx context.Context) (types.InstantVecto
 }
 
 // readRightSideUntilGroupComplete reads series from the right-hand side until all series for desiredGroup have been read.
-func (a *AndBinaryOperation) readRightSideUntilGroupComplete(ctx context.Context, desiredGroup *andGroup) error {
+func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.Context, desiredGroup *andGroup) error {
 	for a.nextRightSeriesIndex <= desiredGroup.lastRightSeriesIndex {
 		groupForRightSeries := a.rightSeriesGroups[0]
 		a.rightSeriesGroups = a.rightSeriesGroups[1:]
@@ -196,11 +224,11 @@ func (a *AndBinaryOperation) readRightSideUntilGroupComplete(ctx context.Context
 	return nil
 }
 
-func (a *AndBinaryOperation) ExpressionPosition() posrange.PositionRange {
+func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
-func (a *AndBinaryOperation) Close() {
+func (a *AndUnlessBinaryOperation) Close() {
 	a.Left.Close()
 	a.Right.Close()
 }
@@ -237,12 +265,12 @@ func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesD
 
 // FilterLeftSeries returns leftData filtered based on samples seen for the right-hand side.
 // The return value reuses the slices from leftData, and returns any unused slices to the pool.
-func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange, isUnless bool) (types.InstantVectorSeriesData, error) {
 	filteredData := types.InstantVectorSeriesData{}
 	nextOutputFloatIndex := 0
 
 	for _, p := range leftData.Floats {
-		if !g.rightSamplePresence[timeRange.PointIndex(p.T)] {
+		if g.rightSamplePresence[timeRange.PointIndex(p.T)] == isUnless {
 			continue
 		}
 
@@ -261,7 +289,7 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 	nextOutputHistogramIndex := 0
 
 	for idx, p := range leftData.Histograms {
-		if !g.rightSamplePresence[timeRange.PointIndex(p.T)] {
+		if g.rightSamplePresence[timeRange.PointIndex(p.T)] == isUnless {
 			continue
 		}
 
