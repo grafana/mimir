@@ -184,7 +184,7 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 			NeedsSeriesDeduplication: true,
 		}
 
-		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+		o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
 
 		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 	}
