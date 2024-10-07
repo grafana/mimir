@@ -32,18 +32,20 @@ type config struct {
 	bucketPrefix     string
 	outputDir        string
 	blockConcurrency int
+	full             bool
 	dryRun           bool
 	maxBlockDuration time.Duration
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
 	c.bucket.RegisterFlags(f)
-	f.Var(&c.blocks, "blocks", "An optional comma separated list of blocks to target. If not provided, or empty, all blocks are considered.")
+	f.Var(&c.blocks, "blocks", "An optional comma separated list of blocks to target. If not provided, or empty, all blocks are considered")
 	f.StringVar(&c.bucketPrefix, "bucket-prefix", "", "An optional prefix applied to the bucket path")
 	f.StringVar(&c.outputDir, "output.dir", "", "The output directory where split blocks will be written")
 	f.IntVar(&c.blockConcurrency, "block-concurrency", 5, "How many blocks can be split at once")
+	f.BoolVar(&c.full, "full", false, "If set blocks that do not need to be split are included in the output directory")
 	f.BoolVar(&c.dryRun, "dry-run", false, "If set blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged")
-	f.DurationVar(&c.maxBlockDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing a duration boundary are split.")
+	f.DurationVar(&c.maxBlockDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing a duration boundary are split")
 }
 
 func (c *config) validate() error {
@@ -106,29 +108,19 @@ func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
 		return errors.Wrap(err, "failed to create bucket")
 	}
 
-	// Helpful when not specifying -backend=filesystem (since it can use -filesystem.dir)
 	if cfg.bucketPrefix != "" {
 		bkt = bucket.NewPrefixedBucketClient(bkt, cfg.bucketPrefix)
 	}
 
-	var blocks []string
-	if len(cfg.blocks) > 0 {
-		blocks = cfg.blocks
-	} else {
-		blocks, err = listBlocks(ctx, bkt)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to list blocks", "err", err)
-			return errors.Wrapf(err, "failed to list blocks")
-		}
+	blockIDs, err := targetBlocks(ctx, cfg, bkt)
+	if err != nil {
+		return err
 	}
 
-	return concurrency.ForEachUser(ctx, blocks, cfg.blockConcurrency, func(ctx context.Context, blockString string) error {
-		blockID, err := ulid.Parse(blockString)
-		if err != nil {
-			return err
-		}
+	return concurrency.ForEachJob(ctx, len(blockIDs), cfg.blockConcurrency, func(ctx context.Context, idx int) error {
+		blockID := blockIDs[idx]
 
-		logger := log.With(logger, "block", blockString)
+		logger := log.With(logger, "block", blockID.String())
 		blockMeta, err := block.DownloadMeta(ctx, logger, bkt, blockID)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to read block's meta.json file", "err", err)
@@ -147,6 +139,16 @@ func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
 		allowedMaxTime := blockMinTime.Truncate(cfg.maxBlockDuration).Add(cfg.maxBlockDuration)
 		if !blockMaxTime.After(allowedMaxTime) {
 			level.Info(logger).Log("msg", "block does not need to be split")
+			if cfg.full {
+				if cfg.dryRun {
+					level.Info(logger).Log("msg", "dry run: would download block")
+					return nil
+				}
+				blockDir := filepath.Join(cfg.outputDir, blockID.String())
+				if err := block.Download(ctx, logger, bkt, blockID, blockDir); err != nil {
+					return errors.Wrapf(err, "failed to download block")
+				}
+			}
 			return nil
 		}
 
@@ -165,16 +167,32 @@ func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
 	})
 }
 
-func listBlocks(ctx context.Context, bkt objstore.Bucket) ([]string, error) {
-	var blocks []string
+func targetBlocks(ctx context.Context, cfg config, bkt objstore.Bucket) ([]ulid.ULID, error) {
+	if len(cfg.blocks) == 0 {
+		return listBlocks(ctx, bkt)
+	}
+
+	blocks := make([]ulid.ULID, 0, len(cfg.blocks))
+	for _, block := range cfg.blocks {
+		blockID, err := ulid.Parse(block)
+		if err != nil {
+			return nil, errors.Wrapf(err, "a blockID in --blocks was invalid: %s", block)
+		}
+		blocks = append(blocks, blockID)
+	}
+	return blocks, nil
+}
+
+func listBlocks(ctx context.Context, bkt objstore.Bucket) ([]ulid.ULID, error) {
+	var blocks []ulid.ULID
 	err := bkt.Iter(ctx, "", func(name string) error {
 		if block, ok := block.IsBlockDir(name); ok {
-			blocks = append(blocks, block.String())
+			blocks = append(blocks, block)
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to list blocks")
 	}
 
 	return blocks, nil
@@ -214,13 +232,21 @@ func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block
 			return nil, errors.Wrap(err, "failed while splitting block")
 		}
 
-		splitMeta, err := block.ReadMetaFromDir(path.Join(parentDir, splitID.String()))
+		splitDir := path.Join(parentDir, splitID.String())
+		splitMeta, err := block.ReadMetaFromDir(splitDir)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed while reading meta.json from split block")
 		}
 
-		level.Info(logger).Log("msg", "created block from split", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime), "splitID", splitID, "series", splitMeta.Stats.NumSeries, "chunks", splitMeta.Stats.NumChunks, "samples", splitMeta.Stats.NumSamples)
-		result = append(result, splitID)
+		if splitMeta.Stats.NumSeries == 0 {
+			if err := os.RemoveAll(splitDir); err != nil {
+				return nil, errors.Wrap(err, "failed to clean up empty split block")
+			}
+		} else {
+			level.Info(logger).Log("msg", "created block from split", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime), "splitID", splitID, "series", splitMeta.Stats.NumSeries, "chunks", splitMeta.Stats.NumChunks, "samples", splitMeta.Stats.NumSamples)
+			result = append(result, splitID)
+		}
+
 		minTime = maxTime
 	}
 

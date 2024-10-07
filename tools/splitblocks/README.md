@@ -10,10 +10,11 @@ Source blocks can be read from either object storage or a local filesystem. Bloc
 
 - `--output.dir` (required) The output directory where split blocks will be written on the local filesystem
 - `--blocks` (optional) A comma separated list of blocks to target. If not provided, or empty, all blocks are considered
-- `--block-concurrency` (optional) How many blocks can be split at once
+- `--block-concurrency` (optional, defaults to `5`) How many blocks can be split concurrently
 - `--bucket-prefix` (optional) A prefix applied to the bucket path
 - `--max-block-duration` (optional, defaults to `24h`) Max block duration, blocks larger than this or crossing a duration boundary are split
-- `--dry-run` (optional) If set blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged
+- `--full` (optional) If set, blocks that do not need to be split are included in the output directory
+- `--dry-run` (optional) If set, blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged
 
 ## Running
 
