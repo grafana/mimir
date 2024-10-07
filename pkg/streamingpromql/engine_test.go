@@ -257,9 +257,9 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 
 	q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 	require.NoError(t, err)
-	promethues := q.Exec(context.Background())
+	prometheus := q.Exec(context.Background())
 
-	testutils.RequireEqualResults(t, expr, promethues, mimir)
+	testutils.RequireEqualResults(t, expr, prometheus, mimir)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
