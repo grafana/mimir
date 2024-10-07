@@ -81,4 +81,12 @@ type ScalarOperator interface {
 	GetValues(ctx context.Context) (ScalarData, error)
 }
 
+// StringOperator represents all operators that produce strings.
+type StringOperator interface {
+	Operator
+
+	// GetValue returns the string
+	GetValue() string
+}
+
 var EOS = errors.New("operator stream exhausted") //nolint:revive
