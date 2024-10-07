@@ -43,7 +43,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
 		"metric{} or other_metric{}":                   "binary expression with 'or'",
-		"metric{} unless other_metric{}":               "binary expression with 'unless'",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
@@ -1903,7 +1902,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
-		for _, op := range []string{"+", "-", "*", "/", "and"} {
+		for _, op := range []string{"+", "-", "*", "/", "and", "unless"} {
 			binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for _, label := range labels[1:] {
 				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
