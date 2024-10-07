@@ -944,6 +944,20 @@ func (c *mockedRemoteCacheClient) SetMultiAsync(data map[string][]byte, _ time.D
 	}
 }
 
+func (c *mockedRemoteCacheClient) Set(_ context.Context, key string, value []byte, _ time.Duration) error {
+	c.cache[key] = value
+	return nil
+}
+
+func (c *mockedRemoteCacheClient) Add(_ context.Context, key string, value []byte, _ time.Duration) error {
+	if _, ok := c.cache[key]; ok {
+		return cache.ErrNotStored
+	}
+
+	c.cache[key] = value
+	return nil
+}
+
 func (c *mockedRemoteCacheClient) Delete(_ context.Context, key string) error {
 	delete(c.cache, key)
 

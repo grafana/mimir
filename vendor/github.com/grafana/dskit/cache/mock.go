@@ -43,6 +43,25 @@ func (m *MockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	}
 }
 
+func (m *MockCache) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cache[key] = Item{Data: value, ExpiresAt: time.Now().Add(ttl)}
+	return nil
+}
+
+func (m *MockCache) Add(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.cache[key]; ok {
+		return ErrNotStored
+	}
+
+	m.cache[key] = Item{Data: value, ExpiresAt: time.Now().Add(ttl)}
+	return nil
+}
+
 func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[string][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -119,6 +138,16 @@ func (m *InstrumentedMockCache) SetAsync(key string, value []byte, ttl time.Dura
 func (m *InstrumentedMockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	m.storeCount.Inc()
 	m.cache.SetMultiAsync(data, ttl)
+}
+
+func (m *InstrumentedMockCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	m.storeCount.Inc()
+	return m.cache.Set(ctx, key, value, ttl)
+}
+
+func (m *InstrumentedMockCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	m.storeCount.Inc()
+	return m.cache.Add(ctx, key, value, ttl)
 }
 
 func (m *InstrumentedMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
