@@ -23,7 +23,8 @@
           "github.com/colega/go-yaml-yaml",
           "github.com/grafana/goautoneg",
           "github.com/grafana/opentracing-contrib-go-stdlib",
-          "github.com/charleskorn/go-grpc"
+          "github.com/charleskorn/go-grpc",
+          "github.com/grafana/franz-go", // pinned to 1.17.1 + grafana/franz-go#1, #3, and #4; We can remove this once 1.18.0 comes out, and we can use the master branch of our fork (or remove the fork entirely)
         ],
         "enabled": false
       },
