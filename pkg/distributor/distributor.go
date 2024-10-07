@@ -1434,9 +1434,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	now := mtime.Now()
-
-	d.updateReceivedMetrics(req, userID, now)
+	d.updateReceivedMetrics(req, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -1667,12 +1665,15 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string, now time.Time) {
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+	now := mtime.Now()
 	var receivedSamples, receivedExemplars, receivedMetadata int
 	costattributionLimit := 0
 	caEnabled := d.costAttributionMng != nil && d.costAttributionMng.EnabledForUser(userID)
+	caLabel := ""
 	if caEnabled {
 		costattributionLimit = d.costAttributionMng.GetUserAttributionLimit(userID)
+		caLabel = d.costAttributionMng.GetUserAttributionLabel(userID)
 	}
 	costAttribution := make(map[string]int, costattributionLimit)
 
@@ -1680,7 +1681,12 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 		if caEnabled {
-			attribution := d.costAttributionMng.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
+			isKeyOutdated, attribution := d.costAttributionMng.UpdateAttributionTimestamp(userID, caLabel, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
+			if isKeyOutdated {
+				// If the key is outdated, we need to reset cost attribution cache and update cost attribution label
+				costAttribution = make(map[string]int, costattributionLimit)
+				caLabel = d.costAttributionMng.GetUserAttributionLabel(userID)
+			}
 			costAttribution[attribution]++
 		}
 	}

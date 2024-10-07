@@ -75,13 +75,15 @@ func Test_UpdateAttributionTimestamp(t *testing.T) {
 	tm1, tm2, tm3 := "bar", "foo", "baz"
 	t.Run("Should update the timestamp when limit not reached for the user attribution", func(t *testing.T) {
 		lbls.Set("department", tm1)
-		result := manager.UpdateAttributionTimestamp("user3", lbls.Labels(), time.Unix(0, 0))
+		isOutdated, result := manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(0, 0))
+		assert.False(t, isOutdated, "Expected label to be the same as the one in the cache")
 		assert.Equal(t, tm1, result, "Expected attribution to be returned since user is enabled for cost attribution, and limit is not reached")
 		assert.NotNil(t, manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[tm1])
 		assert.Equal(t, int64(0), manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[tm1].Load())
 
 		lbls.Set("department", tm2)
-		result = manager.UpdateAttributionTimestamp("user3", lbls.Labels(), time.Unix(1, 0))
+		isOutdated, result = manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(1, 0))
+		assert.False(t, isOutdated)
 		assert.Equal(t, tm2, result, "Expected attribution to be returned since user is enabled for cost attribution, and limit is not reached")
 		assert.NotNil(t, manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[tm2])
 		assert.Equal(t, int64(1), manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[tm2].Load())
@@ -89,13 +91,15 @@ func Test_UpdateAttributionTimestamp(t *testing.T) {
 
 	t.Run("Should only update the timestamp of invalide when limit reached for the user attribution", func(t *testing.T) {
 		lbls.Set("department", tm3)
-		result := manager.UpdateAttributionTimestamp("user3", lbls.Labels(), time.Unix(2, 0))
+		isOutdated, result := manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(2, 0))
+		assert.False(t, isOutdated)
 		assert.Equal(t, manager.invalidValue, result, "Expected invalidValue to be returned since user has reached the limit of cost attribution labels")
 		assert.NotNil(t, manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[manager.invalidValue])
 		assert.Equal(t, int64(2), manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[manager.invalidValue].Load())
 
 		lbls.Set("department", tm1)
-		result = manager.UpdateAttributionTimestamp("user3", lbls.Labels(), time.Unix(3, 0))
+		isOutdated, result = manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(3, 0))
+		assert.False(t, isOutdated)
 		assert.Equal(t, manager.invalidValue, result, "Expected invalidValue to be returned since user has reached the limit of cost attribution labels")
 		assert.Equal(t, int64(3), manager.attributionTracker.trackersByUserID["user3"].attributionTimestamps[manager.invalidValue].Load())
 	})
@@ -112,7 +116,8 @@ func Test_SetActiveSeries(t *testing.T) {
 
 	t.Run("Should set the active series gauge for the given user and attribution", func(t *testing.T) {
 		lbls.Set("team", "foo")
-		val := manager.UpdateAttributionTimestamp(userID, lbls.Labels(), time.Unix(0, 0))
+		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "team", lbls.Labels(), time.Unix(0, 0))
+		assert.False(t, isOutdated)
 		manager.SetActiveSeries(userID, val, 1.0)
 		expectedMetrics := `
 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
@@ -128,11 +133,13 @@ func Test_SetActiveSeries(t *testing.T) {
 	t.Run("Should set the active series gauge for all users and attributions enabled and ignore disabled user", func(t *testing.T) {
 		userID = "user3"
 		lbls.Set("department", "bar")
-		val := manager.UpdateAttributionTimestamp(userID, lbls.Labels(), time.Unix(0, 0))
+		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(0, 0))
+		assert.False(t, isOutdated)
 		manager.SetActiveSeries(userID, val, 2.0)
 
 		lbls.Set("department", "baz")
-		val = manager.UpdateAttributionTimestamp(userID, lbls.Labels(), time.Unix(0, 0))
+		isOutdated, val = manager.UpdateAttributionTimestamp(userID, "team", lbls.Labels(), time.Unix(0, 0))
+		assert.True(t, isOutdated)
 		manager.SetActiveSeries(userID, val, 3.0)
 
 		expectedMetrics := `
@@ -161,7 +168,8 @@ func Test_SetActiveSeries(t *testing.T) {
 			},
 		}))
 		manager.attributionTracker.limits = overrides
-		val := manager.UpdateAttributionTimestamp(userID, lbls.Labels(), time.Unix(5, 0))
+		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(5, 0))
+		assert.False(t, isOutdated)
 		manager.SetActiveSeries(userID, val, 3.0)
 
 		expectedMetrics := `
@@ -178,7 +186,8 @@ func Test_SetActiveSeries(t *testing.T) {
 	t.Run("Should ignore setting the active series gauge for disabled user", func(t *testing.T) {
 		userID = "user2"
 		lbls.Set("department", "bar")
-		val := manager.UpdateAttributionTimestamp(userID, lbls.Labels(), time.Unix(0, 0))
+		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(0, 0))
+		assert.False(t, isOutdated)
 		manager.SetActiveSeries(userID, val, 4.0)
 
 		expectedMetrics := `

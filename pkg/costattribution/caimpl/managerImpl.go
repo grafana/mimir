@@ -68,18 +68,20 @@ func (m *ManagerImpl) GetUserAttributionLimit(userID string) int {
 	return 0
 }
 
-func (m *ManagerImpl) UpdateAttributionTimestamp(user string, lbs labels.Labels, now time.Time) string {
+func (m *ManagerImpl) UpdateAttributionTimestamp(user string, calb string, lbs labels.Labels, now time.Time) (bool, string) {
 	// if cost attribution is not enabled for the user, return empty string
 	if !m.EnabledForUser(user) {
 		m.attributionTracker.deleteUserTracerFromCache(user)
-		return ""
+		return false, ""
 	}
 
 	// when cost attribution is enabled, the label has to be set. the cache would be updated with the label
 	lb := m.attributionTracker.getUserAttributionLabelFromCache(user)
 	// this should not happened, if user is enabled for cost attribution, the label has to be set
+
+	isUpdated := calb != lb
 	if lb == "" {
-		return ""
+		return isUpdated, ""
 	}
 	val := lbs.Get(lb)
 
@@ -88,7 +90,7 @@ func (m *ManagerImpl) UpdateAttributionTimestamp(user string, lbs labels.Labels,
 		level.Error(m.logger).Log("msg", fmt.Sprintf("set attribution label to \"%s\" since user has reached the limit of cost attribution labels", m.invalidValue))
 	}
 	m.attributionTracker.updateAttributionCacheForUser(user, lb, val, now)
-	return val
+	return isUpdated, val
 }
 
 // SetActiveSeries adjust the input attribution and sets the active series gauge for the given user and attribution

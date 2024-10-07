@@ -331,6 +331,10 @@ type Ingester struct {
 	usersMetadataMtx sync.RWMutex
 	usersMetadata    map[string]*userMetricsMetadata
 
+	// For storing tenant current cost attribution labels.
+	costAttributionMtx sync.RWMutex
+	costAttributionlbs map[string]string
+
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
@@ -367,8 +371,9 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
+		tsdbs:         make(map[string]*userTSDB),
+		usersMetadata: make(map[string]*userMetricsMetadata),
+
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		shipperMetrics:      newShipperMetrics(registerer),
@@ -953,6 +958,7 @@ type pushStats struct {
 	succeededSamplesCount       int
 	failedSamplesCount          int
 	failedSamplesAttribution    map[string]int
+	attributionLabel            string
 	succeededExemplarsCount     int
 	failedExemplarsCount        int
 	sampleOutOfBoundsCount      int
@@ -1301,12 +1307,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	// Return true if handled as soft error, and we can ingest more series.
 	// get the cost attribution value for the series
 	caEnabled := i.isCostAttributionEnabledForUser(userID)
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, caValue string) bool {
 		if caEnabled {
-			// get the label value and update the timestamp,
-			// if the cordianlity is reached or we are currently in cooldown period, function would returned __unaccounted__
-			costAttrib := i.costAttributionMng.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(labels), startAppend)
-			stats.failedSamplesAttribution[costAttrib]++
+			stats.failedSamplesAttribution[caValue]++
 		}
 
 		stats.failedSamplesCount++
@@ -1412,11 +1415,17 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
+	isOutDated := false
 	for _, ts := range timeseries {
-		var costAttrib string
+		var caValue string
 		// when cost attribution label is set
 		if caEnabled {
-			costAttrib = i.costAttributionMng.UpdateAttributionTimestamp(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend)
+			isOutDated, caValue = i.costAttributionMng.UpdateAttributionTimestamp(userID, stats.attributionLabel, mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend)
+			// if the cost attribution label is outdated, we need to reset the attribution counter
+			if isOutDated {
+				stats.attributionLabel = i.costAttributionMng.GetUserAttributionLabel(userID)
+				stats.failedSamplesAttribution = make(map[string]int, i.limits.MaxCostAttributionPerUser(userID))
+			}
 		}
 
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -1435,7 +1444,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
 				if caEnabled {
-					stats.failedSamplesAttribution[costAttrib] += len(ts.Samples) + len(ts.Histograms)
+					stats.failedSamplesAttribution[caValue] += len(ts.Samples) + len(ts.Histograms)
 				}
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
@@ -1458,7 +1467,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleOutOfBoundsCount += len(ts.Samples)
 				if caEnabled {
-					stats.failedSamplesAttribution[costAttrib] += len(ts.Samples)
+					stats.failedSamplesAttribution[caValue] += len(ts.Samples)
 				}
 				firstTimestamp := ts.Samples[0].TimestampMs
 
@@ -1484,10 +1493,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 			// Ensure the sample is not too far in the future.
 			if s.TimestampMs > maxTimestampMs {
-				handleAppendError(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
+				handleAppendError(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels, caValue)
 				continue
 			} else if s.TimestampMs < minTimestampMs {
-				handleAppendError(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
+				handleAppendError(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels, caValue)
 				continue
 			}
 
@@ -1509,7 +1518,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs, ts.Labels) {
+			if handleAppendError(err, s.TimestampMs, ts.Labels, caValue) {
 				continue
 			}
 
@@ -1527,10 +1536,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				)
 
 				if h.Timestamp > maxTimestampMs {
-					handleAppendError(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels)
+					handleAppendError(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels, caValue)
 					continue
 				} else if h.Timestamp < minTimestampMs {
-					handleAppendError(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels)
+					handleAppendError(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels, caValue)
 					continue
 				}
 
@@ -1557,7 +1566,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 				}
 
-				if handleAppendError(err, h.Timestamp, ts.Labels) {
+				if handleAppendError(err, h.Timestamp, ts.Labels, caValue) {
 					continue
 				}
 

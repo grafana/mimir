@@ -14,7 +14,7 @@ type Manager interface {
 	EnabledForUser(userID string) bool
 	GetUserAttributionLabel(userID string) string
 	GetUserAttributionLimit(userID string) int
-	UpdateAttributionTimestamp(user string, lbs labels.Labels, now time.Time) string
+	UpdateAttributionTimestamp(user string, calb string, lbs labels.Labels, now time.Time) (bool, string)
 	SetActiveSeries(userID, attribution string, value float64)
 	IncrementDiscardedSamples(userID, attribution string, value float64)
 	IncrementReceivedSamples(userID, attribution string, value float64)

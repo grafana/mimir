@@ -81,6 +81,7 @@ type seriesStripe struct {
 	// here the attribution values map, it maps the attribute value to its index, so we can increment the counter directly,
 	// so in each entry, we keep the index of the value only, instead of keeping the string value
 	costAttributionValues map[string]uint32
+	caLabel               string
 }
 
 // seriesEntry holds a timestamp for single series.
@@ -90,6 +91,7 @@ type seriesEntry struct {
 	numNativeHistogramBuckets int                          // Number of buckets in native histogram series, -1 if not a native histogram.
 	// keep the value corresponding the label configured in serieStripe
 	deleted          bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
+	calabel          string
 	attributionValue string
 }
 
@@ -239,6 +241,14 @@ func (c *ActiveSeries) ActiveByAttributionValue() map[string]uint32 {
 		c.stripes[s].mu.RUnlock()
 	}
 	return total
+}
+
+func (c *ActiveSeries) ResetAttribution() {
+	for s := 0; s < numStripes; s++ {
+		c.stripes[s].mu.Lock()
+		c.stripes[s].costAttributionValues = map[string]uint32{}
+		c.stripes[s].mu.Unlock()
+	}
 }
 
 func (c *ActiveSeries) Delete(ref chunks.HeadSeriesRef) {
@@ -426,9 +436,15 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 
 	// here if we have a cost attribution label, we can split the serie count based on the value of the label
 	// we also set the reference to the value of the label in the entry, so when remove, we can decrease the counter accordingly
-	if s.costAttributionMng != nil && s.costAttributionMng.GetUserAttributionLabel(s.userID) != "" {
-		attributionValue := s.costAttributionMng.UpdateAttributionTimestamp(s.userID, series, time.Unix(0, nowNanos))
+	if s.costAttributionMng != nil && s.costAttributionMng.EnabledForUser(s.userID) {
+		isOutDated, attributionValue := s.costAttributionMng.UpdateAttributionTimestamp(s.userID, s.caLabel, series, time.Unix(0, nowNanos))
+		if isOutDated {
+			// if the label is outdated, we need to remove the reference to the old value
+			s.costAttributionValues = map[string]uint32{}
+			s.caLabel = s.costAttributionMng.GetUserAttributionLabel(s.userID)
+		}
 		s.costAttributionValues[attributionValue]++
+		e.attributionValue = s.caLabel
 		e.attributionValue = attributionValue
 	}
 
@@ -515,7 +531,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 			s.activeNativeHistogramBuckets += uint32(entry.numNativeHistogramBuckets)
 		}
 		// restore the cost attribution by attribution value
-		if entry.attributionValue != "" {
+		if entry.attributionValue != "" && entry.calabel == s.caLabel {
 			s.costAttributionValues[entry.attributionValue]++
 		}
 		ml := entry.matches.Len()
@@ -556,7 +572,7 @@ func (s *seriesStripe) remove(ref storage.SeriesRef) {
 	}
 
 	s.active--
-	if entry.attributionValue != "" {
+	if entry.attributionValue != "" && s.caLabel == entry.calabel {
 		s.costAttributionValues[entry.attributionValue]--
 	}
 	if entry.numNativeHistogramBuckets >= 0 {
