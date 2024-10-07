@@ -1692,8 +1692,8 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	}
 	receivedMetadata = len(req.Metadata)
 	if caEnabled {
-		for lv, count := range costAttribution {
-			d.costAttributionMng.IncrementReceivedSamples(userID, lv, float64(count))
+		for value, count := range costAttribution {
+			d.costAttributionMng.IncrementReceivedSamples(userID, caLabel, value, float64(count))
 		}
 	}
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))

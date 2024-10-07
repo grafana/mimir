@@ -231,24 +231,18 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 	return
 }
 
-func (c *ActiveSeries) ActiveByAttributionValue() map[string]uint32 {
+func (c *ActiveSeries) ActiveByAttributionValue(calb string) map[string]uint32 {
 	total := make(map[string]uint32, c.costAttributionMng.GetUserAttributionLimit(c.userID))
 	for s := 0; s < numStripes; s++ {
 		c.stripes[s].mu.RLock()
-		for k, v := range c.stripes[s].costAttributionValues {
-			total[k] += v
+		if c.stripes[s].caLabel == calb {
+			for k, v := range c.stripes[s].costAttributionValues {
+				total[k] += v
+			}
 		}
 		c.stripes[s].mu.RUnlock()
 	}
 	return total
-}
-
-func (c *ActiveSeries) ResetAttribution() {
-	for s := 0; s < numStripes; s++ {
-		c.stripes[s].mu.Lock()
-		c.stripes[s].costAttributionValues = map[string]uint32{}
-		c.stripes[s].mu.Unlock()
-	}
 }
 
 func (c *ActiveSeries) Delete(ref chunks.HeadSeriesRef) {

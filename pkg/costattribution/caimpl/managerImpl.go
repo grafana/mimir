@@ -94,7 +94,11 @@ func (m *ManagerImpl) UpdateAttributionTimestamp(user string, calb string, lbs l
 }
 
 // SetActiveSeries adjust the input attribution and sets the active series gauge for the given user and attribution
-func (m *ManagerImpl) SetActiveSeries(userID, attribution string, value float64) {
+func (m *ManagerImpl) SetActiveSeries(userID, calb, attribution string, value float64) {
+	// if the input label is outdated, we skip the update
+	if calb != m.GetUserAttributionLabel(userID) {
+		return
+	}
 	attribution = m.adjustUserAttribution(userID, attribution)
 
 	m.attributionTracker.mu.Lock()
@@ -105,7 +109,12 @@ func (m *ManagerImpl) SetActiveSeries(userID, attribution string, value float64)
 }
 
 // IncrementDiscardedSamples increments the discarded samples counter for a given user and attribution
-func (m *ManagerImpl) IncrementDiscardedSamples(userID, attribution string, value float64) {
+func (m *ManagerImpl) IncrementDiscardedSamples(userID, calb, attribution string, value float64) {
+	// if the input label is outdated, we skip the update
+	if calb != m.GetUserAttributionLabel(userID) {
+		return
+	}
+
 	attribution = m.adjustUserAttribution(userID, attribution)
 	m.attributionTracker.mu.RLock()
 	defer m.attributionTracker.mu.RUnlock()
@@ -115,7 +124,11 @@ func (m *ManagerImpl) IncrementDiscardedSamples(userID, attribution string, valu
 }
 
 // IncrementReceivedSamples increments the received samples counter for a given user and attribution
-func (m *ManagerImpl) IncrementReceivedSamples(userID, attribution string, value float64) {
+func (m *ManagerImpl) IncrementReceivedSamples(userID, calb, attribution string, value float64) {
+	// if the input label is outdated, we skip the update
+	if calb != m.GetUserAttributionLabel(userID) {
+		return
+	}
 	attribution = m.adjustUserAttribution(userID, attribution)
 	m.attributionTracker.mu.RLock()
 	defer m.attributionTracker.mu.RUnlock()

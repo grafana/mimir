@@ -118,7 +118,7 @@ func Test_SetActiveSeries(t *testing.T) {
 		lbls.Set("team", "foo")
 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "team", lbls.Labels(), time.Unix(0, 0))
 		assert.False(t, isOutdated)
-		manager.SetActiveSeries(userID, val, 1.0)
+		manager.SetActiveSeries(userID, "team", val, 1.0)
 		expectedMetrics := `
 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
 		# TYPE cortex_ingester_active_series_attribution gauge
@@ -135,12 +135,12 @@ func Test_SetActiveSeries(t *testing.T) {
 		lbls.Set("department", "bar")
 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(0, 0))
 		assert.False(t, isOutdated)
-		manager.SetActiveSeries(userID, val, 2.0)
+		manager.SetActiveSeries(userID, "department", val, 2.0)
 
 		lbls.Set("department", "baz")
-		isOutdated, val = manager.UpdateAttributionTimestamp(userID, "team", lbls.Labels(), time.Unix(0, 0))
-		assert.True(t, isOutdated)
-		manager.SetActiveSeries(userID, val, 3.0)
+		isOutdated, val = manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(1, 0))
+		assert.False(t, isOutdated)
+		manager.SetActiveSeries(userID, "department", val, 3.0)
 
 		expectedMetrics := `
 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
@@ -170,7 +170,7 @@ func Test_SetActiveSeries(t *testing.T) {
 		manager.attributionTracker.limits = overrides
 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(5, 0))
 		assert.False(t, isOutdated)
-		manager.SetActiveSeries(userID, val, 3.0)
+		manager.SetActiveSeries(userID, val, "department", 3.0)
 
 		expectedMetrics := `
 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
@@ -188,7 +188,7 @@ func Test_SetActiveSeries(t *testing.T) {
 		lbls.Set("department", "bar")
 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(0, 0))
 		assert.False(t, isOutdated)
-		manager.SetActiveSeries(userID, val, 4.0)
+		manager.SetActiveSeries(userID, val, "department", 4.0)
 
 		expectedMetrics := `
 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.

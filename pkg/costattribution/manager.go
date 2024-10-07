@@ -15,9 +15,9 @@ type Manager interface {
 	GetUserAttributionLabel(userID string) string
 	GetUserAttributionLimit(userID string) int
 	UpdateAttributionTimestamp(user string, calb string, lbs labels.Labels, now time.Time) (bool, string)
-	SetActiveSeries(userID, attribution string, value float64)
-	IncrementDiscardedSamples(userID, attribution string, value float64)
-	IncrementReceivedSamples(userID, attribution string, value float64)
+	SetActiveSeries(userID, calb string, attribution string, value float64)
+	IncrementDiscardedSamples(userID, calb string, attribution string, value float64)
+	IncrementReceivedSamples(userID, calb string, attribution string, value float64)
 
 	Collect(out chan<- prometheus.Metric)
 	Describe(chan<- *prometheus.Desc)

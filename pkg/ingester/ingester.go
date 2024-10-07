@@ -331,10 +331,6 @@ type Ingester struct {
 	usersMetadataMtx sync.RWMutex
 	usersMetadata    map[string]*userMetricsMetadata
 
-	// For storing tenant current cost attribution labels.
-	costAttributionMtx sync.RWMutex
-	costAttributionlbs map[string]string
-
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
@@ -794,14 +790,15 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				if i.isCostAttributionEnabledForUser(userID) {
-					labelAttributions := userDB.activeSeries.ActiveByAttributionValue()
-					for label, count := range labelAttributions {
-						i.costAttributionMng.SetActiveSeries(userID, label, float64(count))
+					calb := i.costAttributionMng.GetUserAttributionLabel(userID)
+					labelAttributions := userDB.activeSeries.ActiveByAttributionValue(calb)
+					for value, count := range labelAttributions {
+						i.costAttributionMng.SetActiveSeries(userID, calb, value, float64(count))
 					}
 				}
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
-				i.metrics.activeSeriesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
+				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
 			}
 			if allActiveHistograms > 0 {
 				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
@@ -1288,8 +1285,8 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 		}
 	}
 	if i.isCostAttributionEnabledForUser(userID) {
-		for label, count := range stats.failedSamplesAttribution {
-			i.costAttributionMng.IncrementDiscardedSamples(userID, label, float64(count))
+		for value, count := range stats.failedSamplesAttribution {
+			i.costAttributionMng.IncrementDiscardedSamples(userID, stats.attributionLabel, value, float64(count))
 		}
 	}
 }

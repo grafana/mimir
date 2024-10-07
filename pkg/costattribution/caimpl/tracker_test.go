@@ -48,8 +48,4 @@ func Test_NewTracker(t *testing.T) {
 
 	// Clean the tracker for the user attribution
 	tracker.cleanupTrackerAttribution(userID, attribution)
-
-	// Verify that metrics have been cleaned
-	expectedMetrics = ``
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 }

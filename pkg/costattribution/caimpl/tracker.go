@@ -36,14 +36,17 @@ func newTracker(trackedLabel string, limit int) (*Tracker, error) {
 		attributionLimit:      limit,
 		attributionTimestamps: map[string]*atomic.Int64{},
 		coolDownDeadline:      atomic.NewInt64(0),
+		//nolint:faillint // the metrics are registered in the mimir package
 		discardedSampleAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_discarded_samples_attribution_total",
 			Help: "The total number of samples that were discarded per attribution.",
 		}, []string{"user", trackedLabel}),
+		//nolint:faillint
 		receivedSamplesAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_received_samples_attribution_total",
 			Help: "The total number of samples that were received per attribution.",
 		}, []string{"user", trackedLabel}),
+		//nolint:faillint
 		activeSeriesPerUserAttribution: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_attribution",
 			Help: "The total number of active series per user and attribution.",
