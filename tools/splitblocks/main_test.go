@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,58 +16,51 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
+
+func TestSplitBlocks(t *testing.T) {
+	bkt := objstore.NewInMemBucket()
+	cfg := config{
+		outputDir:        t.TempDir(),
+		blockConcurrency: 2,
+		maxBlockDuration: 24 * time.Hour,
+	}
+	logger := log.NewNopLogger()
+
+	startOfDay := time.Now().Truncate(24 * time.Hour)
+	specs := buildSeriesSpec(startOfDay)
+
+	blocksDir := t.TempDir()
+	meta, err := block.GenerateBlockFromSpec(blocksDir, specs)
+	require.NoError(t, err)
+
+	err = block.Upload(context.Background(), logger, bkt, path.Join(blocksDir, meta.ULID.String()), meta)
+	require.NoError(t, err)
+
+	for _, dryRun := range []bool{true, false} {
+		cfg.dryRun = dryRun
+		err = splitBlocks(context.Background(), cfg, bkt, logger)
+		require.NoError(t, err)
+
+		entries, err := os.ReadDir(cfg.outputDir)
+		require.NoError(t, err)
+		expectedEntries := 3
+		if dryRun {
+			expectedEntries = 0
+		}
+		require.Len(t, entries, expectedEntries)
+	}
+}
 
 func TestSplitLocalBlock(t *testing.T) {
 	dir := t.TempDir()
 
 	startOfDay := time.Now().Truncate(24 * time.Hour)
 
-	specs := []*block.SeriesSpec{
-		{
-			Labels: labels.FromStrings("__name__", "1_series_with_one_chunk_with_samples_covering_multiple_days"),
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.Add(10*time.Minute).UnixMilli(), 1, nil, nil),
-					newSample(startOfDay.Add(12*time.Hour).UnixMilli(), 2, nil, nil),
-					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
-					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
-					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
-				})),
-			},
-		},
-
-		{
-			Labels: labels.FromStrings("__name__", "2_series_with_multiple_chunks_not_crossing_24h_boundary"),
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.UnixMilli(), 1, nil, nil),
-					newSample(startOfDay.Add(12*time.Hour).UnixMilli(), 2, nil, nil),
-				})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
-					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
-				})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
-				})),
-			},
-		},
-
-		{
-			Labels: labels.FromStrings("__name__", "3_series_with_samples_on_second_day"),
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 1, nil, nil),
-					newSample(startOfDay.Add(25*time.Hour).UnixMilli(), 2, nil, nil),
-					newSample(startOfDay.Add(26*time.Hour).UnixMilli(), 3, nil, nil),
-				})),
-			},
-		},
-	}
-
+	specs := buildSeriesSpec(startOfDay)
 	meta, err := block.GenerateBlockFromSpec(dir, specs)
 	require.NoError(t, err)
 
@@ -142,6 +137,51 @@ func TestSplitLocalBlock(t *testing.T) {
 	}
 }
 
+func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
+	return []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("__name__", "1_series_with_one_chunk_with_samples_covering_multiple_days"),
+			Chunks: []chunks.Meta{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(startOfDay.Add(10*time.Minute).UnixMilli(), 1, nil, nil),
+					newSample(startOfDay.Add(12*time.Hour).UnixMilli(), 2, nil, nil),
+					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
+					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
+					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
+				})),
+			},
+		},
+
+		{
+			Labels: labels.FromStrings("__name__", "2_series_with_multiple_chunks_not_crossing_24h_boundary"),
+			Chunks: []chunks.Meta{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(startOfDay.UnixMilli(), 1, nil, nil),
+					newSample(startOfDay.Add(12*time.Hour).UnixMilli(), 2, nil, nil),
+				})),
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
+					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
+				})),
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
+				})),
+			},
+		},
+
+		{
+			Labels: labels.FromStrings("__name__", "3_series_with_samples_on_second_day"),
+			Chunks: []chunks.Meta{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 1, nil, nil),
+					newSample(startOfDay.Add(25*time.Hour).UnixMilli(), 2, nil, nil),
+					newSample(startOfDay.Add(26*time.Hour).UnixMilli(), 3, nil, nil),
+				})),
+			},
+		},
+	}
+}
+
 func listSeriesAndChunksFromBlock(t *testing.T, blockDir string) []*block.SeriesSpec {
 	allKey, allValue := index.AllPostingsKey()
 	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
@@ -201,5 +241,14 @@ func (s sample) Type() chunkenc.ValueType {
 		return chunkenc.ValFloatHistogram
 	default:
 		return chunkenc.ValFloat
+	}
+}
+
+func (s sample) Copy() sample {
+	return sample{
+		s.t,
+		s.v,
+		s.h.Copy(),
+		s.fh.Copy(),
 	}
 }

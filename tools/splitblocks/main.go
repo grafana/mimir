@@ -49,11 +49,6 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 }
 
 func (c *config) validate() error {
-	for _, blockID := range c.blocks {
-		if _, err := ulid.Parse(blockID); err != nil {
-			return errors.Wrap(err, "blocks contained an invalid block ID")
-		}
-	}
 	if c.maxBlockDuration < 2*time.Hour {
 		return fmt.Errorf("max-block-duration must be at least 2 hours")
 	}
@@ -96,18 +91,19 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if err := splitBlocks(ctx, cfg, logger); err != nil {
+	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrap(err, "failed to create bucket"))
+		os.Exit(1)
+	}
+
+	if err := splitBlocks(ctx, cfg, bkt, logger); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 }
 
-func splitBlocks(ctx context.Context, cfg config, logger log.Logger) error {
-	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
-	if err != nil {
-		return errors.Wrap(err, "failed to create bucket")
-	}
-
+func splitBlocks(ctx context.Context, cfg config, bkt objstore.Bucket, logger log.Logger) error {
 	if cfg.bucketPrefix != "" {
 		bkt = bucket.NewPrefixedBucketClient(bkt, cfg.bucketPrefix)
 	}
