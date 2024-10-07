@@ -516,8 +516,9 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
 							engine := newEngine()
 							downstream := &downstreamHandler{
-								engine:    engine,
-								queryable: queryable,
+								engine:                                  engine,
+								queryable:                               queryable,
+								includePositionInformationInAnnotations: true,
 							}
 
 							// Run the query with the normal engine
@@ -530,6 +531,12 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							// Ensure the query produces some results.
 							require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 							requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+							if testData.expectedSplitQueries > 0 {
+								// Remove position information from annotations, to mirror what we expect from the split queries below.
+								removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+								removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+							}
 
 							splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), engine, reg)
 

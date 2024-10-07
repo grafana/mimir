@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -175,9 +176,11 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 
 	if annotationAccumulator != nil {
 		// Add any annotations returned by the sharded queries, and remove any duplicates.
+		// We remove any position information for the same reason as above: the position information
+		// relates to the rewritten expression sent to queriers, not the original expression provided by the user.
 		accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
-		warn = append(warn, accumulatedWarnings...)
-		info = append(info, accumulatedInfos...)
+		warn = append(warn, removeAllAnnotationPositionInformation(accumulatedWarnings)...)
+		info = append(info, removeAllAnnotationPositionInformation(accumulatedInfos)...)
 		warn = removeDuplicates(warn)
 		info = removeDuplicates(info)
 	}
@@ -573,4 +576,20 @@ func getAllKeys(m *sync.Map) []string {
 func removeDuplicates(s []string) []string {
 	slices.Sort(s)
 	return slices.Compact(s)
+}
+
+var annotationPositionPattern = regexp.MustCompile(`\s+\(\d+:\d+\)$`)
+
+func removeAnnotationPositionInformation(annotation string) string {
+	return annotationPositionPattern.ReplaceAllLiteralString(annotation, "")
+}
+
+// removeAllAnnotationPositionInformation removes position information from each annotation in annotations,
+// modifying annotations in-place and returning it for convenience.
+func removeAllAnnotationPositionInformation(annotations []string) []string {
+	for i, annotation := range annotations {
+		annotations[i] = removeAnnotationPositionInformation(annotation)
+	}
+
+	return annotations
 }
