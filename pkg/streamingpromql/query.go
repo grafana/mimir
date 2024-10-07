@@ -522,7 +522,15 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		} else {
 			q.result = &promql.Result{Value: q.populateMatrixFromScalarOperator(d)}
 		}
-
+	case parser.ValueTypeString:
+		if q.IsInstant() {
+			root := q.root.(types.StringOperator)
+			str := root.GetValue()
+			q.result = &promql.Result{Value: q.populateStringFromStringOperator(str)}
+		} else {
+			// This should be caught in newQuery above
+			return &promql.Result{Err: fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(q.statement.Expr.Type()))}
+		}
 	default:
 		// This should be caught in newQuery above.
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
@@ -534,6 +542,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	}
 
 	return q.result
+}
+
+func (q *Query) populateStringFromStringOperator(str string) promql.String {
+	return promql.String{
+		T: timeMilliseconds(q.statement.Start),
+		V: str,
+	}
 }
 
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
