@@ -71,6 +71,8 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 	blockID := ulid.MustNew(ulid.Now(), crypto_rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
+	stats := tsdb.BlockStats{}
+
 	// Ensure series are sorted.
 	sort.Slice(specs, func(i, j int) bool {
 		return labels.Compare(specs[i].Labels, specs[j].Labels) < 0
@@ -109,11 +111,15 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	// Updates the Ref on each chunk.
 	for _, series := range specs {
+		stats.NumSeries++
+
 		// Ensure every chunk meta has chunk data.
 		for _, c := range series.Chunks {
 			if c.Chunk == nil {
 				return nil, errors.Errorf("missing chunk data for series %s", series.Labels.String())
 			}
+			stats.NumChunks++
+			stats.NumSamples += uint64(c.Chunk.NumSamples())
 		}
 
 		if err := chunkw.WriteChunks(series.Chunks...); err != nil {
@@ -172,6 +178,7 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 				Sources: []ulid.ULID{blockID},
 			},
 			Version: 1,
+			Stats:   stats,
 		},
 		Thanos: ThanosMeta{
 			Version: ThanosVersion1,
