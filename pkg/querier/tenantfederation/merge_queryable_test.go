@@ -554,7 +554,7 @@ func TestMergeQueryable_Select(t *testing.T) {
 						require.EqualError(t, seriesSet.Err(), tc.expectedQueryErr.Error())
 					} else {
 						require.NoError(t, seriesSet.Err())
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.expectedMetrics), "cortex_querier_federation_tenants_queried"))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.expectedMetrics), "cortex_querier_federation_sample_tenants_queried"))
 						assertEqualWarnings(t, tc.expectedWarnings, seriesSet.Warnings())
 					}
 
@@ -709,7 +709,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 				} else {
 					require.NoError(t, err)
 					assert.Equal(t, scenario.labelNamesTestCase.expectedLabelNames, labelNames)
-					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(scenario.labelNamesTestCase.expectedMetrics), "cortex_querier_federation_tenants_queried"))
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(scenario.labelNamesTestCase.expectedMetrics), "cortex_querier_federation_sample_tenants_queried"))
 					assertEqualWarnings(t, scenario.labelNamesTestCase.expectedWarnings, warnings)
 				}
 			})
@@ -900,7 +900,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					} else {
 						require.NoError(t, err)
 						assert.Equal(t, tc.expectedLabelValues, actLabelValues, fmt.Sprintf("unexpected values for label '%s'", tc.labelName))
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.expectedMetrics), "cortex_querier_federation_tenants_queried"))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.expectedMetrics), "cortex_querier_federation_sample_tenants_queried"))
 						assertEqualWarnings(t, tc.expectedWarnings, warnings)
 					}
 				})
