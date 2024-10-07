@@ -244,7 +244,7 @@ func (s sample) Type() chunkenc.ValueType {
 	}
 }
 
-func (s sample) Copy() sample {
+func (s sample) Copy() chunks.Sample {
 	return sample{
 		s.t,
 		s.v,
