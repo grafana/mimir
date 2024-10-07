@@ -8,8 +8,8 @@ package functions
 
 import (
 	"fmt"
-	"regexp"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
