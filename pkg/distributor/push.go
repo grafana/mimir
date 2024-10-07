@@ -44,7 +44,7 @@ var (
 )
 
 const (
-	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelValidation"
+	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
 	statusClientClosedRequest     = 499
 )
 
