@@ -21,6 +21,7 @@ const (
 	NotReducibleNativeHistogram           ID = "not-reducible-native-histogram"
 	InvalidSchemaNativeHistogram          ID = "invalid-native-histogram-schema"
 	SeriesInvalidLabel                    ID = "label-invalid"
+	SeriesInvalidLabelValue               ID = "label-value-invalid"
 	SeriesLabelNameTooLong                ID = "label-name-too-long"
 	SeriesLabelValueTooLong               ID = "label-value-too-long"
 	SeriesWithDuplicateLabelNames         ID = "duplicate-label-names"

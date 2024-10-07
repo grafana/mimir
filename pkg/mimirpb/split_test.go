@@ -16,8 +16,8 @@ import (
 
 func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 	req := &WriteRequest{
-		Source:                  RULE,
-		SkipLabelNameValidation: true,
+		Source:              RULE,
+		SkipLabelValidation: true,
 		Timeseries: []PreallocTimeseries{
 			{TimeSeries: &TimeSeries{
 				Labels:     FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
@@ -39,7 +39,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 
 	// Pre-requisite check: WriteRequest fields are set to non-zero values.
 	require.NotZero(t, req.Source)
-	require.NotZero(t, req.SkipLabelNameValidation)
+	require.NotZero(t, req.SkipLabelValidation)
 	require.NotZero(t, req.Timeseries)
 	require.NotZero(t, req.Metadata)
 
@@ -55,21 +55,21 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []PreallocTimeseries{req.Timeseries[0]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []PreallocTimeseries{req.Timeseries[0]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []PreallocTimeseries{req.Timeseries[1]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []PreallocTimeseries{req.Timeseries[1]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*MetricMetadata{req.Metadata[0], req.Metadata[1]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*MetricMetadata{req.Metadata[0], req.Metadata[1]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*MetricMetadata{req.Metadata[2]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*MetricMetadata{req.Metadata[2]},
 			},
 		}, partials)
 
@@ -84,25 +84,25 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		partials := SplitWriteRequestByMaxMarshalSize(req, req.Size(), limit)
 		assert.Equal(t, []*WriteRequest{
 			{
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []PreallocTimeseries{req.Timeseries[0]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []PreallocTimeseries{req.Timeseries[0]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []PreallocTimeseries{req.Timeseries[1]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []PreallocTimeseries{req.Timeseries[1]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*MetricMetadata{req.Metadata[0]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*MetricMetadata{req.Metadata[0]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*MetricMetadata{req.Metadata[1]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*MetricMetadata{req.Metadata[1]},
 			}, {
-				Source:                  RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*MetricMetadata{req.Metadata[2]},
+				Source:              RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*MetricMetadata{req.Metadata[2]},
 			},
 		}, partials)
 
@@ -135,10 +135,10 @@ func TestSplitWriteRequestByMaxMarshalSize_Fuzzy(t *testing.T) {
 
 		// Ensure the merge of all partial requests is equal to the original one.
 		merged := &WriteRequest{
-			Timeseries:              []PreallocTimeseries{},
-			Source:                  partials[0].Source,
-			Metadata:                []*MetricMetadata{},
-			SkipLabelNameValidation: partials[0].SkipLabelNameValidation,
+			Timeseries:          []PreallocTimeseries{},
+			Source:              partials[0].Source,
+			Metadata:            []*MetricMetadata{},
+			SkipLabelValidation: partials[0].SkipLabelValidation,
 		}
 
 		for _, partial := range partials {
@@ -166,7 +166,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 
 	// If the fields of WriteRequest have changed, then you will probably need to modify
 	// the SplitWriteRequestByMaxMarshalSize() implementation accordingly!
-	assert.ElementsMatch(t, []string{"Timeseries", "Source", "Metadata", "SkipLabelNameValidation", "skipUnmarshalingExemplars"}, fieldNames)
+	assert.ElementsMatch(t, []string{"Timeseries", "Source", "Metadata", "SkipLabelValidation", "skipUnmarshalingExemplars"}, fieldNames)
 }
 
 func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
@@ -330,9 +330,9 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 	}
 
 	return &WriteRequest{
-		Source:                  RULE,
-		SkipLabelNameValidation: true,
-		Timeseries:              timeseries,
-		Metadata:                metadata,
+		Source:              RULE,
+		SkipLabelValidation: true,
+		Timeseries:          timeseries,
+		Metadata:            metadata,
 	}
 }

@@ -28,8 +28,8 @@ message WriteRequest {
 
   // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
 
-  // Skip validation of label names.
-  bool skip_label_name_validation = 1000;
+  // Skip validation of label names and values.
+  bool skip_label_validation = 1000;
 }
 
 message WriteResponse {}

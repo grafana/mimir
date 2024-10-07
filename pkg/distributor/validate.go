@@ -34,6 +34,7 @@ var (
 	reasonInvalidMetricName            = globalerror.InvalidMetricName.LabelValue()
 	reasonMaxLabelNamesPerSeries       = globalerror.MaxLabelNamesPerSeries.LabelValue()
 	reasonInvalidLabel                 = globalerror.SeriesInvalidLabel.LabelValue()
+	reasonInvalidLabelValue            = globalerror.SeriesInvalidLabelValue.LabelValue()
 	reasonLabelNameTooLong             = globalerror.SeriesLabelNameTooLong.LabelValue()
 	reasonLabelValueTooLong            = globalerror.SeriesLabelValueTooLong.LabelValue()
 	reasonMaxNativeHistogramBuckets    = globalerror.MaxNativeHistogramBuckets.LabelValue()
@@ -70,9 +71,10 @@ var (
 		"received a series whose label value length exceeds the limit, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
 		validation.MaxLabelValueLengthFlag,
 	)
-	invalidLabelMsgFormat   = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
-	duplicateLabelMsgFormat = globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
-	tooManyLabelsMsgFormat  = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
+	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
+	invalidLabelValueMsgFormat = globalerror.SeriesInvalidLabelValue.Message("received a series with invalid value in label '%.200s': '%.200s' series: '%.200s'")
+	duplicateLabelMsgFormat    = globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
+	tooManyLabelsMsgFormat     = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
 		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
 		validation.MaxLabelNamesPerSeriesFlag,
 	)
@@ -125,6 +127,7 @@ type sampleValidationMetrics struct {
 	invalidMetricName            *prometheus.CounterVec
 	maxLabelNamesPerSeries       *prometheus.CounterVec
 	invalidLabel                 *prometheus.CounterVec
+	invalidLabelValue            *prometheus.CounterVec
 	labelNameTooLong             *prometheus.CounterVec
 	labelValueTooLong            *prometheus.CounterVec
 	maxNativeHistogramBuckets    *prometheus.CounterVec
@@ -140,6 +143,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.invalidMetricName.DeletePartialMatch(filter)
 	m.maxLabelNamesPerSeries.DeletePartialMatch(filter)
 	m.invalidLabel.DeletePartialMatch(filter)
+	m.invalidLabelValue.DeletePartialMatch(filter)
 	m.labelNameTooLong.DeletePartialMatch(filter)
 	m.labelValueTooLong.DeletePartialMatch(filter)
 	m.maxNativeHistogramBuckets.DeletePartialMatch(filter)
@@ -154,6 +158,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.invalidMetricName.DeleteLabelValues(userID, group)
 	m.maxLabelNamesPerSeries.DeleteLabelValues(userID, group)
 	m.invalidLabel.DeleteLabelValues(userID, group)
+	m.invalidLabelValue.DeleteLabelValues(userID, group)
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
 	m.labelValueTooLong.DeleteLabelValues(userID, group)
 	m.maxNativeHistogramBuckets.DeleteLabelValues(userID, group)
@@ -169,6 +174,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		invalidMetricName:            validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
 		maxLabelNamesPerSeries:       validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
 		invalidLabel:                 validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
+		invalidLabelValue:            validation.DiscardedSamplesCounter(r, reasonInvalidLabelValue),
 		labelNameTooLong:             validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
 		labelValueTooLong:            validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
 		maxNativeHistogramBuckets:    validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
@@ -368,7 +374,7 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation bool) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
@@ -391,12 +397,15 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	lastLabelName := ""
 	for _, l := range ls {
-		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
+		if !skipLabelValidation && !model.LabelName(l.Name).IsValid() {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Name) > maxLabelNameLength {
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
+		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
+			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
+			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))

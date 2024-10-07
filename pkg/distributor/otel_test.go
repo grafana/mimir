@@ -446,7 +446,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
-		assert.False(t, request.SkipLabelNameValidation)
+		assert.False(t, request.SkipLabelValidation)
 		pushReq.CleanUp()
 		return nil
 	}, nil, nil, log.NewNopLogger(), true)
@@ -493,7 +493,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
 		assert.Len(t, request.Timeseries, 1)
-		assert.False(t, request.SkipLabelNameValidation)
+		assert.False(t, request.SkipLabelValidation)
 		return nil
 	}, nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)
@@ -519,7 +519,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		t.Cleanup(pushReq.CleanUp)
 		require.NoError(t, err)
 		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
-		assert.False(t, request.SkipLabelNameValidation)
+		assert.False(t, request.SkipLabelValidation)
 		return nil
 	}, nil, nil, log.NewNopLogger(), true)
 	handler.ServeHTTP(resp, req)

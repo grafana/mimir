@@ -1745,6 +1745,15 @@ A label name name can only contain characters as defined by Prometheus’ [Metri
 Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-label-value-invalid
+
+This non-critical error occurs when Mimir receives a write request that contains a series with a label that has an invalid value.
+A label value can only contain unicode characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
+
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-label-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label name whose length exceeds the configured limit.
