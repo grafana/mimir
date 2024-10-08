@@ -116,7 +116,7 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 	if !v.Op.IsComparisonOperator() || v.ReturnBool {
 		// We don't need to do deduplication and merging of series in this operator: we expect that this operator
 		// is wrapped in a DeduplicateAndMerge.
-		metadata, err = functions.DropSeriesName(metadata, v.MemoryConsumptionTracker)
+		metadata, err = functions.DropSeriesName.Func(metadata, v.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
