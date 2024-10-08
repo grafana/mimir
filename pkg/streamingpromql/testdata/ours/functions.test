@@ -233,3 +233,111 @@ load 1m
 
 eval range from 0 to 7m step 1m -metric
   {} -1 -1 -1 -3 -3 _ -4 -4
+
+clear
+
+# Test the case where multiple series have the same labels after the metric name is removed by a function.
+load 1m
+  float_metric_1 0+1x4
+  float_metric_2 0+2x4
+  histogram_metric_1 {{sum:0 count:0}}x4
+  histogram_metric_2 {{sum:1 count:1}}x4
+
+eval_fail instant at 5m abs({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m acos({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m acosh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m asin({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m asinh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m atan({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m atanh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m avg_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m ceil({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m cos({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m cosh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m count_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m deg({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m exp({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m floor({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m histogram_count({__name__=~"histogram_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m histogram_sum({__name__=~"histogram_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m increase({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m max_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m min_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m ln({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m log10({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m log2({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m present_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m rad({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m rate({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sgn({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sin({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sinh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sqrt({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sum_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m tan({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m tanh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset

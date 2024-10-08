@@ -20,6 +20,7 @@ var Rate = FunctionOverRangeVector{
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunc:             DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
+	NeedsSeriesDeduplication:       true,
 }
 
 var Increase = FunctionOverRangeVector{
@@ -27,6 +28,7 @@ var Increase = FunctionOverRangeVector{
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunc:             DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
+	NeedsSeriesDeduplication:       true,
 }
 
 // isRate is true for `rate` function, or false for `instant` function
