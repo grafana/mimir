@@ -21,7 +21,7 @@ mimir {
     multi_zone_store_gateway_replicas: 3,
 
     local availabilityZones = ['us-east-2a', 'us-east-2b'],
-    multi_zone_distributor_enabled: true,
+    multi_zone_distributor_enabled: false,
     multi_zone_distributor_availability_zones: availabilityZones,
 
     autoscaling_distributor_enabled: true,
