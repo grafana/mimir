@@ -14,9 +14,6 @@
   local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_distributor_availability_zones) >= 2,
   local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_distributor_availability_zones) >= 3,
 
-  local gossipLabel = if !$._config.memberlist_ring_enabled then {} else
-    $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
-
   distributor_zone_a_args:: $.distributor_args,
   distributor_zone_b_args:: $.distributor_args,
   distributor_zone_c_args:: $.distributor_args,
