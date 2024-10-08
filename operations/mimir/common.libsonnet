@@ -149,6 +149,12 @@
       )
     ),
 
+  newMimirNodeAffinityMatcherAZ(az):: {
+    key: 'topology.kubernetes.io/zone',
+    operator: 'In',
+    values: [az],
+  },
+
   mimirVolumeMounts::
     $.util.volumeMounts(
       [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
