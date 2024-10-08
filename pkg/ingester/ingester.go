@@ -1344,6 +1344,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		// Map TSDB native histogram validation errors to soft errors.
+		case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
+			stats.sampleOutOfOrderCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
+			})
+			return true
 		case errors.Is(err, histogram.ErrHistogramCountMismatch):
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
