@@ -368,38 +368,6 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.autoscaling.ingester.enabled,
-      $.row('Ingester – autoscaling')
-      .addPanel(
-        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (leader zone)' } +
-        $.panelDescription(
-          'Replicas (leader zone)',
-          |||
-            The minimum, maximum, and current number of replicas for the leader zone of ingesters.
-            Other zones scale to follow this zone (with delay for downscale).
-          |||
-        )
-      )
-      .addPanel(
-        $.timeseriesPanel('Replicas') +
-        $.panelDescription('Replicas', 'Number of ingester replicas per zone.') +
-        $.queryPanel(
-          [
-            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
-          ],
-          [
-            '{{ %(per_job_label)s }}' % $._config.per_job_label,
-          ],
-        ),
-      )
-      .addPanel(
-        $.autoScalingDesiredReplicasByValueScalingMetricPanel('ingester', '', '') + { title: 'Desired replicas (leader zone)' }
-      )
-      .addPanel(
-        $.autoScalingFailuresPanel('ingester') + { title: 'Autoscaler failures rate' }
-      ),
-    )
-    .addRowIf(
-      $._config.show_ingest_storage_panels && $._config.autoscaling.ingester.enabled,
       $.row('Ingester – autoscaling (ingest storage)')
       .addPanel(
         $.autoScalingActualReplicas('ingester') + { title: 'Replicas (ReplicaTemplate)' } +
