@@ -84,9 +84,9 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
 	}
 
-	initialSchema := firstPoint.H.Schema
-	if lastPoint.H.Schema < initialSchema {
-		initialSchema = lastPoint.H.Schema
+	desiredSchema := firstPoint.H.Schema
+	if lastPoint.H.Schema < desiredSchema {
+		desiredSchema = lastPoint.H.Schema
 	}
 
 	usingCustomBuckets := firstPoint.H.UsesCustomBuckets()
@@ -94,7 +94,7 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta := lastPoint.H.CopyToSchema(initialSchema)
+	delta := lastPoint.H.CopyToSchema(desiredSchema)
 	_, err := delta.Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
@@ -114,8 +114,8 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 				return histogram.ErrHistogramsIncompatibleSchema
 			}
 
-			if p.H.Schema < delta.Schema {
-				delta = delta.CopyToSchema(p.H.Schema)
+			if p.H.Schema < desiredSchema {
+				desiredSchema = p.H.Schema
 			}
 
 			if p.H.CounterResetHint == histogram.GaugeType {
@@ -136,6 +136,10 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 	if err != nil {
 		return nil, err
 
+	}
+
+	if delta.Schema != desiredSchema {
+		delta = delta.CopyToSchema(desiredSchema)
 	}
 
 	val := calculateHistogramRate(isRate, step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
