@@ -1739,8 +1739,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 ### err-mimir-native-histogram-ooo-disabled
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
-where another sample with a more recent timestamp has already been ingested and 
-`-ingester.ooo-native-histograms-ingestion-enabled` is set to `false`.
+where another sample with a more recent timestamp has already been ingested and `-ingester.ooo-native-histograms-ingestion-enabled` is set to `false`.
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
