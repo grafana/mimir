@@ -2978,16 +2978,16 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default",pod=~"distributor-zone-a.*"}[5m]))
             and
-            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"distributor-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
         and
         count (
           count_over_time(
             present_over_time(
-              container_cpu_usage_seconds_total{container="distributor",namespace="default"}[1m]
+              container_cpu_usage_seconds_total{container="distributor",namespace="default",pod=~"distributor-zone-a.*"}[1m]
             )[15m:1m]
           ) >= 15
         )
@@ -3002,26 +3002,26 @@ spec:
         quantile_over_time(0.95,
           sum(
             (
-              sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
+              sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default",pod=~"distributor-zone-a.*"})
               and
-              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"distributor-zone-a.*"}[1m])) > 0
             ) or vector(0)
           )[15m:]
         )
         +
         sum(
-          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="distributor", namespace="default", resource="memory"}[15m]))
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="distributor", namespace="default", resource="memory",pod=~"distributor-zone-a.*"}[15m]))
           and
-          max by (pod) (changes(kube_pod_container_status_restarts_total{container="distributor", namespace="default"}[15m]) > 0)
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="distributor", namespace="default",pod=~"distributor-zone-a.*"}[15m]) > 0)
           and
-          max by (pod) (kube_pod_container_status_last_terminated_reason{container="distributor", namespace="default", reason="OOMKilled"})
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="distributor", namespace="default", reason="OOMKilled",pod=~"distributor-zone-a.*"})
           or vector(0)
         )
         and
         count (
           count_over_time(
             present_over_time(
-              container_memory_working_set_bytes{container="distributor",namespace="default"}[1m]
+              container_memory_working_set_bytes{container="distributor",namespace="default",pod=~"distributor-zone-a.*"}[1m]
             )[15m:1m]
           ) >= 15
         )
@@ -3066,16 +3066,16 @@ spec:
       query: |
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default",pod=~"distributor-zone-b.*"}[5m]))
             and
-            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"distributor-zone-b.*"}[1m])) > 0
           )[15m:]
         ) * 1000
         and
         count (
           count_over_time(
             present_over_time(
-              container_cpu_usage_seconds_total{container="distributor",namespace="default"}[1m]
+              container_cpu_usage_seconds_total{container="distributor",namespace="default",pod=~"distributor-zone-b.*"}[1m]
             )[15m:1m]
           ) >= 15
         )
@@ -3090,26 +3090,26 @@ spec:
         quantile_over_time(0.95,
           sum(
             (
-              sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
+              sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default",pod=~"distributor-zone-b.*"})
               and
-              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"distributor-zone-b.*"}[1m])) > 0
             ) or vector(0)
           )[15m:]
         )
         +
         sum(
-          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="distributor", namespace="default", resource="memory"}[15m]))
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="distributor", namespace="default", resource="memory",pod=~"distributor-zone-b.*"}[15m]))
           and
-          max by (pod) (changes(kube_pod_container_status_restarts_total{container="distributor", namespace="default"}[15m]) > 0)
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="distributor", namespace="default",pod=~"distributor-zone-b.*"}[15m]) > 0)
           and
-          max by (pod) (kube_pod_container_status_last_terminated_reason{container="distributor", namespace="default", reason="OOMKilled"})
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="distributor", namespace="default", reason="OOMKilled",pod=~"distributor-zone-b.*"})
           or vector(0)
         )
         and
         count (
           count_over_time(
             present_over_time(
-              container_memory_working_set_bytes{container="distributor",namespace="default"}[1m]
+              container_memory_working_set_bytes{container="distributor",namespace="default",pod=~"distributor-zone-b.*"}[1m]
             )[15m:1m]
           ) >= 15
         )
