@@ -85,6 +85,7 @@ const (
 	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
+	NativeHistogramOOODisabled          ID = "native-histogram-ooo-disabled"
 
 	// Alertmanager errors
 	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
