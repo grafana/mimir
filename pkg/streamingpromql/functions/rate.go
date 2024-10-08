@@ -20,6 +20,7 @@ var Rate = FunctionOverRangeVector{
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunc:             DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
+	NeedsSeriesDeduplication:       true,
 }
 
 func rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
