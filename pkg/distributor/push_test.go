@@ -144,7 +144,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 		expectedStatusCode                        int
 	}{
 		{
-			name:                         "config flag set to false means SkipLabelNameValidation is false",
+			name:                         "config flag set to false means SkipLabelValidation is false",
 			allowSkipLabelNameValidation: false,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
 			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
@@ -154,7 +154,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
 				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
 				assert.Equal(t, mimirpb.RULE, request.Source)
-				assert.False(t, request.SkipLabelNameValidation)
+				assert.False(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
 				return nil
 			},
@@ -162,7 +162,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			expectedStatusCode:                        http.StatusOK,
 		},
 		{
-			name:                         "config flag set to false means SkipLabelNameValidation is always false even if write requests sets it to true",
+			name:                         "config flag set to false means SkipLabelValidation is always false even if write requests sets it to true",
 			allowSkipLabelNameValidation: false,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
 			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
@@ -173,14 +173,14 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
 				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
 				assert.Equal(t, mimirpb.RULE, request.Source)
-				assert.False(t, request.SkipLabelNameValidation)
+				assert.False(t, request.SkipLabelValidation)
 				return nil
 			},
 			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
 		},
 		{
-			name:                         "config flag set to true but write request set to false means SkipLabelNameValidation is false",
+			name:                         "config flag set to true but write request set to false means SkipLabelValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
 			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
@@ -190,14 +190,14 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
 				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
 				assert.Equal(t, mimirpb.RULE, request.Source)
-				assert.False(t, request.SkipLabelNameValidation)
+				assert.False(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
 				return nil
 			},
 			expectedStatusCode: http.StatusOK,
 		},
 		{
-			name:                         "config flag set to true and write request set to true means SkipLabelNameValidation is true",
+			name:                         "config flag set to true and write request set to true means SkipLabelValidation is true",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
 			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
@@ -207,14 +207,14 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
 				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
 				assert.Equal(t, mimirpb.RULE, request.Source)
-				assert.True(t, request.SkipLabelNameValidation)
+				assert.True(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
 				return nil
 			},
 			expectedStatusCode: http.StatusOK,
 		},
 		{
-			name:                         "config flag set to true and write request set to true but header not sent means SkipLabelNameValidation is false",
+			name:                         "config flag set to true and write request set to true but header not sent means SkipLabelValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
 			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
@@ -224,7 +224,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
 				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
 				assert.Equal(t, mimirpb.RULE, request.Source)
-				assert.False(t, request.SkipLabelNameValidation)
+				assert.False(t, request.SkipLabelValidation)
 				pushReq.CleanUp()
 				return nil
 			},
@@ -390,7 +390,7 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 		require.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
 		require.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
 		require.Equal(t, expectSource, request.Source)
-		require.False(t, request.SkipLabelNameValidation)
+		require.False(t, request.SkipLabelValidation)
 		return nil
 	}
 }
@@ -456,9 +456,9 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool)
 		},
 	}
 	input := mimirpb.WriteRequest{
-		Timeseries:              []mimirpb.PreallocTimeseries{ts},
-		Source:                  mimirpb.RULE,
-		SkipLabelNameValidation: skipLabelNameValidation,
+		Timeseries:          []mimirpb.PreallocTimeseries{ts},
+		Source:              mimirpb.RULE,
+		SkipLabelValidation: skipLabelNameValidation,
 	}
 	inoutBytes, err := input.Marshal()
 	require.NoError(t, err)
@@ -478,9 +478,9 @@ func createMimirWriteRequestProtobufWithNonSupportedLabelNames(t *testing.T, ski
 		},
 	}
 	input := mimirpb.WriteRequest{
-		Timeseries:              []mimirpb.PreallocTimeseries{ts},
-		Source:                  mimirpb.RULE,
-		SkipLabelNameValidation: skipLabelNameValidation,
+		Timeseries:          []mimirpb.PreallocTimeseries{ts},
+		Source:              mimirpb.RULE,
+		SkipLabelValidation: skipLabelNameValidation,
 	}
 	inoutBytes, err := input.Marshal()
 	require.NoError(t, err)

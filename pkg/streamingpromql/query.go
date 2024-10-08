@@ -108,8 +108,28 @@ func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
 		return q.convertToInstantVectorOperator(expr)
 	case parser.ValueTypeScalar:
 		return q.convertToScalarOperator(expr)
+	case parser.ValueTypeString:
+		return q.convertToStringOperator(expr)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
+	}
+}
+
+func (q *Query) convertToStringOperator(expr parser.Expr) (types.StringOperator, error) {
+	if expr.Type() != parser.ValueTypeString {
+		return nil, fmt.Errorf("cannot create string operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
+	}
+
+	switch e := expr.(type) {
+	case *parser.StringLiteral:
+		return operators.NewStringLiteral(e.Val, e.PositionRange()), nil
+	case *parser.StepInvariantExpr:
+		// One day, we'll do something smarter here.
+		return q.convertToStringOperator(e.Expr)
+	case *parser.ParenExpr:
+		return q.convertToStringOperator(e.Expr)
+	default:
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for string", e))
 	}
 }
 
@@ -502,7 +522,15 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		} else {
 			q.result = &promql.Result{Value: q.populateMatrixFromScalarOperator(d)}
 		}
-
+	case parser.ValueTypeString:
+		if q.IsInstant() {
+			root := q.root.(types.StringOperator)
+			str := root.GetValue()
+			q.result = &promql.Result{Value: q.populateStringFromStringOperator(str)}
+		} else {
+			// This should be caught in newQuery above
+			return &promql.Result{Err: fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(q.statement.Expr.Type()))}
+		}
 	default:
 		// This should be caught in newQuery above.
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
@@ -514,6 +542,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	}
 
 	return q.result
+}
+
+func (q *Query) populateStringFromStringOperator(str string) promql.String {
+	return promql.String{
+		T: timeMilliseconds(q.statement.Start),
+		V: str,
+	}
 }
 
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {

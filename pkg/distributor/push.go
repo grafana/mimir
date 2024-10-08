@@ -172,9 +172,9 @@ func handler(
 			}
 
 			if allowSkipLabelNameValidation {
-				req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
+				req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
 			} else {
-				req.SkipLabelNameValidation = false
+				req.SkipLabelValidation = false
 			}
 
 			cleanup := func() {
