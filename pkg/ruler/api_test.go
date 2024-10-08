@@ -1614,7 +1614,7 @@ func TestAlertStateDescToPrometheusAlert(t *testing.T) {
 	})
 }
 
-func TestAPIRoutesCorrectlyHandleInvalidOrgID(t *testing.T) {
+func TestAPIRoutesCorrectlyHandleInvalidTenantID(t *testing.T) {
 	tcs := []struct {
 		route  string
 		method string
@@ -1630,8 +1630,8 @@ func TestAPIRoutesCorrectlyHandleInvalidOrgID(t *testing.T) {
 	}
 
 	for _, tc := range tcs {
-		for _, tenantID := range []string{"", "user1|user2"} {
-			t.Run(fmt.Sprintf("method=%s, route=%s, userID=%s", tc.method, tc.route, tenantID), func(t *testing.T) {
+		for _, tenantID := range []string{"", "team1|team2"} {
+			t.Run(fmt.Sprintf("method=%s, route=%s, tenantID=%s", tc.method, tc.route, tenantID), func(t *testing.T) {
 				cfg := defaultRulerConfig(t)
 				cfg.TenantFederation.Enabled = true
 
