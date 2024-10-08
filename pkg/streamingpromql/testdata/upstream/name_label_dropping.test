@@ -84,8 +84,9 @@ eval instant at 15m sum by (__name__, env) (metric{env="1"})
 
 # Aggregation operators aggregate metrics with same labelset and to-be-dropped names
 # This is an accidental side effect of delayed __name__ label dropping
-eval instant at 15m sum(rate({env="1"}[10m])) by (env)
-	{env="1"} 0.4
+# Unsupported by streaming engine.
+# eval instant at 15m sum(rate({env="1"}[10m])) by (env)
+# 	{env="1"} 0.4
 
 # Aggregationk operators propagate __name__ label dropping information
 # Unsupported by streaming engine.
