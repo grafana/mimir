@@ -78,8 +78,7 @@ type seriesStripe struct {
 	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 	userID                               string
-	// here the attribution values map, it maps the attribute value to its index, so we can increment the counter directly,
-	// so in each entry, we keep the index of the value only, instead of keeping the string value
+	// here we keep the counter of cost attribution for seriesStripe
 	costAttributionValues map[string]uint32
 	caLabel               string
 }
@@ -438,7 +437,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 			s.caLabel = s.costAttributionMng.GetUserAttributionLabel(s.userID)
 		}
 		s.costAttributionValues[attributionValue]++
-		e.attributionValue = s.caLabel
+		e.calabel = s.caLabel
 		e.attributionValue = attributionValue
 	}
 

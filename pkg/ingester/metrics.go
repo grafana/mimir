@@ -409,8 +409,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
-	m.activeSeriesPerUser.DeletePartialMatch(prometheus.Labels{"user": userID})
-
+	m.activeSeriesPerUser.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
