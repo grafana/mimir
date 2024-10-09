@@ -41,6 +41,8 @@ func messageV2Of(v any) protobufproto.Message {
 func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	vv := messageV2Of(v)
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
+	// Decrement buf's reference count. Note though that if v implements BufferHolder,
+	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
 
 	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
