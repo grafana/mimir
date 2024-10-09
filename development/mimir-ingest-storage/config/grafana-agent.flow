@@ -41,7 +41,7 @@ prometheus.scrape "metrics_local_mimir_read_write_mode_mimir_write" {
                                         cluster     = "docker-compose",
                                         container   = "mimir-write",
                                         namespace   = "mimir-read-write-mode",
-                                        job = "mimir-write-zone-c",
+                                        job         = "mimir-write-zone-c",
                                 }],
         )
         forward_to      = [prometheus.remote_write.metrics_local.receiver]
