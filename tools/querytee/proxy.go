@@ -8,6 +8,7 @@ package querytee
 import (
 	"flag"
 	"fmt"
+	"github.com/grafana/dskit/flagext"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -73,13 +74,9 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 
 	var skipSamplesBefore string
 	f.StringVar(&skipSamplesBefore, "proxy.compare-skip-samples-before", "", "Skip the samples before the given time for comparison. The time must be in RFC3339 format.")
-	if skipSamplesBefore != "" {
-		var err error
-		cfg.SkipSamplesBefore, err = time.Parse(time.RFC3339, skipSamplesBefore)
-		if err != nil {
-			cfg.SkipSamplesBefore = time.Time{}
-		}
-	}
+	var t flagext.Time
+	_ = t.Set(skipSamplesBefore) // If there is any error, t will be time.Time{}.
+	cfg.SkipSamplesBefore = time.Time(t)
 }
 
 type Route struct {

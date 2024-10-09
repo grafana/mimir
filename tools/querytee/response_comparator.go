@@ -417,7 +417,7 @@ func allMatrixSamplesOutsideComparableWindow(m model.Matrix, queryEvaluationTime
 	return true
 }
 
-func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) (retErr error) {
 	var expected, actual model.Vector
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -434,12 +434,32 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		return nil
 	}
 
+	// Warning: filtering samples can give out confusing error messages. For example if the actual response had
+	// matching series, but all sample timestamps were before SkipSamplesBefore, while expected response had samples
+	// after SkipSamplesBefore: instead of saying mismatch, it will instead say that some metrics is missing, because
+	// we filter them here.
+	eChanged, aChanged := false, false
 	expected = filterSlice(expected, func(p *model.Sample) bool {
+		eChanged = true
 		return p.Timestamp < opts.SkipSamplesBefore
 	})
 	actual = filterSlice(actual, func(p *model.Sample) bool {
+		aChanged = true
 		return p.Timestamp < opts.SkipSamplesBefore
 	})
+	defer func() {
+		if retErr != nil {
+			warning := ""
+			if eChanged && aChanged {
+				warning = "(also, some samples were filtered out from the expected and actual response)"
+			} else if aChanged {
+				warning = "(also, some samples were filtered out from the actual response)"
+			} else if eChanged {
+				warning = "(also, some samples were filtered out from the expected response)"
+			}
+			retErr = fmt.Errorf("%w %s", retErr, warning)
+		}
+	}()
 
 	if len(expected) != len(actual) {
 		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
