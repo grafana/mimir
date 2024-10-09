@@ -17,7 +17,7 @@ import (
 type Manager struct {
 	services.Service
 	logger             log.Logger
-	attributionTracker *AttributionTrackerGroup
+	attributionTracker *attributionTrackerGroup
 	inactiveTimeout    time.Duration
 	invalidValue       string
 }

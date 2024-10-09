@@ -7,7 +7,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-type Tracker struct {
+type tracker struct {
 	trackedLabel                   string
 	attributionLimit               int
 	activeSeriesPerUserAttribution *prometheus.GaugeVec
@@ -17,21 +17,21 @@ type Tracker struct {
 	coolDownDeadline               *atomic.Int64
 }
 
-func (t *Tracker) cleanupTrackerAttribution(userID, attribution string) {
+func (t *tracker) cleanupTrackerAttribution(userID, attribution string) {
 	t.activeSeriesPerUserAttribution.DeleteLabelValues(userID, attribution)
 	t.receivedSamplesAttribution.DeleteLabelValues(userID, attribution)
 	t.discardedSampleAttribution.DeleteLabelValues(userID, attribution)
 }
 
-func (t *Tracker) cleanupTracker(userID string) {
+func (t *tracker) cleanupTracker(userID string) {
 	filter := prometheus.Labels{"user": userID}
 	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
 	t.receivedSamplesAttribution.DeletePartialMatch(filter)
 	t.discardedSampleAttribution.DeletePartialMatch(filter)
 }
 
-func newTracker(trackedLabel string, limit int) (*Tracker, error) {
-	m := &Tracker{
+func newTracker(trackedLabel string, limit int) (*tracker, error) {
+	m := &tracker{
 		trackedLabel:          trackedLabel,
 		attributionLimit:      limit,
 		attributionTimestamps: map[string]*atomic.Int64{},
@@ -55,13 +55,13 @@ func newTracker(trackedLabel string, limit int) (*Tracker, error) {
 	return m, nil
 }
 
-func (t *Tracker) Collect(out chan<- prometheus.Metric) {
+func (t *tracker) Collect(out chan<- prometheus.Metric) {
 	t.activeSeriesPerUserAttribution.Collect(out)
 	t.receivedSamplesAttribution.Collect(out)
 	t.discardedSampleAttribution.Collect(out)
 }
 
 // Describe implements prometheus.Collector.
-func (t *Tracker) Describe(chan<- *prometheus.Desc) {
+func (t *tracker) Describe(chan<- *prometheus.Desc) {
 	// this is an unchecked collector
 }

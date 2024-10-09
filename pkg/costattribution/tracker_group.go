@@ -9,16 +9,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type AttributionTrackerGroup struct {
+type attributionTrackerGroup struct {
 	mu               sync.RWMutex
-	trackersByUserID map[string]*Tracker
+	trackersByUserID map[string]*tracker
 	limits           *validation.Overrides
 	cooldownTimeout  time.Duration
 }
 
-func newAttributionTrackerGroup(limits *validation.Overrides, cooldownTimeout time.Duration) *AttributionTrackerGroup {
-	return &AttributionTrackerGroup{
-		trackersByUserID: make(map[string]*Tracker),
+func newAttributionTrackerGroup(limits *validation.Overrides, cooldownTimeout time.Duration) *attributionTrackerGroup {
+	return &attributionTrackerGroup{
+		trackersByUserID: make(map[string]*tracker),
 		limits:           limits,
 		mu:               sync.RWMutex{},
 		cooldownTimeout:  cooldownTimeout,
@@ -26,7 +26,7 @@ func newAttributionTrackerGroup(limits *validation.Overrides, cooldownTimeout ti
 }
 
 // getUserAttributionLabelFromCache is read user attribution label through cache, if not found, get from config
-func (atg *AttributionTrackerGroup) getUserAttributionLabelFromCache(userID string) string {
+func (atg *attributionTrackerGroup) getUserAttributionLabelFromCache(userID string) string {
 	atg.mu.RLock()
 	defer atg.mu.RUnlock()
 	// if the user is not enabled for cost attribution, we don't need to track the attribution
@@ -41,7 +41,7 @@ func (atg *AttributionTrackerGroup) getUserAttributionLabelFromCache(userID stri
 
 // getUserAttributionLimitFromCache is read per user attribution limit through cache, if not found, get from config
 // always call only when the user is enabled for cost attribution
-func (atg *AttributionTrackerGroup) getUserAttributionLimitFromCache(userID string) int {
+func (atg *attributionTrackerGroup) getUserAttributionLimitFromCache(userID string) int {
 	atg.mu.Lock()
 	defer atg.mu.Unlock()
 	if _, exists := atg.trackersByUserID[userID]; !exists {
@@ -51,7 +51,7 @@ func (atg *AttributionTrackerGroup) getUserAttributionLimitFromCache(userID stri
 }
 
 // deleteUserTracerFromCache is delete user from cache since the user is disabled for cost attribution
-func (atg *AttributionTrackerGroup) deleteUserTracerFromCache(userID string) {
+func (atg *attributionTrackerGroup) deleteUserTracerFromCache(userID string) {
 	atg.mu.Lock()
 	defer atg.mu.Unlock()
 	if _, exists := atg.trackersByUserID[userID]; !exists {
@@ -66,7 +66,7 @@ func (atg *AttributionTrackerGroup) deleteUserTracerFromCache(userID string) {
 // if the label has changed, we will create a new tracker, and won't update the timestamp
 // if the label has not changed, we will update the attribution timestamp
 // if the limit is set to 0 or label is empty, we skip the update
-func (atg *AttributionTrackerGroup) updateAttributionCacheForUser(userID, label, attribution string, now time.Time) {
+func (atg *attributionTrackerGroup) updateAttributionCacheForUser(userID, label, attribution string, now time.Time) {
 	// If the limit is set to 0, we don't need to track the attribution, clean the cache if exists
 	if atg.limits.CostAttributionLabel(userID) == "" || atg.limits.MaxCostAttributionPerUser(userID) <= 0 {
 		atg.deleteUserTracerFromCache(userID)
@@ -96,7 +96,7 @@ func (atg *AttributionTrackerGroup) updateAttributionCacheForUser(userID, label,
 	atg.trackersByUserID[userID].attributionTimestamps[attribution] = atomic.NewInt64(ts)
 }
 
-func (atg *AttributionTrackerGroup) purgeInactiveAttributionsForUser(userID string, deadline int64) []string {
+func (atg *attributionTrackerGroup) purgeInactiveAttributionsForUser(userID string, deadline int64) []string {
 	atg.mu.RLock()
 	var inactiveAttributions []string
 	if atg.trackersByUserID[userID] == nil {
@@ -145,7 +145,7 @@ func (atg *AttributionTrackerGroup) purgeInactiveAttributionsForUser(userID stri
 	return inactiveAttributions
 }
 
-func (atg *AttributionTrackerGroup) purgeInactiveAttributions(inactiveTimeout time.Duration) {
+func (atg *attributionTrackerGroup) purgeInactiveAttributions(inactiveTimeout time.Duration) {
 	atg.mu.RLock()
 	userIDs := make([]string, 0, len(atg.trackersByUserID))
 	for userID := range atg.trackersByUserID {
@@ -167,7 +167,7 @@ func (atg *AttributionTrackerGroup) purgeInactiveAttributions(inactiveTimeout ti
 	}
 }
 
-func (atg *AttributionTrackerGroup) attributionLimitExceeded(userID, attribution string, now time.Time) bool {
+func (atg *attributionTrackerGroup) attributionLimitExceeded(userID, attribution string, now time.Time) bool {
 	// if we are still at the cooldown period, we will consider the limit reached
 	atg.mu.RLock()
 	defer atg.mu.RUnlock()
