@@ -2302,7 +2302,7 @@ Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]`),
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[105,"1"]}]}
 						}`),
 			skipSamplesBefore: 100 * 1000,
-			err:               errors.New(`expected 0 metrics but got 1 (also, some samples were filtered out from the expected response)`),
+			err:               errors.New(`expected 0 metrics but got 1 (also, some samples were filtered out from the expected response due to the 'skip samples before')`),
 		},
 		{
 			name: "should fail when skipped samples only for actual vector",
@@ -2315,7 +2315,7 @@ Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]`),
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[95,"1"]}]}
 						}`),
 			skipSamplesBefore: 100 * 1000,
-			err:               errors.New(`expected 1 metrics but got 0 (also, some samples were filtered out from the actual response)`),
+			err:               errors.New(`expected 1 metrics but got 0 (also, some samples were filtered out from the actual response due to the 'skip samples before')`),
 		},
 		{
 			name: "should skip properly when there are multiple series in a vector",
@@ -2356,7 +2356,7 @@ Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]`),
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[95,"1"]}, {"metric":{"foo":"bar2"},"value":[105,"1"]}]}
 						}`),
 			skipSamplesBefore: 100 * 1000,
-			err:               errors.New(`expected metric {foo="bar"} missing from actual response (also, some samples were filtered out from the expected and actual response)`),
+			err:               errors.New(`expected metric {foo="bar"} missing from actual response (also, some samples were filtered out from the expected and actual response due to the 'skip samples before')`),
 		},
 		{
 			name: "different series skipped in expected and actual, causing an error - histogram",
@@ -2373,7 +2373,7 @@ Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]`),
 								{"metric":{"foo":"bar2"},"histogram":[105,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
 						}`),
 			skipSamplesBefore: 100 * 1000,
-			err:               errors.New(`expected metric {foo="bar"} missing from actual response (also, some samples were filtered out from the expected and actual response)`),
+			err:               errors.New(`expected metric {foo="bar"} missing from actual response (also, some samples were filtered out from the expected and actual response due to the 'skip samples before')`),
 		},
 		{
 			name: "expected is skippable but not the actual, causing an error",

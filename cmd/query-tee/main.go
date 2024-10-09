@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -107,7 +108,7 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		Tolerance:              cfg.ProxyConfig.ValueComparisonTolerance,
 		UseRelativeError:       cfg.ProxyConfig.UseRelativeError,
 		SkipRecentSamples:      cfg.ProxyConfig.SkipRecentSamples,
-		SkipSamplesBefore:      model.Time(cfg.ProxyConfig.SkipSamplesBefore.UnixMilli()),
+		SkipSamplesBefore:      model.Time(time.Time(cfg.ProxyConfig.SkipSamplesBefore).UnixMilli()),
 		RequireExactErrorMatch: cfg.ProxyConfig.RequireExactErrorMatch,
 	})
 
