@@ -266,9 +266,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				return ingesterQueryResult{}, err
 			}
 
-			defer func() {
-				resp.FreeBuffer()
-			}()
+			defer resp.FreeBuffer()
 
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
