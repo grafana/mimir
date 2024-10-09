@@ -452,7 +452,9 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 				} else if eChanged {
 					warning = " (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
 				}
-				retErr = fmt.Errorf("%w%s", retErr, warning)
+				if warning != "" {
+					retErr = fmt.Errorf("%w%s", retErr, warning)
+				}
 			}
 		}()
 	}
@@ -558,9 +560,12 @@ func compareScalar(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 }
 
 func compareSamplePair(expected, actual model.SamplePair, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+	// If the timestamp is before the configured SkipSamplesBefore then we don't even check if the timestamp is correct.
+	// The reason is that the SkipSamplesBefore feature may be used to compare queries hitting a different storage and one of two storages has no historical data.
 	if expected.Timestamp < opts.SkipSamplesBefore && actual.Timestamp < opts.SkipSamplesBefore {
 		return nil
 	}
+
 	if expected.Timestamp != actual.Timestamp {
 		return fmt.Errorf("expected timestamp %v but got %v", expected.Timestamp, actual.Timestamp)
 	}
