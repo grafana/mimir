@@ -37,7 +37,7 @@ func messageV2Of(v any) protobufproto.Message {
 }
 
 // Unmarshal customizes gRPC unmarshalling.
-// If v implements the UnmarshalerV2 interface, its SetBuffer method is called with the unmarshalling buffer.
+// If v implements the BufferHolder interface, its SetBuffer method is called with the unmarshalling buffer.
 func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	vv := messageV2Of(v)
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
@@ -47,7 +47,7 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		return err
 	}
 
-	unmarshaler, ok := v.(UnmarshalerV2)
+	unmarshaler, ok := v.(BufferHolder)
 	if ok {
 		buf.Ref()
 		unmarshaler.SetBuffer(buf)
@@ -56,16 +56,14 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	return nil
 }
 
-// UnmarshalerV2 is an interface for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// BufferHolder is an interface for protobuf messages that keep unsafe references to the unmarshalling buffer.
 // Implementations of this interface should keep a reference to said buffer.
-type UnmarshalerV2 interface {
+type BufferHolder interface {
 	// SetBuffer sets the unmarshalling buffer.
 	SetBuffer(mem.Buffer)
-	// SetBuffer frees the unmarshalling buffer.
-	FreeBuffer()
 }
 
-var _ UnmarshalerV2 = &WriteRequest{}
+var _ BufferHolder = &WriteRequest{}
 
 func (m *WriteRequest) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf

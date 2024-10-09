@@ -8,7 +8,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var _ mimirpb.UnmarshalerV2 = &RulesResponse{}
+var _ mimirpb.BufferHolder = &RulesResponse{}
 
 func (m *RulesResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf

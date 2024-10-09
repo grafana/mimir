@@ -149,7 +149,7 @@ func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
 	}
 }
 
-var _ mimirpb.UnmarshalerV2 = &SeriesResponse{}
+var _ mimirpb.BufferHolder = &SeriesResponse{}
 
 func (m *SeriesResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
@@ -162,7 +162,7 @@ func (m *SeriesResponse) FreeBuffer() {
 	}
 }
 
-var _ mimirpb.UnmarshalerV2 = &CachedSeries{}
+var _ mimirpb.BufferHolder = &CachedSeries{}
 
 func (m *CachedSeries) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf

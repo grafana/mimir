@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
-var _ mimirpb.UnmarshalerV2 = &QueryResponse{}
+var _ mimirpb.BufferHolder = &QueryResponse{}
 
 func (m *QueryResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
@@ -28,7 +28,7 @@ func (m *QueryResponse) FreeBuffer() {
 	}
 }
 
-var _ mimirpb.UnmarshalerV2 = &QueryStreamResponse{}
+var _ mimirpb.BufferHolder = &QueryStreamResponse{}
 
 func (m *QueryStreamResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
@@ -41,7 +41,7 @@ func (m *QueryStreamResponse) FreeBuffer() {
 	}
 }
 
-var _ mimirpb.UnmarshalerV2 = &ExemplarQueryResponse{}
+var _ mimirpb.BufferHolder = &ExemplarQueryResponse{}
 
 func (m *ExemplarQueryResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
@@ -107,7 +107,7 @@ func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
 }
 
-var _ mimirpb.UnmarshalerV2 = &MetricsForLabelMatchersResponse{}
+var _ mimirpb.BufferHolder = &MetricsForLabelMatchersResponse{}
 
 func (m *MetricsForLabelMatchersResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
@@ -120,7 +120,7 @@ func (m *MetricsForLabelMatchersResponse) FreeBuffer() {
 	}
 }
 
-var _ mimirpb.UnmarshalerV2 = &ActiveSeriesResponse{}
+var _ mimirpb.BufferHolder = &ActiveSeriesResponse{}
 
 func (m *ActiveSeriesResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf

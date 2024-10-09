@@ -8,7 +8,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var _ mimirpb.UnmarshalerV2 = &PrometheusResponse{}
+var _ mimirpb.BufferHolder = &PrometheusResponse{}
 
 func (m *PrometheusResponse) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
