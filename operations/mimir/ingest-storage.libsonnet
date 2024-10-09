@@ -186,15 +186,16 @@
         ]
       ));
 
-      // The client ID can be up to 255 characters in length, and can include the following characters:
-      // a-z, A-Z, 0-9, . (dot), _ (underscore), - (dash), = (equal).
+      // The client ID can be up to 255 characters in length (limit hardcoded in franz-go), and can include
+      // the following characters:
+      // a-z, A-Z, 0-9, . (dot), _ (underscore), - (dash), = (equal), "," (comma).
       local isValid(input) =
         std.length(
           // Build an array of invalid characters.
           [
             char
             for char in std.stringChars(clientID)
-            if !std.member('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-=', char)
+            if !std.member('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-=,', char)
           ]
         ) == 0;
 
