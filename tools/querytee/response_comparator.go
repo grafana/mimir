@@ -438,26 +438,25 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 	// matching series, but all sample timestamps were before SkipSamplesBefore, while expected response had samples
 	// after SkipSamplesBefore: instead of saying mismatch, it will instead say that some metrics is missing, because
 	// we filter them here.
-	eChanged, aChanged := false, false
+	eOrgLen, aOrgLen := len(expected), len(actual)
 	expected = filterSlice(expected, func(p *model.Sample) bool {
-		eChanged = true
 		return p.Timestamp < opts.SkipSamplesBefore
 	})
 	actual = filterSlice(actual, func(p *model.Sample) bool {
-		aChanged = true
 		return p.Timestamp < opts.SkipSamplesBefore
 	})
+	eChanged, aChanged := len(expected) != eOrgLen, len(actual) != aOrgLen
 	defer func() {
 		if retErr != nil {
 			warning := ""
 			if eChanged && aChanged {
-				warning = "(also, some samples were filtered out from the expected and actual response)"
+				warning = " (also, some samples were filtered out from the expected and actual response)"
 			} else if aChanged {
-				warning = "(also, some samples were filtered out from the actual response)"
+				warning = " (also, some samples were filtered out from the actual response)"
 			} else if eChanged {
-				warning = "(also, some samples were filtered out from the expected response)"
+				warning = " (also, some samples were filtered out from the expected response)"
 			}
-			retErr = fmt.Errorf("%w %s", retErr, warning)
+			retErr = fmt.Errorf("%w%s", retErr, warning)
 		}
 	}()
 
