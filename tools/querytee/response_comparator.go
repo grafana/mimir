@@ -456,7 +456,9 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 			} else if eChanged {
 				warning = " (also, some samples were filtered out from the expected response due to the 'skip samples before')"
 			}
-			retErr = fmt.Errorf("%w%s", retErr, warning)
+			if warning != "" {
+				retErr = fmt.Errorf("%w%s", retErr, warning)
+			}
 		}
 	}()
 
