@@ -8,7 +8,6 @@ package querytee
 import (
 	"flag"
 	"fmt"
-	"github.com/grafana/dskit/flagext"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/spanlogger"
 	"github.com/pkg/errors"
