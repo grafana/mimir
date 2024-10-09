@@ -38,6 +38,11 @@ std.manifestYamlDoc({
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
       extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
     }),
+    // mimir-write-zone-c-61 is an instance that's not connected to the rest of the cluster.
+    // The idea is that it can be used to test replay speed on a kafka partition without affecting the
+    // availability of the rest of the cluster (for example by using `kafkatool dump`).
+    // The rest of the cluster can be used to monitor c-61 and ingest metrics as usual.
+    // c-61 deployed in its own hash ring. For complete disambiguation, it's deployed in a separate zone and has a separate instance ID.
     'mimir-write-zone-c-61': mimirService({
       name: 'mimir-write-zone-c-61',
       target: 'ingester',
