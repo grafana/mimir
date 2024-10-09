@@ -372,9 +372,8 @@ func trimBeginning[S ~[]M, M any](s S, skip func(M) bool) S {
 
 // filterSlice returns a new slice with elements from s removed that satisfy skip().
 func filterSlice[S ~[]M, M any](s S, skip func(M) bool) S {
-	var i int
-	var res S
-	for ; i < len(s); i++ {
+	res := make(S, 0, len(s))
+	for i := 0; i < len(s); i++ {
 		if !skip(s[i]) {
 			res = append(res, s[i])
 		}
@@ -434,31 +433,29 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		return nil
 	}
 
-	// Warning: filtering samples can give out confusing error messages. For example if the actual response had
-	// matching series, but all sample timestamps were before SkipSamplesBefore, while expected response had samples
-	// after SkipSamplesBefore: instead of saying mismatch, it will instead say that some metrics is missing, because
-	// we filter them here.
-	eOrgLen, aOrgLen := len(expected), len(actual)
-	expected = filterSlice(expected, func(p *model.Sample) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	actual = filterSlice(actual, func(p *model.Sample) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	eChanged, aChanged := len(expected) != eOrgLen, len(actual) != aOrgLen
-	defer func() {
-		if retErr != nil {
-			warning := ""
-			if eChanged && aChanged {
-				warning = " (also, some samples were filtered out from the expected and actual response due to the 'skip samples before')"
-			} else if aChanged {
-				warning = " (also, some samples were filtered out from the actual response due to the 'skip samples before')"
-			} else if eChanged {
-				warning = " (also, some samples were filtered out from the expected response due to the 'skip samples before')"
+	if opts.SkipSamplesBefore > 0 {
+		// Warning: filtering samples can give out confusing error messages. For example if the actual response had
+		// matching series, but all sample timestamps were before SkipSamplesBefore, while expected response had samples
+		// after SkipSamplesBefore: instead of saying mismatch, it will instead say that some metrics is missing, because
+		// we filter them here.
+		eOrgLen, aOrgLen := len(expected), len(actual)
+		expected = filterSlice(expected, func(p *model.Sample) bool { return p.Timestamp < opts.SkipSamplesBefore })
+		actual = filterSlice(actual, func(p *model.Sample) bool { return p.Timestamp < opts.SkipSamplesBefore })
+		eChanged, aChanged := len(expected) != eOrgLen, len(actual) != aOrgLen
+		defer func() {
+			if retErr != nil {
+				warning := ""
+				if eChanged && aChanged {
+					warning = " (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+				} else if aChanged {
+					warning = " (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+				} else if eChanged {
+					warning = " (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+				}
+				retErr = fmt.Errorf("%w%s", retErr, warning)
 			}
-			retErr = fmt.Errorf("%w%s", retErr, warning)
-		}
-	}()
+		}()
+	}
 
 	if len(expected) != len(actual) {
 		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
@@ -592,7 +589,7 @@ func compareSampleValue(first, second float64, opts SampleComparisonOptions) boo
 }
 
 func compareSampleHistogramPair(expected, actual model.SampleHistogramPair, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
-	if expected.Timestamp < opts.SkipSamplesBefore {
+	if expected.Timestamp < opts.SkipSamplesBefore && actual.Timestamp < opts.SkipSamplesBefore {
 		return nil
 	}
 
