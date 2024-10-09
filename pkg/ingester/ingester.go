@@ -311,7 +311,7 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
-	costAttributionMng costattribution.Manager
+	costAttributionMng *costattribution.Manager
 
 	tsdbMetrics *tsdbMetrics
 
@@ -381,7 +381,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMng costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMng *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err

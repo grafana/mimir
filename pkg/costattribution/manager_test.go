@@ -1,4 +1,4 @@
-package caimpl
+package costattribution
 
 import (
 	"strings"
@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func newTestManager() *ManagerImpl {
+func newTestManager() *Manager {
 	logger := log.NewNopLogger()
 	limits, _ := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{
 		"user1": {

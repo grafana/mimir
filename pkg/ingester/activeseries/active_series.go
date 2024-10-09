@@ -50,7 +50,7 @@ type ActiveSeries struct {
 	matchers           *asmodel.Matchers
 	lastMatchersUpdate time.Time
 
-	costAttributionMng costattribution.Manager
+	costAttributionMng *costattribution.Manager
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
@@ -68,7 +68,7 @@ type seriesStripe struct {
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs                        atomic.Int64
-	costAttributionMng                   costattribution.Manager
+	costAttributionMng                   *costattribution.Manager
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
@@ -98,7 +98,7 @@ func NewActiveSeries(
 	asm *asmodel.Matchers,
 	timeout time.Duration,
 	userID string,
-	costAttributionMng costattribution.Manager,
+	costAttributionMng *costattribution.Manager,
 ) *ActiveSeries {
 	c := &ActiveSeries{
 		matchers: asm, timeout: timeout, userID: userID,
@@ -148,6 +148,7 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef,
 			c.stripes[deletedStripeID].remove(deleted.ref)
 		}
 	}
+
 }
 
 // PostDeletion should be called when series are deleted from the head.
@@ -468,7 +469,7 @@ func (s *seriesStripe) reinitialize(
 	asm *asmodel.Matchers,
 	deleted *deletedSeries,
 	userID string,
-	costAttributionMng costattribution.Manager,
+	costAttributionMng *costattribution.Manager,
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

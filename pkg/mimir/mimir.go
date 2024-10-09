@@ -716,7 +716,7 @@ type Mimir struct {
 	TenantLimits                  validation.TenantLimits
 	Overrides                     *validation.Overrides
 	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	CostAttributionManager        costattribution.Manager
+	CostAttributionManager        *costattribution.Manager
 
 	Distributor                     *distributor.Distributor
 	Ingester                        *ingester.Ingester
