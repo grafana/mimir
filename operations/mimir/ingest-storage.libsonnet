@@ -179,12 +179,30 @@
 
     if std.length(cleanSettings) > 0 then
       // Build the Kafka client ID from settings. Sort the key-value pairs to get a stable output.
-      std.join(',', std.sort(
+      local clientID = std.join(',', std.sort(
         [
           key + '=' + cleanSettings[key]
           for key in std.objectFields(cleanSettings)
         ]
-      ))
+      ));
+
+      // The client ID can be up to 255 characters in length (limit hardcoded in franz-go), and can include
+      // the following characters:
+      // a-z, A-Z, 0-9, . (dot), _ (underscore), - (dash), = (equal), "," (comma).
+      local isValid(input) =
+        std.length(
+          // Build an array of invalid characters.
+          [
+            char
+            for char in std.stringChars(clientID)
+            if !std.member('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-=,', char)
+          ]
+        ) == 0;
+
+      assert std.length(clientID) < 256 : 'the Kafka client ID must be less than 256 characters (actual: %s)' % clientID;
+      assert isValid(clientID) : 'the Kafka client ID contains invalid characters (actual: %s)' % clientID;
+
+      clientID
     else
       // Explicitly use null so that the CLI flag will not be set at all (instead of getting set to an empty string).
       null,
