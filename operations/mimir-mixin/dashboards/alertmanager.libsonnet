@@ -48,7 +48,7 @@ local filename = 'mimir-alertmanager.json';
           |||
             sum(%(prefix)s:cortex_alertmanager_alerts_received_total:rate5m%(selectors)s)
             -
-            sum(%(prefix)s:cortex_alertmanager_alerts_invalid_total:rate5m%(selectors)s)
+            (sum(%(prefix)s:cortex_alertmanager_alerts_invalid_total:rate5m%(selectors)s) or vector(0))
           ||| % {
             prefix: $.recordingRulePrefix(jobSelector),
             selectors: utils.toPrometheusSelector(jobSelector),
@@ -232,7 +232,7 @@ local filename = 'mimir-alertmanager.json';
           |||
             sum(%(prefix)s:cortex_alertmanager_state_replication_total:rate5m%(selectors)s)
             -
-            sum(%(prefix)s:cortex_alertmanager_state_replication_failed_total:rate5m%(selectors)s)
+            (sum(%(prefix)s:cortex_alertmanager_state_replication_failed_total:rate5m%(selectors)s) or vector(0))
           ||| % {
             prefix: $.recordingRulePrefix(jobSelector),
             selectors: utils.toPrometheusSelector(jobSelector),
@@ -249,7 +249,7 @@ local filename = 'mimir-alertmanager.json';
           |||
             sum(%(prefix)s:cortex_alertmanager_partial_state_merges_total:rate5m%(selectors)s)
             -
-            sum(%(prefix)s:cortex_alertmanager_partial_state_merges_failed_total:rate5m%(selectors)s)
+            (sum(%(prefix)s:cortex_alertmanager_partial_state_merges_failed_total:rate5m%(selectors)s) or vector(0))
           ||| % {
             prefix: $.recordingRulePrefix(jobSelector),
             selectors: utils.toPrometheusSelector(jobSelector),
