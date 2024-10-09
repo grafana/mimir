@@ -50,5 +50,8 @@ func main() {
 	clusterMetadataCommand := &BrokersCommand{}
 	clusterMetadataCommand.Register(app, getKafkaClient, printer)
 
+	dumpCommand := &DumpCommand{}
+	dumpCommand.Register(app, getKafkaClient, printer)
+
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }

@@ -12,8 +12,7 @@ import (
 	"github.com/klauspost/compress/s2"
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
-
-	"github.com/twmb/franz-go/pkg/kgo/internal/pool"
+	"github.com/twmb/franz-go/pkg/kgo/pool"
 )
 
 var byteBuffers = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 8<<10)) }}
@@ -274,17 +273,28 @@ func (d *decompressor) decompress(src []byte, codec byte, pool *pool.BucketedPoo
 	if compCodec == codecNone {
 		return src, nil
 	}
+	var (
+		out *bytes.Buffer
+		buf []byte
+		err error
+	)
 
-	out, buf, err := d.getDecodedBuffer(src, compCodec, pool)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if compCodec == codecSnappy {
-			return
+	if pool != nil {
+		out, buf, err = d.getDecodedBuffer(src, compCodec, pool)
+		if err != nil {
+			return nil, err
 		}
-		pool.Put(buf)
-	}()
+		defer func() {
+			if compCodec == codecSnappy {
+				return
+			}
+			pool.Put(buf)
+		}()
+	} else {
+		out = byteBuffers.Get().(*bytes.Buffer)
+		out.Reset()
+		defer byteBuffers.Put(out)
+	}
 
 	switch compCodec {
 	case codecGzip:
@@ -349,6 +359,9 @@ func (d *decompressor) getDecodedBuffer(src []byte, compCodec codecType, pool *p
 }
 
 func (d *decompressor) copyDecodedBuffer(decoded []byte, compCodec codecType, pool *pool.BucketedPool[byte]) []byte {
+	if pool == nil {
+		return append([]byte(nil), decoded...)
+	}
 	if compCodec == codecSnappy {
 		// We already know the actual size of the decoded buffer before decompression,
 		// so there's no need to copy the buffer.

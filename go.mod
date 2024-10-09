@@ -315,4 +315,4 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // - https://github.com/grafana/franz-go/pull/1
 // - https://github.com/grafana/franz-go/pull/3
 // - https://github.com/grafana/franz-go/pull/4
-replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241003081803-835b5cb1ddcf
+replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009101240-fa97d35e871f
