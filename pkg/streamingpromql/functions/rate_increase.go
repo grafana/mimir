@@ -18,17 +18,15 @@ import (
 var Rate = FunctionOverRangeVector{
 	StepFunc:                       rate(true),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
-	SeriesMetadataFunc:             DropSeriesName,
+	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
-	NeedsSeriesDeduplication:       true,
 }
 
 var Increase = FunctionOverRangeVector{
 	StepFunc:                       rate(false),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
-	SeriesMetadataFunc:             DropSeriesName,
+	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
-	NeedsSeriesDeduplication:       true,
 }
 
 // isRate is true for `rate` function, or false for `instant` function

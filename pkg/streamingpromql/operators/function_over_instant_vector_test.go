@@ -47,8 +47,10 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		Inner:                    inner,
 		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 		Func: functions.FunctionOverInstantVector{
-			SeriesMetadataFunc: mustBeCalledMetadata,
-			SeriesDataFunc:     mustBeCalledSeriesData,
+			SeriesDataFunc: mustBeCalledSeriesData,
+			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{
+				Func: mustBeCalledMetadata,
+			},
 		},
 	}
 
