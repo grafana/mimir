@@ -32,7 +32,7 @@ var (
 	errNotImplemented       = errors.New("not implemented")
 )
 
-type HandleEmbeddedQueryFunc func(ctx context.Context, queryString string, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
+type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
 
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
@@ -115,8 +115,8 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
-func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryString string, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
-	query, err := query.WithQuery(queryString)
+func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+	query, err := query.WithQuery(queryExpr.Expr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -140,7 +140,7 @@ func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryString string, que
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
-func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []string, hints *storage.SelectHints) storage.SeriesSet {
+func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []astmapper.EmbeddedQuery, hints *storage.SelectHints) storage.SeriesSet {
 	streams := make([][]SampleStream, len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.

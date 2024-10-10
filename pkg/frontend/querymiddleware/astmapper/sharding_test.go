@@ -540,24 +540,32 @@ func TestShardSummer(t *testing.T) {
 }
 
 func concatShards(shards int, queryTemplate string) string {
-	queries := make([]string, shards)
+	queries := make([]EmbeddedQuery, shards)
 	for shard := range queries {
-		queries[shard] = strings.ReplaceAll(queryTemplate, "x_of_y", sharding.FormatShardIDLabelValue(uint64(shard), uint64(shards)))
+		queryStr := strings.ReplaceAll(queryTemplate, "x_of_y", sharding.FormatShardIDLabelValue(uint64(shard), uint64(shards)))
+		queries[shard] = NewEmbeddedQuery(queryStr, nil)
 	}
-	return concat(queries...)
+	return concatInner(queries...)
 }
 
-func concat(queries ...string) string {
-	exprs := make([]parser.Expr, 0, len(queries))
-	for _, q := range queries {
-		n, err := parser.ParseExpr(q)
+func concat(queryStrs ...string) string {
+	queries := make([]EmbeddedQuery, len(queryStrs))
+	for i, query := range queryStrs {
+		queries[i] = NewEmbeddedQuery(query, nil)
+	}
+	return concatInner(queries...)
+}
+
+func concatInner(rawQueries ...EmbeddedQuery) string {
+	queries := make([]EmbeddedQuery, len(rawQueries))
+	for i, q := range rawQueries {
+		n, err := parser.ParseExpr(q.Expr)
 		if err != nil {
 			panic(err)
 		}
-		exprs = append(exprs, n)
-
+		queries[i] = NewEmbeddedQuery(n.String(), q.Params)
 	}
-	mapped, err := VectorSquasher(exprs...)
+	mapped, err := VectorSquasher(queries...)
 	if err != nil {
 		panic(err)
 	}
@@ -573,7 +581,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		{
 			shards:   3,
 			input:    `sum(rate(bar1{baz="blip"}[1m]))`,
-			expected: `sum(__embedded_queries__{__queries__="{\"Concat\":[\"sum(rate(bar1{__query_shard__=\\\"1_of_3\\\",baz=\\\"blip\\\"}[1m]))\",\"sum(rate(bar1{__query_shard__=\\\"2_of_3\\\",baz=\\\"blip\\\"}[1m]))\",\"sum(rate(bar1{__query_shard__=\\\"3_of_3\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
+			expected: `sum(__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum(rate(bar1{__query_shard__=\\\"1_of_3\\\",baz=\\\"blip\\\"}[1m]))\"},{\"Expr\":\"sum(rate(bar1{__query_shard__=\\\"2_of_3\\\",baz=\\\"blip\\\"}[1m]))\"},{\"Expr\":\"sum(rate(bar1{__query_shard__=\\\"3_of_3\\\",baz=\\\"blip\\\"}[1m]))\"}]}"})`,
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {

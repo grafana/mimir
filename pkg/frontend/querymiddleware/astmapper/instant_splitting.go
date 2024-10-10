@@ -358,7 +358,7 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval ti
 	}
 
 	// Create a partial query for each split
-	embeddedQueries := make([]parser.Expr, 0, splitCount)
+	embeddedQueries := make([]EmbeddedQuery, 0, splitCount)
 	for split := 0; split < splitCount; split++ {
 		splitOffset := time.Duration(split) * i.interval
 		// The range interval of the last embedded query can be smaller than i.interval
@@ -377,7 +377,7 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval ti
 		}
 
 		// Prepend to embedded queries
-		embeddedQueries = append([]parser.Expr{splitExpr}, embeddedQueries...)
+		embeddedQueries = append([]EmbeddedQuery{NewEmbeddedQuery(splitExpr.String(), nil)}, embeddedQueries...)
 	}
 
 	squashExpr, err := VectorSquasher(embeddedQueries...)
