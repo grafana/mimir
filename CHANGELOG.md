@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Adds bearer token support for mimirtool's analyze ruler/prometheus commands.
 * [CHANGE] Alertmanager: the following metrics are not exported for a given `user` when the metric value is zero: #9359
   * `cortex_alertmanager_alerts_received_total`
   * `cortex_alertmanager_alerts_invalid_total`

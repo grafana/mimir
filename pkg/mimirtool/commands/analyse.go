@@ -26,6 +26,10 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	prometheusAnalyzeCmd.Flag("prometheus-http-prefix", "HTTP URL path under which the Prometheus api will be served.").
 		Default("").
 		StringVar(&paCmd.prometheusHTTPPrefix)
+	prometheusAnalyzeCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set "+envVars.AuthToken+".").
+		Default("").
+		Envar(envVars.AuthToken).
+		StringVar(&paCmd.authToken)
 	prometheusAnalyzeCmd.Flag("id", "Basic auth username to use when contacting Prometheus or Grafana Mimir, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
 		Envar(envVars.TenantID).
 		Default("").
@@ -88,6 +92,10 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	rulerAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("metrics-in-ruler.json").
 		StringVar(&raCmd.outputFile)
+	rulerAnalyzeCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set "+envVars.AuthToken+".").
+		Default("").
+		Envar(envVars.AuthToken).
+		StringVar(&raCmd.ClientConfig.AuthToken)
 
 	daCmd := &DashboardAnalyzeCommand{}
 	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").Action(daCmd.run)
