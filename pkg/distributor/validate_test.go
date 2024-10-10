@@ -66,29 +66,34 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelNamesPerSeries = 2
 
 	for _, c := range []struct {
-		metric                  model.Metric
-		skipLabelNameValidation bool
-		err                     error
+		metric                   model.Metric
+		skipLabelNameValidation  bool
+		skipLabelCountValidation bool
+		err                      error
 	}{
 		{
-			map[model.LabelName]model.LabelValue{},
-			false,
-			errors.New(noMetricNameMsgFormat),
+			metric:                   map[model.LabelName]model.LabelValue{},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      errors.New(noMetricNameMsgFormat),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
-			false,
-			fmt.Errorf(invalidMetricNameMsgFormat, " "),
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      fmt.Errorf(invalidMetricNameMsgFormat, " "),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0"},
-			false,
-			fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				invalidLabelMsgFormat,
 				"foo ",
 				mimirpb.FromLabelAdaptersToString(
@@ -100,14 +105,16 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
-			false,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
 				mimirpb.FromLabelAdaptersToString(
@@ -119,9 +126,10 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				labelValueTooLongMsgFormat,
 				"much_shorter_name",
 				"test_value_please_ignore_no_really_nothing_to_see_here",
@@ -134,9 +142,10 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				tooManyLabelsMsgFormat,
 				tooManyLabelsArgs(
 					[]mimirpb.LabelAdapter{
@@ -149,19 +158,28 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
-			true,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: true,
+			err:                      nil,
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "你好"},
-			false,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
+			skipLabelNameValidation:  true,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "你好"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				invalidLabelValueMsgFormat,
 				"label1", "abc\xfe\xfddef",
 				mimirpb.FromLabelAdaptersToString(
@@ -173,12 +191,13 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
-			true,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			skipLabelNameValidation:  true,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 	} {
-		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -381,7 +400,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false)
+	}, false, false)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -398,7 +417,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false)
+	}, false, false)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",

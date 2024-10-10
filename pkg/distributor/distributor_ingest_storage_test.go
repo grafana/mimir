@@ -301,7 +301,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 
 		// Send write request through the HTTP handler.
-		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
+		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
 		h.ServeHTTP(resp, createRequest(t, marshalledReq))
 		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
