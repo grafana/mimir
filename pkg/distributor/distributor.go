@@ -198,9 +198,11 @@ type Config struct {
 	// for testing and for extending the ingester by adding calls to the client
 	IngesterClientFactory ring_client.PoolFactory `yaml:"-"`
 
-	// when true the distributor does not validate the label name and value, Mimir doesn't directly use
-	// this (and should never use it) but this feature is used by other projects built on top of it
-	SkipLabelValidation bool `yaml:"-"`
+	// When SkipLabelValidation is true the distributor does not validate the label name and value, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
+	// Similarly, SkipLabelCountValidation skips the label count validation.
+	SkipLabelValidation      bool `yaml:"-"`
+	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
@@ -713,8 +715,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
 		return err
 	}
 
@@ -1051,8 +1053,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
 			skipLabelValidation := d.cfg.SkipLabelValidation || req.GetSkipLabelValidation()
+			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
+
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
