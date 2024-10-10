@@ -1306,7 +1306,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 		require.NoError(t, reader.StartAsync(readerCtx))
 		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			// Interrupting startup should fail the service.
+			// A context cancellation error shouldn't be swallowed and interpreted as "startup went ok"
+			assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
 		})
 
 		// Wait until the Kafka cluster received at least 1 ListOffsets request.
@@ -1353,7 +1355,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 		require.NoError(t, reader.StartAsync(readerCtx))
 		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			// Interrupting startup should fail the service.
+			// A context cancellation error shouldn't be swallowed and interpreted as "startup went ok"
+			assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
 		})
 
 		// Wait until the Kafka cluster received at least 1 Fetch request.
