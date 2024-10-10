@@ -44,8 +44,10 @@ var (
 )
 
 const (
-	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
-	statusClientClosedRequest     = 499
+	SkipLabelNameValidationHeader  = "X-Mimir-SkipLabelNameValidation"
+	SkipLabelCountValidationHeader = "X-Mimir-SkipLabelCountValidation"
+
+	statusClientClosedRequest = 499
 )
 
 type RetryConfig struct {
@@ -77,13 +79,14 @@ func Handler(
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -130,6 +133,7 @@ func handler(
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
@@ -175,6 +179,12 @@ func handler(
 				req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
 			} else {
 				req.SkipLabelValidation = false
+			}
+
+			if allowSkipLabelCountValidation {
+				req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
+			} else {
+				req.SkipLabelCountValidation = false
 			}
 
 			cleanup := func() {
