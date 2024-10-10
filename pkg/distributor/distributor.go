@@ -522,13 +522,23 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
+		var wpMu sync.Mutex // Prevents data races on the pool's jobs channel.
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
-		d.doBatchPushWorkers = wp.Go
+		d.doBatchPushWorkers = func(f func()) {
+			wpMu.Lock()
+			defer wpMu.Unlock()
+			wp.Go(f)
+		}
 		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
 		subservices = append(subservices, services.NewBasicService(
 			nil,
 			func(ctx context.Context) error { <-ctx.Done(); return nil },
-			func(_ error) error { wp.Close(); return nil },
+			func(_ error) error {
+				wpMu.Lock()
+				defer wpMu.Unlock()
+				wp.Close()
+				return nil
+			},
 		))
 	}
 

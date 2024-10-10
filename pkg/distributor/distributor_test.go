@@ -315,6 +315,48 @@ func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
 	require.GreaterOrEqual(t, counter.Load(), int64(3))
 }
 
+func TestDistributor_PushWithDoBatchWorkers_DataRace(t *testing.T) {
+	limits := prepareDefaultLimits()
+	limits.IngestionRate = 20
+	limits.IngestionBurstSize = 20
+
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
+		configure: func(cfg *Config) {
+			// 2 workers, so 1 push would need to spawn a new goroutine.
+			cfg.ReusableIngesterPushWorkers = 2
+		},
+	})
+	require.Len(t, ds, 1)
+	distributor := ds[0]
+
+	require.NotNil(t, distributor.doBatchPushWorkers)
+
+	reqCt := 10
+	errs := make(chan error, reqCt)
+	for i := 0; i < reqCt; i++ {
+		go func() {
+			request := makeWriteRequest(123456789000, 3, 5, false, false, "foo")
+			ctx := user.InjectOrgID(context.Background(), "user")
+			_, err := distributor.Push(ctx, request)
+			errs <- err
+		}()
+	}
+	time.Sleep(10 * time.Millisecond)
+	distributor.StopAsync()
+	errCt := 0
+	for i := 0; i < reqCt; i++ {
+		if <-errs != nil {
+			errCt++
+		}
+	}
+	require.NotZero(t, errCt, "expected at least one error")
+	require.Less(t, errCt, reqCt, "expected not all requests to fail")
+}
+
 func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	now := time.Now()
 	mtime.NowForce(now)
