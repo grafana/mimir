@@ -462,7 +462,7 @@ func TestCachingAndInvalidation(t *testing.T) {
 
 		cacheCfg := bucketcache.NewCachingBucketConfig()
 		cacheCfg.CacheIter("rule-iter", mockCache, matchAll, time.Minute, iterCodec)
-		cacheCfg.CacheGet("rule-groups", mockCache, matchAll, 1024^2, time.Minute, time.Minute, time.Minute, true)
+		cacheCfg.CacheGet("rule-groups", mockCache, matchAll, 1024^2, time.Minute, time.Minute, time.Minute)
 		cacheClient, err := bucketcache.NewCachingBucket("rule-store", baseClient, cacheCfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 
@@ -478,28 +478,37 @@ func TestCachingAndInvalidation(t *testing.T) {
 
 	t.Run("list users with cache", func(t *testing.T) {
 		mockCache, ruleStore := setup(t)
+		startStores := mockCache.CountStoreCalls()
+		startFetches := mockCache.CountFetchCalls()
+
 		users, err := ruleStore.ListAllUsers(context.Background())
 
 		require.NoError(t, err)
 		require.Equal(t, []string{"user1", "user2"}, users)
 
-		require.Equal(t, 1, mockCache.CountStoreCalls())
-		require.Equal(t, 1, mockCache.CountFetchCalls())
+		require.Equal(t, 1, mockCache.CountStoreCalls()-startStores)
+		require.Equal(t, 1, mockCache.CountFetchCalls()-startFetches)
 	})
 
 	t.Run("list users no cache", func(t *testing.T) {
 		mockCache, rs := setup(t)
+		startStores := mockCache.CountStoreCalls()
+		startFetches := mockCache.CountFetchCalls()
+
 		users, err := rs.ListAllUsers(context.Background(), rulestore.WithCacheDisabled())
 
 		require.NoError(t, err)
 		require.Equal(t, []string{"user1", "user2"}, users)
 
-		require.Equal(t, 1, mockCache.CountStoreCalls())
-		require.Equal(t, 0, mockCache.CountFetchCalls())
+		require.Equal(t, 1, mockCache.CountStoreCalls()-startStores)
+		require.Equal(t, 0, mockCache.CountFetchCalls()-startFetches)
 	})
 
 	t.Run("list rule groups with cache", func(t *testing.T) {
 		mockCache, ruleStore := setup(t)
+		startStores := mockCache.CountStoreCalls()
+		startFetches := mockCache.CountFetchCalls()
+
 		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
 
 		require.NoError(t, err)
@@ -521,12 +530,15 @@ func TestCachingAndInvalidation(t *testing.T) {
 			},
 		}, groups)
 
-		require.Equal(t, 1, mockCache.CountStoreCalls())
-		require.Equal(t, 1, mockCache.CountFetchCalls())
+		require.Equal(t, 1, mockCache.CountStoreCalls()-startStores)
+		require.Equal(t, 1, mockCache.CountFetchCalls()-startFetches)
 	})
 
 	t.Run("list rule groups no cache", func(t *testing.T) {
 		mockCache, ruleStore := setup(t)
+		startStores := mockCache.CountStoreCalls()
+		startFetches := mockCache.CountFetchCalls()
+
 		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", rulestore.WithCacheDisabled())
 
 		require.NoError(t, err)
@@ -548,48 +560,54 @@ func TestCachingAndInvalidation(t *testing.T) {
 			},
 		}, groups)
 
-		require.Equal(t, 1, mockCache.CountStoreCalls())
-		require.Equal(t, 0, mockCache.CountFetchCalls())
+		require.Equal(t, 1, mockCache.CountStoreCalls()-startStores)
+		require.Equal(t, 0, mockCache.CountFetchCalls()-startFetches)
 	})
 
 	t.Run("get rule group from cache", func(t *testing.T) {
 		mockCache, ruleStore := setup(t)
+		startStores := mockCache.CountStoreCalls()
+		startFetches := mockCache.CountFetchCalls()
+
 		group, err := ruleStore.GetRuleGroup(context.Background(), "user1", "world", "another namespace testGroup")
 
 		require.NoError(t, err)
 		require.NotNil(t, group)
 
-		require.Equal(t, 2, mockCache.CountStoreCalls())
-		require.Equal(t, 1, mockCache.CountFetchCalls())
+		require.Equal(t, 2, mockCache.CountStoreCalls()-startStores) // content set + exists set
+		require.Equal(t, 1, mockCache.CountFetchCalls()-startFetches)
 	})
 
 	t.Run("get rule groups after invalidation", func(t *testing.T) {
 		mockCache, ruleStore := setup(t)
+		startStores := mockCache.CountStoreCalls()
+		startFetches := mockCache.CountFetchCalls()
+		startDeletes := mockCache.CountDeleteCalls()
+
 		group, err := ruleStore.GetRuleGroup(context.Background(), "user1", "world", "another namespace testGroup")
 
 		require.NoError(t, err)
 		require.NotNil(t, group)
 		require.Zero(t, group.QueryOffset)
 
-		require.Equal(t, 2, mockCache.CountStoreCalls())
-		require.Equal(t, 1, mockCache.CountFetchCalls())
+		require.Equal(t, 2, mockCache.CountStoreCalls()-startStores) // content set + exists set
+		require.Equal(t, 1, mockCache.CountFetchCalls()-startFetches)
 
-		origDeletes := mockCache.CountDeleteCalls()
 		group.QueryOffset = 42 * time.Second
 		require.NoError(t, ruleStore.SetRuleGroup(context.Background(), group.User, group.Namespace, group))
 
-		require.Equal(t, 2, mockCache.CountStoreCalls())
-		require.Equal(t, 1, mockCache.CountFetchCalls())
-		require.Equal(t, 2, mockCache.CountDeleteCalls()-origDeletes)
+		require.Equal(t, 4, mockCache.CountStoreCalls()-startStores) // += content lock + exists lock
+		require.Equal(t, 1, mockCache.CountFetchCalls()-startFetches)
+		require.Equal(t, 2, mockCache.CountDeleteCalls()-startDeletes)
 
 		modifiedGroup, err := ruleStore.GetRuleGroup(context.Background(), "user1", "world", "another namespace testGroup")
 		require.NoError(t, err)
 		require.NotNil(t, modifiedGroup)
 		require.Equal(t, 42*time.Second, modifiedGroup.QueryOffset)
 
-		require.Equal(t, 4, mockCache.CountStoreCalls())
-		require.Equal(t, 2, mockCache.CountFetchCalls())
-		require.Equal(t, 2, mockCache.CountDeleteCalls()-origDeletes)
+		require.Equal(t, 6, mockCache.CountStoreCalls()-startStores) // += content set + exists set
+		require.Equal(t, 2, mockCache.CountFetchCalls()-startFetches)
+		require.Equal(t, 2, mockCache.CountDeleteCalls()-startDeletes)
 	})
 }
 
