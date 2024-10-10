@@ -1305,6 +1305,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 		require.NoError(t, reader.StartAsync(readerCtx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
 
 		// Wait until the Kafka cluster received at least 1 ListOffsets request.
 		test.Poll(t, 5*time.Second, true, func() interface{} {
@@ -1349,6 +1352,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 		require.NoError(t, reader.StartAsync(readerCtx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
 
 		// Wait until the Kafka cluster received at least 1 Fetch request.
 		test.Poll(t, 5*time.Second, true, func() interface{} {
