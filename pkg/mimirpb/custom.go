@@ -8,7 +8,75 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
+	protobufproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 )
+
+func init() {
+	c := encoding.GetCodecV2(proto.Name)
+	encoding.RegisterCodecV2(&codecV2{c})
+}
+
+// codecV2 customizes gRPC unmarshalling.
+type codecV2 struct {
+	encoding.CodecV2
+}
+
+func messageV2Of(v any) protobufproto.Message {
+	switch v := v.(type) {
+	case protoadapt.MessageV1:
+		return protoadapt.MessageV2Of(v)
+	case protoadapt.MessageV2:
+		return v
+	default:
+		panic(fmt.Errorf("unrecognized message type %T", v))
+	}
+}
+
+// Unmarshal customizes gRPC unmarshalling.
+// If v implements the BufferHolder interface, its SetBuffer method is called with the unmarshalling buffer.
+func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	vv := messageV2Of(v)
+	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
+	// Decrement buf's reference count. Note though that if v implements BufferHolder,
+	// we increase buf's reference count first so it doesn't go to zero.
+	defer buf.Free()
+
+	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+		return err
+	}
+
+	unmarshaler, ok := v.(BufferHolder)
+	if ok {
+		buf.Ref()
+		unmarshaler.SetBuffer(buf)
+	}
+
+	return nil
+}
+
+// BufferHolder is an interface for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// Implementations of this interface should keep a reference to said buffer.
+type BufferHolder interface {
+	// SetBuffer sets the unmarshalling buffer.
+	SetBuffer(mem.Buffer)
+}
+
+var _ BufferHolder = &WriteRequest{}
+
+func (m *WriteRequest) SetBuffer(buf mem.Buffer) {
+	m.buffer = buf
+}
+
+func (m *WriteRequest) FreeBuffer() {
+	if m.buffer != nil {
+		m.buffer.Free()
+		m.buffer = nil
+	}
+}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
