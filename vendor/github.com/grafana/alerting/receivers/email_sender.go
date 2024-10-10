@@ -43,7 +43,7 @@ type defaultEmailSender struct {
 
 // NewEmailSenderFactory takes a configuration and returns a new EmailSender factory function.
 func NewEmailSenderFactory(cfg EmailSenderConfig) func(Metadata) (EmailSender, error) {
-	return func(n Metadata) (EmailSender, error) {
+	return func(_ Metadata) (EmailSender, error) {
 		tmpl, err := template.New("templates").
 			Funcs(template.FuncMap{
 				"Subject":                 subjectTemplateFunc,
