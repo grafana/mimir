@@ -678,7 +678,7 @@ func (i *cacheInvalidation) start(ctx context.Context, name string) {
 	existsLockKey := cachingKeyExistsLock(i.bucketID, name)
 
 	if attrCfg != nil || getCfg != nil || existCfg != nil {
-		i.runWithRetries(ctx, logger, func() error {
+		err := i.runWithRetries(ctx, func() error {
 			me := multierror.MultiError{}
 			if attrCfg != nil {
 				me.Add(attrCfg.cache.Set(ctx, attrLockKey, []byte{}, invalidationLockTTL))
@@ -692,10 +692,11 @@ func (i *cacheInvalidation) start(ctx context.Context, name string) {
 			return me.Err()
 		})
 
-		logger.DebugLog(
-			"msg", "inserted cached object locks",
-			"object", name,
-		)
+		if err != nil {
+			level.Warn(logger).Log("msg", "failed to set lock object storage cache entries", "object", name, "err", err)
+		} else {
+			logger.DebugLog("msg", "set lock object storage cache entries", "object", name)
+		}
 	}
 }
 
@@ -717,7 +718,7 @@ func (i *cacheInvalidation) finish(ctx context.Context, name string) {
 	existsKey := cachingKeyExists(i.bucketID, name)
 
 	if attrCfg != nil || getCfg != nil || existCfg != nil {
-		i.runWithRetries(ctx, logger, func() error {
+		err := i.runWithRetries(ctx, func() error {
 			me := multierror.MultiError{}
 			// Breaking the cache abstraction here to test for Memcached-specific
 			// errors to avoid retries when we attempt to invalidate something that
@@ -740,28 +741,35 @@ func (i *cacheInvalidation) finish(ctx context.Context, name string) {
 			return me.Err()
 		})
 
-		logger.DebugLog(
-			"msg", "deleted cached object entries",
-			"object", name,
-		)
+		if err != nil {
+			level.Warn(logger).Log("msg", "failed to delete object storage cache entries", "object", name, "err", err)
+		} else {
+			logger.DebugLog("msg", "deleted object storage cache entries", "object", name)
+		}
 	}
 }
 
-func (i *cacheInvalidation) runWithRetries(ctx context.Context, logger *spanlogger.SpanLogger, f func() error) {
+func (i *cacheInvalidation) runWithRetries(ctx context.Context, f func() error) error {
 	retry := backoff.New(ctx, i.retryCfg)
+	var err error
+
 	for retry.Ongoing() {
-		err := f()
+		err = f()
 		if err == nil {
-			return
+			return nil
 		}
 
-		logger.DebugLog(
-			"msg", "retrying cache invalidation operation",
-			"retries", retry.NumRetries(),
-			"err", err,
-		)
 		retry.Wait()
 	}
+
+	// If the operation failed, that's the more relevant error for why we weren't able
+	// to run some cache operation even if the context was canceled before the operation
+	// could be retried.
+	if err != nil {
+		return err
+	}
+
+	return retry.Err()
 }
 
 func cachingKeyAttributes(bucketID, name string) string {
