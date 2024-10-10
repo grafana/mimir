@@ -108,7 +108,7 @@ Any traffic that does not match that prefix is discarded, to ensure that only th
    This label must be the same on all instances that are part of the same cluster.
    For example, if you run a Grafana Mimir cluster in a dedicated namespace, then set the cluster label to the name of the namespace.
 4. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
-5. Enable cluster label verification on all clusters instances by removing the configuration option `-memberlist.cluster-label-verification-disabled=true`.
+5. Enable cluster label verification on all clusters instances by removing the configuration option `-memberlist.cluster-label-verification-disabled=false`.
 6. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
 
 ### Fine tuning memberlist changes propagation latency
