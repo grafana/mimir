@@ -17,11 +17,11 @@ import (
 
 func init() {
 	c := encoding.GetCodecV2(proto.Name)
-	encoding.RegisterCodecV2(&CodecV2{c})
+	encoding.RegisterCodecV2(&codecV2{c})
 }
 
-// CodecV2 customizes gRPC unmarshalling.
-type CodecV2 struct {
+// codecV2 customizes gRPC unmarshalling.
+type codecV2 struct {
 	encoding.CodecV2
 }
 
@@ -38,7 +38,7 @@ func messageV2Of(v any) protobufproto.Message {
 
 // Unmarshal customizes gRPC unmarshalling.
 // If v implements the BufferHolder interface, its SetBuffer method is called with the unmarshalling buffer.
-func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
+func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	vv := messageV2Of(v)
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 	// Decrement buf's reference count. Note though that if v implements BufferHolder,
