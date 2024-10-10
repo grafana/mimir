@@ -30,6 +30,9 @@ message WriteRequest {
 
   // Skip validation of label names and values.
   bool skip_label_validation = 1000;
+
+  // Skip label count validation.
+  bool skip_label_count_validation = 1001;
 }
 
 message WriteResponse {}
