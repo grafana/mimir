@@ -3781,6 +3781,16 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
+  # The username to use to authenticate to Kafka using SASL plain mechanism.
+  # SASL is enabled when both the username and password have been configured.
+  # CLI flag: -ingest-storage.kafka.sasl-username
+  [sasl_username: <string> | default = ""]
+
+  # The password to use to authenticate to Kafka using SASL plain mechanism.
+  # SASL is enabled when both the username and password have been configured.
+  # CLI flag: -ingest-storage.kafka.sasl-password
+  [sasl_password: <string> | default = ""]
+
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
   # consumer group contains the '<partition>' placeholder, it is replaced with

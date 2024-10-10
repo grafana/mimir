@@ -21,6 +21,47 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
+func TestNewKafkaWriterClient(t *testing.T) {
+	t.Run("should support SASL plain authentication", func(t *testing.T) {
+		const (
+			topicName     = "test"
+			numPartitions = 1
+			username      = "mimir"
+			password      = "supersecret"
+		)
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithSASLPlain(username, password))
+
+		t.Run("should fail if the provided auth is wrong", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.SASLUsername = username
+			cfg.SASLPassword = "wrong"
+
+			client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			require.Error(t, client.Ping(context.Background()))
+		})
+
+		t.Run("should succeed if the provided auth is good", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.SASLUsername = username
+			cfg.SASLPassword = password
+
+			client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			require.NoError(t, client.Ping(context.Background()))
+		})
+	})
+}
+
 func TestKafkaProducer_ShouldExposeBufferedBytesLimit(t *testing.T) {
 	const (
 		numPartitions = 1
