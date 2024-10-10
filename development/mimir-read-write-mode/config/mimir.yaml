@@ -56,6 +56,7 @@ alertmanager:
   data_dir: /data/alertmanager
   fallback_config_file: ./config/alertmanager-fallback-config.yaml
   external_url: http://localhost:8006/alertmanager
+  grafana_alertmanager_compatibility_enabled: true
 
 alertmanager_storage:
   s3:
