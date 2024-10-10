@@ -87,6 +87,17 @@
         },
         {
           "kind": "field",
+          "name": "skip_label_count_validation_header_enabled",
+          "required": false,
+          "desc": "Allows to skip label count validation via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.skip-label-count-validation-header-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "get_request_for_ingester_shutdown_enabled",
           "required": false,
           "desc": "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.",
