@@ -71,7 +71,7 @@ func (c jsonCodec) Decode(encoded string) (queries []EmbeddedQuery, err error) {
 	return embedded.Concat, nil
 }
 
-// VectorSquash reduces an AST into a single vector query which can be hijacked by a Queryable impl.
+// VectorSquash reduces multiple EmbeddedQueries into a single vector query which can be hijacked by a Queryable impl.
 // It always uses a VectorSelector as the substitution expr.
 // This is important because logical/set binops can only be applied against vectors and not matrices.
 func VectorSquasher(exprs ...EmbeddedQuery) (parser.Expr, error) {

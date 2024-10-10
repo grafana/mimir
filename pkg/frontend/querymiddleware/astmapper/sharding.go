@@ -499,7 +499,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
-		var aggExpr parser.Expr = &parser.AggregateExpr{
+		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
 			Grouping: expr.Grouping,
@@ -553,7 +553,7 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 			return nil, err
 		}
 
-		var binExpr parser.Expr = &parser.BinaryExpr{
+		binExpr := &parser.BinaryExpr{
 			LHS:        shardedLHS,
 			Op:         expr.Op,
 			RHS:        shardedRHS,
