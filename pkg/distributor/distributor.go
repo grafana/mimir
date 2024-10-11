@@ -200,8 +200,10 @@ type Config struct {
 
 	// When SkipLabelValidation is true the distributor does not validate the label name and value, Mimir doesn't directly use
 	// this (and should never use it) but this feature is used by other projects built on top of it.
-	// Similarly, SkipLabelCountValidation skips the label count validation.
-	SkipLabelValidation      bool `yaml:"-"`
+	SkipLabelValidation bool `yaml:"-"`
+
+	// When SkipLabelCountValidation is true the distributor does not validate the number of labels, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
 	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
