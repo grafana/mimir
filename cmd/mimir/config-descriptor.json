@@ -6490,6 +6490,26 @@
             },
             {
               "kind": "field",
+              "name": "sasl_username",
+              "required": false,
+              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_password",
+              "required": false,
+              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "consumer_group",
               "required": false,
               "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
