@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -139,7 +140,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.Enabled = true
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
-				cfg.KafkaConfig.SASLPassword.Set("supersecret")
+				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
 			},
 			expectedErr: ErrInconsistentSASLCredentials,
 		},
@@ -149,7 +150,7 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.Address = "localhost"
 				cfg.KafkaConfig.Topic = "test"
 				cfg.KafkaConfig.SASLUsername = "mimir"
-				cfg.KafkaConfig.SASLPassword.Set("supersecret")
+				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
 			},
 		},
 	}
