@@ -1923,7 +1923,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
-		for _, op := range []string{"+", "-", "*", "/", "and", "unless"} {
+		for _, op := range []string{"+", "-", "*", "/", "and", "unless", "or"} {
 			binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for _, label := range labels[1:] {
 				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
