@@ -13671,6 +13671,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "rule_group_enabled",
+              "required": false,
+              "desc": "Enabling caching of rule group contents if a cache backend is configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.cache.rule-group-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "backend",
               "required": false,
               "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",

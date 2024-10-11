@@ -2497,6 +2497,8 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] Username to use when connecting to Redis.
   -ruler-storage.cache.redis.write-timeout duration
     	[deprecated] Client write timeout. (default 3s)
+  -ruler-storage.cache.rule-group-enabled
+    	[experimental] Enabling caching of rule group contents if a cache backend is configured.
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
