@@ -125,6 +125,33 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidMaxConsumerLagAtStartup,
 		},
+		"should fail if SASL username is configured but password is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLUsername = "mimir"
+			},
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should fail if SASL password is configured but username is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLPassword.Set("supersecret")
+			},
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should pass if both SASL username and password are configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLUsername = "mimir"
+				cfg.KafkaConfig.SASLPassword.Set("supersecret")
+			},
+		},
 	}
 
 	for testName, testData := range tests {
