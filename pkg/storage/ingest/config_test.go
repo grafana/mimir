@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -124,6 +125,33 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.MaxConsumerLagAtStartup = 1 * time.Second
 			},
 			expectedErr: ErrInvalidMaxConsumerLagAtStartup,
+		},
+		"should fail if SASL username is configured but password is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLUsername = "mimir"
+			},
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should fail if SASL password is configured but username is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+			},
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should pass if both SASL username and password are configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLUsername = "mimir"
+				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+			},
 		},
 	}
 
