@@ -729,13 +729,13 @@ mimirtool analyze ruler --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment variable | Flag            | Description                                                                                               |
-| -------------------- | --------------- | --------------------------------------------------------------------------------------------------------- |
-| `MIMIR_ADDRESS`      | `--address`     | Sets the address of the Prometheus instance.                                                              |
-| `MIMIR_TENANT_ID`    | `--id`          | Sets the basic authentication username. If you're using Grafana Cloud, this variable is your instance ID. |
-| `MIMIR_API_KEY`      | `--key`         | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.     |
-| `MIMIR_AUTH_TOKEN`   | `--auth-token`  | Sets the bearer or JWT token that is required for Mimir clusters authenticating with this method.         |
-| -                    | `--output`      | Sets the output file path, which by default is `metrics-in-ruler.json`.                                   |
+| Environment variable | Flag           | Description                                                                                               |
+| -------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`      | `--address`    | Sets the address of the Prometheus instance.                                                              |
+| `MIMIR_TENANT_ID`    | `--id`         | Sets the basic authentication username. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_API_KEY`      | `--key`        | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.     |
+| `MIMIR_AUTH_TOKEN`   | `--auth-token` | Sets the bearer or JWT token that is required for Mimir clusters authenticating with this method.         |
+| -                    | `--output`     | Sets the output file path, which by default is `metrics-in-ruler.json`.                                   |
 
 ##### Example output file
 
