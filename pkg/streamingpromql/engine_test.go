@@ -42,7 +42,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} or other_metric{}":                   "binary expression with 'or'",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
