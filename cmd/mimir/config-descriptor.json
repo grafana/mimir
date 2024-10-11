@@ -16012,6 +16012,17 @@
         },
         {
           "kind": "field",
+          "name": "notify_interval",
+          "required": false,
+          "desc": "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "memberlist.notify-interval",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "advertise_addr",
           "required": false,
           "desc": "Gossip address to advertise to other members in the cluster. Used for NAT traversal.",
@@ -16199,6 +16210,28 @@
           "fieldValue": null,
           "fieldDefaultValue": 5000000000,
           "fieldFlag": "memberlist.packet-write-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_concurrent_writes",
+          "required": false,
+          "desc": "Maximum number of concurrent writes to other nodes.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3,
+          "fieldFlag": "memberlist.max-concurrent-writes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "acquire_writer_timeout",
+          "required": false,
+          "desc": "Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped.",
+          "fieldValue": null,
+          "fieldDefaultValue": 250000000,
+          "fieldFlag": "memberlist.acquire-writer-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },

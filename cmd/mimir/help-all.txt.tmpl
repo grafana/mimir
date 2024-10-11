@@ -1703,6 +1703,8 @@ Usage of ./cmd/mimir/mimir:
     	Size of memory ballast to allocate.
   -memberlist.abort-if-join-fails
     	If this node fails to join memberlist cluster, abort.
+  -memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
   -memberlist.advertise-addr string
     	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
   -memberlist.advertise-port int
@@ -1733,6 +1735,8 @@ Usage of ./cmd/mimir/mimir:
     	Timeout for leaving memberlist cluster. (default 20s)
   -memberlist.left-ingesters-timeout duration
     	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
   -memberlist.max-join-backoff duration
     	Max backoff duration to join other cluster members. (default 1m0s)
   -memberlist.max-join-retries int
@@ -1743,6 +1747,8 @@ Usage of ./cmd/mimir/mimir:
     	Min backoff duration to join other cluster members. (default 1s)
   -memberlist.nodename string
     	Name of the node in memberlist cluster. Defaults to hostname.
+  -memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
   -memberlist.packet-dial-timeout duration
     	Timeout used when connecting to other nodes to send packet. (default 2s)
   -memberlist.packet-write-timeout duration
