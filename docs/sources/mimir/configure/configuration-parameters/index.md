@@ -141,7 +141,7 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
-  # (advanced) Allows to skip label count validation via
+  # (advanced) Allows skipping the label count validation via the
   # X-Mimir-SkipLabelCountValidation header on the http write path. Allowing
   # this for external clients allows any client to send invalid label counts.
   # After enabling it, requests with a specific HTTP header set to true will not
