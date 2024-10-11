@@ -28,7 +28,7 @@ func TestNewKafkaReaderClient(t *testing.T) {
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
 			cfg.SASLUsername = username
-			cfg.SASLPassword = "wrong"
+			require.NoError(t, cfg.SASLPassword.Set("wrong"))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestNewKafkaReaderClient(t *testing.T) {
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
 			cfg.SASLUsername = username
-			cfg.SASLPassword = password
+			require.NoError(t, cfg.SASLPassword.Set(password))
 
 			client, err := NewKafkaReaderClient(cfg, nil, log.NewNopLogger())
 			require.NoError(t, err)

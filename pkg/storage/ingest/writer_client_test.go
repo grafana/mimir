@@ -37,7 +37,7 @@ func TestNewKafkaWriterClient(t *testing.T) {
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
 			cfg.SASLUsername = username
-			cfg.SASLPassword = "wrong"
+			require.NoError(t, cfg.SASLPassword.Set("wrong"))
 
 			client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestNewKafkaWriterClient(t *testing.T) {
 
 			cfg := createTestKafkaConfig(clusterAddr, topicName)
 			cfg.SASLUsername = username
-			cfg.SASLPassword = password
+			require.NoError(t, cfg.SASLPassword.Set(password))
 
 			client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			require.NoError(t, err)

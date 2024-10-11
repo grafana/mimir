@@ -99,11 +99,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	}
 
 	// SASL plain auth.
-	if cfg.SASLUsername != "" && cfg.SASLPassword != "" {
+	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
 		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
 			return plain.Auth{
 				User: cfg.SASLUsername,
-				Pass: cfg.SASLPassword,
+				Pass: cfg.SASLPassword.String(),
 			}, nil
 		})))
 	}

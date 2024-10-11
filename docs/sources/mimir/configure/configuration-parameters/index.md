@@ -3781,13 +3781,13 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
-  # The username to use to authenticate to Kafka using SASL plain mechanism.
-  # SASL is enabled when both the username and password have been configured.
+  # The username used to authenticate to Kafka using the SASL plain mechanism.
+  # To enable SASL, configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-username
   [sasl_username: <string> | default = ""]
 
-  # The password to use to authenticate to Kafka using SASL plain mechanism.
-  # SASL is enabled when both the username and password have been configured.
+  # The password used to authenticate to Kafka using the SASL plain mechanism.
+  # To enable SASL, configure both the username and password.
   # CLI flag: -ingest-storage.kafka.sasl-password
   [sasl_password: <string> | default = ""]
 
