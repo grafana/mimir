@@ -231,6 +231,8 @@ func checkTSDBAppendError(err error) error {
 		return nil
 	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
 		return nil
+	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
+		return nil
 	}
 	return err
 }
