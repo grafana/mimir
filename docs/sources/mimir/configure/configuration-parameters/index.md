@@ -141,6 +141,14 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
+  # (advanced) Allows to disable enforcement of the label count limit
+  # "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on
+  # the http write path. Allowing this for external clients allows any client to
+  # send invalid label counts. After enabling it, requests with a specific HTTP
+  # header set to true will not have label counts validated.
+  # CLI flag: -api.skip-label-count-validation-header-enabled
+  [skip_label_count_validation_header_enabled: <boolean> | default = false]
+
   # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
   # trigger an ingester shutdown. This is a potentially dangerous operation and
   # should only be enabled consciously.
