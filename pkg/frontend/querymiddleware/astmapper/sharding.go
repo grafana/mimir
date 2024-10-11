@@ -29,8 +29,6 @@ func NewSharding(shardSummer ASTMapper) ASTMapper {
 type Squasher = func(...EmbeddedQuery) (parser.Expr, error)
 
 type ShardLabeller interface {
-	GetLabelName() string
-	GetLabelValue(shard int) string
 	GetLabelMatcher(shard int) (*labels.Matcher, error)
 	GetParams(shard int) map[string]string
 }
@@ -44,16 +42,8 @@ func newQueryShardLabeller(shards int) ShardLabeller {
 	return &queryShardLabeller{shards: shards}
 }
 
-func (lbl *queryShardLabeller) GetLabelName() string {
-	return sharding.ShardLabel
-}
-
-func (lbl *queryShardLabeller) GetLabelValue(shard int) string {
-	return sharding.ShardSelector{ShardIndex: uint64(shard), ShardCount: uint64(lbl.shards)}.LabelValue()
-}
-
 func (lbl *queryShardLabeller) GetLabelMatcher(shard int) (*labels.Matcher, error) {
-	return labels.NewMatcher(labels.MatchEqual, lbl.GetLabelName(), lbl.GetLabelValue(shard))
+	return labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(shard), ShardCount: uint64(lbl.shards)}.LabelValue())
 }
 
 func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
@@ -499,7 +489,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
-		var aggExpr parser.Expr = &parser.AggregateExpr{
+		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
 			Grouping: expr.Grouping,
@@ -553,7 +543,7 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 			return nil, err
 		}
 
-		var binExpr parser.Expr = &parser.BinaryExpr{
+		binExpr := &parser.BinaryExpr{
 			LHS:        shardedLHS,
 			Op:         expr.Op,
 			RHS:        shardedRHS,

@@ -601,7 +601,7 @@ type PrometheusLabelNamesQueryRequest struct {
 	Path  string
 	Start int64
 	End   int64
-	// labelMatcherSets is a repeated field here in order to enable the representation
+	// LabelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
@@ -642,7 +642,7 @@ type PrometheusLabelValuesQueryRequest struct {
 	LabelName string
 	Start     int64
 	End       int64
-	// labelMatcherSets is a repeated field here in order to enable the representation
+	// LabelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
@@ -683,7 +683,7 @@ type PrometheusSeriesQueryRequest struct {
 	Path  string
 	Start int64
 	End   int64
-	// labelMatcherSets is a repeated field here in order to enable the representation
+	// LabelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
