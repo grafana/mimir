@@ -11,7 +11,7 @@ import (
 )
 
 func createKafkaClientProvider(t *testing.T, kafkaAddress, kafkaClientID string) (func() *kgo.Client, error) {
-	client, err := CreateKafkaClient(kafkaAddress, kafkaClientID)
+	client, err := CreateKafkaClient(kafkaAddress, kafkaClientID, nil)
 	if err != nil {
 		return nil, err
 	}
