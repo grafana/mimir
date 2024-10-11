@@ -31,19 +31,6 @@ type InstantVectorSeriesData struct {
 	Histograms []promql.HPoint
 }
 
-// RemoveReferencesToRetainedHistogram searches backwards through d.Histograms, starting at lastIndex, removing any
-// points that reference h, stopping once a different FloatHistogram is reached.
-func (d InstantVectorSeriesData) RemoveReferencesToRetainedHistogram(h *histogram.FloatHistogram, lastIndex int) {
-	for i := lastIndex; i >= 0; i-- {
-		if d.Histograms[i].H != h {
-			// We've reached a different histogram. We're done.
-			return
-		}
-
-		d.Histograms[i].H = nil
-	}
-}
-
 type InstantVectorSeriesDataIterator struct {
 	data   InstantVectorSeriesData
 	fIndex int
