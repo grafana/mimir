@@ -5,6 +5,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math"
 	"math/rand"
 	"slices"
@@ -375,23 +376,23 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		tqaNonFlipped := newTenantQuerierAssignments()
-		tqaFlipped := newTenantQuerierAssignments()
-		tqaQuerierWorkerPrioritization := newTenantQuerierAssignments()
+		tqaNonFlipped := tree.NewTenantQuerierQueuingAlgorithm()
+		tqaFlipped := tree.NewTenantQuerierQueuingAlgorithm()
+		tqaQuerierWorkerPrioritization := tree.NewTenantQuerierQueuingAlgorithm()
 
-		nonFlippedRoundRobinTree, err := NewTree(tqaNonFlipped, &roundRobinState{})
+		nonFlippedRoundRobinTree, err := tree.NewTree(tqaNonFlipped, tree.NewRoundRobinState())
 		require.NoError(t, err)
 
-		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqaFlipped)
+		flippedRoundRobinTree, err := tree.NewTree(tree.NewRoundRobinState(), tqaFlipped)
 		require.NoError(t, err)
 
-		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
+		querierWorkerPrioritizationTree, err := tree.NewTree(tree.NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
 		require.NoError(t, err)
 
 		treeScenarios := []struct {
 			name string
-			tree Tree
-			tqa  *tenantQuerierAssignments
+			tree tree.Tree
+			tqa  *tree.TenantQuerierQueuingAlgorithm
 		}{
 			// keeping these names the same length keeps logged results aligned
 			{
@@ -440,7 +441,11 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierAssignments
 				// so we have to override here to use the same structures as the test case
-				queue.queueBroker.tenantQuerierAssignments = scenario.tqa
+				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierAssignments{
+					querierIDsSorted:       make([]tree.QuerierID, 0),
+					tenantsByID:            make(map[string]*queueTenant),
+					tenantQueuingAlgorithm: scenario.tqa,
+				}
 				queue.queueBroker.prioritizeQueryComponents = prioritizeQueryComponents
 				queue.queueBroker.tree = scenario.tree
 
@@ -486,9 +491,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 				require.NoError(t, queue.stop(nil))
 				// ensure everything was dequeued
-				path, val := scenario.tree.Dequeue(&DequeueArgs{querierID: scenario.tqa.currentQuerier})
+				path, val := scenario.tree.Dequeue(&tree.DequeueArgs{QuerierID: tree.CurrentQuerier(scenario.tqa)})
 				assert.Nil(t, val)
-				assert.Equal(t, path, QueuePath{})
+				assert.Equal(t, path, tree.QueuePath{})
 			})
 		}
 	}

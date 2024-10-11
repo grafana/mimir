@@ -7,6 +7,7 @@ package queue
 
 import (
 	"fmt"
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math/rand"
 	"slices"
 	"testing"
@@ -16,40 +17,40 @@ import (
 )
 
 func TestShuffleQueriers(t *testing.T) {
-	allQueriers := querierIDSlice{"a", "b", "c", "d", "e"}
-	tqs := tenantQuerierAssignments{
+	allQueriers := []tree.QuerierID{"a", "b", "c", "d", "e"}
+	tqs := &tenantQuerierAssignments{
 		querierIDsSorted: allQueriers,
-		tenantsByID: map[TenantID]*queueTenant{
+		tenantsByID: map[string]*queueTenant{
 			"team-a": {
 				shuffleShardSeed: 12345,
 			},
 		},
-		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
+		tenantQueuingAlgorithm: tree.NewTenantQuerierQueuingAlgorithm(),
 	}
 
 	// maxQueriers is 0, so sharding is off
 	tqs.shuffleTenantQueriers("team-a", nil)
-	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
+	require.Nil(t, tqs.tenantQueuingAlgorithm.TenantQuerierIDs["team-a"])
 
 	// maxQueriers is equal to the total queriers, so the sharding calculation is unnecessary
 	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers)
 	tqs.shuffleTenantQueriers("team-a", nil)
-	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
+	require.Nil(t, tqs.tenantQueuingAlgorithm.TenantQuerierIDs["team-a"])
 
 	// maxQueriers is greater than the total queriers, so the sharding calculation is unnecessary
 	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers) + 1
 	tqs.shuffleTenantQueriers("team-a", nil)
-	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
+	require.Nil(t, tqs.tenantQueuingAlgorithm.TenantQuerierIDs["team-a"])
 
 	// now maxQueriers is nonzero and less than the total queriers, so we shuffle shard and assign
 	tqs.tenantsByID["team-a"].maxQueriers = 3
 	tqs.shuffleTenantQueriers("team-a", nil)
-	r1 := tqs.tenantQuerierIDs["team-a"]
+	r1 := tqs.tenantQueuingAlgorithm.TenantQuerierIDs["team-a"]
 	require.Equal(t, 3, len(r1))
 
 	// Same input produces same output.
 	tqs.shuffleTenantQueriers("team-a", nil)
-	r2 := tqs.tenantQuerierIDs["team-a"]
+	r2 := tqs.tenantQueuingAlgorithm.TenantQuerierIDs["team-a"]
 
 	require.Equal(t, 3, len(r2))
 	require.Equal(t, r1, r2)
@@ -60,18 +61,18 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 
 	var allSortedQueriers querierIDSlice
 	for i := 0; i < queriersCount; i++ {
-		allSortedQueriers = append(allSortedQueriers, QuerierID(fmt.Sprintf("%d", i)))
+		allSortedQueriers = append(allSortedQueriers, tree.QuerierID(fmt.Sprintf("%d", i)))
 	}
 	slices.Sort(allSortedQueriers)
 
 	tqs := tenantQuerierAssignments{
 		querierIDsSorted: allSortedQueriers,
-		tenantsByID: map[TenantID]*queueTenant{
+		tenantsByID: map[string]*queueTenant{
 			"team-a": {
 				shuffleShardSeed: 12345,
 			},
 		},
-		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
+		tenantQueuingAlgorithm: tree.NewTenantQuerierQueuingAlgorithm(),
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -86,11 +87,11 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 		tqs.tenantsByID["team-a"].shuffleShardSeed = r.Int63()
 
 		tqs.shuffleTenantQueriers("team-a", nil)
-		selectedQueriers := tqs.tenantQuerierIDs["team-a"]
+		selectedQueriers := tqs.tenantQueuingAlgorithm.TenantQuerierIDs["team-a"]
 		require.Equal(t, toSelect, len(selectedQueriers))
 
 		slices.Sort(allSortedQueriers)
-		prevQuerier := QuerierID("")
+		prevQuerier := tree.QuerierID("")
 		for _, q := range allSortedQueriers {
 			require.True(t, prevQuerier < q, "non-unique querier")
 			prevQuerier = q

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package queue
+package tree
 
 import (
 	"slices"
@@ -45,6 +45,10 @@ type QueuingAlgorithm interface {
 // queuePosition is 3, a new child will be placed at index 2). Children are dequeued from using a simple round-robin
 // ordering; queuePosition is incremented on every dequeue.
 type roundRobinState struct {
+}
+
+func NewRoundRobinState() *roundRobinState {
+	return &roundRobinState{}
 }
 
 // setup for roundRobinState doesn't need to do any state updates, because roundRobinState doesn't maintain any state.

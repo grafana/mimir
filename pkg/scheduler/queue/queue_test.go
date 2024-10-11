@@ -7,6 +7,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -294,7 +295,7 @@ func runQueueConsumerUntilEmpty(
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
 
-		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), QuerierID(querierID))
+		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
 		err := requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 		if err != nil {
 			return err
@@ -753,11 +754,11 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 				AdditionalQueueDimensions: queueDim,
 			}
 			tr := tenantRequest{
-				tenantID: TenantID("tenant-1"),
+				tenantID: "tenant-1",
 				req:      req,
 			}
 
-			var multiAlgorithmTreeQueuePath QueuePath
+			var multiAlgorithmTreeQueuePath tree.QueuePath
 			if queueDim == nil {
 				queueDim = []string{unknownQueueDimension}
 			}
@@ -775,7 +776,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			call := &QuerierWorkerDequeueRequest{
 				QuerierWorkerConn: &QuerierWorkerConn{
 					ctx:       ctx,
-					QuerierID: QuerierID(querierID),
+					QuerierID: querierID,
 					WorkerID:  0,
 				},
 				lastTenantIndex: FirstTenant(),
