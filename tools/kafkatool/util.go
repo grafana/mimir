@@ -7,10 +7,11 @@ import (
 	"sync"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl"
 )
 
-func CreateKafkaClient(kafkaAddress, kafkaClientID string) (*kgo.Client, error) {
-	return kgo.NewClient(
+func CreateKafkaClient(kafkaAddress, kafkaClientID string, auth sasl.Mechanism) (*kgo.Client, error) {
+	options := []kgo.Opt{
 		kgo.SeedBrokers(kafkaAddress),
 		kgo.ClientID(kafkaClientID),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
@@ -18,7 +19,13 @@ func CreateKafkaClient(kafkaAddress, kafkaClientID string) (*kgo.Client, error) 
 		kgo.AllowAutoTopicCreation(),
 		kgo.BrokerMaxWriteBytes(268_435_456),
 		kgo.MaxBufferedBytes(268_435_456),
-	)
+	}
+
+	if auth != nil {
+		options = append(options, kgo.SASL(auth))
+	}
+
+	return kgo.NewClient(options...)
 }
 
 type Printer interface {
