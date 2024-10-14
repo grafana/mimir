@@ -1,6 +1,6 @@
-# Streaming PromQL engine
+# Mimir Query Engine
 
-This file contains a brief overview of the internals of the streaming PromQL engine.
+This file contains a brief overview of the internals of the Mimir Query Engine, aka MQE.
 
 For an introduction to the engine itself and the problems it tries to solve, check out [this PromCon 2023 talk](https://www.youtube.com/watch?v=3kM2Asj6hcg).
 
@@ -16,19 +16,19 @@ Prometheus' PromQL engine will first load all samples for all series selected by
 It will then compute the sum for each unique value of `environment`.
 At its peak, Prometheus' PromQL engine will hold all samples for all input series (from `some_metric{cluster="cluster-1"}`) and all samples for all output series in memory at once.
 
-The streaming engine here will instead execute the selector `some_metric{cluster="cluster-1"}` and gather the labels of all series returned.
+MQE here will instead execute the selector `some_metric{cluster="cluster-1"}` and gather the labels of all series returned.
 With these labels, it will then compute all the possible output series for the `sum by (environment)` operation (ie. one output series per unique value of `environment`).
 Having computed the output series, it will then begin reading series from the selector, one at a time, and update the running total for the appropriate output series.
-At its peak, the streaming engine in this example will hold all samples for one input series and all samples for all output series in memory at once[^1],
+At its peak, MQE in this example will hold all samples for one input series and all samples for all output series in memory at once[^1],
 a significant reduction compared to Prometheus' PromQL engine, particularly when the selector selects many series.
 
 This idea of streaming can be applied to multiple levels as well. Imagine we're evaluating the query `max(sum by (environment) (some_metric{cluster="cluster-1"}))`.
-In the streaming engine, once the result of each group series produced by `sum` is complete, it is passed to `max`, which can update its running maximum seen so far across all groups.
-At its peak, the streaming engine will hold all samples for one input series, all samples for all incomplete `sum` group series, and the single incomplete `max` output series in memory at once.
+In MQE, once the result of each group series produced by `sum` is complete, it is passed to `max`, which can update its running maximum seen so far across all groups.
+At its peak, MQE will hold all samples for one input series, all samples for all incomplete `sum` group series, and the single incomplete `max` output series in memory at once.
 
 ## Internals
 
-Within the streaming engine, a query is represented by a set of linked operators (one for each operation) that together form the query plan.
+Within MQE, a query is represented by a set of linked operators (one for each operation) that together form the query plan.
 
 For example, the `max(sum by (environment) (some_metric{cluster="cluster-1"}))` example from before would have a query plan made up of three operators:
 
