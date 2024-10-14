@@ -666,8 +666,8 @@ github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
 github.com/grafana/e2e/images
-# github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56
-## explicit; go 1.18
+# github.com/grafana/gomemcache v0.0.0-20240805133030-fdaf6a95408e
+## explicit; go 1.22
 github.com/grafana/gomemcache/memcache
 # github.com/grafana/pyroscope-go/godeltaprof v0.1.8
 ## explicit; go 1.18
