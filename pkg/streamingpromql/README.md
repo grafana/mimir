@@ -98,4 +98,25 @@ Elaborating on the example from before, the overall query would proceed like thi
 
 ## Implementation notes
 
-- Operators are not expected to be thread-safe: the engine currently evaluates queries from a single goroutine.
+### Thread safety
+
+Operators are not expected to be thread-safe: the engine currently evaluates queries from a single goroutine.
+
+### Native histograms and memory pooling
+
+MQE makes extensive use of memory pooling to reduce GC pressure, including for slices that hold `*histogram.FloatHistogram` pointers.
+
+Slices of `promql.HPoint` returned by `types.HPointSlicePool` are not cleared when they are returned. This allows the `FloatHistogram`
+instances to be reused for other series or time steps. For example, when filling a `HPointRingBuffer`, range vector selectors will
+reuse `FloatHistogram` instances already present in the `HPoint` slice that backs the ring buffer, rather than unconditionally creating
+a new `FloatHistogram` instance.
+
+The implication of this is that anywhere that returns a `promql.HPoint` slice `s` to `types.HPointSlicePool` must remove references in
+`s` to any `FloatHistogram`s retained after `s` is returned. The simplest way to do this is to set the `H` field on `promql.HPoint` to `nil`.
+If all points in `s` are being retained, then calling `clear(s)` is also sufficient.
+
+If this is not done, query results may become corrupted due to multiple queries simultaneously modifying the same `FloatHistogram` instance.
+This can also manifest as panics while interacting with `FloatHistogram`s.
+
+The same problem does not apply to `*histogram.FloatHistogram` slices returned by `types.HistogramSlicePool`. Slices from this pool are used only by
+parts of MQE that do not benefit from reusing `FloatHistogram` instances, and so `types.HistogramSlicePool` clears all slices returned.
