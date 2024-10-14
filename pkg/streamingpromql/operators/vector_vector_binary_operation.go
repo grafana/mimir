@@ -654,6 +654,7 @@ func (b *VectorVectorBinaryOperation) Close() {
 type binaryOperationFunc func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
 
 // FIXME(jhesketh): Investigate avoiding copying histograms for binary ops.
+// We would need nil-out the retained FloatHistogram instances in their original HPoint slices, to avoid them being modified when the slice is returned to the pool.
 var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.ADD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		if hlhs != nil && hrhs != nil {
