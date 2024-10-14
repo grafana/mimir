@@ -223,13 +223,14 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
+		// We deliberately want this to happen at the end of mergeOneSideHistograms, so calling defer like this in a loop is fine.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer types.HPointSlicePool.Put(second.Histograms, memoryConsumptionTracker)
+		defer clearAndReturnHPointSlice(second.Histograms, memoryConsumptionTracker) // We're going to retain all the FloatHistogram instances, so don't leave them in the slice to be reused.
 
 		if len(second.Histograms) == 0 {
 			// We've reached the end of all series with histograms.
-			// However, continue iterating so we can return all of the slices.
-			// (As they may have length 0, but a non-zero capacity).
+			// However, continue iterating so we can return all of the slices to the pool.
+			// (As they may have length 0, but a non-zero capacity and so still need to be returned to the pool).
 			continue
 		}
 		mergedSize += len(second.Histograms)
@@ -252,7 +253,7 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
 	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer types.HPointSlicePool.Put(data[0].Histograms, memoryConsumptionTracker)
+	defer clearAndReturnHPointSlice(data[0].Histograms, memoryConsumptionTracker) // We're going to retain all the FloatHistogram instances, so don't leave them in the slice to be reused.
 
 	// Re-slice data with just the series with histograms to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that sourceSeriesIndices remains longer.
@@ -320,6 +321,11 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 			remainingSeriesWithHistograms--
 		}
 	}
+}
+
+func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	clear(s)
+	types.HPointSlicePool.Put(s, memoryConsumptionTracker)
 }
 
 type MergeConflict struct {
