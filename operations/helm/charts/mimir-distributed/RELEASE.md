@@ -151,9 +151,13 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    For example `user/update-mimir-distributed-release-x.y-final`.
 
-1. Optionally finalise release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
+1. Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
 
    - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
+
+   - Finalize the chart's changelog. Update the title of the release section by setting it to the final release version number.
+
+     For example, `## 4.5.0`.
 
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired final release version.
 
