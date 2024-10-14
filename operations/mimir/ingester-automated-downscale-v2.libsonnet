@@ -34,7 +34,6 @@
 
   // Validate the configuration.
   assert !$._config.ingester_automated_downscale_v2_enabled || $._config.multi_zone_ingester_enabled : 'ingester downscaling requires multi_zone_ingester_enabled in namespace %s' % $._config.namespace,
-  assert !$._config.ingester_automated_downscale_v2_enabled || $._config.multi_zone_ingester_replicas > 0 : 'ingester downscaling requires multi_zone_ingester_replicas > 0 in namespace %s' % $._config.namespace,
   assert !$._config.ingester_automated_downscale_v2_enabled || !$._config.ingester_automated_downscale_enabled : 'ingester_automated_downscale_enabled_v2 and ingester_automated_downscale_enabled are mutually exclusive in namespace %s' % $._config.namespace,
 
   // Utility used to override a field only if exists in super.

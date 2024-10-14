@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20241007163720-de20fd2fe818
+	github.com/grafana/dskit v0.0.0-20241011202249-8e7752e59bab
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
@@ -205,7 +205,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56 // indirect
+	github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56
 	github.com/hashicorp/consul/api v1.29.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -315,7 +315,7 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // - https://github.com/grafana/franz-go/pull/1
 // - https://github.com/grafana/franz-go/pull/3
 // - https://github.com/grafana/franz-go/pull/4
-replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241003081803-835b5cb1ddcf
+replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009101240-fa97d35e871f
 
 // Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581

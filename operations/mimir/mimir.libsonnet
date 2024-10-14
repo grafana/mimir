@@ -25,6 +25,7 @@
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
 (import 'multi-zone.libsonnet') +
+(import 'multi-zone-distributor.libsonnet') +
 (import 'rollout-operator.libsonnet') +
 (import 'ruler-remote-evaluation.libsonnet') +
 (import 'continuous-test.libsonnet') +
