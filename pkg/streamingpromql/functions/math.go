@@ -58,11 +58,6 @@ var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVec
 	}
 
 	for i := range seriesData.Histograms {
-		if i > 0 && seriesData.Histograms[i].H == seriesData.Histograms[i-1].H {
-			// Previous point shares the same histogram instance, which we've already negated, so don't negate it again.
-			continue
-		}
-
 		seriesData.Histograms[i].H.Mul(-1) // Mul modifies the histogram in-place, so we don't need to do anything with the result here.
 	}
 

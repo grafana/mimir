@@ -78,7 +78,6 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 
 func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
 	var err error
-	var lastUncopiedHistogram *histogram.FloatHistogram
 
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
 		// First series with histogram values for this group, populate it.
@@ -97,29 +96,13 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			continue
 		}
 
-		if lastUncopiedHistogram == p.H {
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we're retaining a reference to it.
-			data.Histograms[inputIdx].H = nil
-		}
-
 		if g.histogramSums[outputIdx] == nil {
-			if lastUncopiedHistogram == p.H {
-				// We've already used this histogram for a previous point due to lookback.
-				// Make a copy of it so we don't modify the other point.
-				g.histogramSums[outputIdx] = p.H.Copy()
-				g.histogramPointCount++
-
-				continue
-			}
-
-			// We have not previously used this histogram as the start of an output point.
-			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
+			// First sample for this output point, retain the histogram as-is.
 			g.histogramSums[outputIdx] = p.H
 			g.histogramPointCount++
-			lastUncopiedHistogram = p.H
 
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused, including if it was used at previous points.
-			data.RemoveReferencesToRetainedHistogram(p.H, inputIdx)
+			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
+			data.Histograms[inputIdx].H = nil
 
 			continue
 		}

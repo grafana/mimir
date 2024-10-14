@@ -51,7 +51,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 
 		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
 
-		if f.NeedsSeriesDeduplication {
+		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 		}
 
@@ -67,9 +67,8 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 //   - seriesDataFunc: The function to handle series data
 func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
 	f := functions.FunctionOverInstantVector{
-		SeriesDataFunc:           seriesDataFunc,
-		SeriesMetadataFunc:       functions.DropSeriesName,
-		NeedsSeriesDeduplication: true,
+		SeriesDataFunc:         seriesDataFunc,
+		SeriesMetadataFunction: functions.DropSeriesName,
 	}
 
 	return SingleInputVectorFunctionOperatorFactory(name, f)
@@ -83,12 +82,10 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 // Parameters:
 //   - name: The name of the function
 //   - metadataFunc: The function for handling metadata
-//   - needsSeriesDeduplication: Set to true if metadataFunc may produce multiple series with the same labels and therefore deduplication is required
-func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, needsSeriesDeduplication bool) InstantVectorFunctionOperatorFactory {
+func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunctionDefinition) InstantVectorFunctionOperatorFactory {
 	f := functions.FunctionOverInstantVector{
-		SeriesDataFunc:           functions.PassthroughData,
-		SeriesMetadataFunc:       metadataFunc,
-		NeedsSeriesDeduplication: needsSeriesDeduplication,
+		SeriesDataFunc:         functions.PassthroughData,
+		SeriesMetadataFunction: metadataFunc,
 	}
 
 	return SingleInputVectorFunctionOperatorFactory(name, f)
@@ -118,7 +115,7 @@ func FunctionOverRangeVectorOperatorFactory(
 
 		var o types.InstantVectorOperator = operators.NewFunctionOverRangeVector(inner, memoryConsumptionTracker, f, annotations, expressionPosition)
 
-		if f.NeedsSeriesDeduplication {
+		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 		}
 
@@ -179,9 +176,11 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 		}
 
 		f := functions.FunctionOverInstantVector{
-			SeriesDataFunc:           functions.PassthroughData,
-			SeriesMetadataFunc:       functions.LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
-			NeedsSeriesDeduplication: true,
+			SeriesDataFunc: functions.PassthroughData,
+			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{
+				Func:                     functions.LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
+				NeedsSeriesDeduplication: true,
+			},
 		}
 
 		o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
@@ -283,9 +282,8 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 
 func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) types.InstantVectorOperator {
 	f := functions.FunctionOverInstantVector{
-		SeriesDataFunc:           functions.UnaryNegation,
-		SeriesMetadataFunc:       functions.DropSeriesName,
-		NeedsSeriesDeduplication: true,
+		SeriesDataFunc:         functions.UnaryNegation,
+		SeriesMetadataFunction: functions.DropSeriesName,
 	}
 
 	o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)

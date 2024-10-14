@@ -13,15 +13,16 @@ import (
 // SeriesMetadataFunction is a function to operate on the metadata across series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
 
-// DropSeriesName is a SeriesMetadataFunc that removes the __name__ label from all series in seriesMetadata.
-//
-// It does not check that the list of returned series is free of duplicates.
-func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	for i := range seriesMetadata {
-		seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
-	}
+// DropSeriesName is a series metadata function that removes the __name__ label from all series.
+var DropSeriesName = SeriesMetadataFunctionDefinition{
+	Func: func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+		for i := range seriesMetadata {
+			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
+		}
 
-	return seriesMetadata, nil
+		return seriesMetadata, nil
+	},
+	NeedsSeriesDeduplication: true,
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
@@ -93,16 +94,10 @@ type FunctionOverInstantVector struct {
 	// SeriesDataFunc is the function that computes an output series for a single input series.
 	SeriesDataFunc InstantVectorSeriesFunction
 
-	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
+	// SeriesMetadataFunction is the function that computes the output series for this function based on the given input series.
 	//
-	// If SeriesMetadataFunc is nil, the input series are used as-is.
-	SeriesMetadataFunc SeriesMetadataFunction
-
-	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
-	//
-	// This should be set to true if SeriesMetadataFunc modifies the input series labels in such a way that duplicates may be
-	// present in the output series labels (eg. dropping a label).
-	NeedsSeriesDeduplication bool
+	// If SeriesMetadataFunction.Func is nil, the input series are used as-is.
+	SeriesMetadataFunction SeriesMetadataFunctionDefinition
 }
 
 type FunctionOverRangeVector struct {
@@ -120,17 +115,24 @@ type FunctionOverRangeVector struct {
 	// SeriesValidationFuncFactory can be nil, in which case no validation is performed.
 	SeriesValidationFuncFactory RangeVectorSeriesValidationFunctionFactory
 
-	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
+	// SeriesMetadataFunction is the function that computes the output series for this function based on the given input series.
 	//
-	// If SeriesMetadataFunc is nil, the input series are used as-is.
-	SeriesMetadataFunc SeriesMetadataFunction
-
-	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
-	//
-	// This should be set to true if SeriesMetadataFunc modifies the input series labels in such a way that duplicates may be
-	// present in the output series labels (eg. dropping a label).
-	NeedsSeriesDeduplication bool
+	// If SeriesMetadataFunction.Func is nil, the input series are used as-is.
+	SeriesMetadataFunction SeriesMetadataFunctionDefinition
 
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
 	NeedsSeriesNamesForAnnotations bool
+}
+
+type SeriesMetadataFunctionDefinition struct {
+	// Func is the function that computes the output series for this function based on the given input series.
+	//
+	// If Func is nil, the input series are used as-is.
+	Func SeriesMetadataFunction
+
+	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
+	//
+	// This should be set to true if Func modifies the input series labels in such a way that duplicates may be
+	// present in the output series labels (eg. dropping a label).
+	NeedsSeriesDeduplication bool
 }

@@ -1146,7 +1146,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.6.1
 ## explicit; go 1.13
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.17.1 => github.com/grafana/franz-go v0.0.0-20241009101240-fa97d35e871f
+# github.com/twmb/franz-go v1.17.1 => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
@@ -1159,7 +1159,7 @@ github.com/twmb/franz-go/pkg/sasl/plain
 # github.com/twmb/franz-go/pkg/kadm v1.13.0
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20240821035758-b77dd13e2bfa
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20241010233600-b66ceb79e585
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.8.0
@@ -1356,7 +1356,7 @@ golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/scrypt
-# golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6
+# golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c
 ## explicit; go 1.22.0
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
@@ -1681,4 +1681,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240924175849-b8b7c2c74eb6
-# github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009101240-fa97d35e871f
+# github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937

@@ -55,8 +55,8 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 		return nil, err
 	}
 
-	if m.Func.SeriesMetadataFunc != nil {
-		return m.Func.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	if m.Func.SeriesMetadataFunction.Func != nil {
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker)
 	}
 
 	return metadata, nil

@@ -77,7 +77,7 @@ require (
 	github.com/thanos-io/objstore v0.0.0-20240913165201-fd105025a2e5
 	github.com/twmb/franz-go v1.17.1
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240821035758-b77dd13e2bfa
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20241010233600-b66ceb79e585
 	github.com/twmb/franz-go/pkg/kmsg v1.8.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -86,7 +86,7 @@ require (
 	go.opentelemetry.io/otel v1.30.0
 	go.opentelemetry.io/otel/trace v1.30.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6
+	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c
 	golang.org/x/term v0.25.0
 	google.golang.org/api v0.196.0
 	google.golang.org/protobuf v1.34.2
@@ -315,4 +315,4 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // - https://github.com/grafana/franz-go/pull/1
 // - https://github.com/grafana/franz-go/pull/3
 // - https://github.com/grafana/franz-go/pull/4
-replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009101240-fa97d35e871f
+replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
