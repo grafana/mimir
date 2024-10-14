@@ -155,7 +155,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
 
-   - Finalize the chart's changelog. Update the title of the release section, setting it to the final release version number.
+   - Finalize the chart's changelog. Update the title of the release section by setting it to the final release version number.
 
      For example, `## 4.5.0`.
 

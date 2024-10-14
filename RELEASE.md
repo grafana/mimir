@@ -104,7 +104,7 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
-    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instrictions](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
+    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
@@ -139,7 +139,7 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
-    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instrictions](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
+    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] If during the release process settings in the `renovate.json5` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
         modify it again to ensure that only the latest two minor versions get updated.
         For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
