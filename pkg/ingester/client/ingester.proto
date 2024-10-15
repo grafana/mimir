@@ -38,10 +38,13 @@ service Ingester {
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
 
   rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {};
+
+  // When adding more read-path methods here, please update ingester_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well.
 }
 
 message LabelNamesAndValuesRequest {
   repeated LabelMatcher matchers = 1;
+  CountMethod count_method = 2;
 }
 
 message LabelNamesAndValuesResponse {
@@ -73,50 +76,7 @@ message LabelValueSeriesCount {
   map<string, uint64> label_value_series = 2;
 }
 
-message ReadRequest {
-  repeated QueryRequest queries = 1;
-
-  enum ResponseType {
-    SAMPLES = 0;
-    STREAMED_XOR_CHUNKS = 1;
-  }
-  repeated ResponseType accepted_response_types = 2;
-}
-
-message ReadResponse {
-  repeated QueryResponse results = 1;
-}
-
-message StreamReadResponse {
-  repeated StreamChunkedSeries chunked_series = 1;
-
-  int64 query_index = 2;
-}
-
-message StreamChunkedSeries {
-  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
-  repeated StreamChunk chunks = 2 [(gogoproto.nullable) = false];
-}
-
-message StreamChunk {
-  int64 min_time_ms = 1;
-  int64 max_time_ms = 2;
-
-  enum Encoding {
-    UNKNOWN = 0;
-    XOR     = 1;
-    HISTOGRAM = 2;
-    FLOAT_HISTOGRAM = 3;
-  }
-  Encoding type  = 3;
-  bytes data     = 4 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
-}
-
 message QueryRequest {
-  // This QueryRequest message is also used for remote read requests, which includes a hints field we don't support.
-  reserved 4;
-  reserved "hints";
-
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
@@ -133,6 +93,11 @@ message ExemplarQueryRequest {
 
 message ActiveSeriesRequest {
   repeated LabelMatcher matchers = 1;
+  enum RequestType {
+    SERIES = 0;
+    NATIVE_HISTOGRAM_SERIES = 1;
+  }
+  RequestType type = 2;
 }
 
 message QueryResponse {
@@ -234,6 +199,9 @@ message MetricsMetadataResponse {
 
 message ActiveSeriesResponse {
   repeated cortexpb.Metric metric = 1;
+  // bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
+  // bucket_count contains the native histogram active buckets count for each series in "metric" above.
+  repeated uint64 bucket_count = 2;
 }
 
 message TimeSeriesChunk {
@@ -265,11 +233,4 @@ message LabelMatcher {
   MatchType type = 1;
   string name = 2;
   string value = 3;
-}
-
-message TimeSeriesFile {
-  string from_ingester_id = 1;
-  string user_id = 2;
-  string filename = 3;
-  bytes data = 4;
 }

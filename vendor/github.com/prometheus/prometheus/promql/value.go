@@ -68,6 +68,9 @@ type Series struct {
 	Metric     labels.Labels `json:"metric"`
 	Floats     []FPoint      `json:"values,omitempty"`
 	Histograms []HPoint      `json:"histograms,omitempty"`
+	// DropName is used to indicate whether the __name__ label should be dropped
+	// as part of the query evaluation.
+	DropName bool `json:"-"`
 }
 
 func (s Series) String() string {
@@ -194,6 +197,9 @@ type Sample struct {
 	H *histogram.FloatHistogram
 
 	Metric labels.Labels
+	// DropName is used to indicate whether the __name__ label should be dropped
+	// as part of the query evaluation.
+	DropName bool
 }
 
 func (s Sample) String() string {
@@ -464,11 +470,11 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return ssi.currT, ssi.currF
 }
 
-func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (ssi *storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
 }
 
-func (ssi *storageSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (ssi *storageSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return ssi.currT, ssi.currH
 }
 

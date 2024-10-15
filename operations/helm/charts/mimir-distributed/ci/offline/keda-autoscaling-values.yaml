@@ -1,0 +1,44 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+metaMonitoring:
+  grafanaAgent:
+    metrics:
+      enabled: false
+      # Leave the remote empty to use the default to send it to Mimir directly
+      # remote: #
+
+distributor:
+  kedaAutoscaling:
+    enabled: true
+    preserveReplicas: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+ruler:
+  kedaAutoscaling:
+    enabled: true
+    preserveReplicas: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+querier:
+  kedaAutoscaling:
+    enabled: true
+    preserveReplicas: true
+    minReplicaCount: 2
+    maxReplicaCount: 10
+    querySchedulerInflightRequestsThreshold: 6
+
+query_frontend:
+  kedaAutoscaling:
+    enabled: true
+    preserveReplicas: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80

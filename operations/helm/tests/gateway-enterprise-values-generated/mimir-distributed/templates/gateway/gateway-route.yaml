@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:
-  host: mimir.example.com
+  host: "gateway-enterprise-values.mimir.example.com"
   to:
     kind: Service
     name: gateway-enterprise-values-mimir-gateway

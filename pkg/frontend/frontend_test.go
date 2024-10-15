@@ -28,10 +28,12 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -105,7 +107,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 	require.NoError(t, err)
 
 	downstreamServer := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
@@ -167,7 +169,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 	require.NoError(t, err)
 
 	downstreamServer := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
@@ -216,6 +218,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	if l != nil {
 		logger = l
 	}
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)
@@ -229,7 +232,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	httpListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	rt, v1, v2, err := InitFrontend(config, limits{}, 0, logger, nil)
+	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, nil, codec)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
 	// v1 will be nil if DownstreamURL is defined.
@@ -265,7 +268,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	go grpcServer.Serve(grpcListen) //nolint:errcheck
 
 	var worker services.Service
-	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler), logger, nil)
+	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), worker))
 
@@ -289,9 +292,14 @@ func defaultFrontendConfig() CombinedFrontendConfig {
 }
 
 type limits struct {
-	queriers int
+	queriers             int
+	queryIngestersWithin time.Duration
 }
 
 func (l limits) MaxQueriersPerUser(_ string) int {
 	return l.queriers
+}
+
+func (l limits) QueryIngestersWithin(string) time.Duration {
+	return l.queryIngestersWithin
 }

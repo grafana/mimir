@@ -47,9 +47,16 @@ type SeriesChunksStreamReader struct {
 	errorChan       chan error
 	err             error
 	seriesBatch     []QueryStreamSeriesChunks
+
+	// Keeping the ingester name for debug logs.
+	ingesterName string
 }
 
-func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+func (s *SeriesChunksStreamReader) GetName() string {
+	return s.ingesterName
+}
+
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		ctx:                 ctx,
 		client:              client,
@@ -57,11 +64,13 @@ func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStrea
 		queryLimiter:        queryLimiter,
 		cleanup:             cleanup,
 		log:                 log,
+		ingesterName:        ingesterName,
 	}
 }
 
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
-// This method should only be called if StartBuffering is not called.
+// This method should only be directly called if StartBuffering is not called,
+// otherwise StartBuffering will call it once done.
 func (s *SeriesChunksStreamReader) Close() {
 	if err := util.CloseAndExhaust[*QueryStreamResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
@@ -94,6 +103,9 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
 			ext.Error.Set(log.Span, true)
 		}
@@ -114,6 +126,11 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 				log.DebugLog("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 				return nil
+			} else if errors.Is(err, context.Canceled) {
+				// If there's a more detailed cancellation reason available, return that.
+				if cause := context.Cause(s.ctx); cause != nil {
+					return fmt.Errorf("aborted stream because query was cancelled: %w", cause)
+				}
 			}
 
 			return err
@@ -225,7 +242,7 @@ func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
+				if validation.IsLimitError(err) {
 					return err
 				}
 				return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)

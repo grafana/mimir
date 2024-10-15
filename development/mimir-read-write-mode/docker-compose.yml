@@ -3,7 +3,7 @@
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
       - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
-    "image": "grafana/grafana:9.4.3"
+    "image": "grafana/grafana:10.4.3"
     "ports":
       - "3000:3000"
     "volumes":
@@ -185,4 +185,13 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-"version": "3.4"
+  "prometheus":
+    "command":
+      - "--config.file=/etc/prometheus/prometheus.yaml"
+      - "--enable-feature=exemplar-storage"
+      - "--enable-feature=native-histograms"
+    "image": "prom/prometheus:v2.53.0"
+    "ports":
+      - "9090:9090"
+    "volumes":
+      - "./config:/etc/prometheus"

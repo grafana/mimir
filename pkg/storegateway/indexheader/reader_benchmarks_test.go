@@ -53,7 +53,7 @@ func BenchmarkLookupSymbol(b *testing.B) {
 }
 
 func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -84,7 +84,7 @@ func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, 
 
 			index := indices[random.Intn(len(indices))]
 			expectedSymbol := indicesToSymbol[index]
-			actualSymbol, err := br.LookupSymbol(index)
+			actualSymbol, err := br.LookupSymbol(context.Background(), index)
 
 			// Why do we wrap require.NoError or require.Equal in an if block here? These methods perform some synchronisation
 			// that ends up dominating the benchmark, so we only want to call them if they're needed.
@@ -128,7 +128,7 @@ func BenchmarkLabelNames(b *testing.B) {
 					b.ResetTimer()
 
 					for i := 0; i < b.N; i++ {
-						actualNames, err := br.LabelNames()
+						actualNames, err := br.LabelNames(ctx)
 
 						require.NoError(b, err)
 						require.Equal(b, nameSymbols, actualNames)
@@ -165,7 +165,7 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 	require.NoError(b, WriteBinary(ctx, bkt, metaIndexV1.ULID, indexName))
 
 	benchmarkReader(b, bucketDir, metaIndexV1.ULID, func(b *testing.B, br Reader) {
-		names, err := br.LabelNames()
+		names, err := br.LabelNames(ctx)
 		require.NoError(b, err)
 
 		rand.Shuffle(len(names), func(i, j int) {
@@ -177,7 +177,7 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValuesOffsets(name, "", func(s string) bool {
+			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
 				return true
 			})
 
@@ -206,11 +206,11 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
-	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, br.Close()) })
 
-	names, err := br.LabelNames()
+	names, err := br.LabelNames(ctx)
 	require.NoError(b, err)
 
 	rand.Shuffle(len(names), func(i, j int) {
@@ -221,7 +221,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := names[i%len(names)]
 
-			values, err := br.LabelValuesOffsets(name, "", func(s string) bool {
+			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
 				return true
 			})
 
@@ -233,7 +233,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 
 func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(b))
-	r, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, blockDir, blockID, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	r, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, blockDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 
 	for lbl, tcs := range tests {
@@ -241,7 +241,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			for _, tc := range tcs {
 				b.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						values, err := r.LabelValuesOffsets(lbl, tc.prefix, tc.filter)
+						values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
 					}
@@ -274,7 +274,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
 		b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(b, err)
 			b.Cleanup(func() {
 				require.NoError(b, br.Close())
@@ -287,7 +287,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				name := nameSymbols[random.Intn(nameCount)]
 				value := valueSymbols[random.Intn(valueCount)]
-				offset, err := br.PostingsOffset(name, value)
+				offset, err := br.PostingsOffset(ctx, name, value)
 
 				require.NoError(b, err)
 				require.NotZero(b, offset.Start)
@@ -298,7 +298,7 @@ func BenchmarkPostingsOffset(b *testing.B) {
 }
 
 func benchmarkReader(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
-	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -330,7 +330,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 					require.NoError(b, err)
 					b.Cleanup(func() {
 						require.NoError(b, br.Close())

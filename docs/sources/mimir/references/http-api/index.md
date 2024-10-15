@@ -48,7 +48,9 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
-| [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
+| [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
+| [Prepare Partition Downscale](#prepare-partition-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-partition-downscale` |
+| [Prepare Instance Ring Downscale](#prepare-instance-ring-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-instance-ring-downscale` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
@@ -56,6 +58,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
 | [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
+| [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
 | [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
 | [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
 | [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
@@ -97,6 +100,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Check block upload](#check-block-upload) | Compactor | `GET /api/v1/upload/block/{block}/check` |
 | [Tenant delete request](#tenant-delete-request) | Compactor | `POST /compactor/delete_tenant` |
 | [Tenant delete status](#tenant-delete-status) | Compactor | `GET /compactor/delete_tenant_status` |
+| [Compactor tenants](#compactor-tenants) | Compactor | `GET /compactor/tenants` |
+| [Compactor tenant planned jobs](#compactor-tenant-planned-jobs) | Compactor | `GET /compactor/tenant/{tenant}/planned_jobs` |
 | [Overrides-exporter ring status](#overrides-exporter-ring-status) | Overrides-exporter | `GET /overrides-exporter/ring` |
 {{% /responsive-table %}}
 
@@ -139,7 +144,9 @@ GET /config
 
 This endpoint displays the configuration currently applied to Grafana Mimir including default values and settings via CLI flags. This endpoint provides the configuration in YAML format and masks sensitive data.
 
-> **Note**: The exported configuration doesn't include the per-tenant overrides.
+{{< admonition type="note" >}}
+The exported configuration doesn't include the per-tenant overrides.
+{{< /admonition >}}
 
 #### Different modes
 
@@ -318,7 +325,11 @@ Requires [authentication](#authentication).
 POST /otlp/v1/metrics
 ```
 
-Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md). Experimental.
+{{% admonition type="note" %}}
+To send OTLP data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+{{% /admonition %}}
+
+Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md).
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
@@ -341,7 +352,9 @@ GET /distributor/all_user_stats
 
 This endpoint displays a web page that shows per-tenant statistics updated in real time, including the total number of active series across all ingesters and the current ingestion rate displayed in samples per second.
 
-> **Note:** This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+{{< admonition type="note" >}}
+This endpoint requires all ingesters to be `ACTIVE` in the ring for a successful response.
+{{< /admonition >}}
 
 ### HA tracker status
 
@@ -370,7 +383,9 @@ If no tenant is specified, all tenants are flushed.
 
 The flush endpoint also accepts a `wait=true` parameter, which makes the call synchronous, and only returns a status code after flushing completes.
 
-> **Note**: The returned status code does not reflect the result of flush operation.
+{{< admonition type="note" >}}
+The returned status code doesn't reflect the result of flush operation.
+{{< /admonition >}}
 
 ### Prepare for Shutdown
 
@@ -397,7 +412,7 @@ This API endpoint is usually used by Kubernetes-specific scale down automations 
 ### Shutdown
 
 ```
-GET,POST /ingester/shutdown
+POST /ingester/shutdown
 ```
 
 This endpoint flushes in-memory time series data from ingesters to the long-term storage, and then shuts down the ingester service.
@@ -406,6 +421,68 @@ During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 This API endpoint is usually used by scale down automations.
+
+### Prepare partition downscale
+
+```
+GET,POST,DELETE /ingester/prepare-partition-downscale
+```
+
+This endpoint prepares the ingester's partition for downscaling by setting it to the `INACTIVE` state.
+
+A `GET` call to this endpoint returns a timestamp of when the partition was switched to the `INACTIVE` state, or 0, if the partition is not in the `INACTIVE` state.
+
+A `POST` call switches this ingester's partition to the `INACTIVE` state, if it isn't `INACTIVE` already, and returns the timestamp of when the switch to the `INACTIVE` state occurred.
+
+A `DELETE` call sets the partition back from the `INACTIVE` to the `ACTIVE` state.
+
+If the ingester is not configured to use ingest-storage, any call to this endpoint fails.
+
+This API endpoint is usually used by scale down automation, e.g. rollout-operator.
+
+### Prepare instance ring downscale
+
+```
+GET,POST,DELETE /ingester/prepare-instance-ring-downscale
+```
+
+This endpoint prepares the ingester for downscaling by setting it to read-only mode.
+
+A `GET` call to this endpoint returns a timestamp of when the ingester was switched to read-only mode, or 0, if the ingester is not in read-only mode.
+
+A `POST` call switches this ingester's partition to read-only mode, if it isn't read-only already, and returns the timestamp of when the switch to read-only mode occurred.
+
+A `DELETE` call sets the ingester back to read-write mode.
+
+If the ingester is configured to use ingest-storage, any call to this endpoint fails.
+
+This API endpoint is usually used by scale down automation, e.g. rollout-operator.
+
+### Prepare for unregister
+
+```
+GET,PUT,DELETE /ingester/unregister-on-shutdown
+```
+
+This endpoint controls whether an ingester should unregister from the ring on its next termination, that is, the next time it receives a `SIGINT` or `SIGTERM` signal.
+Via this endpoint, Mimir operators can dynamically control an ingester's `-ingester.ring.unregister-on-shutdown` state without having to restart the ingester.
+
+A `PUT` sets the ingester's unregister state. When invoked with the `PUT` method, the endpoint takes a request body:
+
+```
+{"unregister": true}
+```
+
+A `GET` returns the ingester's current unregister state.
+
+A `DELETE` resets the ingester's unregister state to the value that was passed via the `-ingester.ring.unregister-on-shutdown`
+configuration option.
+
+Regardless of the HTTP method used, the endpoint always returns a response body with the ingester's current unregister state:
+
+```
+{"unregister": true}
+```
 
 ### TSDB Metrics
 
@@ -493,6 +570,66 @@ For more information, refer to Prometheus [series endpoint](https://prometheus.i
 
 Requires [authentication](#authentication).
 
+### Get active series by selector
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/active_series
+```
+
+Returns the label sets of all active series matching a PromQL selector.
+
+This endpoint is similar to the [series endpoint](#get-series-by-label-matchers) but operates on the set of series considered _active_ at the time of query processing.
+A series is considered active if any data has been written for it within the period specified by `-ingester.active-series-metrics-idle-timeout`.
+
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
+
+Requires [authentication](#authentication).
+
+#### Query parameters
+
+- **selector** - _mandatory_ - PromQL selector used to filter the result set.
+
+#### Headers
+
+- `Sharding-Control` - _optional_ - Integer value specifying how many shards to use for request execution.
+
+#### Response format
+
+The response format is a subset of the [series endpoint](#get-series-by-label-matchers) format including only the `data` field.
+The following shows an example request/response pair for this endpoint. Each item in the `data` array corresponds to a matched series.
+
+```shell
+$ curl 'http://localhost:9090/api/v1/cardinality/active_series' \
+    --header 'Sharding-Control: 4' \ # optional
+    --data-urlencode 'selector=up'
+```
+
+```shell
+{
+   "data" : [
+      {
+         "__name__" : "up",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      },
+      {
+         "__name__" : "up",
+         "job" : "node",
+         "instance" : "localhost:9091"
+      },
+      {
+         "__name__" : "process_start_time_seconds",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      }
+   ]
+}
+```
+
+#### Caching
+
+Responses for the active series endpoint are never cached.
+
 ### Get label names
 
 ```
@@ -554,15 +691,26 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
 Returns label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
 It counts distinct label values per label name.
 
-As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
-cutting between the calls.
-
 The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
 The count of items is limited by `limit` request param.
 
 This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+#### Count series by `inmemory` or `active`
+
+Two methods of counting are available: `inmemory` and `active`. To choose one, use the `count_method` parameter.
+
+The `inmemory` method counts the labels in currently opened TSDBs in Mimir's ingesters.
+Two subsequent calls might return completely different results if an ingester cut a block between calls.
+This method of counting is most useful for understanding ingester memory usage.
+
+The `active` method also counts labels in currently opened TSDBs in Mimir's ingesters, but filters out values that have not received a sample within a configurable duration of time.
+To configure this duration, use the `-ingester.active-series-metrics-idle-timeout` parameter.
+This method of counting is most useful for understanding what label values are represented in the samples ingested by Mimir in the last `-ingester.active-series-metrics-idle-timeout`.
+Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
+Values will change only as a result of changes in the data ingested by Mimir.
 
 #### Caching
 
@@ -571,6 +719,7 @@ The query-frontend can return a stale response fetched from the query results ca
 #### Request params
 
 - **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **count_method** - _optional_ - specifies which series counting method will be used. (default="inmemory", available options=["inmemory", "active"])
 - **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
 
 #### Response schema
@@ -704,7 +853,7 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 ### List Prometheus rules
 
 ```
-GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}&file={}&rule_group={}&rule_name={}
+GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}&file={}&rule_group={}&rule_name={}&exclude_alerts={true|false}
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
@@ -712,6 +861,8 @@ Prometheus-compatible rules endpoint to list alerting and recording rules that a
 The `type` parameter is optional. If set, only the specified type of rule is returned.
 
 The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly.
+
+The `exclude_alerts` parameter is optional. If set, it only returns rules and excludes active alerts.
 
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
@@ -741,7 +892,9 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+{{< admonition type="note" >}}
+To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+{{< /admonition >}}
 
 **Example response**
 
@@ -800,6 +953,8 @@ GET <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
+Escape the `{namespace}` path segment using percent-encoding, as defined by
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -831,12 +986,16 @@ GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
+Escape the `{namespace}` and `{groupName}` path segments using percent-encoding, as defined by
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+{{< admonition type="note" >}}
+To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+{{< /admonition >}}
 
 ### Set rule group
 
@@ -847,15 +1006,22 @@ POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
 Creates or updates a rule group.
 This endpoint expects a request with `Content-Type: application/yaml` header and the rules group **YAML** definition in the request body, and returns `202` on success.
 The request body must contain the definition of one and only one rule group.
+Escape the `{namespace}` path segment using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+{{< admonition type="note" >}}
+To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+{{< /admonition >}}
 
-> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
-> The latter options do not preserve carriage returns and newlines.
+{{< admonition type="note" >}}
+When using `curl` to send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+
+The latter options don't preserve carriage returns and newlines.
+{{< /admonition >}}
 
 #### Example request body
 
@@ -875,12 +1041,16 @@ DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
+Escape the `{namespace}` and `{groupName}` path segments using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+{{< admonition type="note" >}}
+To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+{{< /admonition >}}
 
 ### Delete namespace
 
@@ -889,6 +1059,8 @@ DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
+Escape the `{namespace}` path segment using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -968,7 +1140,9 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
 ### Set Alertmanager configuration
 
@@ -986,10 +1160,15 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
-> **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
-> The latter options do not preserve carriage returns and newlines.
+{{< admonition type="note" >}}
+When using `curl` to send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
+
+The latter options don't preserve carriage returns and newlines.
+{{< /admonition >}}
 
 #### Example request body
 
@@ -1026,7 +1205,9 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 
 Requires [authentication](#authentication).
 
-> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+{{< admonition type="note" >}}
+To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+{{< /admonition >}}
 
 ## Store-gateway
 
@@ -1210,6 +1391,22 @@ Returns status of tenant deletion.
 The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).
+
+### Compactor tenants
+
+```
+GET /compactor/tenants
+```
+
+Displays a web page with the list of tenants that have blocks in the storage configured for the compactor.
+
+### Compactor tenant planned jobs
+
+```
+GET /compactor/tenant/{tenant}/planned_jobs
+```
+
+Displays a web page listing planned compaction jobs computed from the bucket index for the given tenant.
 
 ## Overrides-exporter
 

@@ -1,0 +1,406 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for functions are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+load 1m
+  some_metric{env="prod", cluster="eu"} 0+60x4
+  some_metric{env="prod", cluster="us"} 0+120x4
+  some_metric{env="test", cluster="eu"} 0+180x4
+  some_metric{env="test", cluster="us"} 0+240x4
+  some_metric_with_gaps 0 60 120 180 240 _ 2000 2120 2240
+  some_metric_with_stale_marker 0 60 120 stale 240 300
+
+# Range query with rate.
+eval range from 0 to 4m step 1m rate(some_metric[1m])
+  {env="prod", cluster="eu"} _ 1 1 1 1
+  {env="prod", cluster="us"} _ 2 2 2 2
+  {env="test", cluster="eu"} _ 3 3 3 3
+  {env="test", cluster="us"} _ 4 4 4 4
+
+# Range query with increase.
+eval range from 0 to 4m step 1m increase(some_metric[1m])
+  {env="prod", cluster="eu"} _ 60 60 60 60
+  {env="prod", cluster="us"} _ 120 120 120 120
+  {env="test", cluster="eu"} _ 180 180 180 180
+  {env="test", cluster="us"} _ 240 240 240 240
+
+# If no series are matched, we shouldn't return any results.
+eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
+  # Should return no results.
+
+eval range from 0 to 4m step 1m increase(some_nonexistent_metric[1m])
+  # Should return no results.
+
+# Ensure we don't include points outside the range of each individual step.
+#
+# When evaluating a range selector, if there is no point with timestamp equal to the end of the range,
+# the next point (from outside the range) will be included in the ring buffer passed to rate().
+# So we need to ensure we ignore this.
+#
+# The first query below (with 1m) tests that we correctly skip evaluating rate() when there aren't enough points in the range.
+# The second query below (with 2m) tests that we correctly pick the last point from the buffer if the last point in the buffer is outside the range.
+eval range from 0 to 8m step 1m rate(some_metric_with_gaps[1m])
+  {} _ 1 1 1 1 _ _ 2 2
+
+eval range from 0 to 8m step 1m increase(some_metric_with_gaps[1m])
+  {} _ 60 60 60 60 _ _ 120 120
+
+eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m])
+  {} _ 0.5 1 1 1 1 14.666666666666666 2 2
+
+eval range from 0 to 8m step 1m increase(some_metric_with_gaps[2m])
+  {} _ 60 120 120 120 120 1760 240 240
+
+# Test that we handle staleness markers correctly.
+eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m])
+  {} _ 0.5 1 1 1 1
+
+eval range from 0 to 5m step 1m increase(some_metric_with_stale_marker[2m])
+  {} _ 60 120 120 120 120
+
+clear
+
+# Test simple functions not covered by the upstream tests
+load 1m
+  some_metric{env="prod"} 0 0.5 -0.5 NaN -NaN 2.1 -2.1
+
+eval range from 0 to 4m step 1m abs(some_metric)
+  {env="prod"} 0 0.5 0.5 NaN NaN
+
+eval range from 0 to 4m step 1m acos(some_metric)
+  {env="prod"} 1.5707963267948966 1.0471975511965976 2.0943951023931957 NaN NaN
+
+eval range from 0 to 4m step 1m asin(some_metric)
+  {env="prod"} 0 0.5235987755982989 -0.5235987755982989 NaN NaN
+
+eval range from 0 to 4m step 1m atanh(some_metric)
+  {env="prod"} 0 0.5493061443340548 -0.5493061443340548 NaN NaN
+
+eval range from 0 to 6m step 1m ceil(some_metric)
+  {env="prod"} 0 1 -0 NaN -NaN 3 -2
+
+eval range from 0 to 6m step 1m floor(some_metric)
+  {env="prod"} 0 0 -1 NaN -NaN 2 -3
+
+clear
+
+load 1m
+  some_metric{foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+  some_nhcb_metric{baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}}
+  some_inf_and_nan_metric{foo="baz"} 0 1 2 3 Inf Inf Inf NaN NaN NaN NaN 8 7 6
+
+eval range from 0 to 7m step 1m count_over_time(some_metric[3m])
+  {foo="bar"} 1 2 3 4 3 2 2 2
+
+eval range from 0 to 7m step 1m count_over_time(some_metric[5s])
+  {foo="bar"} 1 1 1 1 _ _ 1 1
+
+eval range from 0 to 7m step 1m last_over_time(some_metric[3m])
+  some_metric{foo="bar"} 0 1 2 3 3 3 {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 7m step 1m last_over_time(some_metric[5s])
+  some_metric{foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 7m step 1m present_over_time(some_metric[3m])
+  {foo="bar"} 1 1 1 1 1 1 1 1
+
+eval range from 0 to 7m step 1m present_over_time(some_metric[5s])
+  {foo="bar"} 1 1 1 1 _ _ 1 1
+
+eval range from 0 to 7m step 1m min_over_time(some_metric[3m])
+  {foo="bar"} 0 0 0 0 1 2 3 _
+
+eval range from 0 to 7m step 1m min_over_time(some_metric[5s])
+  {foo="bar"} 0 1 2 3 _ _ _ _
+
+eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m])
+  {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
+
+eval range from 0 to 7m step 1m max_over_time(some_metric[3m])
+  {foo="bar"} 0 1 2 3 3 3 3 _
+
+eval range from 0 to 7m step 1m max_over_time(some_metric[5s])
+  {foo="bar"} 0 1 2 3 _ _ _ _
+
+eval range from 0 to 16m step 1m max_over_time(some_inf_and_nan_metric[3m])
+  {foo="baz"} 0 1 2 3 Inf Inf Inf Inf Inf Inf NaN 8 8 8 8 7 6
+
+eval_warn range from 0 to 10m step 1m sum_over_time(some_metric[3m])
+  {foo="bar"} 0 1 3 6 6 5 _ {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 5m step 1m sum_over_time(some_metric[3m])
+  {foo="bar"} 0 1 3 6 6 5
+
+eval range from 7m to 10m step 1m sum_over_time(some_metric[3m])
+  {foo="bar"} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 7m step 1m sum_over_time(some_metric[5s])
+  {foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m])
+  {baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:16 count:7 custom_values:[5 10] buckets:[1 6]}} {{schema:-53 sum:19 count:22 custom_values:[5 10] buckets:[8 14]}}
+
+eval range from 0 to 16m step 1m sum_over_time(some_inf_and_nan_metric[3m])
+  {foo="baz"} 0 1 3 6 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 21 13 6
+
+eval_warn range from 0 to 10m step 1m avg_over_time(some_metric[3m])
+  {foo="bar"} 0 0.5 1 1.5 2 2.5 _ {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 5m step 1m avg_over_time(some_metric[3m])
+  {foo="bar"} 0 0.5 1 1.5 2 2.5
+
+eval range from 7m to 10m step 1m avg_over_time(some_metric[3m])
+  {foo="bar"} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 7m step 1m avg_over_time(some_metric[5s])
+  {foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
+
+eval range from 0 to 2m step 1m avg_over_time(some_nhcb_metric[3m])
+  {baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:8 count:3.5 custom_values:[5 10] buckets:[0.5 3]}} {{schema:-53 sum:6.333333333333334 count:7.333333333333333 custom_values:[5 10] buckets:[2.666666666666667 4.666666666666666]}}
+
+eval range from 0 to 16m step 1m avg_over_time(some_inf_and_nan_metric[3m])
+  {foo="baz"} 0 0.5 1 1.5 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 7 6.5 6
+
+clear
+
+eval range from 0 to 2m step 1m pi()
+  {} 3.141592653589793 3.141592653589793 3.141592653589793
+
+eval range from 0 to 2m step 1m vector(12.34)
+  {} 12.34 12.34 12.34
+
+clear
+
+load 6m
+  single_series 1 2 _ 3 stale 4 {{schema:3 sum:4 count:4 buckets:[1 2 1]}} 5
+  multiple_series{series="1"} 1 2 _  3  stale 4  {{schema:3 sum:4 count:4 buckets:[1 2 1]}} 5  6 _ NaN NaN 7
+  multiple_series{series="2"} _ _ 10 20 30    40 50                                         60 _ _ 70  NaN _
+
+# scalar() on float value
+eval instant at 0m scalar(single_series)
+  1
+
+# scalar() on missing value
+eval instant at 12m scalar(single_series)
+  NaN
+
+# scalar() on stale value
+eval instant at 24m scalar(single_series)
+  NaN
+
+# scalar() on histogram
+eval instant at 36m scalar(single_series)
+  NaN
+
+# Same cases as above, but for a range query.
+eval range from 0 to 42m step 6m scalar(single_series)
+  {} 1 2 NaN 3 NaN 4 NaN 5
+
+eval range from 0 to 42m step 6m vector(scalar(single_series))
+  {} 1 2 NaN 3 NaN 4 NaN 5
+
+# scalar() combining multiple series
+eval range from 0 to 72m step 6m scalar(multiple_series)
+  {} 1 2 10 NaN 30 NaN 50 NaN 6 NaN NaN NaN 7
+
+# scalar() over no input series
+eval range from 0 to 1m step 1m scalar(no_matching_series)
+  {} NaN NaN
+
+# scalar() over multiple series with no points at the query time
+eval instant at 54m scalar(multiple_series)
+  NaN
+
+clear
+
+load 6m
+  metric{series="float"} 1 2 3 4 -5 0 NaN -NaN
+  metric{series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
+
+eval range from 0 to 42m step 6m -metric
+  {series="float"} -1 -2 -3 -4 5 0 -NaN NaN
+  {series="histogram"} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}} {{schema:3 sum:-14 count:-27 buckets:[-1 -2 -6] n_buckets:[-3 -5 -10]}}
+
+# Ensure unary negation of histograms behaves correctly when lookback is involved.
+eval range from 0 to 1m step 1m -metric{series="histogram"}
+  {series="histogram"} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}}
+
+clear
+
+load 1m
+  metric 1 _ _ 3 _ stale 4 _
+
+eval range from 0 to 7m step 1m -metric
+  {} -1 -1 -1 -3 -3 _ -4 -4
+
+clear
+
+# label_replace() tests
+load 5m
+  series{label="a"} 1.1
+  series{label="b"} 2.9
+  series{label="c"} NaN
+
+eval instant at 0m label_replace(series, "export", "$1", "label", "(.*)")
+  series{label="a", export="a"} 1.1
+  series{label="b", export="b"} 2.9
+  series{label="c", export="c"} NaN
+
+eval instant at 0m label_replace(series, "__name__", "$1", "label", "(.*)")
+  a{label="a"} 1.1
+  b{label="b"} 2.9
+  c{label="c"} NaN
+
+# Replacing the labels until duplicate series
+eval_fail instant at 0m label_replace(series, "label", "replaced", "label", ".*")
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+# Bad regex
+eval_fail instant at 0m label_replace(series, "export", "$1", "label", "[.*")
+  expected_fail_message invalid regular expression in label_replace(): [.*
+
+# Invalid destination label name
+eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
+  expected_fail_message invalid destination label name in label_replace(): (export)
+
+# Make sure label name exists after it was dropped
+eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
+  a{label="a"} 1
+  b{label="b"} 2
+  c{label="c"} NaN
+
+# Label name is dropped by floor after it is set
+eval instant at 0m floor(label_replace(series, "__name__", "$1", "label", "(.*)"))
+  {label="a"} 1
+  {label="b"} 2
+  {label="c"} NaN
+
+clear
+
+# The following tests pass prometheus' engine when promql-delayed-name-removal is enabled.
+# (As tested in upstream/name_label_dropping.test).
+# Otherwise they fail both engines.
+load 5m
+  metric{env="1"}	0 60 120
+  another_metric{env="1"}	60 120 180
+
+# Allows relabeling (to-be-dropped) __name__  via label_replace
+eval_fail instant at 15m label_replace(rate({env="1"}[10m]), "my_name", "rate_$1", "__name__", "(.+)")
+  expected_fail_message vector cannot contain metrics with the same labelset
+#  {my_name="rate_metric", env="1"} 0.2
+#  {my_name="rate_another_metric", env="1"} 0.2
+
+# Allows preserving __name__ via label_replace
+eval_fail instant at 15m label_replace(rate({env="1"}[10m]), "__name__", "rate_$1", "__name__", "(.+)")
+  expected_fail_message vector cannot contain metrics with the same labelset
+#  rate_metric{env="1"} 0.2
+#  rate_another_metric{env="1"} 0.2
+
+clear
+
+# Test the case where multiple series have the same labels after the metric name is removed by a function.
+load 1m
+  float_metric_1 0+1x4
+  float_metric_2 0+2x4
+  histogram_metric_1 {{sum:0 count:0}}x4
+  histogram_metric_2 {{sum:1 count:1}}x4
+
+eval_fail instant at 5m abs({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m acos({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m acosh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m asin({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m asinh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m atan({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m atanh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m avg_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m ceil({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m cos({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m cosh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m count_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m deg({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m exp({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m floor({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m histogram_count({__name__=~"histogram_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m histogram_sum({__name__=~"histogram_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m increase({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m max_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m min_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m ln({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m log10({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m log2({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m present_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m rad({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m rate({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sgn({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sin({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sinh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sqrt({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m sum_over_time({__name__=~"float_metric_.*"}[5m])
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m tan({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+eval_fail instant at 5m tanh({__name__=~"float_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset

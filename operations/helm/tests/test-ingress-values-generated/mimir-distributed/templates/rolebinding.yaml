@@ -1,0 +1,20 @@
+---
+# Source: mimir-distributed/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-ingress-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ingress-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: test-ingress-values-mimir
+subjects:
+- kind: ServiceAccount
+  name: test-ingress-values-mimir
+- kind: ServiceAccount
+  name: test-ingress-values-mimir-distributed

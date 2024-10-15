@@ -6,8 +6,8 @@
         {
           alert: $.alertName('AlertmanagerSyncConfigsFailing'),
           expr: |||
-            rate(cortex_alertmanager_sync_configs_failed_total[5m]) > 0
-          |||,
+            rate(cortex_alertmanager_sync_configs_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           'for': '30m',
           labels: {
             severity: 'critical',
@@ -21,8 +21,8 @@
         {
           alert: $.alertName('AlertmanagerRingCheckFailing'),
           expr: |||
-            rate(cortex_alertmanager_ring_check_errors_total[2m]) > 0
-          |||,
+            rate(cortex_alertmanager_ring_check_errors_total[%s]) > 0
+          ||| % $.alertRangeInterval(2),
           'for': '10m',
           labels: {
             severity: 'critical',
@@ -36,8 +36,8 @@
         {
           alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
           expr: |||
-            rate(cortex_alertmanager_partial_state_merges_failed_total[2m]) > 0
-          |||,
+            rate(cortex_alertmanager_partial_state_merges_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(2),
           'for': '10m',
           labels: {
             severity: 'critical',
@@ -51,8 +51,8 @@
         {
           alert: $.alertName('AlertmanagerReplicationFailing'),
           expr: |||
-            rate(cortex_alertmanager_state_replication_failed_total[2m]) > 0
-          |||,
+            rate(cortex_alertmanager_state_replication_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(2),
           'for': '10m',
           labels: {
             severity: 'critical',
@@ -66,8 +66,8 @@
         {
           alert: $.alertName('AlertmanagerPersistStateFailing'),
           expr: |||
-            rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
-          |||,
+            rate(cortex_alertmanager_state_persist_failed_total[%s]) > 0
+          ||| % $.alertRangeInterval(15),
           'for': '1h',
           labels: {
             severity: 'critical',
@@ -81,8 +81,8 @@
         {
           alert: $.alertName('AlertmanagerInitialSyncFailed'),
           expr: |||
-            increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
-          |||,
+            increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[%s]) > 0
+          ||| % $.alertRangeInterval(1),
           labels: {
             severity: 'critical',
           },
@@ -143,5 +143,5 @@
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
 }

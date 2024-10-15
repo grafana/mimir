@@ -61,6 +61,7 @@ spec:
             - name: http-metric
               containerPort: 8080
               protocol: TCP
+          {{- if or .Values.global.extraEnv .Values.nginx.extraEnv }}
           env:
           {{- with .Values.global.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -68,6 +69,8 @@ spec:
           {{- with .Values.nginx.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.nginx.extraEnvFrom }}
           envFrom:
           {{- with .Values.global.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
@@ -75,13 +78,15 @@ spec:
           {{- with .Values.nginx.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- end }}
           readinessProbe:
             {{- toYaml .Values.nginx.readinessProbe | nindent 12 }}
           securityContext:
             {{- toYaml .Values.nginx.containerSecurityContext | nindent 12 }}
           volumeMounts:
             - name: config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             {{- if .Values.nginx.basicAuth.enabled }}
             - name: auth
               mountPath: /etc/nginx/secrets
@@ -92,6 +97,9 @@ spec:
               mountPath: /docker-entrypoint.d
             {{- if .Values.nginx.extraVolumeMounts }}
             {{- toYaml .Values.nginx.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+            {{- toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
           resources:
             {{- toYaml .Values.nginx.resources | nindent 12 }}
@@ -126,6 +134,9 @@ spec:
           emptyDir: {}
         {{- if .Values.nginx.extraVolumes }}
         {{- toYaml .Values.nginx.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{- toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
 {{- end -}}
 {{- end -}}

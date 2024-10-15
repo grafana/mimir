@@ -37,6 +37,7 @@
     query_frontend_topology_spread_max_skew: 1,
     querier_topology_spread_max_skew: 1,
     ruler_topology_spread_max_skew: 1,
+    ruler_querier_topology_spread_max_skew: 1,
 
     // Controls how many concurrent queries are run in the querier.
     querier_max_concurrency: 8,
@@ -91,6 +92,13 @@
     // While this is the default value, we want to pass the same to the -blocks-storage.bucket-store.sync-interval
     compactor_cleanup_interval: '15m',
 
+    // Enable concurrent rollout of compactor through the usage of the rollout operator.
+    // This feature modifies the compactor StatefulSet which cannot be altered, so if it already exists it has to be deleted and re-applied again in order to be enabled.
+    cortex_compactor_concurrent_rollout_enabled: false,
+    // Maximum number of unavailable replicas during a compactor rollout when using cortex_compactor_concurrent_rollout_enabled feature.
+    // Computed from compactor replicas by default, but can also be specified as percentage, for example "25%".
+    cortex_compactor_max_unavailable: std.max(std.floor($.compactor_statefulset.spec.replicas / 2), 1),
+
     // Enable use of bucket index by querier, ruler and store-gateway.
     bucket_index_enabled: true,
 
@@ -98,8 +106,6 @@
 
     // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
     // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
-    // store_gateway_lazy_loading_enabled: false will also reduce the concurrency of blocks syncing;
-    // this improves startup times when running on HDDs instead of SSDs as it reduces random reads.
     store_gateway_lazy_loading_enabled: true,
 
     // Number of memcached replicas for each memcached statefulset
@@ -107,21 +113,25 @@
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
+    cache_frontend_connection_limit: 16384,
     cache_frontend_backend: 'memcached',
     memcached_frontend_mtls_enabled: false,
 
     cache_index_queries_enabled: true,
     cache_index_queries_max_item_size_mb: 5,
+    cache_index_queries_connection_limit: 16384,
     cache_index_queries_backend: 'memcached',
     memcached_index_queries_mtls_enabled: false,
 
     cache_chunks_enabled: true,
     cache_chunks_max_item_size_mb: 1,
+    cache_chunks_connection_limit: 16384,
     cache_chunks_backend: 'memcached',
     memcached_chunks_mtls_enabled: false,
 
     cache_metadata_enabled: true,
     cache_metadata_max_item_size_mb: 1,
+    cache_metadata_connection_limit: 16384,
     cache_metadata_backend: 'memcached',
     memcached_metadata_mtls_enabled: false,
 
@@ -219,6 +229,10 @@
       'store-gateway.sharding-ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'store-gateway.sharding-ring.prefix': '',
       'store-gateway.sharding-ring.replication-factor': $._config.store_gateway_replication_factor,
+
+      // Relax pressure on KV store when running at scale.
+      // When changing this, please remember to also change the hearbeat period defined in store_gateway_args.
+      'store-gateway.sharding-ring.heartbeat-timeout': '4m',
     },
 
     // Querier component config (shared between the ruler and querier).
@@ -239,9 +253,12 @@
       'ingester.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'ingester.ring.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
-      'ingester.ring.heartbeat-timeout': '10m',
       'ingester.ring.store': 'consul',
       'ingester.ring.prefix': '',
+
+      // Relax pressure on KV store when running at scale.
+      // When changing this, please remember to also change the hearbeat period defined in ingester_args.
+      'ingester.ring.heartbeat-timeout': '10m',
     },
 
     local querySchedulerRingConfig = {
@@ -565,7 +582,11 @@
     configMap.new($._config.overrides_configmap) +
     configMap.withData({
       'overrides.yaml': $.util.manifestYaml(
-        { overrides: $._config.overrides }
+        {
+          // Recursively remove fields whose value has been explicitly set to "null". This technique allow us
+          // us to easily remove fields using jsonnet overrides.
+          overrides: $.util.removeNulls($._config.overrides),
+        }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
@@ -689,6 +710,7 @@
             'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
             'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
+            'blocks-storage.bucket-store.index-cache.memcached.timeout': '750ms',
           } + if $._config.memcached_index_queries_mtls_enabled then {
             'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
             'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
@@ -713,7 +735,7 @@
             'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
             'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
             'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
-            'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
+            'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '750ms',
           } + if $._config.memcached_chunks_mtls_enabled then {
             'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
             'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',

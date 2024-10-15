@@ -198,7 +198,7 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	return c.atTypeHisto()
 }
 
-func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	if !c.atHisto {
 		panic(errors.New("concreteSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
 	}
@@ -206,7 +206,7 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
-func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if !c.atHisto {
 		panic(errors.New("concreteSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
 	}
@@ -250,11 +250,11 @@ func (errIterator) At() (t int64, v float64) {
 	return 0, 0
 }
 
-func (errIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (errIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, nil
 }
 
-func (errIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (errIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, nil
 }
 

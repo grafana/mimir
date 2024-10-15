@@ -10,10 +10,9 @@ import (
 	"net/http"
 	"text/template"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
@@ -34,11 +33,11 @@ type statusPageContents struct {
 	State string
 }
 
-func writeRingStatusMessage(w http.ResponseWriter, message string) {
+func writeRingStatusMessage(w http.ResponseWriter, message string, logger log.Logger) {
 	w.WriteHeader(http.StatusOK)
 	err := ringStatusPageTemplate.Execute(w, ringStatusPageContents{Message: message})
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "unable to serve alertmanager ring page", "err", err)
+		level.Error(logger).Log("msg", "unable to serve alertmanager ring page", "err", err)
 	}
 }
 
@@ -46,33 +45,20 @@ func (am *MultitenantAlertmanager) RingHandler(w http.ResponseWriter, req *http.
 	if am.State() != services.Running {
 		// we cannot read the ring before the alertmanager is in Running state,
 		// because that would lead to race condition.
-		writeRingStatusMessage(w, "Alertmanager is not running yet.")
+		writeRingStatusMessage(w, "Alertmanager is not running yet.", am.logger)
 		return
 	}
 
 	am.ring.ServeHTTP(w, req)
 }
 
-// GetStatusHandler returns the status handler for this multi-tenant
-// alertmanager.
-func (am *MultitenantAlertmanager) GetStatusHandler() StatusHandler {
-	return StatusHandler{
-		am: am,
-	}
-}
-
-// StatusHandler shows the status of the alertmanager.
-type StatusHandler struct {
-	am *MultitenantAlertmanager
-}
-
-// ServeHTTP serves the status of the alertmanager.
-func (s StatusHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+// StatusHandler serves the status of the alertmanager.
+func (am *MultitenantAlertmanager) StatusHandler(w http.ResponseWriter, _ *http.Request) {
 	err := statusPageTemplate.Execute(w, statusPageContents{
-		State: s.am.State().String(),
+		State: am.State().String(),
 	})
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "unable to serve alertmanager status page", "err", err)
+		level.Error(am.logger).Log("msg", "unable to serve alertmanager status page", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

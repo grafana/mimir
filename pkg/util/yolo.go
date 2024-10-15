@@ -8,5 +8,5 @@ package util
 import "unsafe"
 
 func YoloBuf(s string) []byte {
-	return *((*[]byte)(unsafe.Pointer(&s)))
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

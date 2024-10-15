@@ -21,14 +21,15 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
@@ -65,11 +66,11 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("remote-read-path", "Path of the remote read endpoint.").
 			Default("/prometheus/api/v1/read").
 			StringVar(&c.remoteReadPath)
-		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").
+		cmd.Flag("id", "Grafana Mimir tenant ID. Used for basic auth and as X-Scope-OrgID HTTP header. Alternatively, set "+envVars.TenantID+".").
 			Envar(envVars.TenantID).
 			Default("").
 			StringVar(&c.tenantID)
-		cmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
+		cmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
 			Envar(envVars.APIKey).
 			Default("").
 			StringVar(&c.apiKey)
@@ -105,66 +106,60 @@ func (s *setTenantIDTransport) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 type timeSeriesIterator struct {
-	posSeries int
-	posSample int
-	ts        []*prompb.TimeSeries
+	seriesSet           storage.SeriesSet
+	currentSeriesChunks chunkenc.Iterator
 
-	// labels slice is reused across samples within a series
-	labels          labels.Labels
-	labelsSeriesPos int
+	ts int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
-func newTimeSeriesIterator(ts []*prompb.TimeSeries) *timeSeriesIterator {
+func newTimeSeriesIterator(seriesSet storage.SeriesSet) *timeSeriesIterator {
 	return &timeSeriesIterator{
-		posSeries: 0,
-		posSample: -1,
-
-		// ensure we are not pointing to a valid slice position
-		labelsSeriesPos: -1,
-
-		ts: ts,
+		seriesSet:           seriesSet,
+		currentSeriesChunks: chunkenc.NewNopIterator(),
 	}
-
 }
 
 func (i *timeSeriesIterator) Next() error {
-	if i.posSeries >= len(i.ts) {
-		return io.EOF
+	// Find non empty chunk iterator.
+	var vt chunkenc.ValueType
+	for vt = i.currentSeriesChunks.Next(); vt == chunkenc.ValNone; vt = i.currentSeriesChunks.Next() {
+		if !i.seriesSet.Next() {
+			err := i.seriesSet.Err()
+			if err != nil {
+				return err
+			}
+			return io.EOF
+		}
+		i.currentSeriesChunks = i.seriesSet.At().Iterator(i.currentSeriesChunks)
 	}
-
-	i.posSample++
-
-	if i.posSample >= len(i.ts[i.posSeries].Samples) {
-		i.posSample = -1
-		i.posSeries++
-		return i.Next()
+	switch vt {
+	case chunkenc.ValFloat:
+		i.ts, i.v = i.currentSeriesChunks.At()
+		i.h = nil
+		i.fh = nil
+	case chunkenc.ValHistogram:
+		i.ts, i.h = i.currentSeriesChunks.AtHistogram(nil)
+		i.v = i.h.Sum
+		i.fh = nil
+	case chunkenc.ValFloatHistogram:
+		i.ts, i.fh = i.currentSeriesChunks.AtFloatHistogram(nil)
+		i.v = i.fh.Sum
+		i.h = nil
+	default:
+		panic("unreachable")
 	}
-
 	return nil
 }
 
 func (i *timeSeriesIterator) Labels() (l labels.Labels) {
-	// if it's the same label as previously return it
-	if i.posSeries == i.labelsSeriesPos {
-		return i.labels
-	}
-
-	series := i.ts[i.posSeries]
-	builder := labels.NewScratchBuilder(len(series.Labels))
-	for posLabel := range series.Labels {
-		builder.Add(series.Labels[posLabel].Name, series.Labels[posLabel].Value)
-	}
-	i.labels = builder.Labels()
-	i.labelsSeriesPos = i.posSeries
-	return i.labels
+	return i.seriesSet.At().Labels()
 }
 
-func (i *timeSeriesIterator) Sample() (ts int64, v float64) {
-	series := i.ts[i.posSeries]
-	sample := series.Samples[i.posSample]
-
-	//sample.GetValue()
-	return sample.GetTimestamp(), sample.GetValue()
+func (i *timeSeriesIterator) Sample() (ts int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+	return i.ts, i.v, i.h, i.fh
 }
 
 // this is adapted from Go 1.15 for older versions
@@ -206,7 +201,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 			},
 		},
 		Headers: map[string]string{
-			"User-Agent": client.UserAgent,
+			"User-Agent": client.UserAgent(),
 		},
 	})
 	if err != nil {
@@ -231,7 +226,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 }
 
 // prepare() validates the input and prepares the client to query remote read endpoints
-func (c *RemoteReadCommand) prepare() (query func(context.Context) ([]*prompb.TimeSeries, error), from, to time.Time, err error) {
+func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.SeriesSet, error), from, to time.Time, err error) {
 	from, err = time.Parse(time.RFC3339, c.from)
 	if err != nil {
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing from: '%s' value: %w", c.from, err)
@@ -262,14 +257,14 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) ([]*prompb.Ti
 		return nil, time.Time{}, time.Time{}, err
 	}
 
-	return func(ctx context.Context) ([]*prompb.TimeSeries, error) {
+	return func(ctx context.Context) (storage.SeriesSet, error) {
 		log.Infof("Querying time from=%s to=%s with selector=%s", from.Format(time.RFC3339), to.Format(time.RFC3339), c.selector)
-		resp, err := readClient.Read(ctx, pbQuery)
+		resp, err := readClient.Read(ctx, pbQuery, false)
 		if err != nil {
 			return nil, err
 		}
 
-		return resp.Timeseries, nil
+		return resp, nil
 
 	}, from, to, nil
 }
@@ -285,23 +280,39 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	iterator := newTimeSeriesIterator(timeseries)
-	for {
-		err := iterator.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return err
-		}
+	var it chunkenc.Iterator
+	for timeseries.Next() {
+		s := timeseries.At()
 
-		l := iterator.Labels()
-		ts, v := iterator.Sample()
-		comment := ""
-		if value.IsStaleNaN(v) {
-			comment = " # StaleNaN"
+		l := s.Labels().String()
+		it := s.Iterator(it)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			switch vt {
+			case chunkenc.ValFloat:
+				ts, v := it.At()
+				comment := ""
+				if value.IsStaleNaN(v) {
+					comment = " # StaleNaN"
+				}
+				fmt.Printf("%s %g %d%s\n", l, v, ts, comment)
+			case chunkenc.ValHistogram:
+				ts, h := it.AtHistogram(nil)
+				comment := ""
+				if value.IsStaleNaN(h.Sum) {
+					comment = " # StaleNaN"
+				}
+				fmt.Printf("%s %s %d%s\n", l, h.String(), ts, comment)
+			case chunkenc.ValFloatHistogram:
+				ts, h := it.AtFloatHistogram(nil)
+				comment := ""
+				if value.IsStaleNaN(h.Sum) {
+					comment = " # StaleNaN"
+				}
+				fmt.Printf("%s %s %d%s\n", l, h.String(), ts, comment)
+			default:
+				panic("unreachable")
+			}
 		}
-		fmt.Printf("%s %g %d%s\n", l, v, ts, comment)
 	}
 
 	return nil
@@ -331,32 +342,44 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 		Series: make(map[string]struct{}),
 	}
 
-	iterator := newTimeSeriesIterator(timeseries)
-	for {
-		err := iterator.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
+	var it chunkenc.Iterator
+	for timeseries.Next() {
+		s := timeseries.At()
+		it := s.Iterator(it)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			num.Samples++
+			num.Series[s.Labels().String()] = struct{}{}
+
+			var ts int64
+			var v float64
+			switch vt {
+			case chunkenc.ValFloat:
+				ts, v = it.At()
+			case chunkenc.ValHistogram:
+				var h *histogram.Histogram
+				ts, h = it.AtHistogram(nil)
+				v = h.Sum
+			case chunkenc.ValFloatHistogram:
+				var h *histogram.FloatHistogram
+				ts, h = it.AtFloatHistogram(nil)
+				v = h.Sum
+			default:
+				panic("unreachable")
 			}
-			return err
-		}
-		num.Samples++
-		num.Series[iterator.Labels().String()] = struct{}{}
 
-		ts, v := iterator.Sample()
+			if int64(num.MaxT) < ts {
+				num.MaxT = model.Time(ts)
+			}
+			if num.MinT == 0 || int64(num.MinT) > ts {
+				num.MinT = model.Time(ts)
+			}
 
-		if int64(num.MaxT) < ts {
-			num.MaxT = model.Time(ts)
-		}
-		if num.MinT == 0 || int64(num.MinT) > ts {
-			num.MinT = model.Time(ts)
-		}
-
-		if math.IsNaN(v) {
-			num.NaNValues++
-		}
-		if value.IsStaleNaN(v) {
-			num.StaleNaNValues++
+			if math.IsNaN(v) {
+				num.NaNValues++
+			}
+			if value.IsStaleNaN(v) {
+				num.StaleNaNValues++
+			}
 		}
 	}
 

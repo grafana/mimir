@@ -17,14 +17,15 @@ import (
 	"strings"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ballast"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -56,7 +57,6 @@ type mainFlags struct {
 	ballastBytes             int     `category:"advanced"`
 	mutexProfileFraction     int     `category:"advanced"`
 	blockProfileRate         int     `category:"advanced"`
-	useBufferedLogger        bool    `category:"deprecated"` // Deprecated: deprecated in Mimir 2.11, remove it in 2.13.
 	rateLimitedLogsEnabled   bool    `category:"experimental"`
 	rateLimitedLogsPerSecond float64 `category:"experimental"`
 	rateLimitedLogsBurstSize int     `category:"experimental"`
@@ -70,7 +70,6 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.IntVar(&mf.ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	fs.IntVar(&mf.mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
-	fs.BoolVar(&mf.useBufferedLogger, "log.buffered", true, "Use a buffered logger to reduce write contention.")
 	fs.BoolVar(&mf.rateLimitedLogsEnabled, "log.rate-limit-enabled", false, "Use rate limited logger to reduce the number of logged messages per second.")
 	fs.Float64Var(&mf.rateLimitedLogsPerSecond, "log.rate-limit-logs-per-second", 10000, "Maximum number of messages per second to be logged.")
 	fs.IntVar(&mf.rateLimitedLogsBurstSize, "log.rate-limit-logs-burst-size", 1000, "Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second.")
@@ -170,16 +169,17 @@ func main() {
 	if mainFlags.blockProfileRate > 0 {
 		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
 	}
+	clampGOMAXPROCS()
 
 	reg := prometheus.DefaultRegisterer
-	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, mainFlags.useBufferedLogger, util_log.RateLimitedLoggerCfg{
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, true, util_log.RateLimitedLoggerCfg{
 		Enabled:       mainFlags.rateLimitedLogsEnabled,
 		LogsPerSecond: mainFlags.rateLimitedLogsPerSecond,
 		LogsBurstSize: mainFlags.rateLimitedLogsBurstSize,
 		Registry:      reg,
 	})
 
-	var ballast = util.AllocateBallast(mainFlags.ballastBytes)
+	var ballast = ballast.Allocate(mainFlags.ballastBytes)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
@@ -193,7 +193,7 @@ func main() {
 		}
 
 		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name); err != nil {
+		if trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3)); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
 			defer trace.Close()
@@ -228,6 +228,18 @@ func main() {
 
 	runtime.KeepAlive(ballast)
 	util_log.CheckFatal("running application", err)
+}
+
+func clampGOMAXPROCS() {
+	if runtime.GOMAXPROCS(0) <= runtime.NumCPU() {
+		return
+	}
+	level.Warn(util_log.Logger).Log(
+		"msg", "GOMAXPROCS is higher than the number of CPUs; clamping it to NumCPU; please report if this doesn't fit your use case",
+		"GOMAXPROCS", runtime.GOMAXPROCS(0),
+		"NumCPU", runtime.NumCPU(),
+	)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func exit(code int) {
@@ -307,6 +319,11 @@ func expandEnvironmentVariables(config []byte) []byte {
 		if v == "" && len(keyAndDefault) == 2 {
 			v = keyAndDefault[1] // Set value to the default.
 		}
+
+		if strings.Contains(v, "\n") {
+			return strings.Replace(v, "\n", "", -1)
+		}
+
 		return v
 	}))
 }

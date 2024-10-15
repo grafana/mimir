@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -42,7 +43,7 @@ type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, 
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
 // It converts scalar into vector results.
-func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
+func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		q, err := engine.NewInstantQuery(ctx, q, nil, qs, t)
 		if err != nil {
@@ -105,22 +106,27 @@ type ContextWrapFunc func(ctx context.Context, g *Group) context.Context
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL *url.URL
-	QueryFunc   QueryFunc
-	NotifyFunc  NotifyFunc
-	Context     context.Context
+	ExternalURL               *url.URL
+	QueryFunc                 QueryFunc
+	NotifyFunc                NotifyFunc
+	Context                   context.Context
+	Appendable                storage.Appendable
+	Queryable                 storage.Queryable
+	Logger                    log.Logger
+	Registerer                prometheus.Registerer
+	OutageTolerance           time.Duration
+	ForGracePeriod            time.Duration
+	ResendDelay               time.Duration
+	GroupLoader               GroupLoader
+	DefaultRuleQueryOffset    func() time.Duration
+	MaxConcurrentEvals        int64
+	ConcurrentEvalsEnabled    bool
+	RuleConcurrencyController RuleConcurrencyController
+	RuleDependencyController  RuleDependencyController
+
 	// GroupEvaluationContextFunc will be called to wrap Context based on the group being evaluated.
 	// Will be skipped if nil.
 	GroupEvaluationContextFunc ContextWrapFunc
-	Appendable                 storage.Appendable
-	Queryable                  storage.Queryable
-	Logger                     log.Logger
-	Registerer                 prometheus.Registerer
-	OutageTolerance            time.Duration
-	ForGracePeriod             time.Duration
-	ResendDelay                time.Duration
-	GroupLoader                GroupLoader
-	DefaultEvaluationDelay     func() time.Duration
 
 	// AlwaysRestoreAlertState forces all new or changed groups in calls to Update to restore.
 	// Useful when you know you will be adding alerting rules after the manager has already started.
@@ -138,6 +144,18 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.GroupLoader == nil {
 		o.GroupLoader = FileLoader{}
+	}
+
+	if o.RuleConcurrencyController == nil {
+		if o.ConcurrentEvalsEnabled {
+			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
+		} else {
+			o.RuleConcurrencyController = sequentialRuleEvalController{}
+		}
+	}
+
+	if o.RuleDependencyController == nil {
+		o.RuleDependencyController = ruleDependencyController{}
 	}
 
 	m := &Manager{
@@ -182,9 +200,17 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
+// This method will no-op in case the manager is already stopped.
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	// We cannot update a stopped manager
+	select {
+	case <-m.done:
+		return nil
+	default:
+	}
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -323,16 +349,31 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
+			// Check dependencies between rules and store it on the Rule itself.
+			m.opts.RuleDependencyController.AnalyseRules(rules)
+
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                          rg.Name,
-				File:                          fn,
-				Interval:                      itv,
-				Limit:                         rg.Limit,
-				Rules:                         rules,
-				SourceTenants:                 rg.SourceTenants,
-				ShouldRestore:                 shouldRestore,
-				Opts:                          m.opts,
-				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
+				Name:          rg.Name,
+				File:          fn,
+				Interval:      itv,
+				Limit:         rg.Limit,
+				Rules:         rules,
+				SourceTenants: rg.SourceTenants,
+				ShouldRestore: shouldRestore,
+				Opts:          m.opts,
+				QueryOffset: func() *time.Duration {
+					// Give preference to QueryOffset, falling back to the deprecated EvaluationDelay.
+					if rg.QueryOffset != nil {
+						return (*time.Duration)(rg.QueryOffset)
+					}
+
+					//nolint:staticcheck // We want to intentionally access a deprecated field
+					if rg.EvaluationDelay != nil {
+						return (*time.Duration)(rg.EvaluationDelay)
+					}
+
+					return nil
+				}(),
 				done:                          m.done,
 				EvalIterationFunc:             groupEvalIterationFunc,
 				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,
@@ -368,13 +409,13 @@ func (m *Manager) RuleGroups() []*Group {
 }
 
 // Rules returns the list of the manager's rules.
-func (m *Manager) Rules() []Rule {
+func (m *Manager) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
 	var rules []Rule
 	for _, g := range m.groups {
-		rules = append(rules, g.rules...)
+		rules = append(rules, g.Rules(matcherSets...)...)
 	}
 
 	return rules
@@ -421,3 +462,71 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 		}
 	}
 }
+
+// RuleDependencyController controls whether a set of rules have dependencies between each other.
+type RuleDependencyController interface {
+	// AnalyseRules analyses dependencies between the input rules. For each rule that it's guaranteed
+	// not having any dependants and/or dependency, this function should call Rule.SetNoDependentRules(true)
+	// and/or Rule.SetNoDependencyRules(true).
+	AnalyseRules(rules []Rule)
+}
+
+type ruleDependencyController struct{}
+
+// AnalyseRules implements RuleDependencyController.
+func (c ruleDependencyController) AnalyseRules(rules []Rule) {
+	depMap := buildDependencyMap(rules)
+	for _, r := range rules {
+		r.SetNoDependentRules(depMap.dependents(r) == 0)
+		r.SetNoDependencyRules(depMap.dependencies(r) == 0)
+	}
+}
+
+// RuleConcurrencyController controls concurrency for rules that are safe to be evaluated concurrently.
+// Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
+// server with additional query load. Concurrency is controlled globally, not on a per-group basis.
+type RuleConcurrencyController interface {
+	// Allow determines if the given rule is allowed to be evaluated concurrently.
+	// If Allow() returns true, then Done() must be called to release the acquired slot and corresponding cleanup is done.
+	// It is important that both *Group and Rule are not retained and only be used for the duration of the call.
+	Allow(ctx context.Context, group *Group, rule Rule) bool
+
+	// Done releases a concurrent evaluation slot.
+	Done(ctx context.Context)
+}
+
+// concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
+type concurrentRuleEvalController struct {
+	sema *semaphore.Weighted
+}
+
+func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
+	return &concurrentRuleEvalController{
+		sema: semaphore.NewWeighted(maxConcurrency),
+	}
+}
+
+func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
+	// To allow a rule to be executed concurrently, we need 3 conditions:
+	// 1. The rule must not have any rules that depend on it.
+	// 2. The rule itself must not depend on any other rules.
+	// 3. If 1 & 2 are true, then and only then we should try to acquire the concurrency slot.
+	if rule.NoDependentRules() && rule.NoDependencyRules() {
+		return c.sema.TryAcquire(1)
+	}
+
+	return false
+}
+
+func (c *concurrentRuleEvalController) Done(_ context.Context) {
+	c.sema.Release(1)
+}
+
+// sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
+type sequentialRuleEvalController struct{}
+
+func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
+	return false
+}
+
+func (c sequentialRuleEvalController) Done(_ context.Context) {}

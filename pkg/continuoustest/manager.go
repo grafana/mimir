@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/modules"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -92,5 +93,9 @@ func (m *Manager) Run(ctx context.Context) error {
 		})
 	}
 
-	return group.Wait()
+	err := group.Wait()
+	if err == nil && m.cfg.SmokeTest {
+		err = modules.ErrStopProcess
+	}
+	return err
 }

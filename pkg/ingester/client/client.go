@@ -7,9 +7,7 @@ package client
 
 import (
 	"flag"
-	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -17,6 +15,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
@@ -33,21 +33,18 @@ type closableHealthAndIngesterClient struct {
 }
 
 // MakeIngesterClient makes a new IngesterClient
-func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
-	logger = log.With(logger, "component", "ingester-client")
-	var reportGRPCStatusesOptions []middleware.InstrumentationOption
-	if cfg.ReportGRPCStatusCodes {
-		reportGRPCStatusesOptions = []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
-	}
+func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics) (HealthAndIngesterClient, error) {
+	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
-	if cfg.CircuitBreaker.Enabled {
-		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
-	}
+	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
+	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}
+
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -69,44 +66,17 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig      grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
-	CircuitBreaker        CircuitBreakerConfig `yaml:"circuit_breaker"`
-	ReportGRPCStatusCodes bool                 `yaml:"report_grpc_codes_in_instrumentation_label_enabled" category:"advanced"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
-	cfg.CircuitBreaker.RegisterFlagsWithPrefix("ingester.client", f)
-	f.BoolVar(&cfg.ReportGRPCStatusCodes, "ingester.client.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"")
 }
 
 func (cfg *Config) Validate() error {
-	if err := cfg.GRPCClientConfig.Validate(); err != nil {
-		return err
-	}
-
-	return cfg.CircuitBreaker.Validate()
-}
-
-type CircuitBreakerConfig struct {
-	Enabled                   bool          `yaml:"enabled" category:"experimental"`
-	FailureThreshold          uint          `yaml:"failure_threshold" category:"experimental"`
-	FailureExecutionThreshold uint          `yaml:"failure_execution_threshold" category:"experimental"`
-	ThresholdingPeriod        time.Duration `yaml:"thresholding_period" category:"experimental"`
-	CooldownPeriod            time.Duration `yaml:"cooldown_period" category:"experimental"`
-}
-
-func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+".circuit-breaker.enabled", false, "Enable circuit breaking when making requests to ingesters")
-	f.UintVar(&cfg.FailureThreshold, prefix+".circuit-breaker.failure-threshold", 10, "Max percentage of requests that can fail over period before the circuit breaker opens")
-	f.UintVar(&cfg.FailureExecutionThreshold, prefix+".circuit-breaker.failure-execution-threshold", 100, "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures")
-	f.DurationVar(&cfg.ThresholdingPeriod, prefix+".circuit-breaker.thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
-	f.DurationVar(&cfg.CooldownPeriod, prefix+".circuit-breaker.cooldown-period", time.Minute, "How long the circuit breaker will stay in the open state before allowing some requests")
-}
-
-func (cfg *CircuitBreakerConfig) Validate() error {
-	return nil
+	return cfg.GRPCClientConfig.Validate()
 }
 
 type CombinedQueryStreamResponse struct {

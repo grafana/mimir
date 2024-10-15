@@ -501,16 +501,13 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 			queryable := storageSeriesQueryable(series)
 
 			for testName, testData := range tests {
-				// Change scope to ensure it work fine when test cases are executed concurrently.
-				testData := testData
-
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
-					reqs := []Request{
+					reqs := []MetricsQueryRequest{
 						&PrometheusInstantQueryRequest{
-							Path:  "/query",
-							Time:  util.TimeToMillis(end),
-							Query: testData.query,
+							path:      "/query",
+							time:      util.TimeToMillis(end),
+							queryExpr: parseQuery(t, testData.query),
 						},
 					}
 
@@ -519,8 +516,9 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
 							engine := newEngine()
 							downstream := &downstreamHandler{
-								engine:    engine,
-								queryable: queryable,
+								engine:                                  engine,
+								queryable:                               queryable,
+								includePositionInformationInAnnotations: true,
 							}
 
 							// Run the query with the normal engine
@@ -533,6 +531,12 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							// Ensure the query produces some results.
 							require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 							requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+							if testData.expectedSplitQueries > 0 {
+								// Remove position information from annotations, to mirror what we expect from the split queries below.
+								removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+								removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+							}
 
 							splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), engine, reg)
 
@@ -615,14 +619,12 @@ func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
 			expectedDownstreamCall: 3, // [3h] range interval with 1h split interval should be split in 3 partial queries
 		},
 	} {
-		tt := tt
-
 		t.Run(tt.name, func(t *testing.T) {
 			req := &PrometheusInstantQueryRequest{
-				Path:    "/query",
-				Time:    time.Now().UnixNano(),
-				Query:   "sum_over_time(metric_counter[3h])", // splittable instant query
-				Options: tt.httpOptions,
+				path:      "/query",
+				time:      time.Now().UnixNano(),
+				queryExpr: parseQuery(t, "sum_over_time(metric_counter[3h])"), // splittable instant query
+				options:   tt.httpOptions,
 			}
 
 			// Split by interval middleware with a limit configuration of split instant query interval of 1m

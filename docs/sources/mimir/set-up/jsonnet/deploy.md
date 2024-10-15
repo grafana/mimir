@@ -41,7 +41,7 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
 
    # Initialise the Tanka.
    mkdir jsonnet-example && cd jsonnet-example
-   tk init --k8s=1.21
+   tk init --k8s=1.29
 
    # Install Mimir jsonnet.
    jb install github.com/grafana/mimir/operations/mimir@main
@@ -101,6 +101,13 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
      kubectl apply -k manifests/
      ```
 
-   > **Note**: The generated Kubernetes manifests create resources in the `default` namespace. To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests.
+   {{< admonition type="note" >}}
+   The generated Kubernetes manifests create resources in the `default` namespace.
+   To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests.
+   {{< /admonition >}}
 
-   > **Note:** A Jsonnet-based installation uses etcd for the HA tracker by default. The Jsonnet-based installation creates the etcd using the [etcd-operator](https://github.com/coreos/etcd-operator). Before applying the `tk apply` or `kubectl apply` command , make sure that you have the etcd-operator running in your Kubernetes cluster.
+   {{< admonition type="warning" >}}
+   A Jsonnet-based installation uses etcd for the HA tracker by default.
+   The Jsonnet-based installation creates the etcd using the [etcd-operator](https://github.com/coreos/etcd-operator).
+   Before applying the `tk apply` or `kubectl apply` command, make sure that you have the etcd-operator running in your Kubernetes cluster.
+   {{< /admonition >}}

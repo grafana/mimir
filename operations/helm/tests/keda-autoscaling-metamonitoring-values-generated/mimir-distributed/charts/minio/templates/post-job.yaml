@@ -1,0 +1,74 @@
+---
+# Source: mimir-distributed/charts/minio/templates/post-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keda-autoscaling-metamonitoring-values-minio-post-job
+  labels:
+    app: minio-post-job
+    chart: minio-5.2.0
+    release: keda-autoscaling-metamonitoring-values
+    heritage: Helm
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  template:
+    metadata:
+      labels:
+        app: minio-job
+        release: keda-autoscaling-metamonitoring-values
+    spec:
+      restartPolicy: OnFailure      
+      volumes:
+        - name: etc-path
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: minio-configuration
+          projected:
+            sources:
+              - configMap:
+                  name: keda-autoscaling-metamonitoring-values-minio
+              - secret:
+                  name: keda-autoscaling-metamonitoring-values-minio
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio-make-bucket
+          image: "quay.io/minio/mc:RELEASE.2024-04-18T16-45-29Z"
+          imagePullPolicy: IfNotPresent
+          command: [ "/bin/sh", "/config/initialize" ]
+          env:
+            - name: MINIO_ENDPOINT
+              value: keda-autoscaling-metamonitoring-values-minio
+            - name: MINIO_PORT
+              value: "9000"
+          volumeMounts:
+            - name: etc-path
+              mountPath: /etc/minio/mc
+            - name: tmp
+              mountPath: /tmp
+            - name: minio-configuration
+              mountPath: /config
+          resources:
+            requests:
+              memory: 128Mi
+        - name: minio-make-user
+          image: "quay.io/minio/mc:RELEASE.2024-04-18T16-45-29Z"
+          imagePullPolicy: IfNotPresent
+          command: [ "/bin/sh", "/config/add-user" ]
+          env:
+            - name: MINIO_ENDPOINT
+              value: keda-autoscaling-metamonitoring-values-minio
+            - name: MINIO_PORT
+              value: "9000"
+          volumeMounts:
+            - name: etc-path
+              mountPath: /etc/minio/mc
+            - name: tmp
+              mountPath: /tmp
+            - name: minio-configuration
+              mountPath: /config
+          resources:
+            requests:
+              memory: 128Mi

@@ -43,13 +43,14 @@ func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc,
 		return nil, err
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial store-gateway %s %s", inst.Id, inst.Addr)
 	}
 
 	return &storeGatewayClient{
-		StoreGatewayClient: storegatewaypb.NewStoreGatewayClient(conn),
+		StoreGatewayClient: storegatewaypb.NewCustomStoreGatewayClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
 	}, nil

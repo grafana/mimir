@@ -76,6 +76,15 @@
         '%dh' % (seconds / 3600)
       else
         '%dm%ds' % [seconds / 60, seconds % 60],
+
+    // Similar to std.prune() but only remove fields whose value is explicitly set to "null".
+    removeNulls(obj)::
+      if std.type(obj) == 'object' then {
+        [key]: $.util.removeNulls(obj[key])
+        for key in std.objectFields(obj)
+        if obj[key] != null
+      }
+      else obj,
   },
 
   // Utility to create an headless service used to discover replicas of a Mimir deployment.
@@ -129,6 +138,22 @@
       topologySpreadConstraints.withWhenUnsatisfiable('ScheduleAnyway') +
       topologySpreadConstraints.withMaxSkew(maxSkew),
     ),
+
+  newMimirNodeAffinityMatchers(nodeAffinityMatchers)::
+    local deployment = $.apps.v1.deployment;
+
+    if std.length(nodeAffinityMatchers) == 0 then {} else (
+      deployment.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.withNodeSelectorTerms(
+        local sorted = std.sort(nodeAffinityMatchers, function(x) x.key);
+        $.core.v1.nodeSelectorTerm.withMatchExpressions(sorted)
+      )
+    ),
+
+  newMimirNodeAffinityMatcherAZ(az):: {
+    key: 'topology.kubernetes.io/zone',
+    operator: 'In',
+    values: [az],
+  },
 
   mimirVolumeMounts::
     $.util.volumeMounts(

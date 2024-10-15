@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -26,9 +28,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
+func TestLimitsMiddleware_MaxQueryLookback_RangeQueryAndRemoteRead(t *testing.T) {
 	const (
 		thirtyDays = 30 * 24 * time.Hour
+		sixtyDays  = 60 * 24 * time.Hour
 	)
 
 	now := time.Now()
@@ -42,7 +45,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 		expectedStartTime     time.Time
 		expectedEndTime       time.Time
 	}{
-		"should not manipulate time range if max lookback is disabled": {
+		"should not manipulate time range if maxQueryLookback and blocksRetentionPeriod are both disabled": {
 			maxQueryLookback:      0,
 			blocksRetentionPeriod: 0,
 			reqStartTime:          time.Unix(0, 0),
@@ -66,16 +69,54 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 			expectedStartTime:     now.Add(-thirtyDays).Add(time.Hour),
 			expectedEndTime:       now,
 		},
-		"should manipulate a query on large time range over the limit": {
+		"should manipulate a query on large time range over the maxQueryLookback limit, and blocksRetentionPeriod is not set": {
 			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: 0,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
+		},
+		"should manipulate a query on large time range over the blocksRetentionPeriod, and maxQueryLookback limit is not set": {
+			maxQueryLookback:      0,
 			blocksRetentionPeriod: thirtyDays,
 			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
 			reqEndTime:            now,
 			expectedStartTime:     now.Add(-thirtyDays),
 			expectedEndTime:       now,
 		},
-		"should skip executing a query outside the allowed time range": {
+		"should manipulate a query on large time range over the maxQueryLookback limit, and blocksRetentionPeriod is set to an higher value": {
 			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: sixtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
+		},
+		"should manipulate a query on large time range over the blocksRetentionPeriod, and maxQueryLookback limit is set to an higher value": {
+			maxQueryLookback:      sixtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
+		},
+		"should skip executing a query outside the allowed maxQueryLookback limit, and blocksRetentionPeriod is not set": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: 0,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query outside the allowed maxQueryLookback limit, and blocksRetentionPeriod is set to an higher value": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: sixtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query outside the blocksRetentionPeriod, and maxQueryLookback limit is set to an higher value": {
+			maxQueryLookback:      sixtyDays,
 			blocksRetentionPeriod: thirtyDays,
 			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
 			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
@@ -93,9 +134,119 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRangeQueryRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+			reqs := map[string]MetricsQueryRequest{
+				"range query": &PrometheusRangeQueryRequest{
+					start: util.TimeToMillis(testData.reqStartTime),
+					end:   util.TimeToMillis(testData.reqEndTime),
+				},
+				"remote read": &remoteReadQueryRequest{
+					path: remoteReadPathSuffix,
+					query: &prompb.Query{
+						StartTimestampMs: util.TimeToMillis(testData.reqStartTime),
+						EndTimestampMs:   util.TimeToMillis(testData.reqEndTime),
+					},
+				},
+			}
+
+			for reqType, req := range reqs {
+				t.Run(reqType, func(t *testing.T) {
+					limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
+					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+					innerRes := newEmptyPrometheusResponse()
+					inner := &mockHandler{}
+					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+					ctx := user.InjectOrgID(context.Background(), "test")
+					outer := middleware.Wrap(inner)
+					res, err := outer.Do(ctx, req)
+					require.NoError(t, err)
+
+					if testData.expectedSkipped {
+						// We expect an empty response, but not the one returned by the inner handler
+						// which we expect has been skipped.
+						assert.NotSame(t, innerRes, res)
+						assert.Len(t, inner.Calls, 0)
+					} else {
+						// We expect the response returned by the inner handler.
+						assert.Same(t, innerRes, res)
+
+						// Assert on the time range of the request passed to the inner handler (5s delta).
+						delta := float64(5000)
+						require.Len(t, inner.Calls, 1)
+
+						assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart(), delta)
+						assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
+	const (
+		thirtyDays = 30 * 24 * time.Hour
+		sixtyDays  = 60 * 24 * time.Hour
+	)
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		maxQueryLookback      time.Duration
+		blocksRetentionPeriod time.Duration
+		reqTime               time.Time
+		expectedSkipped       bool
+		expectedTime          time.Time
+	}{
+		"should allow executing a query if maxQueryLookback and blocksRetentionPeriod are both disabled": {
+			maxQueryLookback:      0,
+			blocksRetentionPeriod: 0,
+			reqTime:               time.Unix(0, 0),
+			expectedTime:          time.Unix(0, 0),
+		},
+		"should allow executing a query with time within maxQueryLookback and blocksRetentionPeriod": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqTime:               now.Add(-time.Hour),
+			expectedTime:          now.Add(-time.Hour),
+		},
+		"should allow executing a query with time close to maxQueryLookback and blocksRetentionPeriod": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqTime:               now.Add(-thirtyDays).Add(time.Hour),
+			expectedTime:          now.Add(-thirtyDays).Add(time.Hour),
+		},
+		"should skip executing a query with time before the maxQueryLookback limit, and blocksRetentionPeriod is not set": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: 0,
+			reqTime:               now.Add(-thirtyDays).Add(-100 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query with time before the blocksRetentionPeriod, and maxQueryLookback limit is not set": {
+			maxQueryLookback:      0,
+			blocksRetentionPeriod: thirtyDays,
+			reqTime:               now.Add(-thirtyDays).Add(-100 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query with time before the maxQueryLookback limit, and blocksRetentionPeriod is set to an higher value": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: sixtyDays,
+			reqTime:               now.Add(-thirtyDays).Add(-100 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query with time before the blocksRetentionPeriod, and maxQueryLookback limit is set to an higher value": {
+			maxQueryLookback:      sixtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqTime:               now.Add(-thirtyDays).Add(-100 * time.Hour),
+			expectedSkipped:       true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusInstantQueryRequest{
+				time: testData.reqTime.UnixMilli(),
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
@@ -123,8 +274,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 				delta := float64(5000)
 				require.Len(t, inner.Calls, 1)
 
-				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart(), delta)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
 			}
 		})
 	}
@@ -167,35 +318,67 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRangeQueryRequest{
-				Query: testData.query,
-				Start: util.TimeToMillis(now.Add(-time.Hour * 2)),
-				End:   util.TimeToMillis(now.Add(-time.Hour)),
-			}
+			startMs := util.TimeToMillis(now.Add(-time.Hour * 2))
+			endMs := util.TimeToMillis(now.Add(-time.Hour))
 
-			tenant.WithDefaultResolver(tenant.NewMultiResolver())
-			limits := multiTenantMockLimits{
-				byTenant: map[string]mockLimits{
-					"test1": {maxQueryExpressionSizeBytes: testData.queryLimits["test1"]},
-					"test2": {maxQueryExpressionSizeBytes: testData.queryLimits["test2"]},
+			reqs := map[string]MetricsQueryRequest{
+				"range query": &PrometheusRangeQueryRequest{
+					queryExpr: parseQuery(t, testData.query),
+					start:     startMs,
+					end:       endMs,
+				},
+				"instant query": &PrometheusInstantQueryRequest{
+					queryExpr: parseQuery(t, testData.query),
+				},
+				"remote read": &remoteReadQueryRequest{
+					path:      remoteReadPathSuffix,
+					promQuery: testData.query,
+					query: &prompb.Query{
+						StartTimestampMs: startMs,
+						EndTimestampMs:   endMs,
+						Matchers: func() []*prompb.LabelMatcher {
+							v := &findVectorSelectorsVisitor{}
+							require.NoError(t, parser.Walk(v, parseQuery(t, testData.query), nil))
+
+							// This test requires the query has only 1 vector selector.
+							require.Len(t, v.selectors, 1)
+							require.NotEmpty(t, v.selectors[0].LabelMatchers)
+
+							matchers, err := remote.ToLabelMatchers(v.selectors[0].LabelMatchers)
+							require.NoError(t, err)
+
+							return matchers
+						}(),
+					},
 				},
 			}
-			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
-			inner := &mockHandler{}
-			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+			for reqType, req := range reqs {
+				t.Run(reqType, func(t *testing.T) {
+					limits := multiTenantMockLimits{
+						byTenant: map[string]mockLimits{
+							"test1": {maxQueryExpressionSizeBytes: testData.queryLimits["test1"]},
+							"test2": {maxQueryExpressionSizeBytes: testData.queryLimits["test2"]},
+						},
+					}
+					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			ctx := user.InjectOrgID(context.Background(), "test1|test2")
-			outer := middleware.Wrap(inner)
-			res, err := outer.Do(ctx, req)
+					innerRes := newEmptyPrometheusResponse()
+					inner := &mockHandler{}
+					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
-			if testData.expectError {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), "err-mimir-max-query-expression-size-bytes")
-			} else {
-				require.NoError(t, err)
-				require.Same(t, innerRes, res)
+					ctx := user.InjectOrgID(context.Background(), "test1|test2")
+					outer := middleware.Wrap(inner)
+					res, err := outer.Do(ctx, req)
+
+					if testData.expectError {
+						require.Error(t, err)
+						require.Contains(t, err.Error(), "err-mimir-max-query-expression-size-bytes")
+					} else {
+						require.NoError(t, err)
+						require.Same(t, innerRes, res)
+					}
+				})
 			}
 		})
 	}
@@ -257,97 +440,51 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRangeQueryRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+			// NOTE: instant queries are not tested because they don't have a time range.
+			reqs := map[string]MetricsQueryRequest{
+				"range query": &PrometheusRangeQueryRequest{
+					start: util.TimeToMillis(testData.reqStartTime),
+					end:   util.TimeToMillis(testData.reqEndTime),
+				},
+				"remote read": &remoteReadQueryRequest{
+					path: remoteReadPathSuffix,
+					query: &prompb.Query{
+						StartTimestampMs: util.TimeToMillis(testData.reqStartTime),
+						EndTimestampMs:   util.TimeToMillis(testData.reqEndTime),
+					},
+				},
 			}
 
-			limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
-			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+			for reqType, req := range reqs {
+				t.Run(reqType, func(t *testing.T) {
+					limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
+					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
-			inner := &mockHandler{}
-			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+					innerRes := newEmptyPrometheusResponse()
+					inner := &mockHandler{}
+					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
-			ctx := user.InjectOrgID(context.Background(), "test")
-			outer := middleware.Wrap(inner)
-			res, err := outer.Do(ctx, req)
+					ctx := user.InjectOrgID(context.Background(), "test")
+					outer := middleware.Wrap(inner)
+					res, err := outer.Do(ctx, req)
 
-			if testData.expectedErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), testData.expectedErr)
-				assert.Nil(t, res)
-				assert.Len(t, inner.Calls, 0)
-			} else {
-				// We expect the response returned by the inner handler.
-				require.NoError(t, err)
-				assert.Same(t, innerRes, res)
+					if testData.expectedErr != "" {
+						require.Error(t, err)
+						assert.Contains(t, err.Error(), testData.expectedErr)
+						assert.Nil(t, res)
+						assert.Len(t, inner.Calls, 0)
+					} else {
+						// We expect the response returned by the inner handler.
+						require.NoError(t, err)
+						assert.Same(t, innerRes, res)
 
-				// The time range of the request passed to the inner handler should have not been manipulated.
-				require.Len(t, inner.Calls, 1)
-				assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart())
-				assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd())
+						// The time range of the request passed to the inner handler should have not been manipulated.
+						require.Len(t, inner.Calls, 1)
+						assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart())
+						assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd())
+					}
+				})
 			}
-		})
-	}
-}
-
-func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
-	now := time.Now()
-
-	tests := map[string]struct {
-		reqStartTime        time.Time
-		reqEndTime          time.Time
-		creationGracePeriod time.Duration
-		expectedEndTime     time.Time
-	}{
-		"should manipulate time range if creation grace period is set to 0": {
-			reqStartTime:        now.Add(-time.Hour),
-			reqEndTime:          now.Add(2 * time.Hour),
-			creationGracePeriod: 0,
-			expectedEndTime:     now,
-		},
-		"should not manipulate time range for a query in now + creation_grace_period": {
-			reqStartTime:        now.Add(-time.Hour),
-			reqEndTime:          now.Add(30 * time.Minute),
-			creationGracePeriod: time.Hour,
-			expectedEndTime:     now.Add(30 * time.Minute),
-		},
-		"should manipulate time range for a query over now + creation_grace_period": {
-			reqStartTime:        now.Add(-time.Hour),
-			reqEndTime:          now.Add(2 * time.Hour),
-			creationGracePeriod: time.Hour,
-			expectedEndTime:     now.Add(time.Hour),
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRangeQueryRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
-			}
-
-			limits := mockLimits{creationGracePeriod: testData.creationGracePeriod}
-			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
-
-			innerRes := newEmptyPrometheusResponse()
-			inner := &mockHandler{}
-			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
-
-			ctx := user.InjectOrgID(context.Background(), "test")
-			outer := middleware.Wrap(inner)
-			res, err := outer.Do(ctx, req)
-			require.NoError(t, err)
-
-			// We expect the response returned by the inner handler.
-			assert.Same(t, innerRes, res)
-
-			// Assert on the time range of the request passed to the inner handler (5s delta).
-			delta := float64(5000)
-			require.Len(t, inner.Calls, 1)
-
-			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
 		})
 	}
 }
@@ -424,6 +561,10 @@ func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time
 	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
 }
 
+func (m multiTenantMockLimits) ResultsCacheTTLForErrors(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForErrors
+}
+
 func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
 }
@@ -438,6 +579,18 @@ func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration 
 
 func (m multiTenantMockLimits) NativeHistogramsIngestionEnabled(userID string) bool {
 	return m.byTenant[userID].nativeHistogramsIngestionEnabled
+}
+
+func (m multiTenantMockLimits) AlignQueriesWithStep(userID string) bool {
+	return m.byTenant[userID].alignQueriesWithStep
+}
+
+func (m multiTenantMockLimits) QueryIngestersWithin(userID string) time.Duration {
+	return m.byTenant[userID].queryIngestersWithin
+}
+
+func (m multiTenantMockLimits) IngestStorageReadConsistency(userID string) string {
+	return m.byTenant[userID].ingestStorageReadConsistency
 }
 
 type mockLimits struct {
@@ -460,8 +613,12 @@ type mockLimits struct {
 	resultsCacheOutOfOrderWindowTTL      time.Duration
 	resultsCacheTTLForCardinalityQuery   time.Duration
 	resultsCacheTTLForLabelsQuery        time.Duration
+	resultsCacheTTLForErrors             time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
 	blockedQueries                       []*validation.BlockedQuery
+	alignQueriesWithStep                 bool
+	queryIngestersWithin                 time.Duration
+	ingestStorageReadConsistency         string
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -526,6 +683,10 @@ func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration
 	return m.resultsCacheOutOfOrderWindowTTL
 }
 
+func (m mockLimits) ResultsCacheTTLForErrors(string) time.Duration {
+	return m.resultsCacheTTLForErrors
+}
+
 func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 	return m.resultsCacheTTLForCardinalityQuery
 }
@@ -550,11 +711,23 @@ func (m mockLimits) NativeHistogramsIngestionEnabled(string) bool {
 	return m.nativeHistogramsIngestionEnabled
 }
 
+func (m mockLimits) AlignQueriesWithStep(string) bool {
+	return m.alignQueriesWithStep
+}
+
+func (m mockLimits) QueryIngestersWithin(string) time.Duration {
+	return m.queryIngestersWithin
+}
+
+func (m mockLimits) IngestStorageReadConsistency(string) string {
+	return m.ingestStorageReadConsistency
+}
+
 type mockHandler struct {
 	mock.Mock
 }
 
-func (m *mockHandler) Do(ctx context.Context, req Request) (Response, error) {
+func (m *mockHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(Response), args.Error(1)
 }
@@ -580,18 +753,18 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	)
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(t, `foo`),
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
-		MiddlewareFunc(func(next Handler) Handler {
-			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
 				for i := 0; i < maxQueryParallelism+20; i++ {
 					wg.Add(1)
@@ -624,18 +797,18 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	)
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(t, `foo`),
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
-		MiddlewareFunc(func(next Handler) Handler {
-			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
 				for i := 0; i < 10; i++ {
 					go func() {
@@ -665,18 +838,18 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	)
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(t, `foo`),
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
-		MiddlewareFunc(func(next Handler) Handler {
-			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
 
 				// Fire up some work. Each sub-request will either be blocked in the sleep or in the queue
@@ -722,20 +895,20 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	})
 
 	codec := newTestPrometheusCodec()
-	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/api/v1/query_range",
-		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
-		Step:  int64(1 * time.Second * time.Millisecond),
-		Query: `foo`,
+	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     time.Now().Add(time.Hour).Unix(),
+		end:       util.TimeToMillis(time.Now()),
+		step:      int64(1 * time.Second * time.Millisecond),
+		queryExpr: parseQuery(b, `foo`),
 	})
 	require.Nil(b, err)
 
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
-			tripper := newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
-				MiddlewareFunc(func(next Handler) Handler {
-					return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+			tripper := NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
+				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+					return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 						wg := sync.WaitGroup{}
 						for i := 0; i < subRequestCount; i++ {
 							wg.Add(1)
@@ -771,4 +944,27 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestSmallestPositiveNonZeroDuration(t *testing.T) {
+	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration())
+	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(0))
+	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(-1))
+
+	assert.Equal(t, time.Duration(1), smallestPositiveNonZeroDuration(0, 1, -1))
+	assert.Equal(t, time.Duration(1), smallestPositiveNonZeroDuration(0, 2, 1))
+}
+
+type findVectorSelectorsVisitor struct {
+	selectors []*parser.VectorSelector
+}
+
+func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
+	selector, ok := node.(*parser.VectorSelector)
+	if !ok {
+		return v, nil
+	}
+
+	v.selectors = append(v.selectors, selector)
+	return v, nil
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/gcs"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/bucket/swift"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -134,6 +135,11 @@ var (
 			Name:       "limits",
 			StructType: reflect.TypeOf(validation.Limits{}),
 			Desc:       "The limits block configures default and per-tenant limits imposed by components.",
+		},
+		{
+			Name:       "ingest_storage",
+			StructType: reflect.TypeOf(ingest.Config{}),
+			Desc:       "The ingest_storage block configures the experimental Kafka-based ingest storage.",
 		},
 		{
 			Name:       "blocks_storage",

@@ -9,6 +9,10 @@ weight: 150
 
 # Configure the OpenTelemetry Collector to write metrics into Mimir
 
+{{% admonition type="note" %}}
+To send OTLP data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+{{% /admonition %}}
+
 When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can write metrics into Mimir via two options: `prometheusremotewrite` and `otlphttp`.
 
 We recommend using the `prometheusremotewrite` exporter when possible because the remote write ingest path is tested and proven at scale.

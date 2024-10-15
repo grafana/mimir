@@ -88,6 +88,14 @@ patches:
 
   - target:
       kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # Jsonnet configures the ingester ring heartbeat period only on the ingester (other components don't need it).
+      - op: remove
+        path: /config/ingester/ring/heartbeat_period
+
+  - target:
+      kind: MimirConfig
       name: 'alertmanager|compactor|store-gateway|query-frontend|query-scheduler|overrides-exporter'
     patch: |-
       - op: remove
@@ -142,18 +150,6 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
-    patch: |-
-      # Only applied to distributors in jsonnet, remove from the rest
-      - op: remove
-        path: /config/server/grpc_server_max_connection_age
-      - op: remove
-        path: /config/server/grpc_server_max_connection_age_grace
-      - op: remove
-        path: /config/server/grpc_server_max_connection_idle
-
-  - target:
-      kind: MimirConfig
       name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
     patch: |-
       # Helm sets it to helm, jsonnet sets it to jsonnet
@@ -179,8 +175,34 @@ patches:
 
   - target:
       kind: MimirConfig
+      name: 'alertmanager|compactor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # Jsonnet configures the distributor ring only on the distributor (other components don't need it).
+      - op: remove
+        path: /config/distributor/ring/heartbeat_period
+      - op: remove
+        path: /config/distributor/ring/heartbeat_timeout
+
+  - target:
+      kind: MimirConfig
       name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
     patch: |-
       # Jsonnet doesn't set this on non-store-gateway components
       - op: remove
         path: /config/store_gateway/sharding_ring/unregister_on_shutdown
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      # Jsonnet configures the store-gateway ring heartbeat period only on the store-gateway (other components don't need it).
+      - op: remove
+        path: /config/store_gateway/sharding_ring/heartbeat_period
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler'
+    patch: |-
+      # Jsonnet configures the store-gateway ring heartbeat timeout only on components using the store-gateway ring (store-gateway, querier, ruler).
+      - op: remove
+        path: /config/store_gateway/sharding_ring/heartbeat_timeout

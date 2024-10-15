@@ -12,6 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -82,6 +85,12 @@ var (
 	errTSDBNotActive        = newTSDBUnavailableError("TSDB is not active")
 )
 
+type ownedSeriesState struct {
+	ownedSeriesCount int // Number of "owned" series, based on current ring.
+	shardSize        int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used to detect shard size changes.
+	localSeriesLimit int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
+}
+
 type userTSDB struct {
 	db             *tsdb.DB
 	userID         string
@@ -122,6 +131,17 @@ type userTSDB struct {
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
+
+	useOwnedSeriesForLimits bool
+
+	// We use a mutex so that we can update count, shard size, and local limit at the same time (when updating owned series count).
+	ownedStateMtx sync.Mutex
+	ownedState    ownedSeriesState
+
+	// Only accessed by ownedSeries service, no need to synchronization.
+	ownedTokenRanges ring.TokenRanges
+
+	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -274,7 +294,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())) {
+	series, minLocalLimit := u.getSeriesCountAndMinLocalLimit()
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, minLocalLimit) {
 		return globalerror.MaxSeriesPerUser
 	}
 
@@ -290,8 +311,27 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	return nil
 }
 
+// getSeriesCountAndMinLocalLimit returns current number of series and minimum local limit that should be used for computing
+// series limit.
+func (u *userTSDB) getSeriesCountAndMinLocalLimit() (int, int) {
+	if u.useOwnedSeriesForLimits {
+		os := u.ownedSeriesState()
+		return os.ownedSeriesCount, os.localSeriesLimit
+	}
+
+	count := int(u.Head().NumSeries())
+	minLocalLimit := 0
+	return count, minLocalLimit
+}
+
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
+
+	// If series was just created, it must belong to this ingester. (Unless it was created while replaying WAL,
+	// but we will recompute owned series when ingester joins the ring.)
+	u.ownedStateMtx.Lock()
+	u.ownedState.ownedSeriesCount++
+	u.ownedStateMtx.Unlock()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
 	if err != nil {
@@ -312,6 +352,9 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
 	}
+
+	// We cannot update ownedSeriesCount here, as we don't know whether deleted series were owned by this ingester or not.
+	// Instead, we recompute owned series after each compaction.
 
 	u.activeSeries.PostDeletion(metrics)
 }
@@ -466,4 +509,124 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	if acquireState != forceCompacting {
 		u.inFlightAppendsStartedBeforeForcedCompaction.Done()
 	}
+}
+
+// ownedSeriesState returns a copy of the current state
+func (u *userTSDB) ownedSeriesState() ownedSeriesState {
+	u.ownedStateMtx.Lock()
+	defer u.ownedStateMtx.Unlock()
+
+	return u.ownedState
+}
+
+func (u *userTSDB) getAndClearReasonForRecomputeOwnedSeries() string {
+	return u.requiresOwnedSeriesUpdate.Swap("")
+}
+
+func (u *userTSDB) triggerRecomputeOwnedSeries(reason string) {
+	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
+}
+
+// recomputeOwnedSeries recomputes owned series for current token ranges, and updates both owned series and shard size.
+//
+// This method returns false, if recomputation of owned series failed multiple times due to too
+// many new series being added during the computation. If no such problem happened, this method returns true.
+//
+// This method and updateTokenRanges should be only called from the same goroutine. (ownedSeries service)
+func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (success bool) {
+	success, _ = u.recomputeOwnedSeriesWithComputeFn(shardSize, reason, logger, u.computeOwnedSeries)
+	return success
+}
+
+const (
+	recomputeOwnedSeriesMaxAttempts   = 3
+	recomputeOwnedSeriesMaxSeriesDiff = 1000
+)
+
+func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
+	start := time.Now()
+
+	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore, localLimitBefore, localLimitNew int
+
+	success = false
+	attempts := 0
+	for !success && attempts < recomputeOwnedSeriesMaxAttempts {
+		attempts++
+
+		os := u.ownedSeriesState()
+		ownedSeriesBefore = os.ownedSeriesCount
+		shardSizeBefore = os.shardSize
+		localLimitBefore = os.localSeriesLimit
+
+		localLimitNew = u.limiter.maxSeriesPerUser(u.userID, 0)
+		ownedSeriesNew = compute()
+
+		u.ownedStateMtx.Lock()
+
+		// Check how many new series were added while we were computing owned series.
+		// If too many series were created in the meantime, our new number of owned series may be wrong
+		// (it may or may not include the new series, we don't know).
+		// In that case, just run the computation again -- if there are more attempts left.
+		seriesDiff := u.ownedState.ownedSeriesCount - ownedSeriesBefore
+		if seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
+			success = true
+		}
+
+		// Even if we run computation again, we can start using our (possibly incorrect) values already.
+		u.ownedState.ownedSeriesCount = ownedSeriesNew
+		u.ownedState.shardSize = shardSize
+		u.ownedState.localSeriesLimit = localLimitNew
+
+		u.ownedStateMtx.Unlock()
+	}
+
+	var l log.Logger
+	if success {
+		l = level.Info(logger)
+	} else {
+		l = level.Warn(logger)
+	}
+	l.Log("msg", "owned series: recomputed owned series for user",
+		"user", u.userID,
+		"reason", reason,
+		"ownedSeriesBefore", ownedSeriesBefore,
+		"ownedSeriesNew", ownedSeriesNew,
+		"shardSizeBefore", shardSizeBefore,
+		"shardSizeNew", shardSize,
+		"localLimitBefore", localLimitBefore,
+		"localLimitNew", localLimitNew,
+		"duration", time.Since(start),
+		"attempts", attempts,
+		"success", success)
+	return success, attempts
+}
+
+// updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+//
+// This method and recomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
+func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
+	prev := u.ownedTokenRanges
+	u.ownedTokenRanges = newTokenRanges
+
+	return !prev.Equal(newTokenRanges)
+}
+
+func (u *userTSDB) computeOwnedSeries() int {
+	// This can happen if ingester doesn't own this tenant anymore.
+	if len(u.ownedTokenRanges) == 0 {
+		u.activeSeries.Clear()
+		return 0
+	}
+
+	count := 0
+	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+		for i, sh := range secondaryHashes {
+			if u.ownedTokenRanges.IncludesKey(sh) {
+				count++
+			} else {
+				u.activeSeries.Delete(refs[i])
+			}
+		}
+	})
+	return count
 }

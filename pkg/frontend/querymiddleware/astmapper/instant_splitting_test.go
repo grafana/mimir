@@ -281,59 +281,59 @@ func TestInstantSplitter(t *testing.T) {
 		// Offset operator
 		{
 			in:                   `rate({app="foo"}[3m] offset 3m)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] offset 5m)\",\"increase({app=\\\"foo\\\"}[1m] offset 4m)\",\"increase({app=\\\"foo\\\"}[1m] offset 3m)\"]}"}) / 180`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 5m)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 4m)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 3m)\"}]}"}) / 180`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `avg_over_time({app="foo"}[3m] offset 5m)`,
-			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset 7m)\",\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset 6m)\",\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset 5m)\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 7m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset 6m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset 5m)\"]}"}))`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[1m] offset 7m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset 6m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset 5m)\"}]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] offset 7m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset 6m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset 5m)\"}]}"}))`,
 			expectedSplitQueries: 6,
 		},
 		{
 			in:                   `rate({app="foo"}[3m] offset 30s)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] offset 2m30s)\",\"increase({app=\\\"foo\\\"}[1m] offset 1m30s)\",\"increase({app=\\\"foo\\\"}[1m] offset 30s)\"]}"}) / 180`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 2m30s)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 1m30s)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 30s)\"}]}"}) / 180`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `count_over_time({app="foo"}[3m] offset -3m)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset -1m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -2m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -3m)\"]}"})`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] offset -1m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -2m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -3m)\"}]}"})`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `avg_over_time({app="foo"}[3m] offset -5m)`,
-			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset -3m)\",\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset -4m)\",\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset -5m)\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset -3m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -4m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -5m)\"]}"}))`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[1m] offset -3m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset -4m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[59s999ms] offset -5m)\"}]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] offset -3m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -4m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -5m)\"}]}"}))`,
 			expectedSplitQueries: 6,
 		},
 		{
 			in:                   `count_over_time({app="foo"}[3m] offset -30s)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 1m30s)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset 30s)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -30s)\"]}"})`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] offset 1m30s)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset 30s)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] offset -30s)\"}]}"})`,
 			expectedSplitQueries: 3,
 		},
 		// @ modifier
 		{
 			in:                   `rate({app="foo"}[3m] @ start())`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] @ start() offset 2m)\",\"increase({app=\\\"foo\\\"}[1m] @ start() offset 1m)\",\"increase({app=\\\"foo\\\"}[1m] @ start())\"]}"}) / 180`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] @ start() offset 2m)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] @ start() offset 1m)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] @ start())\"}]}"}) / 180`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `sum(sum_over_time({app="foo"}[3m] @ end()))`,
-			out:                  `sum(sum(__embedded_queries__{__queries__="{\"Concat\":[\"sum(sum_over_time({app=\\\"foo\\\"}[1m] @ end() offset 2m))\",\"sum(sum_over_time({app=\\\"foo\\\"}[59s999ms] @ end() offset 1m))\",\"sum(sum_over_time({app=\\\"foo\\\"}[59s999ms] @ end()))\"]}"}))`,
+			out:                  `sum(sum(__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum(sum_over_time({app=\\\"foo\\\"}[1m] @ end() offset 2m))\"},{\"Expr\":\"sum(sum_over_time({app=\\\"foo\\\"}[59s999ms] @ end() offset 1m))\"},{\"Expr\":\"sum(sum_over_time({app=\\\"foo\\\"}[59s999ms] @ end()))\"}]}"}))`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `avg(avg_over_time({app="foo"}[3m] @ 1609746000))`,
-			out:                  `avg((sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"sum_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000 offset 1m)\",\"sum_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000)\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000 offset 1m)\",\"count_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000)\"]}"})))`,
+			out:                  `avg((sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000 offset 1m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000)\"}]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000 offset 1m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[59s999ms] @ 1609746000.000)\"}]}"})))`,
 			expectedSplitQueries: 6,
 		},
 		// Should support both offset and @ operators
 		{
 			in:                   `max_over_time({app="foo"}[3m] @ 1609746000 offset 1m)`,
-			out:                  `max without() (__embedded_queries__{__queries__="{\"Concat\":[\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 3m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\"]}"})`,
+			out:                  `max without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 3m)\"},{\"Expr\":\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\"},{\"Expr\":\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\"}]}"})`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `max_over_time({app="foo"}[3m] offset 1m @ 1609746000)`,
-			out:                  `max without() (__embedded_queries__{__queries__="{\"Concat\":[\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 3m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\"]}"})`,
+			out:                  `max without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 3m)\"},{\"Expr\":\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\"},{\"Expr\":\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\"}]}"})`,
 			expectedSplitQueries: 3,
 		},
 		// Should split deeper in the tree if an inner expression is splittable
@@ -401,23 +401,23 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 	}{
 		{
 			in:                   `rate({app="foo"}[5m])`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] offset 4m)\",\"increase({app=\\\"foo\\\"}[2m] offset 2m)\",\"increase({app=\\\"foo\\\"}[2m])\"]}"}) / 300`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"increase({app=\\\"foo\\\"}[1m] offset 4m)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[2m] offset 2m)\"},{\"Expr\":\"increase({app=\\\"foo\\\"}[2m])\"}]}"}) / 300`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `avg_over_time({app="foo"}[3m])`,
-			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"sum_over_time({app=\\\"foo\\\"}[1m59s999ms])\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[1m59s999ms])\"]}"}))`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[1m] offset 2m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[1m59s999ms])\"}]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m59s999ms])\"}]}"}))`,
 			expectedSplitQueries: 4,
 		},
 		// Should support expressions with offset operator
 		{
 			in:                   `sum_over_time({app="foo"}[4m] offset 1m)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[2m] offset 3m)\",\"sum_over_time({app=\\\"foo\\\"}[1m59s999ms] offset 1m)\"]}"})`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[2m] offset 3m)\"},{\"Expr\":\"sum_over_time({app=\\\"foo\\\"}[1m59s999ms] offset 1m)\"}]}"})`,
 			expectedSplitQueries: 2,
 		},
 		{
 			in:                   `count_over_time({app="foo"}[3m] offset 1m)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[1m59s999ms] offset 1m)\"]}"})`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\"},{\"Expr\":\"count_over_time({app=\\\"foo\\\"}[1m59s999ms] offset 1m)\"}]}"})`,
 			expectedSplitQueries: 2,
 		},
 	} {
@@ -603,6 +603,10 @@ func TestInstantSplitterSkippedQueryReason(t *testing.T) {
 		},
 		{
 			query:         `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
+			skippedReason: SkippedReasonSubquery,
+		},
+		{
+			query:         `sum by(group_1) (sum_over_time(metric_counter[7d:] @ start()))`,
 			skippedReason: SkippedReasonSubquery,
 		},
 	} {

@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/spanlogger"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -39,11 +40,11 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 
 	if rateLimitedCfg.Enabled {
 		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(6))
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(6))
 		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsBurstSize, rateLimitedCfg.Registry)
 	} else {
 		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(5))
 	}
 	// Must put the level filter last for efficiency.
 	logger = newFilter(logger, logLevel)

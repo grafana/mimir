@@ -14,17 +14,21 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/groupcache/singleflight"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/extprom"
@@ -142,10 +146,13 @@ type MetaFetcher struct {
 
 	mtx    sync.Mutex
 	cached map[ulid.ULID]*Meta
+
+	// Cache reused between MetaFetchers.
+	metaCache *MetaCache
 }
 
 // NewMetaFetcher returns a MetaFetcher.
-func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter) (*MetaFetcher, error) {
+func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, metaCache *MetaCache) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -166,6 +173,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		cached:      map[ulid.ULID]*Meta{},
 		metrics:     NewFetcherMetrics(reg, nil),
 		filters:     filters,
+		metaCache:   metaCache,
 	}, nil
 }
 
@@ -194,6 +202,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	//
 	// - The block upload is completed: this is the normal case. meta.json file still exists in the
 	//   object storage and it's expected to match the locally cached one (because it's immutable by design).
+	//
 	// - The block has been marked for deletion: the deletion hasn't started yet, so the full block (including
 	//   the meta.json file) is still in the object storage. This case is not different than the previous one.
 	//
@@ -208,10 +217,20 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 		return m, nil
 	}
 
+	if f.metaCache != nil {
+		m := f.metaCache.Get(id)
+		if m != nil {
+			return m, nil
+		}
+	}
+
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
+			if f.metaCache != nil {
+				f.metaCache.Put(m)
+			}
 			return m, nil
 		}
 
@@ -257,6 +276,10 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 		if err := m.WriteToDir(f.logger, cachedBlockDir); err != nil {
 			level.Warn(f.logger).Log("msg", "best effort save of the meta.json to local dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 		}
+	}
+
+	if f.metaCache != nil {
+		f.metaCache.Put(m)
 	}
 	return m, nil
 }
@@ -309,11 +332,11 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 					continue
 				}
 
-				if errors.Is(errors.Cause(err), ErrorSyncMetaNotFound) {
+				if errors.Is(err, ErrorSyncMetaNotFound) {
 					mtx.Lock()
 					resp.noMetasCount++
 					mtx.Unlock()
-				} else if errors.Is(errors.Cause(err), ErrorSyncMetaCorrupted) {
+				} else if errors.Is(err, ErrorSyncMetaCorrupted) {
 					mtx.Lock()
 					resp.corruptedMetasCount++
 					mtx.Unlock()
@@ -417,7 +440,7 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, par
 }
 
 // FetchWithoutMarkedForDeletion returns all block metas as well as partial blocks (blocks without or with corrupted meta file) from the bucket.
-// This function excludes all blocks for deletion (no deletion delay applied).
+// This function excludes all blocks marked for deletion (no deletion delay applied).
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
@@ -549,10 +572,10 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 			for id := range ch {
 				m := &DeletionMark{}
 				if err := ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
-					if errors.Is(errors.Cause(err), ErrorMarkerNotFound) {
+					if errors.Is(err, ErrorMarkerNotFound) {
 						continue
 					}
-					if errors.Is(errors.Cause(err), ErrorUnmarshalMarker) {
+					if errors.Is(err, ErrorUnmarshalMarker) {
 						level.Warn(f.logger).Log("msg", "found partial deletion-mark.json; if we will see it happening often for the same block, consider manually deleting deletion-mark.json from the object storage", "block", id, "err", err)
 						continue
 					}
@@ -601,4 +624,87 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 	f.mtx.Unlock()
 
 	return nil
+}
+
+// MetaCache is a LRU cache for parsed *Meta objects, optionally used by *MetaFetcher.
+// While MetaFetcher.cache is per-instance, MetaCache can be reused between different *MetaFetcher instances.
+type MetaCache struct {
+	maxSize            int
+	minCompactionLevel int
+	minSources         int
+
+	lru    *lru.Cache[ulid.ULID, *Meta]
+	hits   atomic.Int64
+	misses atomic.Int64
+}
+
+// NewMetaCache creates new *MetaCache with given max size, and parameters for storing *Meta objects.
+// Only *Meta objects with specified minimum compaction level and number of sources are stored into the cache.
+func NewMetaCache(maxSize, minCompactionLevel, minSources int) *MetaCache {
+	l, err := lru.New[ulid.ULID, *Meta](maxSize)
+	// This can only happen if size < 0.
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return &MetaCache{
+		maxSize:            maxSize,
+		minCompactionLevel: minCompactionLevel,
+		minSources:         minSources,
+		lru:                l,
+	}
+}
+
+func (mc *MetaCache) MaxSize() int {
+	return mc.maxSize
+}
+
+func (mc *MetaCache) Put(meta *Meta) {
+	if meta == nil {
+		return
+	}
+
+	if mc.minCompactionLevel > 0 && meta.Compaction.Level < mc.minCompactionLevel {
+		return
+	}
+
+	if mc.minSources > 0 && len(meta.Compaction.Sources) < mc.minSources {
+		return
+	}
+
+	mc.lru.Add(meta.ULID, meta)
+}
+
+func (mc *MetaCache) Get(id ulid.ULID) *Meta {
+	val, ok := mc.lru.Get(id)
+	if !ok {
+		mc.misses.Add(1)
+		return nil
+	}
+	mc.hits.Add(1)
+	return val
+}
+
+func (mc *MetaCache) Stats() (items int, bytesSize int64, hits, misses int) {
+	for _, m := range mc.lru.Values() {
+		items++
+		bytesSize += sizeOfUlid // for a key
+		bytesSize += MetaBytesSize(m)
+	}
+	return items, bytesSize, int(mc.hits.Load()), int(mc.misses.Load())
+}
+
+var sizeOfUlid = int64(unsafe.Sizeof(ulid.ULID{}))
+var sizeOfBlockDesc = int64(unsafe.Sizeof(tsdb.BlockDesc{}))
+
+func MetaBytesSize(m *Meta) int64 {
+	size := int64(0)
+	size += int64(unsafe.Sizeof(*m))
+	size += int64(len(m.Compaction.Sources)) * sizeOfUlid
+	size += int64(len(m.Compaction.Parents)) * sizeOfBlockDesc
+
+	for _, h := range m.Compaction.Hints {
+		size += int64(unsafe.Sizeof(h))
+	}
+	return size
 }

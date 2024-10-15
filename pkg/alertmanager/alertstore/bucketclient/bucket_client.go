@@ -34,58 +34,100 @@ const (
 	//     alertmanager/<user-id>/<object>
 	AlertmanagerPrefix = "alertmanager"
 
+	// GrafanaAlertmanagerPrefix is the bucket prefix under which Grafana's alertmanager configuration and state are stored.
+	// Note that objects stored under this prefix follow the pattern:
+	//		grafana_alertmanager/<user-id>/<object>
+	GrafanaAlertmanagerPrefix = "grafana_alertmanager"
+
 	// The name of alertmanager full state objects (notification log + silences).
 	fullStateName = "fullstate"
 
 	// How many users to load concurrently.
 	fetchConcurrency = 16
+
+	grafanaConfigName = "grafana_config"
+	grafanaStateName  = "grafana_fullstate"
 )
 
 // BucketAlertStore is used to support the AlertStore interface against an object storage backend. It is implemented
 // using the Thanos objstore.Bucket interface
 type BucketAlertStore struct {
-	alertsBucket objstore.Bucket
-	amBucket     objstore.Bucket
-	cfgProvider  bucket.TenantConfigProvider
-	logger       log.Logger
+	alertsBucket    objstore.Bucket
+	amBucket        objstore.Bucket
+	grafanaAMBucket objstore.Bucket
+
+	cfgProvider     bucket.TenantConfigProvider
+	fetchGrafanaCfg bool
+	logger          log.Logger
 }
 
-func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
+type BucketAlertStoreConfig struct {
+	// Retrieve Grafana AM configs alongside Mimir AM configs.
+	FetchGrafanaConfig bool
+}
+
+func NewBucketAlertStore(cfg BucketAlertStoreConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
-		alertsBucket: bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
-		amBucket:     bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
-		cfgProvider:  cfgProvider,
-		logger:       logger,
+		alertsBucket:    bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
+		amBucket:        bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
+		grafanaAMBucket: bucket.NewPrefixedBucketClient(bkt, GrafanaAlertmanagerPrefix),
+		cfgProvider:     cfgProvider,
+		fetchGrafanaCfg: cfg.FetchGrafanaConfig,
+		logger:          logger,
 	}
 }
 
 // ListAllUsers implements alertstore.AlertStore.
 func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
-	var userIDs []string
+	userIDs := make(map[string]struct{})
 
 	err := s.alertsBucket.Iter(ctx, "", func(key string) error {
-		userIDs = append(userIDs, key)
+		userIDs[key] = struct{}{}
 		return nil
 	})
 
-	return userIDs, err
+	if s.fetchGrafanaCfg {
+		err = s.grafanaAMBucket.Iter(ctx, "", func(key string) error {
+			// Unlike standard configurations, for the Grafana bucket has a hierarchy per user.
+			userIDs[strings.TrimRight(key, "/")] = struct{}{}
+			return nil
+		})
+	}
+
+	result := make([]string, 0, len(userIDs))
+	for userID := range userIDs {
+		result = append(result, userID)
+	}
+
+	return result, err
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
-func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error) {
+func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error) {
 	var (
 		cfgsMx = sync.Mutex{}
-		cfgs   = make(map[string]alertspb.AlertConfigDesc, len(userIDs))
+		cfgs   = make(map[string]alertspb.AlertConfigDescs, len(userIDs))
 	)
 
 	err := concurrency.ForEachJob(ctx, len(userIDs), fetchConcurrency, func(ctx context.Context, idx int) error {
 		userID := userIDs[idx]
+		var cfg alertspb.AlertConfigDescs
 
-		cfg, err := s.getAlertConfig(ctx, userID)
+		mimirCfg, err := s.getAlertConfig(ctx, userID)
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
 			return errors.Wrapf(err, "failed to fetch alertmanager config for user %s", userID)
+		}
+		cfg.Mimir = mimirCfg
+
+		if s.fetchGrafanaCfg {
+			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
+			// Users not having a Grafana alerting configuration is expected.
+			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
+				return errors.Wrapf(err, "failed to fetch grafana alertmanager config for user %s", userID)
+			}
+			cfg.Grafana = grafanaCfg
 		}
 
 		cfgsMx.Lock()
@@ -126,6 +168,34 @@ func (s *BucketAlertStore) DeleteAlertConfig(ctx context.Context, userID string)
 	if userBkt.IsObjNotFoundErr(err) {
 		return nil
 	}
+	return err
+}
+
+func (s *BucketAlertStore) GetGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
+	config, err := s.getGrafanaAlertConfig(ctx, userID)
+	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
+		return config, alertspb.ErrNotFound
+	}
+	return config, err
+}
+
+func (s *BucketAlertStore) SetGrafanaAlertConfig(ctx context.Context, cfg alertspb.GrafanaAlertConfigDesc) error {
+	cfgBytes, err := cfg.Marshal()
+	if err != nil {
+		return err
+	}
+
+	return s.getGrafanaAlertmanagerUserBucket(cfg.User).Upload(ctx, grafanaConfigName, bytes.NewBuffer(cfgBytes))
+}
+
+func (s *BucketAlertStore) DeleteGrafanaAlertConfig(ctx context.Context, userID string) error {
+	userBkt := s.getGrafanaAlertmanagerUserBucket(userID)
+
+	err := userBkt.Delete(ctx, grafanaConfigName)
+	if userBkt.IsObjNotFoundErr(err) {
+		return nil
+	}
+
 	return err
 }
 
@@ -177,9 +247,49 @@ func (s *BucketAlertStore) DeleteFullState(ctx context.Context, userID string) e
 	return err
 }
 
+func (s *BucketAlertStore) GetFullGrafanaState(ctx context.Context, userID string) (alertspb.FullStateDesc, error) {
+	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
+	fs := alertspb.FullStateDesc{}
+
+	err := s.get(ctx, bkt, grafanaStateName, &fs)
+	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
+		return fs, alertspb.ErrNotFound
+	}
+
+	return fs, err
+}
+
+func (s *BucketAlertStore) SetFullGrafanaState(ctx context.Context, userID string, fs alertspb.FullStateDesc) error {
+	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
+
+	fsBytes, err := fs.Marshal()
+	if err != nil {
+		return err
+	}
+
+	return bkt.Upload(ctx, grafanaStateName, bytes.NewBuffer(fsBytes))
+}
+
+func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID string) error {
+	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
+
+	err := bkt.Delete(ctx, grafanaStateName)
+	if bkt.IsObjNotFoundErr(err) {
+		return nil
+	}
+
+	return err
+}
+
 func (s *BucketAlertStore) getAlertConfig(ctx context.Context, userID string) (alertspb.AlertConfigDesc, error) {
 	config := alertspb.AlertConfigDesc{}
 	err := s.get(ctx, s.getUserBucket(userID), userID, &config)
+	return config, err
+}
+
+func (s *BucketAlertStore) getGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
+	config := alertspb.GrafanaAlertConfigDesc{}
+	err := s.get(ctx, s.getGrafanaAlertmanagerUserBucket(userID), grafanaConfigName, &config)
 	return config, err
 }
 
@@ -211,4 +321,8 @@ func (s *BucketAlertStore) getUserBucket(userID string) objstore.Bucket {
 
 func (s *BucketAlertStore) getAlertmanagerUserBucket(userID string) objstore.Bucket {
 	return bucket.NewUserBucketClient(userID, s.amBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
+}
+
+func (s *BucketAlertStore) getGrafanaAlertmanagerUserBucket(userID string) objstore.Bucket {
+	return bucket.NewUserBucketClient(userID, s.grafanaAMBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }

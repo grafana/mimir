@@ -3,8 +3,10 @@ local filename = 'mimir-reads.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'e327503188913dc38ad571c647eef643' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
       ($.row('Reads dashboard description') { height: '175px', showTitle: false })
@@ -37,26 +39,13 @@ local filename = 'mimir-reads.json';
          showTitle: false,
        })
       .addPanel(
+        local addRuleEvalRate(q) = {
+          local ruleEvalRate = ' + sum(rate(cortex_prometheus_rule_evaluations_total{' + $.jobMatcher($._config.job_names.ruler) + '}[$__rate_interval]))',
+          classic: q.classic + ruleEvalRate,
+          native: q.native + ruleEvalRate,
+        };
         $.panel('Instant queries / sec') +
-        $.statPanel(|||
-          sum(
-            rate(
-              cortex_request_duration_seconds_count{
-                %(queryFrontend)s,
-                route=~"(prometheus|api_prom)_api_v1_query"
-              }[$__rate_interval]
-            )
-            or
-            rate(
-              cortex_prometheus_rule_evaluations_total{
-                %(ruler)s
-              }[$__rate_interval]
-            )
-          )
-        ||| % {
-          queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
-          ruler: $.jobMatcher($._config.job_names.ruler),
-        }, format='reqps') +
+        $.statPanel(addRuleEvalRate($.queries.query_frontend.ncInstantQueriesPerSecond), format='reqps') +
         $.panelDescription(
           'Instant queries per second',
           |||
@@ -68,7 +57,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Range queries / sec') +
-        $.statPanel($.queries.query_frontend.rangeQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncRangeQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Range queries per second',
           |||
@@ -79,7 +68,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Label names queries / sec') +
-        $.statPanel($.queries.query_frontend.labelNamesQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncLabelNamesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           '"Label names" queries per second',
           |||
@@ -90,7 +79,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Label values queries / sec') +
-        $.statPanel($.queries.query_frontend.labelValuesQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncLabelValuesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           '"Label values" queries per second',
           |||
@@ -101,7 +90,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Series queries / sec') +
-        $.statPanel($.queries.query_frontend.seriesQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncSeriesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Series queries per second',
           |||
@@ -115,138 +104,65 @@ local filename = 'mimir-reads.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel($.queries.gateway.readRequestsPerSecond)
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.readRequestsPerSecondSelector)
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex], ''
-        )
-      )
-    )
-    .addRow(
-      $.row('Query-frontend')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel($.queries.query_frontend.readRequestsPerSecond)
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend), $.queries.read_http_routes_regex], ''
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          $.queries.gateway.requestsPerSecondMetric,
+          $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)],
         )
       )
     )
-    .addRow(
-      $.row('Query-scheduler')
-      .addPanel(
-        $.textPanel(
-          '',
-          |||
-            <p>
-              The query scheduler is an optional service that moves
-              the internal queue from the query-frontend into a
-              separate component.
-              If this service is not deployed,
-              these panels will show "No data."
-            </p>
-          |||
-        )
-      )
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
-      )
-      .addPanel(
-        $.panel('Latency (Time in Queue)') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
-      )
-    )
-    .addRow(
-      $.row('Cache – query results')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.queryPanel(
-          |||
-            sum (
-              rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-              or ignoring(backend)
-              rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-          ||| % {
-            frontend: $.jobMatcher($._config.job_names.query_frontend),
-          },
-          'Requests/s'
-        ) +
-        { yaxes: $.yaxes('ops') },
-      )
-      .addPanel(
-        $.panel('Latency') +
-        $.backwardsCompatibleLatencyPanel(
-          'thanos_memcached_operation_duration_seconds',
-          'thanos_cache_operation_duration_seconds',
-          '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)
-        )
-      )
-    )
-    .addRow(
-      $.row('Querier')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.querier), $.queries.read_http_routes_regex])
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.querier), $.queries.read_http_routes_regex], ''
-        )
-      )
-    )
+    .addRows($.commonReadsDashboardsRows(
+      queryFrontendJobName=$._config.job_names.query_frontend,
+      querySchedulerJobName=$._config.job_names.query_scheduler,
+      querierJobName=$._config.job_names.querier,
+      queryRoutesRegex=$.queries.read_http_routes_regex,
+      showQueryCacheRow=true,
+    ))
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.queries.ingester.readRequestsPerSecondSelector)
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          $.queries.ingester.requestsPerSecondMetric,
+          $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)],
+        ),
       )
     )
     .addRow(
       $.row('Store-gateway')
       .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.queries.store_gateway.readRequestsPerSecondSelector)
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', $._config.store_gateway_read_path_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          $.queries.store_gateway.requestsPerSecondMetric,
+          $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', $._config.store_gateway_read_path_routes_regex)],
+        ),
       )
     )
     .addRowIf(
@@ -259,40 +175,43 @@ local filename = 'mimir-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.querier.enabled,
-      $.row('Querier - autoscaling')
+      $.row('Querier – autoscaling')
       .addPanel(
         local title = 'Replicas';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
-              kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              max by (scaletargetref_name) (
+                kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
+              )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
               cluster_labels: std.join(', ', $._config.cluster_labels),
               hpa_name: $._config.autoscaling.querier.hpa_name,
             },
             |||
-              kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.
-              * on (%(cluster_labels)s, horizontalpodautoscaler)
-                kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
-              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              max by (scaletargetref_name) (
+                kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
+              )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
               cluster_labels: std.join(', ', $._config.cluster_labels),
               hpa_name: $._config.autoscaling.querier.hpa_name,
             },
             |||
-              kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              max by (scaletargetref_name) (
+                kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+                * on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  group by (%(cluster_labels)s, horizontalpodautoscaler, scaletargetref_name) (kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"})
+              )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
               cluster_labels: std.join(', ', $._config.cluster_labels),
@@ -309,32 +228,29 @@ local filename = 'mimir-reads.json';
           title,
           |||
             The maximum, and current number of querier replicas.
-            Please note that the current number of replicas can still show 1 replica even when scaled to 0.
-            Since HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
           |||
         ) +
         {
-          seriesOverrides+: [
-            {
-              alias: '/Max .+/',
-              dashes: true,
-              fill: 0,
-            },
-            {
-              alias: '/Current .+/',
-              fill: 0,
-            },
-            {
-              alias: '/Min .+/',
-              dashes: true,
-              fill: 0,
-            },
-          ],
-        }
+          fieldConfig+: {
+            overrides: [
+              $.overrideField('byRegexp', '/Max .+/', [
+                $.overrideProperty('custom.fillOpacity', 0),
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+              ]),
+              $.overrideField('byRegexp', '/Current .+/', [
+                $.overrideProperty('custom.fillOpacity', 0),
+              ]),
+              $.overrideField('byRegexp', '/Min .+/', [
+                $.overrideProperty('custom.fillOpacity', 0),
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+              ]),
+            ],
+          },
+        },
       )
       .addPanel(
         local title = 'Scaling metric (desired replicas)';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
@@ -345,10 +261,12 @@ local filename = 'mimir-reads.json';
                 )
                 /
                 on(%(aggregation_labels)s, scaledObject, metric) group_left
-                label_replace(label_replace(
-                    kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                    "metric", "$1", "metric_name", "(.+)"
-                ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
+                max by (%(aggregation_labels)s, scaledObject, metric) (
+                  label_replace(label_replace(
+                      kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                      "metric", "$1", "metric_name", "(.+)"
+                  ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
+                )
               )
             ||| % {
               aggregation_labels: $._config.alert_aggregation_labels,
@@ -367,12 +285,11 @@ local filename = 'mimir-reads.json';
             This panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.
             It should represent the desired number of replicas, ignoring the min/max constraints which are applied later.
           |||
-        ) +
-        $.panelAxisPlacement('Target per replica', 'right'),
+        )
       )
       .addPanel(
         local title = 'Autoscaler failures rate';
-        $.panel(title) +
+        $.timeseriesPanel(title) +
         $.queryPanel(
           $.filterKedaScalerErrorsByHPA($._config.autoscaling.querier.hpa_name),
           '{{scaler}} failures'
@@ -381,10 +298,42 @@ local filename = 'mimir-reads.json';
           title,
           |||
             The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-            metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+            metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
           |||
         ),
       )
+    )
+    .addRowIf(
+      $._config.autoscaling.store_gateway.enabled,
+      $.row('Store-gateway – autoscaling')
+      .addPanel(
+        $.autoScalingActualReplicas('store_gateway') + { title: 'Replicas (leader zone)' } +
+        $.panelDescription(
+          'Replicas (leader zone)',
+          |||
+            The minimum, maximum, and current number of replicas for the leader zone of store-gateways.
+            Other zones scale to follow this zone (with delay for downscale).
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Replicas') +
+        $.panelDescription('Replicas', 'Number of store-gateway replicas per zone.') +
+        $.queryPanel(
+          [
+            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.store_gateway)],
+          ],
+          [
+            '{{ %(per_job_label)s }}' % $._config.per_job_label,
+          ],
+        ),
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByValueScalingMetricPanel('store_gateway', '', '') + { title: 'Desired replicas (leader zone)' }
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('store_gateway') + { title: 'Autoscaler failures rate' }
+      ),
     )
     .addRow(
       $.kvStoreRow('Store-gateway – key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
@@ -392,7 +341,7 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.row('Memcached – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.queryPanel(
           |||
             sum by(operation) (
@@ -420,10 +369,10 @@ local filename = 'mimir-reads.json';
           '{{operation}}'
         ) +
         $.stack +
-        { yaxes: $.yaxes('ops') },
+        { fieldConfig+: { defaults+: { unit: 'ops' } } }
       )
       .addPanel(
-        $.panel('Latency (getmulti)') +
+        $.timeseriesPanel('Latency (getmulti)') +
         $.backwardsCompatibleLatencyPanel(
           'thanos_memcached_operation_duration_seconds',
           'thanos_cache_operation_duration_seconds',
@@ -438,7 +387,7 @@ local filename = 'mimir-reads.json';
         )
       )
       .addPanel(
-        $.panel('Hit ratio') +
+        $.timeseriesPanel('Hit ratio') +
         $.queryPanel(
           |||
             sum by(item_type) (
@@ -464,7 +413,7 @@ local filename = 'mimir-reads.json';
           ],
           '{{item_type}}'
         ) +
-        { yaxes: $.yaxes('percentunit') } +
+        { fieldConfig+: { defaults+: { unit: 'percentunit' } } } +
         $.panelDescription(
           'Hit ratio',
           |||

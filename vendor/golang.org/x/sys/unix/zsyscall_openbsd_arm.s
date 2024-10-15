@@ -178,6 +178,11 @@ TEXT libc_sysctl_trampoline<>(SB),NOSPLIT,$0-0
 GLOBL	·libc_sysctl_trampoline_addr(SB), RODATA, $4
 DATA	·libc_sysctl_trampoline_addr(SB)/4, $libc_sysctl_trampoline<>(SB)
 
+TEXT libc_fcntl_trampoline<>(SB),NOSPLIT,$0-0
+	JMP	libc_fcntl(SB)
+GLOBL	·libc_fcntl_trampoline_addr(SB), RODATA, $4
+DATA	·libc_fcntl_trampoline_addr(SB)/4, $libc_fcntl_trampoline<>(SB)
+
 TEXT libc_ppoll_trampoline<>(SB),NOSPLIT,$0-0
 	JMP	libc_ppoll(SB)
 GLOBL	·libc_ppoll_trampoline_addr(SB), RODATA, $4
@@ -457,6 +462,11 @@ TEXT libc_mknodat_trampoline<>(SB),NOSPLIT,$0-0
 	JMP	libc_mknodat(SB)
 GLOBL	·libc_mknodat_trampoline_addr(SB), RODATA, $4
 DATA	·libc_mknodat_trampoline_addr(SB)/4, $libc_mknodat_trampoline<>(SB)
+
+TEXT libc_mount_trampoline<>(SB),NOSPLIT,$0-0
+	JMP	libc_mount(SB)
+GLOBL	·libc_mount_trampoline_addr(SB), RODATA, $4
+DATA	·libc_mount_trampoline_addr(SB)/4, $libc_mount_trampoline<>(SB)
 
 TEXT libc_nanosleep_trampoline<>(SB),NOSPLIT,$0-0
 	JMP	libc_nanosleep(SB)

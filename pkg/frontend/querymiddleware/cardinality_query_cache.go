@@ -5,7 +5,6 @@ package querymiddleware
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -13,7 +12,9 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/prometheus/client_golang/prometheus"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -22,53 +23,58 @@ const (
 	cardinalityActiveSeriesQueryCachePrefix = "ca:"
 )
 
-func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
-	delegate := &cardinalityQueryCache{
+func newCardinalityQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+	ttl := &cardinalityQueryTTL{
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, delegate, next, logger, newResultsCacheMetrics("cardinality", reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValuesCardinality, ttl, next, logger, newResultsCacheMetrics(queryTypeCardinality, reg))
 }
 
-type cardinalityQueryCache struct {
+type cardinalityQueryTTL struct {
 	limits Limits
 }
 
-func (c *cardinalityQueryCache) getTTL(userID string) time.Duration {
+func (c *cardinalityQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
+func (DefaultCacheKeyGenerator) LabelValuesCardinality(r *http.Request) (*GenericQueryCacheKey, error) {
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
 	switch {
-	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
-		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelNamesPathSuffix):
+		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(reqValues)
 		if err != nil {
 			return nil, err
 		}
 
-		return &genericQueryRequest{
-			cacheKey:       parsed.String(),
-			cacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
 		}, nil
-	case strings.HasSuffix(path, cardinalityLabelValuesPathSuffix):
-		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(values)
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelValuesPathSuffix):
+		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(reqValues)
 		if err != nil {
 			return nil, err
 		}
 
-		return &genericQueryRequest{
-			cacheKey:       parsed.String(),
-			cacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
 		}, nil
-	case strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix):
-		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(values)
+	case strings.HasSuffix(r.URL.Path, cardinalityActiveSeriesPathSuffix):
+		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(reqValues)
 		if err != nil {
 			return nil, err
 		}
 
-		return &genericQueryRequest{
-			cacheKey:       parsed.String(),
-			cacheKeyPrefix: cardinalityActiveSeriesQueryCachePrefix,
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityActiveSeriesQueryCachePrefix,
 		}, nil
 	default:
 		return nil, errors.New("unknown cardinality API endpoint")

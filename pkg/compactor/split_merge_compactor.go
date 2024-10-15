@@ -21,7 +21,7 @@ func splitAndMergeGrouperFactory(_ context.Context, cfg Config, cfgProvider Conf
 
 func splitAndMergeCompactorFactory(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
 	// We don't need to customise the TSDB compactor so we're just using the Prometheus one.
-	compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, cfg.BlockRanges.ToMilliseconds(), nil, nil, true)
+	compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, cfg.BlockRanges.ToMilliseconds(), nil, nil)
 	if err != nil {
 		return nil, nil, err
 	}

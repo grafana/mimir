@@ -30,9 +30,16 @@
       'ruler.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
 
       'server.http-listen-port': $._config.server_http_port,
+
+      // Increased from 2s to 10s in order to accommodate writing large rule results ot he ingester.
+      'distributor.remote-timeout': '10s',
     },
 
-  ruler_env_map:: {},
+  ruler_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
+  },
+
+  ruler_node_affinity_matchers:: [],
 
   ruler_container::
     if $._config.ruler_enabled then
@@ -52,11 +59,12 @@
     local name = 'ruler';
 
     deployment.new(name, 2, [$.ruler_container]) +
+    $.newMimirNodeAffinityMatchers($.ruler_node_affinity_matchers) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
-    $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
+    $.newMimirSpreadTopology(name, $._config.ruler_querier_topology_spread_max_skew) +
     $.mimirVolumeMounts,
 
   ruler_service: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else

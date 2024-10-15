@@ -158,6 +158,12 @@ func (w *GzipResponseWriter) Write(b []byte) (int, error) {
 	return w.startPlainWrite(len(b))
 }
 
+// Unwrap returns the underlying ResponseWriter. This interface is used by
+// http.ResponseController to operate on the underlying ResponseWriter.
+func (w *GzipResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func (w *GzipResponseWriter) startPlainWrite(blen int) (int, error) {
 	if err := w.startPlain(); err != nil {
 		return 0, err

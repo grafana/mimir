@@ -64,13 +64,27 @@ For compatibility and to support upgrade from enterprise-metrics chart calculate
 {{- end -}}
 
 {{/*
-Create the name of the service account
+Create the name of the general service account
 */}}
 {{- define "mimir.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
     {{ default (include "mimir.fullname" .) .Values.serviceAccount.name }}
 {{- else -}}
     {{ default "default" .Values.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the ruler service account
+*/}}
+{{- define "mimir.ruler.serviceAccountName" -}}
+{{- if and .Values.ruler.serviceAccount.create (eq .Values.ruler.serviceAccount.name "") -}}
+{{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-%s" $sa "ruler" }}
+{{- else if and .Values.ruler.serviceAccount.create (not (eq .Values.ruler.serviceAccount.name "")) -}}
+{{- .Values.ruler.serviceAccount.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
 {{- end -}}
 {{- end -}}
 
@@ -365,6 +379,18 @@ Prometheus http prefix
 {{- end -}}
 
 {{/*
+KEDA Autoscaling Prometheus address
+*/}}
+{{- define "mimir.kedaPrometheusAddress" -}}
+{{- if not .ctx.Values.kedaAutoscaling.prometheusAddress -}}
+{{ include "mimir.metaMonitoring.metrics.remoteReadUrl" . }}
+{{- else -}}
+{{ .ctx.Values.kedaAutoscaling.prometheusAddress }}
+{{- end -}}
+{{- end -}}
+
+
+{{/*
 Cluster name that shows up in dashboard metrics
 */}}
 {{- define "mimir.clusterName" -}}
@@ -413,6 +439,7 @@ Examples:
   "ingester" "ingester"
   "memcached" "memcached"
   "metadata-cache" "metadata-cache"
+  "meta-monitoring" "metaMonitoring.grafanaAgent"
   "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
   "querier" "querier"
@@ -420,6 +447,9 @@ Examples:
   "query-scheduler" "query_scheduler"
   "results-cache" "results-cache"
   "ruler" "ruler"
+  "ruler-querier" "ruler_querier"
+  "ruler-query-frontend" "ruler_query_frontend"
+  "ruler-query-scheduler" "ruler_query_scheduler"
   "smoke-test" "smoke_test"
   "store-gateway" "store_gateway"
   "tokengen" "tokengenJob"
@@ -495,6 +525,10 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- end -}}
+
+{{- define "mimir.remoteReadUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
 {{- end -}}
 
 {{/*
@@ -607,7 +641,7 @@ Params:
 
 {{/*
 siToBytes is used to convert Kubernetes byte units to bytes.
-Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+Works for a sub set of SI suffixes: m, k, M, G, T, and their power-of-two equivalents: Ki, Mi, Gi, Ti.
 
 mimir.siToBytes takes 1 argument
   .value = the input value with SI unit
@@ -621,6 +655,16 @@ mimir.siToBytes takes 1 argument
         {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
         {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+    {{- else if (hasSuffix "k" .value) -}}
+        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+    {{- else if (hasSuffix "M" .value) -}}
+        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "G" .value) -}}
+        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "T" .value) -}}
+        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "m" .value) -}}
+        {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}
         {{- .value }}
     {{- end -}}
@@ -639,5 +683,21 @@ mimir.parseCPU takes 1 argument
         {{ trimSuffix "m" $value_string | float64 | mulf 0.001 -}}
     {{- else -}}
         {{- $value_string }}
+    {{- end -}}
+{{- end -}}
+
+{{/*
+cpuToMilliCPU is used to convert Kubernetes CPU units to MilliCPU.
+The returned value is a string representation. If you need to do any math on it, please parse the string first.
+
+mimir.cpuToMilliCPU takes 1 argument
+  .value = the Kubernetes CPU request value
+*/}}
+{{- define "mimir.cpuToMilliCPU" -}}
+    {{- $value_string := .value | toString -}}
+    {{- if (hasSuffix "m" $value_string) -}}
+        {{ trimSuffix "m" $value_string -}}
+    {{- else -}}
+        {{- $value_string | float64 | mulf 1000 | toString }}
     {{- end -}}
 {{- end -}}

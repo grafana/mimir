@@ -49,7 +49,6 @@ func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQuer
 		idLabelName:             idLabelName,
 		bypassWithSingleQuerier: bypassWithSingleQuerier,
 		upstream:                upstream,
-		resolver:                tenant.NewMultiResolver(),
 		maxConcurrency:          maxConcurrency,
 		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_federation_exemplar_tenants_queried",
@@ -64,14 +63,13 @@ type mergeExemplarQueryable struct {
 	idLabelName             string
 	bypassWithSingleQuerier bool
 	upstream                storage.ExemplarQueryable
-	resolver                tenant.Resolver
 	maxConcurrency          int
 	tenantsQueried          prometheus.Histogram
 }
 
 // tenantsAndQueriers returns a list of tenant IDs and corresponding queriers based on the context
 func (m *mergeExemplarQueryable) tenantsAndQueriers(ctx context.Context) ([]string, []storage.ExemplarQuerier, error) {
-	tenantIDs, err := m.resolver.TenantIDs(ctx)
+	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,7 +176,7 @@ func (m *mergeExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Ma
 	// Each task grabs a job object from the slice and stores its results in the corresponding
 	// index in the results slice. The job handles performing a tenant-specific exemplar query
 	// and adding a tenant ID label to each of the results.
-	run := func(ctx context.Context, idx int) error {
+	run := func(_ context.Context, idx int) error {
 		job := jobs[idx]
 
 		res, err := job.querier.Select(start, end, job.matchers...)
@@ -219,7 +217,7 @@ func filterTenantsAndRewriteMatchers(idLabelName string, ids []string, allMatche
 		return sliceToSet(ids), allMatchers
 	}
 
-	outIds := make(map[string]struct{})
+	outIDs := make(map[string]struct{})
 	outMatchers := make([][]*labels.Matcher, len(allMatchers))
 
 	// The ExemplarQuerier.Select method accepts a slice of slices of matchers. The matchers within
@@ -227,13 +225,13 @@ func filterTenantsAndRewriteMatchers(idLabelName string, ids []string, allMatche
 	// In order to support that, we start with a set of 0 tenant IDs and add any tenant IDs that remain
 	// after filtering (based on the inner slice of matchers), for each outer slice.
 	for i, matchers := range allMatchers {
-		filteredIds, unrelatedMatchers := filterValuesByMatchers(idLabelName, ids, matchers...)
-		for k := range filteredIds {
-			outIds[k] = struct{}{}
+		filteredIDs, unrelatedMatchers := FilterValuesByMatchers(idLabelName, ids, matchers...)
+		for k := range filteredIDs {
+			outIDs[k] = struct{}{}
 		}
 
 		outMatchers[i] = unrelatedMatchers
 	}
 
-	return outIds, outMatchers
+	return outIDs, outMatchers
 }

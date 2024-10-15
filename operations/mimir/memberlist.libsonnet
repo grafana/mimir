@@ -111,6 +111,21 @@
     if !$._config.memberlist_ring_enabled then {} else gossipLabel
   ),
 
+  distributor_zone_a_deployment: overrideSuperIfExists(
+    'distributor_zone_a_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  distributor_zone_b_deployment: overrideSuperIfExists(
+    'distributor_zone_b_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  distributor_zone_c_deployment: overrideSuperIfExists(
+    'distributor_zone_c_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
   ingester_statefulset: overrideSuperIfExists(
     'ingester_statefulset',
     if !$._config.memberlist_ring_enabled then {} else gossipLabel
@@ -128,6 +143,21 @@
 
   ingester_zone_c_statefulset: overrideSuperIfExists(
     'ingester_zone_c_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  ingester_partition_zone_a_statefulset: overrideSuperIfExists(
+    'ingester_partition_zone_a_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  ingester_partition_zone_b_statefulset: overrideSuperIfExists(
+    'ingester_partition_zone_b_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  ingester_partition_zone_c_statefulset: overrideSuperIfExists(
+    'ingester_partition_zone_c_statefulset',
     if !$._config.memberlist_ring_enabled then {} else gossipLabel
   ),
 

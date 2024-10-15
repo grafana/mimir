@@ -3,6 +3,7 @@ local filename = 'mimir-compactor-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '09a5c49e9cdb2f2b24c6d184574a07fd' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Compactor resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(

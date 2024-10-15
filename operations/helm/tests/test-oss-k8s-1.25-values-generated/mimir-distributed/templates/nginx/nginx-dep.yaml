@@ -44,14 +44,12 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: nginx
-          image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
+          image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
           imagePullPolicy: IfNotPresent
           ports:
             - name: http-metric
               containerPort: 8080
               protocol: TCP
-          env:
-          envFrom:
           readinessProbe:
             httpGet:
               path: /
@@ -66,7 +64,8 @@ spec:
             readOnlyRootFilesystem: true
           volumeMounts:
             - name: config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             - name: tmp
               mountPath: /tmp
             - name: docker-entrypoint-d-override

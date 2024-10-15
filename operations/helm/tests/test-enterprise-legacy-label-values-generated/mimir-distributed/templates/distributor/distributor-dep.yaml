@@ -42,8 +42,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: distributor
           imagePullPolicy: IfNotPresent
@@ -51,6 +49,13 @@ spec:
             - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # When write requests go through distributors via gRPC, we want gRPC clients to re-resolve the distributors DNS
+            # endpoint before the distributor process is terminated, in order to avoid any failures during graceful shutdown.
+            # To achieve it, we set a shutdown delay greater than the gRPC max connection age.
+            - "-server.grpc.keepalive.max-connection-age=60s"
+            - "-server.grpc.keepalive.max-connection-age-grace=5m"
+            - "-server.grpc.keepalive.max-connection-idle=1m"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -60,7 +65,6 @@ spec:
               mountPath: /var/enterprise-metrics
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -93,11 +97,8 @@ spec:
           env:
             - name: "GOMAXPROCS"
               value: "8"
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -106,9 +107,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-distributor
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 100
       volumes:
         - name: config
           secret:

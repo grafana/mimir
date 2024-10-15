@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Provenance-includes-location: https://github.com/cortexproject/cortex/cmd/cortex/Dockerfile
-# Provenance-includes-license: Apache-2.0
-# Provenance-includes-copyright: The Cortex Authors.
+# We use different base images for mimir and mimir race images since race-detector needs glibc packages.
+# See difference between distroless static and base-nossl at https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md.
 
-FROM       alpine:3.18.4
-ARG        EXTRA_PACKAGES
-RUN        apk add --no-cache ca-certificates tzdata $EXTRA_PACKAGES
+ARG        BASEIMG=gcr.io/distroless/static-debian12
+FROM       ${BASEIMG}
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
 ARG        TARGETARCH

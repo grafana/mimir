@@ -41,8 +41,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: query-scheduler
           imagePullPolicy: IfNotPresent
@@ -50,8 +48,6 @@ spec:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
-            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -87,12 +83,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -102,8 +92,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
             app.kubernetes.io/component: query-scheduler
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

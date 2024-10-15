@@ -10,10 +10,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,7 +25,9 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -54,8 +59,6 @@ func TestBlocksCleaner(t *testing.T) {
 		{concurrency: 2},
 		{concurrency: 10},
 	} {
-		options := options
-
 		t.Run(options.String(), func(t *testing.T) {
 			t.Parallel()
 			testBlocksCleanerWithOptions(t, options)
@@ -93,7 +96,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 
 	// User-4 with no more blocks, but couple of mark and debug files. Should be fully deleted.
 	user4Mark := tsdb.NewTenantDeletionMark(time.Now())
-	user4Mark.FinishedTime = time.Now().Unix() - 60 // Set to check final user cleanup.
+	user4Mark.FinishedTime = util.UnixSecondsFromTime(time.Now().Add(-60 * time.Second)) // Set to check final user cleanup.
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-4", nil, user4Mark))
 	user4DebugMetaFile := path.Join("user-4", block.DebugMetas, "meta.json")
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
@@ -124,13 +127,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		{path: path.Join("user-1", block3.String(), block.MetaFilename), expectedExists: false},
 		{path: path.Join("user-2", block7.String(), block.MetaFilename), expectedExists: false},
 		{path: path.Join("user-2", block8.String(), block.MetaFilename), expectedExists: true},
-		// Should not delete a block with deletion mark who hasn't reached the deletion threshold yet.
+		// Should not delete a block with deletion mark which hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block2.String(), block.MetaFilename), expectedExists: true},
 		{path: path.Join("user-1", block.DeletionMarkFilepath(block2)), expectedExists: true},
-		// Should delete a partial block with deletion mark who hasn't reached the deletion threshold yet.
+		// Should delete a partial block with deletion mark which hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block4.String(), block.DeletionMarkFilename), expectedExists: false},
 		{path: path.Join("user-1", block.DeletionMarkFilepath(block4)), expectedExists: false},
-		// Should delete a partial block with deletion mark who has reached the deletion threshold.
+		// Should delete a partial block with deletion mark which has reached the deletion threshold.
 		{path: path.Join("user-1", block5.String(), block.DeletionMarkFilename), expectedExists: false},
 		{path: path.Join("user-1", block.DeletionMarkFilepath(block5)), expectedExists: false},
 		// Should not delete a partial block without deletion mark.
@@ -203,10 +206,17 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 2
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 }
 
@@ -371,10 +381,17 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 
 	// Override the users scanner to reconfigure it to only return a subset of users.
@@ -396,10 +413,15 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# HELP cortex_bucket_blocks_partials_count Total number of partial blocks.
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 }
 
@@ -442,12 +464,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
 
 	// But there are no metrics for any user, because we did not in fact clean them.
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
-		# TYPE cortex_bucket_blocks_count gauge
-	`),
-		"cortex_bucket_blocks_count",
-	))
+	test.AssertGatherAndCompare(t, reg, "", "cortex_bucket_blocks_count")
 
 	// Running cleanUsers again will see that users are no longer owned.
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
@@ -1011,6 +1028,449 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 	}
 }
 
+func TestComputeCompactionJobs(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
+		CompactionBlockRanges:   tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
+	}
+
+	const user = "test"
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+	dayMS := 24 * time.Hour.Milliseconds()
+
+	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
+
+	// Mark block for no-compaction.
+	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
+	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
+
+	cases := map[string]struct {
+		blocks         bucketindex.Blocks
+		expectedSplits int
+		expectedMerges int
+	}{
+		"standard": {
+			blocks: bucketindex.Blocks{
+				// Some 2h blocks that should be compacted together and split.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+
+				// Some merge jobs.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+
+				// This merge job is skipped, as block is marked for no-compaction.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+				&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+			},
+			expectedSplits: 1,
+			expectedMerges: 2,
+		},
+		"labels don't match": {
+			blocks: bucketindex.Blocks{
+				// Compactor wouldn't produce a job for this pair as their external labels differ:
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"another_label": "-1",
+					},
+				},
+			},
+			expectedSplits: 0,
+			expectedMerges: 0,
+		},
+		"ignore deprecated labels": {
+			blocks: bucketindex.Blocks{
+				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"honored_label":                        "12345",
+						tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
+						tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"honored_label":                        "12345",
+						tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
+						tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
+					},
+				},
+			},
+			expectedSplits: 0,
+			expectedMerges: 1,
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			index := &bucketindex.Index{Blocks: c.blocks}
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0)
+			require.NoError(t, err)
+			split, merge := computeSplitAndMergeJobs(jobs)
+			require.Equal(t, c.expectedSplits, split)
+			require.Equal(t, c.expectedMerges, merge)
+		})
+	}
+}
+
+func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+
+	makeUlid := func(n byte) ulid.ULID {
+		return ulid.ULID{n}
+	}
+
+	makeMeta := func(id ulid.ULID, labels map[string]string) *block.Meta {
+		return &block.Meta{
+			BlockMeta: prom_tsdb.BlockMeta{
+				ULID:    id,
+				MinTime: 0,
+				MaxTime: twoHoursMS,
+				Version: block.TSDBVersion1,
+			},
+			Thanos: block.ThanosMeta{
+				Version: block.ThanosVersion1,
+				Labels:  labels,
+			},
+		}
+	}
+
+	cases := map[string]struct {
+		index         *bucketindex.Index
+		expectedMetas map[ulid.ULID]*block.Meta
+	}{
+		"empty": {
+			index:         &bucketindex.Index{Blocks: bucketindex.Blocks{}},
+			expectedMetas: map[ulid.ULID]*block.Meta{},
+		},
+		"basic": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{}),
+			},
+		},
+		"adopt shard ID": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78"},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
+			},
+		},
+		"use labeled shard ID": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
+						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+			},
+		},
+		"don't overwrite labeled shard ID": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
+						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+			},
+		},
+		"honor deletion marks": {
+			index: &bucketindex.Index{
+				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
+					&bucketindex.BlockDeletionMark{ID: makeUlid(14)},
+				},
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(14), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{},
+		},
+		"excess deletes": {
+			index: &bucketindex.Index{
+				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
+					&bucketindex.BlockDeletionMark{ID: makeUlid(15)},
+					&bucketindex.BlockDeletionMark{ID: makeUlid(16)},
+				},
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(14), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(14): makeMeta(makeUlid(14), map[string]string{}),
+			},
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := ConvertBucketIndexToMetasForCompactionJobPlanning(c.index)
+			require.Equal(t, c.expectedMetas, m)
+		})
+	}
+}
+
+// This test reproduces a race condition we've observed in production where there may be two
+// compactor replicas running the blocks cleaner for the same tenant at the same time (e.g.
+// during a scale up, or when a compactor is restarted and temporarily leaves the ring during
+// the restart).
+//
+// See: https://github.com/grafana/mimir/issues/8687
+func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleanerDeletesBlocks(t *testing.T) {
+	const (
+		tenantID      = "user-1"
+		deletionDelay = time.Hour
+	)
+
+	var (
+		ctx         = context.Background()
+		logger      = log.NewNopLogger()
+		cfgProvider = newMockConfigProvider()
+		cfg         = BlocksCleanerConfig{
+			DeletionDelay:              deletionDelay,
+			CleanupInterval:            time.Minute,
+			CleanupConcurrency:         1,
+			DeleteBlocksConcurrency:    1,
+			NoBlocksFileCleanupEnabled: true,
+		}
+	)
+
+	tests := map[string]struct {
+		mockBucketClients func(bucket2 objstore.Bucket) (cleaner1BucketClient, cleaner2BucketClient objstore.Bucket)
+	}{
+		"the 2nd cleaner lists markers after the 1st cleaner has started deleting some blocks": {
+			mockBucketClients: func(bucketClient objstore.Bucket) (cleaner1BucketClient, cleaner2BucketClient objstore.Bucket) {
+				cleaner2ListMarkersStarted := make(chan struct{})
+				cleaner2ListMarkersUnblocked := make(chan struct{})
+
+				cleaner1BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preIterHook: func(_ context.Context, dir string, _ ...objstore.IterOption) {
+						// When listing blocks, wait until the 2nd cleaner started to list markers.
+						if path.Base(dir) == tenantID {
+							<-cleaner2ListMarkersStarted
+						}
+					},
+					postDeleteHook: func() func(context.Context, string) {
+						once := sync.Once{}
+
+						return func(_ context.Context, name string) {
+							// After deleting the deletion mark of a block (which is expected to be the last object deleted of a block)
+							// unblock the 2nd cleaner markers listing.
+							if path.Base(name) == block.DeletionMarkFilename {
+								once.Do(func() {
+									close(cleaner2ListMarkersUnblocked)
+								})
+							}
+						}
+					}(),
+				}
+
+				cleaner2BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preIterHook: func() func(context.Context, string, ...objstore.IterOption) {
+						once := sync.Once{}
+
+						return func(_ context.Context, dir string, _ ...objstore.IterOption) {
+							if path.Base(dir) == block.MarkersPathname {
+								// Before listing markers, signal that the 2nd cleaner started to list markers and
+								// then wait until it should proceed.
+								once.Do(func() {
+									close(cleaner2ListMarkersStarted)
+									<-cleaner2ListMarkersUnblocked
+								})
+							}
+						}
+					}(),
+				}
+
+				return
+			},
+		},
+		"the 2nd cleaner fetches new deletion marks after the 1st cleaner has started deleting blocks for the new deletion marks": {
+			mockBucketClients: func(bucketClient objstore.Bucket) (cleaner1BucketClient, cleaner2BucketClient objstore.Bucket) {
+				cleaner2ListMarkersStarted := make(chan struct{})
+				cleaner2GetDeletionMarkUnblocked := make(chan struct{})
+
+				// Mock the 1st cleaner to delete deletion marks when the 2nd cleaner is between the listing
+				// of deletion marks and fetching their content (for new markers).
+				cleaner1BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preDeleteHook: func(_ context.Context, name string) {
+						if path.Base(name) == block.DeletionMarkFilename {
+							// Before deleting the deletion mark of a block, wait until cleaner2 has listed the deletion marks,
+							// because we want cleaner2 to discover the deletion mark before we delete it.
+							<-cleaner2ListMarkersStarted
+						}
+					},
+					postDeleteHook: func() func(context.Context, string) {
+						once := sync.Once{}
+
+						return func(_ context.Context, name string) {
+							if path.Base(name) == block.DeletionMarkFilename {
+								// After deleting the deletion mark of a block, signal it to the 2nd cleaner.
+								once.Do(func() {
+									go func() {
+										close(cleaner2GetDeletionMarkUnblocked)
+									}()
+								})
+							}
+						}
+					}(),
+				}
+
+				// Mock the 2nd cleaner to discover deletion marks *before* 1st cleaner deletes the blocks,
+				// and to fetch the deletion markers after the 1st cleaner has deleted the blocks.
+				cleaner2BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					postIterHook: func() func(context.Context, string, ...objstore.IterOption) {
+						once := sync.Once{}
+
+						return func(_ context.Context, dir string, _ ...objstore.IterOption) {
+							// Signal when cleaner1 has listed markers.
+							if path.Base(dir) == block.MarkersPathname {
+								once.Do(func() {
+									go func() {
+										close(cleaner2ListMarkersStarted)
+									}()
+								})
+							}
+						}
+					}(),
+					preGetHook: func(_ context.Context, name string) {
+						// When fetching the deletion mark of a block, wait until cleaner2 has deleted it.
+						if path.Base(name) == block.DeletionMarkFilename {
+							<-cleaner2GetDeletionMarkUnblocked
+						}
+					},
+				}
+
+				return
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+			bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+			// Create two blocks and mark one of them for deletion at a time before the deletion delay.
+			block1 := createTSDBBlock(t, bucketClient, tenantID, 10, 20, 1, nil)
+			block2 := createTSDBBlock(t, bucketClient, tenantID, 20, 30, 1, nil)
+			createDeletionMark(t, bucketClient, tenantID, block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
+
+			cleaner1BucketClient, cleaner2BucketClient := testData.mockBucketClients(bucketClient)
+			cleaner1 := NewBlocksCleaner(cfg, cleaner1BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+			cleaner2 := NewBlocksCleaner(cfg, cleaner2BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+
+			// Run both cleaners concurrently.
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+
+			go func() {
+				defer wg.Done()
+				require.NoError(t, cleaner1.cleanUser(ctx, tenantID, logger))
+			}()
+
+			go func() {
+				defer wg.Done()
+				require.NoError(t, cleaner2.cleanUser(ctx, tenantID, logger))
+			}()
+
+			// Wait until both cleaners have done.
+			wg.Wait()
+
+			// Check the updated bucket index.
+			idx, err := bucketindex.ReadIndex(ctx, bucketClient, tenantID, cfgProvider, logger)
+			require.NoError(t, err)
+
+			// The non-deleted block must be in the index.
+			assert.Contains(t, idx.Blocks.GetULIDs(), block2)
+
+			// The block marked for deletion should be deleted. Due to race, it could either be removed from the list of blocks
+			// or it could still be listed among the list of blocks but, if so, the deletion marker should still be in the index.
+			if slices.Contains(idx.Blocks.GetULIDs(), block1) {
+				assert.Contains(t, idx.BlockDeletionMarks.GetULIDs(), block1)
+			} else {
+				assert.NotContains(t, idx.BlockDeletionMarks.GetULIDs(), block1)
+			}
+		})
+	}
+}
+
+type hookBucket struct {
+	objstore.Bucket
+
+	preIterHook    func(ctx context.Context, dir string, options ...objstore.IterOption)
+	postIterHook   func(ctx context.Context, dir string, options ...objstore.IterOption)
+	preGetHook     func(ctx context.Context, name string)
+	postGetHook    func(ctx context.Context, name string)
+	preDeleteHook  func(ctx context.Context, name string)
+	postDeleteHook func(ctx context.Context, name string)
+}
+
+func (b *hookBucket) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
+	if b.postIterHook != nil {
+		defer b.postIterHook(ctx, dir, options...)
+	}
+
+	if b.preIterHook != nil {
+		b.preIterHook(ctx, dir, options...)
+	}
+
+	return b.Bucket.Iter(ctx, dir, f, options...)
+}
+
+func (b *hookBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if b.postGetHook != nil {
+		defer b.postGetHook(ctx, name)
+	}
+
+	if b.preGetHook != nil {
+		b.preGetHook(ctx, name)
+	}
+
+	return b.Bucket.Get(ctx, name)
+}
+
+func (b *hookBucket) Delete(ctx context.Context, name string) error {
+	if b.postDeleteHook != nil {
+		defer b.postDeleteHook(ctx, name)
+	}
+
+	if b.preDeleteHook != nil {
+		b.preDeleteHook(ctx, name)
+	}
+
+	return b.Bucket.Delete(ctx, name)
+}
+
 type mockBucketFailure struct {
 	objstore.Bucket
 
@@ -1035,6 +1495,7 @@ type mockConfigProvider struct {
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
+	perTenantInMemoryCache       map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -1048,6 +1509,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
+		perTenantInMemoryCache:       make(map[string]int),
 	}
 }
 
@@ -1097,6 +1559,10 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 
 func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
 	return m.blockUploadMaxBlockSizeBytes[user]
+}
+
+func (m *mockConfigProvider) CompactorInMemoryTenantMetaCacheSize(userID string) int {
+	return m.perTenantInMemoryCache[userID]
 }
 
 func (m *mockConfigProvider) S3SSEType(string) string {

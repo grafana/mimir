@@ -4,7 +4,6 @@ exporters:
   otlphttp:
     endpoint: http://distributor-1:8000/otlp
 
-
 processors:
   batch: {}
 receivers:
@@ -39,7 +38,7 @@ receivers:
                 container: 'querier'
         - job_name: mimir-microservices-mode/ruler
           static_configs:
-            - targets: ['ruler-1:8021', 'ruler-2:8022']
+            - targets: ['ruler-1:8022', 'ruler-2:8023']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'

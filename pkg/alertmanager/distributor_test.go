@@ -30,14 +30,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributor_DistributeRequest(t *testing.T) {
+	utiltest.VerifyNoLeak(t,
+		// This package's init() function statically starts a singleton goroutine that runs forever.
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+	)
+
 	cases := []struct {
 		name                string
 		numAM, numHappyAM   int
@@ -85,16 +91,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 3,
 			route:              "/alerts",
 		}, {
-			name:               "Read /v1/alerts is sent to 3 AMs",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 3,
-			route:              "/v1/alerts",
-			responseBody:       []byte(`{"status":"success","data":[]}`),
-		}, {
 			name:               "Read /v2/alerts is sent to 3 AMs",
 			numAM:              5,
 			numHappyAM:         5,
@@ -124,16 +120,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			headersNotPreserved: true,
 			route:               "/alerts/groups",
 		}, {
-			name:               "Read /v1/silences is sent to 3 AMs",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 3,
-			route:              "/v1/silences",
-			responseBody:       []byte(`{"status":"success","data":[]}`),
-		}, {
 			name:               "Read /v2/silences is sent to 3 AMs",
 			numAM:              5,
 			numHappyAM:         5,
@@ -151,16 +137,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expStatusCode:      http.StatusOK,
 			expectedTotalCalls: 1,
 			route:              "/silences",
-		}, {
-			name:               "Read /v1/silence/id is sent to 3 AMs",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 3,
-			route:              "/v1/silence/id",
-			responseBody:       []byte(`{"status":"success","data":{"id":"aaa","updatedAt":"2020-01-01T00:00:00Z"}}`),
 		}, {
 			name:               "Read /v2/silence/id is sent to 3 AMs",
 			numAM:              5,
@@ -226,6 +202,16 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expStatusCode:      http.StatusOK,
 			expectedTotalCalls: 1,
 			route:              "/receivers",
+		}, {
+			name:               "Read /api/v1/grafana/receivers is sent to 3 AMs",
+			numAM:              5,
+			numHappyAM:         5,
+			replicationFactor:  3,
+			isRead:             true,
+			expStatusCode:      http.StatusOK,
+			expectedTotalCalls: 3,
+			route:              "/api/v1/grafana/receivers",
+			responseBody:       []byte(`[]`),
 		}, {
 			name:                "Write /receivers not supported",
 			numAM:               5,
@@ -344,12 +330,13 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 	cfg := &MultitenantAlertmanagerConfig{}
 	flagext.DefaultValues(cfg)
 
-	d, err := NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, amRing, newMockAlertmanagerClientFactory(amByAddr), util_log.Logger, prometheus.NewRegistry())
+	d, err := NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, amRing, newMockAlertmanagerClientFactory(amByAddr), utiltest.NewTestingLogger(t), prometheus.NewRegistry())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
 
 	return d, ams, func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), amRing))
 	}
 }
 

@@ -25,7 +25,8 @@ The [load-testing-with-k6.js] script can be configured using the following envir
 | `K6_WRITE_HOSTNAME`           | Yes      |               | Mimir hostname to connect to on the write path.                                       |
 | `K6_READ_HOSTNAME`            | Yes      |               | Mimir hostname to connect to on the read path.                                        |
 | `K6_SCHEME`                   |          | http          | The protocol scheme used for requests.                                                |
-| `K6_USERNAME`                 |          | ''            | Mimir username to use for HTTP bearer authentication.                                 |
+| `K6_WRITE_USERNAME`           |          | ''            | Mimir username to use for HTTP basic authentication for writes.                       |
+| `K6_READ_USERNAME`            |          | ''            | Mimir username to use for HTTP basic authentication for reads.                        |
 | `K6_WRITE_TOKEN`              |          | ''            | Authentication token to use for HTTP bearer authentication on requests to write path. |
 | `K6_READ_TOKEN`               |          | ''            | Authentication token to use for HTTP bearer authentication on requests to read path.  |
 | `K6_WRITE_REQUEST_RATE`       |          | 1             | Number of remote write requests to send every `K6_SCRAPE_INTERVAL_SECONDS`.           |
@@ -37,7 +38,8 @@ The [load-testing-with-k6.js] script can be configured using the following envir
 | `K6_SCRAPE_INTERVAL_SECONDS`  |          | 20            | Simulated Prometheus scrape interval in seconds.                                      |
 | `K6_HA_REPLICAS`              |          | 1             | Number of HA replicas to simulate (use 1 for no HA).                                  |
 | `K6_HA_CLUSTERS`              |          | 1             | Number of HA clusters to simulate.                                                    |
-| `K6_TENANT_ID`                |          | ''            | Tenant ID used for load test to read metrics from and write metrics to.               |
+| `K6_WRITE_TENANT_ID`          |          | ''            | Tenant ID to write metrics to when not using HTTP basic auth.                         |
+| `K6_READ_TENANT_ID`           |          | ''            | Tenant ID to read metrics from when not using HTTP basic auth.                        |
 
 For example, if Mimir is running on `localhost:80` you can run a small scale test with this command:
 

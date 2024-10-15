@@ -14,11 +14,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
@@ -30,7 +33,7 @@ import (
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/util/validation"
+	mimirquerier "github.com/grafana/mimir/pkg/querier"
 )
 
 type queryFrontendTestConfig struct {
@@ -39,6 +42,7 @@ type queryFrontendTestConfig struct {
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
+	shardActiveSeriesQueries    bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -229,6 +233,28 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 	}
 }
 
+func TestQueryFrontendWithIngestStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		querySchedulerEnabled:       true,
+		querySchedulerDiscoveryMode: "dns",
+		queryStatsEnabled:           true,
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+				IngestStorageFlags(),
+			)
+
+			kafka := e2edb.NewKafka()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio, kafka))
+
+			return "", flags
+		},
+		withHistograms: true,
+	})
+}
+
 func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	const numUsers = 10
 	const numQueriesPerUser = 10
@@ -267,7 +293,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -275,7 +301,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
@@ -283,8 +309,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_cache_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_cache_dns_lookups_total"))
 
 	// Wait until distributor and querier have updated the ingesters ring.
 	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
@@ -294,6 +320,18 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
+	if flags["-ingest-storage.enabled"] == "true" {
+		for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
+			require.NoErrorf(t, service.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))),
+				"service: %s", service.Name())
+		}
+
+		waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t, queryFrontend)
+	}
 
 	// Push a series for each user to Mimir.
 	now := time.Now()
@@ -372,18 +410,21 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	wg.Wait()
 
-	extra := float64(2)
+	// Compute the expected number of queries.
+	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 2
+	expectedIngesterQueriesCount := float64(numUsers * numQueriesPerUser) // The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	if cfg.queryStatsEnabled {
-		extra++
+		expectedQueriesCount++
+		expectedIngesterQueriesCount++
 	}
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numUsers*numQueriesPerUser+extra), "cortex_query_frontend_queries_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_query_frontend_queries_total"))
 
-	// The number of received request is greater then the query requests because include
+	// The number of received requests may be greater than the query requests because include
 	// requests to /metrics and /ready.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
 
 	// Ensure query stats metrics are tracked only when enabled.
 	if cfg.queryStatsEnabled {
@@ -395,12 +436,33 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_query_seconds_total"))
 	}
 
+	// When the ingest storage is used, we expect that each query issued by this test was processed
+	// with strong read consistency.
+	if flags["-ingest-storage.enabled"] == "true" {
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+
+		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "false"))))
+	} else {
+		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
+		require.NoError(t, ingester.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
+	}
+
 	// Ensure no service-specific metrics prefix is used by the wrong service.
 	assertServiceMetricsPrefixes(t, Distributor, distributor)
 	assertServiceMetricsPrefixes(t, Ingester, ingester)
 	assertServiceMetricsPrefixes(t, Querier, querier)
 	assertServiceMetricsPrefixes(t, QueryFrontend, queryFrontend)
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
+
+	if flags["-ingest-storage.enabled"] == "true" {
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
+		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, queryScheduler, distributor, ingester, querier)
+	} else {
+		assertServiceMetricsMatching(t, "cortex_distributor_replication_factor", distributor)
+	}
 }
 
 // This spins up a minimal query-frontend setup and compares if errors returned
@@ -427,8 +489,19 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	runtimeConfig := "runtime-config.yaml"
 	require.NoError(t, writeFileToSharedDir(s, runtimeConfig, []byte(`
 overrides:
+  fake:
+    blocked_queries:
+    - pattern: ".*blocked_series.*"
+      regex: true
+    - pattern: "{__name__=\"blocked_selector\"}"
+      regex: false
   query-sharding:
     query_sharding_total_shards: 8
+    blocked_queries:
+    - pattern: ".*blocked_series.*"
+      regex: true
+    - pattern: "{__name__=\"blocked_selector\"}"
+      regex: false
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
@@ -441,7 +514,7 @@ overrides:
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
 
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
@@ -493,19 +566,83 @@ overrides:
 	cQuerier, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "fake")
 	require.NoError(t, err)
 
+	queryClients := map[string]*e2emimir.Client{
+		"query-frontend":               cQueryFrontend,
+		"query-frontend with sharding": cQueryFrontendWithQuerySharding,
+		"querier":                      cQuerier,
+	}
+
 	for _, tc := range []struct {
 		name          string
 		query         func(*e2emimir.Client) (*http.Response, []byte, error)
+		exclude       []string
 		expStatusCode int
+		expJSON       string
 		expBody       string
 	}{
+		{
+			name: "query blocked via regex for instant query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRaw("blocked_series{foo=\"bar\"}")
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via regex for range query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("blocked_series{foo=\"bar\"}", now.Add(-time.Hour), now, time.Minute)
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via regex for remote read",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(remoteReadQueryByMetricName(`blocked_series`, now.Add(-time.Hour*24*32), now))
+				return httpR, respBytes, err
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"remote read error (matchers_0: {__name__=\"blocked_series\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via equality for instant query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRaw("{__name__=\"blocked_selector\"}")
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via equality for range query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("{__name__=\"blocked_selector\"}", now.Add(-time.Hour), now, time.Minute)
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via equality for remote read",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(remoteReadQueryByMetricName(`blocked_selector`, now.Add(-time.Hour*24*32), now))
+				return httpR, respBytes, err
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"remote read error (matchers_0: {__name__=\"blocked_selector\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
 		{
 			name: "maximum resolution error",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.QueryRangeRaw("unknown", now.Add(-time.Hour*24), now, time.Second)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "negative step",
@@ -513,7 +650,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now.Add(-time.Hour), now, -time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "unknown function",
@@ -521,7 +658,7 @@ overrides:
 				return c.QueryRangeRaw("unknown(up)", now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "range vector instead of instant vector",
@@ -529,7 +666,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by(grpc_method)(grpc_server_handled_total{job="cortex-dedicated-06/etcd"}[1m])`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "start after end",
@@ -537,7 +674,7 @@ overrides:
 				return c.QueryRangeRaw("unknown", now, now.Add(-time.Hour), time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "wrong duration specified in step",
@@ -552,7 +689,7 @@ overrides:
 				))
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "wrong timestamp in start",
@@ -567,7 +704,7 @@ overrides:
 				))
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "max samples limit hit",
@@ -575,7 +712,7 @@ overrides:
 				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+			expJSON:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "query time range exceeds the limit",
@@ -583,7 +720,25 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, validation.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+		},
+		{
+			name: "query remote read time range exceeds the limit",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(remoteReadQueryByMetricName(`metric`, now.Add(-time.Hour*24*32), now))
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
+		},
+		{
+			name: "query remote read time range exceeds the limit (streaming chunks)",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteReadChunks(remoteReadQueryByMetricName(`metric`, now.Add(-time.Hour*24*32), now))
+				return httpR, respBytes, err
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       mimirquerier.NewMaxQueryLengthError(time.Hour*24*32, 720*time.Hour).Error(),
 		},
 		{
 			name: "execution error",
@@ -591,7 +746,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by (group_1) (metric{unique=~"0|1|2|3"}) * on(group_1) group_right(unique) (sum by (group_1,unique) (metric{unique=~"0|1|2|3"}))`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expBody:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
+			expJSON:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "range query with range vector",
@@ -599,24 +754,27 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, body, err := tc.query(cQuerier)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "querier returns unexpected body")
+			if tc.expBody != "" && tc.expJSON != "" {
+				t.Fatalf("expected only one of expBody or expJSON to be set")
+			}
 
-			resp, body, err = tc.query(cQueryFrontend)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "query-frontend returns unexpected body")
-
-			resp, body, err = tc.query(cQueryFrontendWithQuerySharding)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend with query-sharding returns unexpected statusCode")
-			assert.JSONEq(t, tc.expBody, string(body), "query-frontend with query-sharding returns unexpected body")
+			for name, c := range queryClients {
+				if slices.Contains(tc.exclude, name) {
+					continue
+				}
+				resp, body, err := tc.query(c)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode for "+name)
+				if tc.expJSON != "" {
+					assert.JSONEq(t, tc.expJSON, string(body), "querier returns unexpected body for "+name)
+				} else {
+					assert.Equal(t, tc.expBody, strings.TrimSpace(string(body)), "querier returns unexpected body for "+name)
+				}
+			}
 		})
 	}
 }
@@ -743,7 +901,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -759,8 +917,8 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_cache_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_cache_dns_lookups_total"))
 
 	// Wait until distributor and querier have updated the ingesters ring.
 	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
@@ -797,4 +955,18 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
 		}
 	}
+}
+
+// waitQueryFrontendToSuccessfullyFetchLastProducedOffsets waits until the query-frontend has successfully fetched
+// the last produced offsets at least once. This is required in integration tests to avoid flakiness, because we
+// bootstrap a new Mimir and Kafka cluster from scratch in each integration test and the query-frontend may start
+// to lookup partitions before the topic is created in Kafka, which will result in a query failure.
+func waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t *testing.T, queryFrontend *e2emimir.MimirService) {
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		requests, requestsErr := queryFrontend.SumMetrics([]string{"cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds"}, e2e.WithMetricCount, e2e.WaitMissingMetrics)
+		failures, failuresErr := queryFrontend.SumMetrics([]string{"cortex_ingest_storage_reader_last_produced_offset_failures_total"}, e2e.WaitMissingMetrics)
+
+		t.Logf("Waiting query-frontend to successfully fetch last produced offsets – requestsErr: %v requests: %v failuresErr: %v failures: %v", requestsErr, requests, failuresErr, failures)
+		return requestsErr == nil && failuresErr == nil && len(requests) == 1 && len(failures) == 1 && requests[0] > failures[0]
+	})
 }

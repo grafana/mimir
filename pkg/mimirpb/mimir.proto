@@ -28,8 +28,11 @@ message WriteRequest {
 
   // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
 
-  // Skip validation of label names.
-  bool skip_label_name_validation = 1000;
+  // Skip validation of label names and values.
+  bool skip_label_validation = 1000;
+
+  // Skip label count validation.
+  bool skip_label_count_validation = 1001;
 }
 
 message WriteResponse {}
@@ -44,9 +47,13 @@ enum ErrorCause {
   INSTANCE_LIMIT = 6;
   SERVICE_UNAVAILABLE = 7;
   TSDB_UNAVAILABLE = 8;
+  TOO_BUSY = 9;
+  CIRCUIT_BREAKER_OPEN = 10;
+  METHOD_NOT_ALLOWED = 11;
+  TENANT_LIMIT = 12;
 }
 
-message WriteErrorDetails {
+message ErrorDetails {
   ErrorCause Cause = 1;
 }
 
@@ -169,6 +176,7 @@ message FloatHistogram {
   repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
   repeated double positive_buckets = 13;
   repeated double negative_buckets = 10;
+  repeated double custom_values = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
@@ -248,6 +256,7 @@ message QueryResponse {
   }
 
   repeated string warnings = 8;
+  repeated string infos = 9;
 }
 
 message StringData {

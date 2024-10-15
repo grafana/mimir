@@ -23,3 +23,7 @@ You can use the following settings to log the IP address passed along by the rev
 - `-server.log-source-ips-regex`
 
   A regular expression that is used to match the source IPs. The regular expression must contain at least one capturing group, the first of which is returned. This flag is used only if `-server.log-source-ips-enabled` is `true` and if `-server.log-source-ips-header` is set.
+
+- `-server.log-source-ips-full`
+
+  Set this to `true` to log all source IPs listed in headers instead of only the originating one. Only used if `server.log-source-ips-enabled` is set to `true`

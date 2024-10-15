@@ -19,8 +19,6 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -99,7 +97,7 @@ type RingConfig struct {
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		level.Error(util_log.Logger).Log("msg", "failed to get hostname", "err", err)
+		level.Error(logger).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
 

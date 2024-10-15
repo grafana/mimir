@@ -41,6 +41,15 @@ On the read path, the ingester reads from the series whose chunks have already b
 
 For these reasons, run the ingesters on disks such as SSDs that have fast disk speed.
 
+### Resource utilization based ingester read path limiting
+
+The ingester supports limiting read requests based on resource (CPU/memory) utilization, in order to protect the write path.
+The ingester write path is generally considered more important than the read path in production, so it's (often) better to
+limit read requests when ingesters are under pressure than to fail writes (or even crash).
+
+We recommend enabling resource utilization based ingester read path limiting, to protect ingesters from potentially getting overwhelmed by expensive queries.
+For more information on its configuration, refer to [ingester]({{< relref "../../../configure/configure-resource-utilization-based-ingester-read-path-limiting.md" >}}).
+
 ## Querier
 
 ### Ensure caching is enabled
@@ -118,8 +127,25 @@ We recommend ensuring Memcached evictions happen infrequently.
 Grafana Mimir query performance might be negatively affected if your Memcached cluster evicts items frequently.
 We recommend increasing your Memcached cluster replicas to add more memory to the cluster and reduce evictions.
 
-We also recommend running a dedicated Memcached cluster for each type of cache: query results, metadata, index, and chunks.
-Running a dedicated Memcached cluster for each cache type is not required, but recommended so that each cache is isolated from the others.
+We also recommend running a dedicated Memcached cluster for each type of cache since each Mimir uses each differently and they scale differently.
+Separation also isolates each cache from the others so that one type of cache entry doesn't crowd out other entries and degrade performance.
+
+The metadata cache stores information about files in object storage, contents of auxiliary files such as bucket indexes, and discovered information about object storage such as lists of tenants.
+This results in relatively low CPU and bandwidth usage.
+
+The query results cache to stores query responses.
+Entries in this cache tend to be small and Mimir only fetches a few at a time.
+This results in relatively low CPU and bandwidth usage.
+
+The index caches store portions of the TSDB index fetched from object storage.
+Entries in this cache vary in size from a few hundred bytes to several megabytes.
+Mimir fetches entries both individually and in batches.
+A single query may fetch many entries from the cache.
+This results in higher CPU usage compared to other caches.
+
+The chunks caches store portions of time series samples fetched from object storage.
+Entries in this cache tend to be large (several kilobytes) and are fetched in batches by the store-gateway components.
+This results in higher bandwidth usage compared to other caches.
 
 ## Security
 

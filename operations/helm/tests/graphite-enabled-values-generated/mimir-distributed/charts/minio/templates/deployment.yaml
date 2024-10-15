@@ -6,7 +6,7 @@ metadata:
   name: graphite-enabled-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.2.0
     release: graphite-enabled-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: graphite-enabled-values
       annotations:
-        checksum/secrets: 545fbc32bd7ff7e1401207d79924ed32e95c84173658cd23028f18854e928aab
-        checksum/config: 00303abe67d4352d4c5ec69c61f51ddf70ebb97c649e140cde0d85bebf6839f4
+        checksum/secrets: 5b85a1d9aea245d0ea765072e06bd83793f3b31e847360c8bb6a35123020eba5
+        checksum/config: e89de3dfe5b80c57c364e1d521daf0022d7628354c01a68c5c6300ed97dc7b25
     spec:
       securityContext:
         runAsUser: 1000
@@ -39,7 +39,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

@@ -17,6 +17,7 @@ package silence
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -32,21 +33,21 @@ import (
 	"github.com/go-kit/log/level"
 	uuid "github.com/gofrs/uuid"
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/alertmanager/cluster"
+	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	pb "github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 )
 
 // ErrNotFound is returned if a silence was not found.
-var ErrNotFound = fmt.Errorf("silence not found")
+var ErrNotFound = errors.New("silence not found")
 
 // ErrInvalidState is returned if the state isn't valid.
-var ErrInvalidState = fmt.Errorf("invalid state")
+var ErrInvalidState = errors.New("invalid state")
 
 type matcherCache map[*pb.Silence]labels.Matchers
 
@@ -77,7 +78,7 @@ func (c matcherCache) add(s *pb.Silence) (labels.Matchers, error) {
 		case pb.Matcher_NOT_REGEXP:
 			mt = labels.MatchNotRegexp
 		default:
-			return nil, errors.Errorf("unknown matcher type %q", m.Type)
+			return nil, fmt.Errorf("unknown matcher type %q", m.Type)
 		}
 		matcher, err := labels.NewMatcher(mt, m.Name, m.Pattern)
 		if err != nil {
@@ -192,12 +193,23 @@ type Silences struct {
 	logger    log.Logger
 	metrics   *metrics
 	retention time.Duration
+	limits    Limits
 
 	mtx       sync.RWMutex
 	st        state
 	version   int // Increments whenever silences are added.
 	broadcast func([]byte)
 	mc        matcherCache
+}
+
+// Limits contains the limits for silences.
+type Limits struct {
+	// MaxSilences limits the maximum number of silences, including expired
+	// silences.
+	MaxSilences func() int
+	// MaxSilenceSizeBytes is the maximum size of an individual silence as
+	// stored on disk.
+	MaxSilenceSizeBytes func() int
 }
 
 // MaintenanceFunc represents the function to run as part of the periodic maintenance for silences.
@@ -270,8 +282,12 @@ func newMetrics(r prometheus.Registerer, s *Silences) *metrics {
 		Help: "How many silence received queries did not succeed.",
 	})
 	m.queryDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "alertmanager_silences_query_duration_seconds",
-		Help: "Duration of silence query evaluation.",
+		Name:                            "alertmanager_silences_query_duration_seconds",
+		Help:                            "Duration of silence query evaluation.",
+		Buckets:                         prometheus.DefBuckets,
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.propagatedMessagesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "alertmanager_silences_gossip_messages_propagated_total",
@@ -313,6 +329,7 @@ type Options struct {
 	// Retention time for newly created Silences. Silences may be
 	// garbage collected after the given duration after they ended.
 	Retention time.Duration
+	Limits    Limits
 
 	// A logger used by background processing.
 	Logger  log.Logger
@@ -321,7 +338,7 @@ type Options struct {
 
 func (o *Options) validate() error {
 	if o.SnapshotFile != "" && o.SnapshotReader != nil {
-		return fmt.Errorf("only one of SnapshotFile and SnapshotReader must be set")
+		return errors.New("only one of SnapshotFile and SnapshotReader must be set")
 	}
 	return nil
 }
@@ -331,11 +348,13 @@ func New(o Options) (*Silences, error) {
 	if err := o.validate(); err != nil {
 		return nil, err
 	}
+
 	s := &Silences{
 		clock:     clock.New(),
 		mc:        matcherCache{},
 		logger:    log.NewNopLogger(),
 		retention: o.Retention,
+		limits:    o.Limits,
 		broadcast: func([]byte) {},
 		st:        state{},
 	}
@@ -467,9 +486,8 @@ func (s *Silences) GC() (int, error) {
 	return n, nil
 }
 
-// ValidateMatcher runs validation on the matcher name, type, and pattern.
-var ValidateMatcher = func(m *pb.Matcher) error {
-	if !model.LabelName(m.Name).IsValid() {
+func validateMatcher(m *pb.Matcher) error {
+	if !compat.IsValidLabelName(model.LabelName(m.Name)) {
 		return fmt.Errorf("invalid label name %q", m.Name)
 	}
 	switch m.Type {
@@ -479,7 +497,7 @@ var ValidateMatcher = func(m *pb.Matcher) error {
 		}
 	case pb.Matcher_REGEXP, pb.Matcher_NOT_REGEXP:
 		if _, err := regexp.Compile(m.Pattern); err != nil {
-			return fmt.Errorf("invalid regular expression %q: %s", m.Pattern, err)
+			return fmt.Errorf("invalid regular expression %q: %w", m.Pattern, err)
 		}
 	default:
 		return fmt.Errorf("unknown matcher type %q", m.Type)
@@ -500,16 +518,14 @@ func matchesEmpty(m *pb.Matcher) bool {
 }
 
 func validateSilence(s *pb.Silence) error {
-	if s.Id == "" {
-		return errors.New("ID missing")
-	}
 	if len(s.Matchers) == 0 {
 		return errors.New("at least one matcher required")
 	}
 	allMatchEmpty := true
+
 	for i, m := range s.Matchers {
-		if err := ValidateMatcher(m); err != nil {
-			return fmt.Errorf("invalid label matcher %d: %s", i, err)
+		if err := validateMatcher(m); err != nil {
+			return fmt.Errorf("invalid label matcher %d: %w", i, err)
 		}
 		allMatchEmpty = allMatchEmpty && matchesEmpty(m)
 	}
@@ -525,9 +541,6 @@ func validateSilence(s *pb.Silence) error {
 	if s.EndsAt.Before(s.StartsAt) {
 		return errors.New("end time must not be before start time")
 	}
-	if s.UpdatedAt.IsZero() {
-		return errors.New("invalid zero update timestamp")
-	}
 	return nil
 }
 
@@ -535,6 +548,16 @@ func validateSilence(s *pb.Silence) error {
 func cloneSilence(sil *pb.Silence) *pb.Silence {
 	s := *sil
 	return &s
+}
+
+func (s *Silences) checkSizeLimits(msil *pb.MeshSilence) error {
+	if s.limits.MaxSilenceSizeBytes != nil {
+		n := msil.Size()
+		if m := s.limits.MaxSilenceSizeBytes(); m > 0 && n > m {
+			return fmt.Errorf("silence exceeded maximum size: %d bytes (limit: %d bytes)", n, m)
+		}
+	}
+	return nil
 }
 
 func (s *Silences) getSilence(id string) (*pb.Silence, bool) {
@@ -545,65 +568,111 @@ func (s *Silences) getSilence(id string) (*pb.Silence, bool) {
 	return msil.Silence, true
 }
 
-func (s *Silences) setSilence(sil *pb.Silence, now time.Time) error {
-	sil.UpdatedAt = now
-
-	if err := validateSilence(sil); err != nil {
-		return errors.Wrap(err, "silence invalid")
-	}
-
-	msil := &pb.MeshSilence{
+func (s *Silences) toMeshSilence(sil *pb.Silence) *pb.MeshSilence {
+	return &pb.MeshSilence{
 		Silence:   sil,
 		ExpiresAt: sil.EndsAt.Add(s.retention),
 	}
+}
+
+func (s *Silences) setSilence(msil *pb.MeshSilence, now time.Time) error {
 	b, err := marshalMeshSilence(msil)
 	if err != nil {
 		return err
 	}
-
 	if s.st.merge(msil, now) {
 		s.version++
 	}
 	s.broadcast(b)
-
 	return nil
+}
+
+// Upsert allows creating silences with a predefined ID.
+func (s *Silences) Upsert(sil *pb.Silence) error {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if err := s.set(sil); !errors.Is(err, ErrNotFound) {
+		return err
+	}
+
+	// If the silence was not found, create it with the given ID.
+	now := s.nowUTC()
+	if sil.StartsAt.Before(now) {
+		sil.StartsAt = now
+	}
+	sil.UpdatedAt = now
+
+	return s.setSilence(s.toMeshSilence(sil), now)
 }
 
 // Set the specified silence. If a silence with the ID already exists and the modification
 // modifies history, the old silence gets expired and a new one is created.
-func (s *Silences) Set(sil *pb.Silence) (string, error) {
+func (s *Silences) Set(sil *pb.Silence) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+	return s.set(sil)
+}
 
+// set assumes a lock is being held in the calling method.
+func (s *Silences) set(sil *pb.Silence) error {
 	now := s.nowUTC()
-	prev, ok := s.getSilence(sil.Id)
+	if sil.StartsAt.IsZero() {
+		sil.StartsAt = now
+	}
 
+	if err := validateSilence(sil); err != nil {
+		return fmt.Errorf("invalid silence: %w", err)
+	}
+
+	prev, ok := s.getSilence(sil.Id)
 	if sil.Id != "" && !ok {
-		return "", ErrNotFound
+		return ErrNotFound
 	}
-	if ok {
-		if canUpdate(prev, sil, now) {
-			return sil.Id, s.setSilence(sil, now)
+
+	if ok && canUpdate(prev, sil, now) {
+		sil.UpdatedAt = now
+		msil := s.toMeshSilence(sil)
+		if err := s.checkSizeLimits(msil); err != nil {
+			return err
 		}
-		if getState(prev, s.nowUTC()) != types.SilenceStateExpired {
-			// We cannot update the silence, expire the old one.
-			if err := s.expire(prev.Id); err != nil {
-				return "", errors.Wrap(err, "expire previous silence")
-			}
+		return s.setSilence(msil, now)
+	}
+
+	// If we got here it's either a new silence or a replacing one (which would
+	// also create a new silence) so we need to make sure we have capacity for
+	// the new silence.
+	if s.limits.MaxSilences != nil {
+		if m := s.limits.MaxSilences(); m > 0 && len(s.st)+1 > m {
+			return fmt.Errorf("exceeded maximum number of silences: %d (limit: %d)", len(s.st), m)
 		}
 	}
-	// If we got here it's either a new silence or a replacing one.
+
 	uid, err := uuid.NewV4()
 	if err != nil {
-		return "", errors.Wrap(err, "generate uuid")
+		return fmt.Errorf("generate uuid: %w", err)
 	}
 	sil.Id = uid.String()
 
 	if sil.StartsAt.Before(now) {
 		sil.StartsAt = now
 	}
+	sil.UpdatedAt = now
 
-	return sil.Id, s.setSilence(sil, now)
+	msil := s.toMeshSilence(sil)
+	if err := s.checkSizeLimits(msil); err != nil {
+		return err
+	}
+
+	if ok && getState(prev, s.nowUTC()) != types.SilenceStateExpired {
+		// We cannot update the silence, expire the old one to leave a history of
+		// the silence before modification.
+		if err := s.expire(prev.Id); err != nil {
+			return fmt.Errorf("expire previous silence: %w", err)
+		}
+	}
+
+	return s.setSilence(msil, now)
 }
 
 // canUpdate returns true if silence a can be updated to b without
@@ -661,8 +730,8 @@ func (s *Silences) expire(id string) error {
 		sil.StartsAt = now
 		sil.EndsAt = now
 	}
-
-	return s.setSilence(sil, now)
+	sil.UpdatedAt = now
+	return s.setSilence(s.toMeshSilence(sil), now)
 }
 
 // QueryParam expresses parameters along which silences are queried.
@@ -745,6 +814,9 @@ func (s *Silences) QueryOne(params ...QueryParam) (*pb.Silence, error) {
 // Query for silences based on the given query parameters. It returns the
 // resulting silences and the state version the result is based on.
 func (s *Silences) Query(params ...QueryParam) ([]*pb.Silence, int, error) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	s.metrics.queriesTotal.Inc()
 	defer prometheus.NewTimer(s.metrics.queryDuration).ObserveDuration()
 
@@ -783,9 +855,6 @@ func (s *Silences) query(q *query, now time.Time) ([]*pb.Silence, int, error) {
 	// If we have no ID constraint, all silences are our base set.  This and
 	// the use of post-filter functions is the trivial solution for now.
 	var res []*pb.Silence
-
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
 
 	if q.ids != nil {
 		for _, id := range q.ids {
@@ -951,7 +1020,7 @@ func decodeState(r io.Reader) (state, error) {
 			st[s.Silence.Id] = &s
 			continue
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		return nil, err

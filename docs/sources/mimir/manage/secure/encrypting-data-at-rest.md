@@ -34,11 +34,11 @@ You can configure AWS S3 SSE globally or for specific tenants.
 
 Configuring AWS S3 SSE globally requires setting SSE for each of the following storage backends:
 
-- [alertmanager_storage]({{< relref "../../references/configuration-parameters#alertmanager_storage" >}})
-- [blocks_storage]({{< relref "../../references/configuration-parameters#blocks_storage" >}})
-- [ruler_storage]({{< relref "../../references/configuration-parameters#ruler_storage" >}})
+- [alertmanager_storage]({{< relref "../../configure/configuration-parameters#alertmanager_storage" >}})
+- [blocks_storage]({{< relref "../../configure/configuration-parameters#blocks_storage" >}})
+- [ruler_storage]({{< relref "../../configure/configuration-parameters#ruler_storage" >}})
 
-For more information about AWS S3 SSE configuration parameters, refer to [s3_storage_backend]({{< relref "../../references/configuration-parameters#s3_storage_backend" >}}).
+For more information about AWS S3 SSE configuration parameters, refer to [s3_storage_backend]({{< relref "../../configure/configuration-parameters#s3_storage_backend" >}}).
 
 The following code sample shows a snippet of a Grafana Mimir configuration file with every backend storage configured to use AWS S3 SSE with and Amazon S3-managed key.
 

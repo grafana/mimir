@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for the @ modifier are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+load 10s
+  metric 0 1 2 3 4 5
+
+# Specific timestamp aligned to an underlying point
+eval range from 0 to 50s step 10s metric @ 20
+  metric 2 2 2 2 2 2
+
+# Specific timestamp not aligned to an underlying point
+eval range from 0 to 50s step 10s metric @ 15
+  metric 1 1 1 1 1 1
+
+# Using start()
+eval range from 0 to 50s step 10s metric @ start()
+  metric 0 0 0 0 0 0
+
+# Using end(), end timestamp aligned to underlying point
+eval range from 0 to 50s step 10s metric @ end()
+  metric 5 5 5 5 5 5
+
+# Using end(), end timestamp not aligned to underlying point
+eval range from 0 to 60s step 10s metric @ end()
+  metric 5 5 5 5 5 5 5
+
+clear
+
+load 5m
+  metric 0 5 10
+
+# Using end(), initial points outside lookback window
+eval range from 0 to 10m step 1m metric @ end()
+  metric 10 10 10 10 10 10 10 10 10 10 10

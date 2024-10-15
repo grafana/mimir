@@ -19,31 +19,57 @@ var (
 type MockCache struct {
 	mu    sync.Mutex
 	cache map[string]Item
+	now   time.Time
 }
 
 func NewMockCache() *MockCache {
-	c := &MockCache{}
+	c := &MockCache{now: time.Now()}
 	c.Flush()
 	return c
 }
 
-func (m *MockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
+func (m *MockCache) SetAsync(key string, value []byte, ttl time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cache[key] = Item{Data: value, ExpiresAt: m.now.Add(ttl)}
+}
+
+func (m *MockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	exp := time.Now().Add(ttl)
+	exp := m.now.Add(ttl)
 	for key, val := range data {
 		m.cache[key] = Item{Data: val, ExpiresAt: exp}
 	}
 }
 
-func (m *MockCache) Fetch(_ context.Context, keys []string, _ ...Option) map[string][]byte {
+func (m *MockCache) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cache[key] = Item{Data: value, ExpiresAt: m.now.Add(ttl)}
+	return nil
+}
+
+func (m *MockCache) Add(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if i, ok := m.cache[key]; ok && i.ExpiresAt.After(m.now) {
+		return ErrNotStored
+	}
+
+	m.cache[key] = Item{Data: value, ExpiresAt: m.now.Add(ttl)}
+	return nil
+}
+
+func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[string][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	found := make(map[string][]byte, len(keys))
 
-	now := time.Now()
+	now := m.now
 	for _, k := range keys {
 		v, ok := m.cache[k]
 		if ok && now.Before(v.ExpiresAt) {
@@ -70,6 +96,10 @@ func (m *MockCache) Name() string {
 	return "mock"
 }
 
+func (m *MockCache) Stop() {
+	// no-op
+}
+
 func (m *MockCache) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -78,11 +108,20 @@ func (m *MockCache) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// Flush removes all entries from the cache
 func (m *MockCache) Flush() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.cache = map[string]Item{}
+}
+
+// Advance changes "now" by the given duration
+func (m *MockCache) Advance(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.now = m.now.Add(d)
 }
 
 // InstrumentedMockCache is a mocked cache implementation which also tracks the number
@@ -101,18 +140,37 @@ func NewInstrumentedMockCache() *InstrumentedMockCache {
 	}
 }
 
-func (m *InstrumentedMockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
+func (m *InstrumentedMockCache) SetAsync(key string, value []byte, ttl time.Duration) {
 	m.storeCount.Inc()
-	m.cache.StoreAsync(data, ttl)
+	m.cache.SetAsync(key, value, ttl)
 }
 
-func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+func (m *InstrumentedMockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	m.storeCount.Inc()
+	m.cache.SetMultiAsync(data, ttl)
+}
+
+func (m *InstrumentedMockCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	m.storeCount.Inc()
+	return m.cache.Set(ctx, key, value, ttl)
+}
+
+func (m *InstrumentedMockCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	m.storeCount.Inc()
+	return m.cache.Add(ctx, key, value, ttl)
+}
+
+func (m *InstrumentedMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	m.fetchCount.Inc()
-	return m.cache.Fetch(ctx, keys, opts...)
+	return m.cache.GetMulti(ctx, keys, opts...)
 }
 
 func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
+}
+
+func (m *InstrumentedMockCache) Stop() {
+	m.cache.Stop()
 }
 
 func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {
@@ -124,8 +182,14 @@ func (m *InstrumentedMockCache) GetItems() map[string]Item {
 	return m.cache.GetItems()
 }
 
+// Flush removes all entries from the cache
 func (m *InstrumentedMockCache) Flush() {
 	m.cache.Flush()
+}
+
+// Advance changes "now" by the given duration
+func (m *InstrumentedMockCache) Advance(d time.Duration) {
+	m.cache.Advance(d)
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {

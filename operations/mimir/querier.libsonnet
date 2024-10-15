@@ -1,6 +1,7 @@
 {
   local container = $.core.v1.container,
 
+  // CLI flags for queriers. Also applied to ruler-queriers.
   querier_args::
     $._config.commonConfig +
     $._config.usageStatsConfig +
@@ -29,6 +30,10 @@
       'mem-ballast-size-bytes': 1 << 28,  // 256M
     },
 
+  // CLI flags that are applied only to queriers, and not ruler-queriers.
+  // Values take precedence over querier_args.
+  querier_only_args:: {},
+
   querier_ports:: $.util.defaultPorts,
 
   newQuerierContainer(name, args, envmap={})::
@@ -42,7 +47,7 @@
     $.util.resourcesLimits(null, '24Gi'),
 
   querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
 
     // Dynamically set GOMAXPROCS based on CPU request.
     GOMAXPROCS: std.toString(
@@ -55,21 +60,26 @@
     ),
   },
 
+  querier_node_affinity_matchers:: [],
+
   querier_container::
-    self.newQuerierContainer('querier', $.querier_args, $.querier_env_map),
+    self.newQuerierContainer('querier', $.querier_args + $.querier_only_args, $.querier_env_map),
 
-  local deployment = $.apps.v1.deployment,
+  newQuerierDeployment(name, container, nodeAffinityMatchers=[])::
+    local deployment = $.apps.v1.deployment;
 
-  newQuerierDeployment(name, container)::
     deployment.new(name, 6, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
+    // Set a termination grace period greater than query timeout.
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
-    self.newQuerierDeployment('querier', $.querier_container),
+    self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),
 
   querier_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),

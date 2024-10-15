@@ -2,7 +2,17 @@
 * @grafana/mimir-maintainers
 
 # Documentation.
-/docs/ @grafana/docs-metrics @grafana/mimir-maintainers
+/.github/workflows/publish-technical-documentation-next.yml                 @grafana/docs-tooling @grafana/mimir-maintainers
+/.github/workflows/publish-technical-documentation-release-helm-charts.yml  @grafana/docs-tooling @grafana/mimir-maintainers
+/.github/workflows/publish-technical-documentation-release-mimir.yml        @grafana/docs-tooling @grafana/mimir-maintainers
+/.github/workflows/update-make-docs.yml                                     @grafana/docs-tooling @grafana/mimir-maintainers
+
+/docs/                                                                      @tacole02 @grafana/mimir-maintainers
+/docs/docs.mk                                                               @grafana/docs-tooling @grafana/mimir-maintainers
+/docs/internal/                                                             @grafana/mimir-maintainers
+/docs/make-docs                                                             @grafana/docs-tooling @grafana/mimir-maintainers
+/docs/proposals/                                                            @grafana/mimir-maintainers
+/docs/variables.mk                                                          @grafana/docs-tooling @grafana/mimir-maintainers
 
 # Alertmanager and ruler.
 /pkg/alertmanager/ @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
@@ -16,6 +26,8 @@
 CHANGELOG.md
 
 # Dependencies
-go.mod @grafana/mimir-maintainers @grafanabot
-go.sum @grafana/mimir-maintainers @grafanabot
-/vendor/ @grafana/mimir-maintainers @grafanabot
+go.mod @stevesg @grafana/mimir-maintainers @grafanabot
+go.sum @stevesg @grafana/mimir-maintainers @grafanabot
+/vendor/ @stevesg @grafana/mimir-maintainers @grafanabot
+/vendor/github.com/prometheus/alertmanager @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers @grafanabot
+/vendor/github.com/grafana/alerting @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers @grafanabot

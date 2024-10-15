@@ -11,7 +11,9 @@ weight: 65
 
 # Configure Grafana Mimir object storage backend
 
-Grafana Mimir can use different object storage services to persist blocks containing the metrics data, as well as recording rules and alertmanager state.
+Grafana Mimir can use different object storage services to persist blocks containing the metrics data, as well as recording rules and Alertmanager state.
+
+Mimir doesn't create the configured storage bucket, you must create it yourself.
 The supported backends are:
 
 - [Amazon S3](https://aws.amazon.com/s3/) (and compatible implementations like [MinIO](https://min.io/))
@@ -26,7 +28,7 @@ empty directories behind when removing blocks. For example, if you use Azure Blo
 [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
 {{% /admonition %}}
 
-Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../references/configuration-parameters#filesystem_storage_backend" >}}) object storage implementation.
+Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "./configuration-parameters#filesystem_storage_backend" >}}) object storage implementation.
 
 [Ruler and alertmanager support a `local` implementation]({{< relref "../references/architecture/components/ruler#local-storage" >}}),
 which is similar to `filesystem` in the way that it uses the local file system,
@@ -34,18 +36,27 @@ but it is a read-only data source and can be used to provision state into those 
 
 ## Common configuration
 
-To avoid repetition, you can use the [common configuration]({{< relref "./about-configurations#common-configurations" >}}) and fill the [`common`]({{< relref "../references/configuration-parameters#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
+To avoid repetition, you can use the [common configuration]({{< relref "./about-configurations#common-configurations" >}}) and fill the [`common`]({{< relref "./configuration-parameters#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
-> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "../references/configuration-parameters#blocks_storage" >}}) use either a:
+To use environment variables in the configuration file, ensure that you [enable expansion]({{< relref "./configuration-parameters#use-environment-variables-in-the-configuration" >}}) for the variables.
+
+{{< admonition type="note" >}}
+Blocks storage can't be located in the same path of the same bucket as the ruler and Alertmanager stores.
+
+When using the common configuration, make [`blocks_storage`]({{< relref "./configuration-parameters#blocks_storage" >}}) use either a:
 
 - different bucket, overriding the common bucket name
 - storage prefix
 
-Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the alertmanager or ruler store uses.
+{{< /admonition >}}
+
+Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the Alertmanager or ruler store uses.
 
 Find examples of setting up the different object stores below:
 
-> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "./about-configurations#common-configurations" >}}).
+{{< admonition type="note" >}}
+If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "./about-configurations#common-configurations" >}}).
+{{< /admonition >}}
 
 ### S3
 
@@ -118,7 +129,7 @@ common:
     backend: azure
     azure:
       account_key: "${AZURE_ACCOUNT_KEY}" # This is a secret injected via an environment variable
-      account_name: mimir-prod
+      account_name: mimirprod
       endpoint_suffix: "blob.core.windows.net"
 
 blocks_storage:

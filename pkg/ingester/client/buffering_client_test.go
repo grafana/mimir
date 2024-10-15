@@ -38,6 +38,7 @@ func setupGrpc(t testing.TB) (*mockServer, *grpc.ClientConn) {
 		_ = server.Serve(l)
 	}()
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	c, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -157,7 +158,7 @@ func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T)
 
 func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
 	bufferingClient := newBufferPoolingIngesterClient(&dummyIngesterClient{}, nil)
-	bufferingClient.pushRawFn = func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	bufferingClient.pushRawFn = func(_ context.Context, _ *grpc.ClientConn, msg interface{}, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 		_, err := msg.(proto.Marshaler).Marshal()
 		return nil, err
 	}

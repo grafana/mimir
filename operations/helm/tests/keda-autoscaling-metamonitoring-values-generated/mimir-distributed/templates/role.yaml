@@ -1,0 +1,16 @@
+---
+# Source: mimir-distributed/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keda-autoscaling-metamonitoring-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+rules:
+- apiGroups:      ['extensions']
+  resources:      ['podsecuritypolicies']
+  verbs:          ['use']
+  resourceNames:  [keda-autoscaling-metamonitoring-values-mimir]

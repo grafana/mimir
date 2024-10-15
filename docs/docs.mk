@@ -1,5 +1,5 @@
 # The source of this file is https://raw.githubusercontent.com/grafana/writers-toolkit/main/docs/docs.mk.
-# 3.0.0 (2023-05-18)
+# A changelog is included in the head of the `make-docs` script.
 include variables.mk
 -include variables.mk.local
 
@@ -34,11 +34,6 @@ endif
 # First project is considered the primary one used for doc-validator.
 PRIMARY_PROJECT := $(subst /,-,$(firstword $(subst :, ,$(firstword $(PROJECTS)))))
 
-# Name for the container.
-ifeq ($(origin DOCS_CONTAINER), undefined)
-export DOCS_CONTAINER := $(PRIMARY_PROJECT)-docs
-endif
-
 # Host port to publish container port to.
 ifeq ($(origin DOCS_HOST_PORT), undefined)
 export DOCS_HOST_PORT := 3002
@@ -70,50 +65,55 @@ ifeq ($(origin HUGO_REFLINKSERRORLEVEL), undefined)
 export HUGO_REFLINKSERRORLEVEL := WARNING
 endif
 
+# Whether to pull the latest container image before running the container.
+ifeq ($(origin PULL), undefined)
+export PULL := true
+endif
+
 .PHONY: docs-rm
 docs-rm: ## Remove the docs container.
 	$(PODMAN) rm -f $(DOCS_CONTAINER)
 
 .PHONY: docs-pull
 docs-pull: ## Pull documentation base image.
-	$(PODMAN) pull $(DOCS_IMAGE)
+	$(PODMAN) pull -q $(DOCS_IMAGE)
 
 make-docs: ## Fetch the latest make-docs script.
 make-docs:
-	if [[ ! -f "$(PWD)/make-docs" ]]; then
+	if [[ ! -f "$(CURDIR)/make-docs" ]]; then
 		echo 'WARN: No make-docs script found in the working directory. Run `make update` to download it.' >&2
 		exit 1
 	fi
 
 .PHONY: docs
-docs: ## Serve documentation locally, which includes pulling the latest `DOCS_IMAGE` (default: `grafana/docs-base:latest`) container image. See also `docs-no-pull`.
+docs: ## Serve documentation locally, which includes pulling the latest `DOCS_IMAGE` (default: `grafana/docs-base:latest`) container image. To not pull the image, set `PULL=false`.
+ifeq ($(PULL), true)
 docs: docs-pull make-docs
-	$(PWD)/make-docs $(PROJECTS)
-
-.PHONY: docs-no-pull
-docs-no-pull: ## Serve documentation locally without pulling the `DOCS_IMAGE` (default: `grafana/docs-base:latest`) container image.
-docs-no-pull: make-docs
-	$(PWD)/make-docs $(PROJECTS)
+else
+docs: make-docs
+endif
+	$(CURDIR)/make-docs $(PROJECTS)
 
 .PHONY: docs-debug
 docs-debug: ## Run Hugo web server with debugging enabled. TODO: support all SERVER_FLAGS defined in website Makefile.
 docs-debug: make-docs
-	WEBSITE_EXEC='hugo server --bind 0.0.0.0 --port 3002 --debug' $(PWD)/make-docs $(PROJECTS)
+	WEBSITE_EXEC='hugo server --bind 0.0.0.0 --port 3002 --debug' $(CURDIR)/make-docs $(PROJECTS)
 
 .PHONY: doc-validator
-doc-validator: ## Run doc-validator on the entire docs folder.
+doc-validator: ## Run doc-validator on the entire docs folder which includes pulling the latest `DOC_VALIDATOR_IMAGE` (default: `grafana/doc-validator:latest`) container image. To not pull the image, set `PULL=false`.
 doc-validator: make-docs
-	DOCS_IMAGE=$(DOC_VALIDATOR_IMAGE) $(PWD)/make-docs $(PROJECTS)
-
-.PHONY: doc-validator/%
-doc-validator/%: ## Run doc-validator on a specific path. To lint the path /docs/sources/administration, run 'make doc-validator/administration'.
-doc-validator/%: make-docs
-	DOCS_IMAGE=$(DOC_VALIDATOR_IMAGE) DOC_VALIDATOR_INCLUDE=$(subst doc-validator/,,$@) $(PWD)/make-docs $(PROJECTS)
+ifeq ($(PULL), true)
+	$(PODMAN) pull -q $(DOC_VALIDATOR_IMAGE)
+endif
+	DOCS_IMAGE=$(DOC_VALIDATOR_IMAGE) $(CURDIR)/make-docs $(PROJECTS)
 
 .PHONY: vale
-vale: ## Run vale on the entire docs folder.
+vale: ## Run vale on the entire docs folder which includes pulling the latest `VALE_IMAGE` (default: `grafana/vale:latest`) container image. To not pull the image, set `PULL=false`.
 vale: make-docs
-	DOCS_IMAGE=$(VALE_IMAGE) $(PWD)/make-docs $(PROJECTS)
+ifeq ($(PULL), true)
+	$(PODMAN) pull -q $(VALE_IMAGE)
+endif
+	DOCS_IMAGE=$(VALE_IMAGE) $(CURDIR)/make-docs $(PROJECTS)
 
 .PHONY: update
 update: ## Fetch the latest version of this Makefile and the `make-docs` script from Writers' Toolkit.

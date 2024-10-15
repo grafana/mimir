@@ -11,14 +11,15 @@ import (
 )
 
 const (
-	RejectReasonMaxSeries          = "max-fetched-series-per-query"
-	RejectReasonMaxChunkBytes      = "max-fetched-chunk-bytes-per-query"
-	RejectReasonMaxChunks          = "max-fetched-chunks-per-query"
-	RejectReasonMaxEstimatedChunks = "max-estimated-fetched-chunks-per-query"
+	RejectReasonMaxSeries                          = "max-fetched-series-per-query"
+	RejectReasonMaxChunkBytes                      = "max-fetched-chunk-bytes-per-query"
+	RejectReasonMaxChunks                          = "max-fetched-chunks-per-query"
+	RejectReasonMaxEstimatedChunks                 = "max-estimated-fetched-chunks-per-query"
+	RejectReasonMaxEstimatedQueryMemoryConsumption = "max-estimated-memory-consumption-per-query"
 )
 
 var (
-	rejectReasons = []string{RejectReasonMaxSeries, RejectReasonMaxChunkBytes, RejectReasonMaxChunks, RejectReasonMaxEstimatedChunks}
+	rejectReasons = []string{RejectReasonMaxSeries, RejectReasonMaxChunkBytes, RejectReasonMaxChunks, RejectReasonMaxEstimatedChunks, RejectReasonMaxEstimatedQueryMemoryConsumption}
 )
 
 // QueryMetrics collects metrics on the number of chunks used while serving queries.
@@ -33,25 +34,29 @@ type QueryMetrics struct {
 
 	// The total number of queries that were rejected for some reason.
 	QueriesRejectedTotal *prometheus.CounterVec
+
+	// The total number of queries executed against a particular source
+	QueriesExecutedTotal *prometheus.CounterVec
 }
 
 func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
 	m := &QueryMetrics{
 		IngesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_deduped_total",
-			Help:      "Number of chunks received from ingesters at query time but discarded as duplicates.",
+			Name: "cortex_distributor_query_ingester_chunks_deduped_total",
+			Help: "Number of chunks received from ingesters at query time but discarded as duplicates.",
 		}),
 		IngesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "distributor_query_ingester_chunks_total",
-			Help:      "Number of chunks received from ingesters at query time, including any chunks discarded as duplicates.",
+			Name: "cortex_distributor_query_ingester_chunks_total",
+			Help: "Number of chunks received from ingesters at query time, including any chunks discarded as duplicates.",
 		}),
 		QueriesRejectedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "querier_queries_rejected_total",
-			Help:      "Number of queries that were rejected, for example because they exceeded a limit.",
+			Name: "cortex_querier_queries_rejected_total",
+			Help: "Number of queries that were rejected, for example because they exceeded a limit.",
 		}, []string{"reason"}),
+		QueriesExecutedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_queries_storage_type_total",
+			Help: "Number of PromQL queries that were executed against a particular storage type.",
+		}, []string{"storage"}),
 	}
 
 	// Ensure the reject metric is initialised (so that we export the value "0" before a limit is reached for the first time).

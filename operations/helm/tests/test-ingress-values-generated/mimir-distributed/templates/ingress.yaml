@@ -1,0 +1,107 @@
+---
+# Source: mimir-distributed/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-ingress-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ingress-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  rules:
+    - host: "mimir.example.com"
+      http:
+        paths:
+          - path: /alertmanager
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-alertmanager-headless
+                port:
+                  number: 8080
+          - path: /multitenant_alertmanager/status
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-alertmanager-headless
+                port:
+                  number: 8080
+          - path: /multitenant_alertmanager/configs
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-alertmanager-headless
+                port:
+                  number: 8080
+          - path: /api/v1/alerts
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-alertmanager-headless
+                port:
+                  number: 8080
+          - path: /api/v1/upload/block/
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-compactor
+                port:
+                  number: 8080
+          - path: /distributor
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-distributor-headless
+                port:
+                  number: 8080
+          - path: /api/v1/push
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-distributor-headless
+                port:
+                  number: 8080
+          - path: /otlp/v1/metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-distributor-headless
+                port:
+                  number: 8080
+          - path: /prometheus
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-query-frontend
+                port:
+                  number: 8080
+          - path: /api/v1/status/buildinfo
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-query-frontend
+                port:
+                  number: 8080
+          - path: /prometheus/config/v1/rules
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-ruler
+                port:
+                  number: 8080
+          - path: /prometheus/api/v1/rules
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-ruler
+                port:
+                  number: 8080
+          - path: /prometheus/api/v1/alerts
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-ruler
+                port:
+                  number: 8080

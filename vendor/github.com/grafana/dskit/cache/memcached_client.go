@@ -24,11 +24,11 @@ import (
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
-	"github.com/grafana/dskit/promregistry"
 )
 
 const (
 	dnsProviderUpdateInterval = 30 * time.Second
+	maxTTL                    = 30 * 24 * time.Hour
 )
 
 var (
@@ -37,18 +37,21 @@ var (
 	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
 	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
 
-	_ RemoteCacheClient = (*memcachedClient)(nil)
+	_ Cache = (*MemcachedClient)(nil)
 )
-
-// MemcachedClient for compatible.
-type MemcachedClient = RemoteCacheClient
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
+	Add(item *memcache.Item) error
 	Delete(key string) error
+	Decrement(key string, delta uint64) (uint64, error)
+	Increment(key string, delta uint64) (uint64, error)
+	Touch(key string, seconds int32) error
 	Close()
+	CompareAndSwap(item *memcache.Item) error
+	FlushAll() error
 }
 
 // updatableServerSelector extends the interface used for picking a memcached server
@@ -159,7 +162,7 @@ func (c *MemcachedClientConfig) Validate() error {
 	return nil
 }
 
-type memcachedClient struct {
+type MemcachedClient struct {
 	*baseClient
 
 	logger   log.Logger
@@ -185,10 +188,10 @@ type memcachedClient struct {
 
 // AddressProvider performs node address resolution given a list of clusters.
 type AddressProvider interface {
-	// Resolves the provided list of memcached cluster to the actual nodes
+	// Resolve resolves the provided list of memcached cluster to the actual nodes
 	Resolve(context.Context, []string) error
 
-	// Returns the nodes
+	// Addresses returns the nodes
 	Addresses() []string
 }
 
@@ -197,8 +200,8 @@ type memcachedGetMultiResult struct {
 	err   error
 }
 
-// NewMemcachedClientWithConfig makes a new RemoteCacheClient.
-func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (RemoteCacheClient, error) {
+// NewMemcachedClientWithConfig makes a new MemcachedClient.
+func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (*MemcachedClient, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -242,23 +245,20 @@ func newMemcachedClient(
 	config MemcachedClientConfig,
 	reg prometheus.Registerer,
 	name string,
-) (*memcachedClient, error) {
-	legacyRegister := prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
+) (*MemcachedClient, error) {
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
-	backwardCompatibleRegs := promregistry.TeeRegisterer{legacyRegister, reg}
-
 	addressProvider := dns.NewProvider(
 		logger,
-		backwardCompatibleRegs,
+		reg,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(backwardCompatibleRegs)
+	metrics := newClientMetrics(reg)
 
-	c := &memcachedClient{
+	c := &MemcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		logger:          log.With(logger, "name", name),
 		config:          config,
@@ -267,15 +267,12 @@ func newMemcachedClient(
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			promregistry.TeeRegisterer{
-				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, legacyRegister),
-				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
-			},
+			prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
-	c.clientInfo = promauto.With(backwardCompatibleRegs).NewGaugeFunc(prometheus.GaugeOpts{
+	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
@@ -305,7 +302,7 @@ func newMemcachedClient(
 	return c, nil
 }
 
-func (c *memcachedClient) Stop() {
+func (c *MemcachedClient) Stop() {
 	close(c.stop)
 
 	// Stop running async operations.
@@ -315,14 +312,84 @@ func (c *memcachedClient) Stop() {
 	c.client.Close()
 }
 
-func (c *memcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
-		return c.client.Set(&memcache.Item{
-			Key:        key,
-			Value:      value,
-			Expiration: int32(time.Now().Add(ttl).Unix()),
-		})
+func (c *MemcachedClient) Name() string {
+	return c.name
+}
+
+func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	c.setMultiAsync(data, ttl, c.setSingleItem)
+}
+
+func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
+	c.setAsync(key, value, ttl, c.setSingleItem)
+}
+
+func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opSet, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return c.setSingleItem(key, value, ttl)
+		}
 	})
+}
+
+func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			ttlSeconds, ok := toSeconds(ttl)
+			if !ok {
+				return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
+			}
+
+			err := c.client.Add(&memcache.Item{
+				Key:        key,
+				Value:      value,
+				Expiration: ttlSeconds,
+			})
+
+			if errors.Is(err, memcache.ErrNotStored) {
+				return fmt.Errorf("%w: for add operation on %s", ErrNotStored, key)
+			}
+
+			return err
+		}
+	})
+}
+
+func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Duration) error {
+	ttlSeconds, ok := toSeconds(ttl)
+	if !ok {
+		return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
+	}
+
+	return c.client.Set(&memcache.Item{
+		Key:        key,
+		Value:      value,
+		Expiration: ttlSeconds,
+	})
+}
+
+// toSeconds converts a time.Duration to seconds as an int32 and returns a boolean
+// indicating if the value is valid to be used as a TTL. Durations might not be valid
+// to be used for a TTL if they are non-zero but less than a second long (Memcached
+// uses seconds for TTL units but "0" to mean infinite TTL) or if they are longer than
+// 30 days (Memcached treats TTLs more than 30 days as UNIX timestamps).
+func toSeconds(d time.Duration) (int32, bool) {
+	if d > maxTTL {
+		return 0, false
+	}
+
+	secs := int32(d.Seconds())
+	if d != 0 && secs <= 0 {
+		return 0, false
+	}
+
+	return secs, true
 }
 
 func toMemcacheOptions(opts ...Option) []memcache.Option {
@@ -343,11 +410,12 @@ func toMemcacheOptions(opts ...Option) []memcache.Option {
 	return out
 }
 
-func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
 	}
 
+	c.metrics.requests.Add(float64(len(keys)))
 	options := toMemcacheOptions(opts...)
 	batches, err := c.getMultiBatched(ctx, keys, options...)
 	if err != nil {
@@ -372,10 +440,11 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 		}
 	}
 
+	c.metrics.hits.Add(float64(len(hits)))
 	return hits
 }
 
-func (c *memcachedClient) Delete(ctx context.Context, key string) error {
+func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 	return c.delete(ctx, key, func(ctx context.Context, key string) error {
 		var err error
 		select {
@@ -388,7 +457,128 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 	})
 }
 
-func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
+func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
+	return c.incrDecr(ctx, key, opIncrement, func() (uint64, error) {
+		return c.client.Increment(key, delta)
+	})
+}
+
+func (c *MemcachedClient) Decrement(ctx context.Context, key string, delta uint64) (uint64, error) {
+	return c.incrDecr(ctx, key, opDecrement, func() (uint64, error) {
+		return c.client.Decrement(key, delta)
+	})
+}
+
+func (c *MemcachedClient) incrDecr(ctx context.Context, key string, operation string, f func() (uint64, error)) (uint64, error) {
+	var (
+		newValue uint64
+		err      error
+	)
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(operation).Inc()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		newValue, err = f()
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to incr/decr cache item",
+			"operation", operation,
+			"key", key,
+			"err", err,
+		)
+		c.trackError(operation, err)
+	} else {
+		c.metrics.duration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
+	}
+
+	return newValue, err
+}
+
+func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Duration) error {
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opTouch).Inc()
+
+	var err error
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.Touch(key, int32(ttl.Seconds()))
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to touch cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opTouch, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opTouch).Observe(time.Since(start).Seconds())
+	}
+	return err
+}
+
+func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	var err error
+	item := &memcache.Item{
+		Key:        key,
+		Value:      value,
+		Expiration: int32(ttl.Seconds()),
+	}
+
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.CompareAndSwap(item)
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to compareAndSwap cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opCompareAndSwap, err)
+	} else {
+		c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
+		c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
+	}
+
+	return err
+}
+
+func (c *MemcachedClient) FlushAll(ctx context.Context) error {
+	var err error
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opFlush).Inc()
+
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.FlushAll()
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to flush all cache",
+			"err", err,
+		)
+		c.trackError(opFlush, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opFlush).Observe(time.Since(start).Seconds())
+	}
+
+	return err
+}
+
+func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
 	// Do not batch if the input keys are less than the max batch size.
 	if (c.config.MaxGetMultiBatchSize <= 0) || (len(keys) <= c.config.MaxGetMultiBatchSize) {
 		// Even if we're not splitting the input into batches, make sure that our single request
@@ -467,7 +657,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string, op
 	return items, lastErr
 }
 
-func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string, opts ...memcache.Option) (items map[string]*memcache.Item, err error) {
+func (c *MemcachedClient) getMultiSingle(ctx context.Context, keys []string, opts ...memcache.Option) (items map[string]*memcache.Item, err error) {
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
@@ -502,7 +692,7 @@ func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string, opt
 // they were supplied in). Note that output is not guaranteed to be any particular order
 // *except* that keys sharded to the same server will be together. The order of keys
 // returned may change from call to call.
-func (c *memcachedClient) sortKeysByServer(keys []string) []string {
+func (c *MemcachedClient) sortKeysByServer(keys []string) []string {
 	bucketed := make(map[string][]string)
 
 	for _, key := range keys {
@@ -524,7 +714,7 @@ func (c *memcachedClient) sortKeysByServer(keys []string) []string {
 	return out
 }
 
-func (c *memcachedClient) resolveAddrsLoop() {
+func (c *MemcachedClient) resolveAddrsLoop() {
 	ticker := time.NewTicker(dnsProviderUpdateInterval)
 	defer ticker.Stop()
 
@@ -541,7 +731,7 @@ func (c *memcachedClient) resolveAddrsLoop() {
 	}
 }
 
-func (c *memcachedClient) resolveAddrs() error {
+func (c *MemcachedClient) resolveAddrs() error {
 	// Resolve configured addresses with a reasonable timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

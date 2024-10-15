@@ -9,13 +9,18 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -39,11 +44,18 @@ func TranslateToPromqlAPIError(err error) error {
 		return err
 	}
 
-	switch errors.Cause(err).(type) {
-	case promql.ErrStorage, promql.ErrTooManySamples, promql.ErrQueryCanceled, promql.ErrQueryTimeout:
+	var (
+		errStorage        promql.ErrStorage
+		errTooManySamples promql.ErrTooManySamples
+		errQueryCanceled  promql.ErrQueryCanceled
+		errQueryTimeout   promql.ErrQueryTimeout
+	)
+
+	switch {
+	case errors.As(err, &errStorage) || errors.As(err, &errTooManySamples) || errors.As(err, &errQueryCanceled) || errors.As(err, &errQueryTimeout):
 		// Don't translate those, just in case we use them internally.
 		return err
-	case validation.LimitError:
+	case validation.IsLimitError(err):
 		// This will be returned with status code 422 by Prometheus API.
 		return err
 	default:
@@ -51,20 +63,27 @@ func TranslateToPromqlAPIError(err error) error {
 			return err // 499
 		}
 
-		s, ok := status.FromError(err)
-		if !ok {
-			s, ok = status.FromError(errors.Cause(err))
-		}
-
-		if ok {
+		if s, ok := grpcutil.ErrorToStatus(err); ok {
 			code := s.Code()
 
-			// Treat these as HTTP status codes, even though they are supposed to be grpc codes.
-			if code >= 400 && code < 500 {
-				// Return directly, will be mapped to 422
-				return err
-			} else if code == http.StatusServiceUnavailable {
-				return promql.ErrQueryTimeout(s.Message())
+			if util.IsHTTPStatusCode(code) {
+				// Treat these as HTTP status codes, even though they are supposed to be grpc codes.
+				if code >= 400 && code < 500 {
+					// Return directly, will be mapped to 422
+					return err
+				} else if code == http.StatusServiceUnavailable {
+					return promql.ErrQueryTimeout(s.Message())
+				}
+			}
+
+			details := s.Details()
+			if len(details) == 1 {
+				if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
+					switch errorDetails.GetCause() {
+					case mimirpb.TOO_BUSY:
+						return promql.ErrQueryTimeout(s.Message())
+					}
+				}
 			}
 		}
 
@@ -120,13 +139,13 @@ type errorTranslateQuerier struct {
 	fn ErrTranslateFn
 }
 
-func (e errorTranslateQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	values, warnings, err := e.q.LabelValues(ctx, name, matchers...)
+func (e errorTranslateQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	values, warnings, err := e.q.LabelValues(ctx, name, hints, matchers...)
 	return values, warnings, e.fn(err)
 }
 
-func (e errorTranslateQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	values, warnings, err := e.q.LabelNames(ctx, matchers...)
+func (e errorTranslateQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	values, warnings, err := e.q.LabelNames(ctx, hints, matchers...)
 	return values, warnings, e.fn(err)
 }
 
@@ -144,13 +163,13 @@ type errorTranslateChunkQuerier struct {
 	fn ErrTranslateFn
 }
 
-func (e errorTranslateChunkQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	values, warnings, err := e.q.LabelValues(ctx, name, matchers...)
+func (e errorTranslateChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	values, warnings, err := e.q.LabelValues(ctx, name, hints, matchers...)
 	return values, warnings, e.fn(err)
 }
 
-func (e errorTranslateChunkQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	values, warnings, err := e.q.LabelNames(ctx, matchers...)
+func (e errorTranslateChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	values, warnings, err := e.q.LabelNames(ctx, hints, matchers...)
 	return values, warnings, e.fn(err)
 }
 
@@ -173,7 +192,8 @@ func (e errorTranslateSeriesSet) Next() bool {
 }
 
 func (e errorTranslateSeriesSet) At() storage.Series {
-	return e.s.At()
+	s := e.s.At()
+	return errorTranslateSeries{s: s, fn: e.fn}
 }
 
 func (e errorTranslateSeriesSet) Err() error {
@@ -182,6 +202,53 @@ func (e errorTranslateSeriesSet) Err() error {
 
 func (e errorTranslateSeriesSet) Warnings() annotations.Annotations {
 	return e.s.Warnings()
+}
+
+type errorTranslateSeries struct {
+	s  storage.Series
+	fn ErrTranslateFn
+}
+
+func (e errorTranslateSeries) Labels() labels.Labels {
+	return e.s.Labels()
+}
+
+func (e errorTranslateSeries) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	i := e.s.Iterator(iterator)
+	return errorTranslateSampleIterator{i: i, fn: e.fn}
+}
+
+type errorTranslateSampleIterator struct {
+	i  chunkenc.Iterator
+	fn ErrTranslateFn
+}
+
+func (e errorTranslateSampleIterator) Next() chunkenc.ValueType {
+	return e.i.Next()
+}
+
+func (e errorTranslateSampleIterator) Seek(t int64) chunkenc.ValueType {
+	return e.i.Seek(t)
+}
+
+func (e errorTranslateSampleIterator) At() (int64, float64) {
+	return e.i.At()
+}
+
+func (e errorTranslateSampleIterator) AtHistogram(histogram *histogram.Histogram) (int64, *histogram.Histogram) {
+	return e.i.AtHistogram(histogram)
+}
+
+func (e errorTranslateSampleIterator) AtFloatHistogram(histogram *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return e.i.AtFloatHistogram(histogram)
+}
+
+func (e errorTranslateSampleIterator) AtT() int64 {
+	return e.i.AtT()
+}
+
+func (e errorTranslateSampleIterator) Err() error {
+	return e.fn(e.i.Err())
 }
 
 type errorTranslateChunkSeriesSet struct {
@@ -194,7 +261,8 @@ func (e errorTranslateChunkSeriesSet) Next() bool {
 }
 
 func (e errorTranslateChunkSeriesSet) At() storage.ChunkSeries {
-	return e.s.At()
+	s := e.s.At()
+	return errorTranslateChunkSeries{s: s, fn: e.fn}
 }
 
 func (e errorTranslateChunkSeriesSet) Err() error {
@@ -203,4 +271,39 @@ func (e errorTranslateChunkSeriesSet) Err() error {
 
 func (e errorTranslateChunkSeriesSet) Warnings() annotations.Annotations {
 	return e.s.Warnings()
+}
+
+type errorTranslateChunkSeries struct {
+	s  storage.ChunkSeries
+	fn ErrTranslateFn
+}
+
+func (e errorTranslateChunkSeries) Labels() labels.Labels {
+	return e.s.Labels()
+}
+
+func (e errorTranslateChunkSeries) Iterator(iterator chunks.Iterator) chunks.Iterator {
+	i := e.s.Iterator(iterator)
+	return errorTranslateChunksIterator{i: i, fn: e.fn}
+}
+
+func (e errorTranslateChunkSeries) ChunkCount() (int, error) {
+	return e.s.ChunkCount()
+}
+
+type errorTranslateChunksIterator struct {
+	i  chunks.Iterator
+	fn ErrTranslateFn
+}
+
+func (e errorTranslateChunksIterator) At() chunks.Meta {
+	return e.i.At()
+}
+
+func (e errorTranslateChunksIterator) Next() bool {
+	return e.i.Next()
+}
+
+func (e errorTranslateChunksIterator) Err() error {
+	return e.fn(e.i.Err())
 }

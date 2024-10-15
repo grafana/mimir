@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+load 6m
+  left_histograms  {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}} _                                          _ {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}}
+
+# These cases currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
+# Once the issue described there has been resolved, these test cases can be removed and the corresponding test cases in
+# testdata/ours/binary_operators.test can be enabled.
+eval range from 0 to 24m step 6m 0 == left_histograms
+  left_histograms 0 0 _ _ 0
+
+eval range from 0 to 24m step 6m 3 != left_histograms
+  left_histograms 0 0 _ _ 0
+
+eval range from 0 to 24m step 6m 3 > left_histograms
+  left_histograms 0 0 _ _ 0
+
+eval range from 0 to 24m step 6m 3 >= left_histograms
+  left_histograms 0 0 _ _ 0
+
+eval range from 0 to 24m step 6m 0 >= left_histograms
+  left_histograms 0 0 _ _ 0

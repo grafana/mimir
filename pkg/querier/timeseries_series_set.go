@@ -156,7 +156,7 @@ func (t *timeSeriesSeriesIterator) At() (int64, float64) {
 }
 
 // AtHistogram implements chunkenc.Iterator.
-func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (t *timeSeriesSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	if !t.atH {
 		panic(errors.New("timeSeriesSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
 	}
@@ -168,7 +168,7 @@ func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
-func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (t *timeSeriesSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if !t.atH {
 		panic(errors.New("timeSeriesSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
 	}

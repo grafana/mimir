@@ -1,0 +1,13 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-ruler-dedicated-query-path-values-rollout-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: test-ruler-dedicated-query-path-values-rollout-operator
+subjects:
+- kind: ServiceAccount
+  name: test-ruler-dedicated-query-path-values-rollout-operator

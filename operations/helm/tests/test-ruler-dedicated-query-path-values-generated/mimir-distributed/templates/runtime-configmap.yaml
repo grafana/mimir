@@ -1,0 +1,15 @@
+---
+# Source: mimir-distributed/templates/runtime-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-ruler-dedicated-query-path-values-mimir-runtime
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  runtime.yaml: |
+    
+    {}

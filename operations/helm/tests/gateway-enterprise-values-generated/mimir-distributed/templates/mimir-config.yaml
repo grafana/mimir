@@ -43,6 +43,9 @@ data:
         insecure: true
         secret_access_key: supersecret
     auth:
+      admin:
+        pass_access_policy_name: true
+        pass_token_name: true
       type: enterprise
     blocks_storage:
       backend: s3
@@ -67,9 +70,16 @@ data:
       max_closing_blocks_concurrency: 2
       max_opening_blocks_concurrency: 4
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
     frontend:
+      log_query_request_headers: X-Access-Policy-Name,X-Token-Name
       parallelize_shardable_queries: true
       scheduler_address: gateway-enterprise-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
@@ -99,6 +109,8 @@ data:
     ingester:
       ring:
         final_sleep: 0s
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
         num_tokens: 512
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
@@ -140,12 +152,10 @@ data:
         secret_access_key: supersecret
     runtime_config:
       file: /var/mimir/runtime.yaml
-    server:
-      grpc_server_max_connection_age: 2m
-      grpc_server_max_connection_age_grace: 5m
-      grpc_server_max_connection_idle: 1m
     store_gateway:
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         kvstore:
           prefix: multi-zone/
         tokens_file_path: /data/tokens

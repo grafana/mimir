@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -22,6 +23,8 @@ const (
 )
 
 type dnsServiceDiscovery struct {
+	refreshMetrics discovery.RefreshMetricsInstantiator
+
 	Resolver cache.AddressProvider
 
 	RefreshInterval time.Duration
@@ -34,7 +37,17 @@ func (dnsServiceDiscovery) Name() string {
 }
 
 func (c dnsServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return refresh.NewDiscovery(opts.Logger, mechanismName, c.RefreshInterval, c.resolve), nil
+	return refresh.NewDiscovery(refresh.Options{
+		Logger:              opts.Logger,
+		Mech:                mechanismName,
+		Interval:            c.RefreshInterval,
+		RefreshF:            c.resolve,
+		MetricsInstantiator: c.refreshMetrics,
+	}), nil
+}
+
+func (c dnsServiceDiscovery) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return &discovery.NoopDiscovererMetrics{}
 }
 
 func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -58,12 +71,13 @@ func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group,
 	return []*targetgroup.Group{tg}, nil
 }
 
-func dnsSD(rulerConfig *Config, resolver cache.AddressProvider, qType dns.QType, url *url.URL) discovery.Config {
+func dnsSD(rulerConfig *Config, resolver cache.AddressProvider, qType dns.QType, url *url.URL, rmi discovery.RefreshMetricsInstantiator) discovery.Config {
 	return dnsServiceDiscovery{
 		Resolver:        resolver,
 		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
 		Host:            url.Host,
 		QType:           qType,
+		refreshMetrics:  rmi,
 	}
 }
 

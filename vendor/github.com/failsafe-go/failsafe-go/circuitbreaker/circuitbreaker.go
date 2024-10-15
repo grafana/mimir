@@ -1,15 +1,17 @@
 package circuitbreaker
 
 import (
+	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/policy"
 )
 
-// ErrCircuitBreakerOpen is returned when an execution is attempted against a circuit breaker that is open.
-var ErrCircuitBreakerOpen = errors.New("circuit breaker open")
+// ErrOpen is returned when an execution is attempted against a circuit breaker that is open.
+var ErrOpen = errors.New("circuit breaker open")
 
 // State of a CircuitBreaker.
 type State int
@@ -42,7 +44,7 @@ const (
 CircuitBreaker is a policy that temporarily blocks execution when a configured number of failures are exceeded. Circuit
 breakers have three states: closed, open, and half-open. When a circuit breaker is in the ClosedState (default),
 executions are allowed. If a configurable number of failures occur, optionally over some time period, the circuit
-breaker transitions to OpenState. In the OpenState a circuit breaker will fail executions with ErrCircuitBreakerOpen.
+breaker transitions to OpenState. In the OpenState a circuit breaker will fail executions with ErrOpen.
 After a configurable delay, the circuit breaker will transition to HalfOpenState. In the HalfOpenState a configurable
 number of trial executions will be allowed, after which the circuit breaker will transition to either ClosedState or
 OpenState depending on how many were successful.
@@ -80,6 +82,10 @@ type CircuitBreaker[R any] interface {
 
 	// State returns the State of the CircuitBreaker.
 	State() State
+
+	// RemainingDelay returns the remaining delay until the circuit is half-opened and allows another execution, when in the
+	// OpenState, else returns 0 when in other states.
+	RemainingDelay() time.Duration
 
 	// Metrics returns metrics for the CircuitBreaker.
 	Metrics() Metrics
@@ -139,11 +145,24 @@ type Metrics interface {
 type StateChangedEvent struct {
 	OldState State
 	NewState State
+	metrics  *eventMetrics
+	context  context.Context
+}
+
+// Metrics returns metrics from the CircuitBreaker old state.
+func (e *StateChangedEvent) Metrics() Metrics {
+	return e.metrics
+}
+
+// Context returns the context configured for the execution, else context.Background if none was configured. For
+// executions involving a timeout or hedge, each attempt will get a separate child context.
+func (e *StateChangedEvent) Context() context.Context {
+	return e.context
 }
 
 type circuitBreaker[R any] struct {
-	config *circuitBreakerConfig[R]
-	mtx    sync.Mutex
+	*config[R]
+	mtx sync.Mutex
 	// Guarded by mtx
 	state circuitState[R]
 }
@@ -175,12 +194,16 @@ func (cb *circuitBreaker[R]) Close() {
 func (cb *circuitBreaker[R]) State() State {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	return cb.state.getState()
+	return cb.state.state()
+}
+
+func (cb *circuitBreaker[R]) RemainingDelay() time.Duration {
+	cb.mtx.Lock()
+	defer cb.mtx.Unlock()
+	return cb.state.remainingDelay()
 }
 
 func (cb *circuitBreaker[R]) Metrics() Metrics {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
 	return cb
 }
 
@@ -199,31 +222,31 @@ func (cb *circuitBreaker[R]) IsClosed() bool {
 func (cb *circuitBreaker[R]) Executions() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	return cb.state.getStats().getExecutionCount()
+	return cb.state.executionCount()
 }
 
 func (cb *circuitBreaker[R]) Failures() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	return cb.state.getStats().getFailureCount()
+	return cb.state.failureCount()
 }
 
 func (cb *circuitBreaker[R]) FailureRate() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	return cb.state.getStats().getFailureRate()
+	return cb.state.failureRate()
 }
 
 func (cb *circuitBreaker[R]) Successes() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	return cb.state.getStats().getSuccessCount()
+	return cb.state.successCount()
 }
 
 func (cb *circuitBreaker[R]) SuccessRate() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	return cb.state.getStats().getSuccessRate()
+	return cb.state.successRate()
 }
 
 func (cb *circuitBreaker[R]) RecordFailure() {
@@ -235,7 +258,7 @@ func (cb *circuitBreaker[R]) RecordFailure() {
 func (cb *circuitBreaker[R]) RecordError(err error) {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	cb.recordResult(*(new(R)), err)
+	cb.recordResult(*new(R), err)
 }
 
 func (cb *circuitBreaker[R]) RecordResult(result R) {
@@ -250,11 +273,10 @@ func (cb *circuitBreaker[R]) RecordSuccess() {
 	cb.recordSuccess()
 }
 
-func (cb *circuitBreaker[R]) ToExecutor(policyIndex int, _ R) any {
-	cbe := &circuitBreakerExecutor[R]{
+func (cb *circuitBreaker[R]) ToExecutor(_ R) any {
+	cbe := &executor[R]{
 		BaseExecutor: &policy.BaseExecutor[R]{
-			BaseFailurePolicy: cb.config.BaseFailurePolicy,
-			PolicyIndex:       policyIndex,
+			BaseFailurePolicy: cb.BaseFailurePolicy,
 		},
 		circuitBreaker: cb,
 	}
@@ -267,15 +289,15 @@ func (cb *circuitBreaker[R]) ToExecutor(policyIndex int, _ R) any {
 // Requires external locking.
 func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Execution[R], listener func(StateChangedEvent)) {
 	transitioned := false
-	currentState := cb.state.getState()
-	if currentState != newState {
+	currentState := cb.state
+	if currentState.state() != newState {
 		switch newState {
 		case ClosedState:
 			cb.state = newClosedState(cb)
 		case OpenState:
-			delay := cb.config.ComputeDelay(exec)
+			delay := cb.ComputeDelay(exec)
 			if delay == -1 {
-				delay = cb.config.Delay
+				delay = cb.Delay
 			}
 			cb.state = newOpenState(cb, cb.state, delay)
 		case HalfOpenState:
@@ -284,18 +306,48 @@ func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Executio
 		transitioned = true
 	}
 
-	if transitioned {
-		event := StateChangedEvent{
-			OldState: currentState,
-			NewState: newState,
+	if transitioned && (listener != nil || cb.stateChangedListener != nil) {
+		ctx := context.Background()
+		if exec != nil {
+			ctx = exec.Context()
 		}
-		if cb.config.stateChangedListener != nil {
-			cb.config.stateChangedListener(event)
+		event := StateChangedEvent{
+			OldState: currentState.state(),
+			NewState: newState,
+			metrics:  &eventMetrics{currentState},
+			context:  ctx,
 		}
 		if listener != nil {
 			listener(event)
 		}
+		if cb.stateChangedListener != nil {
+			cb.stateChangedListener(event)
+		}
 	}
+}
+
+type eventMetrics struct {
+	stats stats
+}
+
+func (m *eventMetrics) Executions() uint {
+	return m.stats.executionCount()
+}
+
+func (m *eventMetrics) Failures() uint {
+	return m.stats.failureCount()
+}
+
+func (m *eventMetrics) FailureRate() uint {
+	return m.stats.failureRate()
+}
+
+func (m *eventMetrics) Successes() uint {
+	return m.stats.successCount()
+}
+
+func (m *eventMetrics) SuccessRate() uint {
+	return m.stats.successRate()
 }
 
 // Requires external locking.
@@ -308,22 +360,22 @@ func (cb *circuitBreaker[R]) tryAcquirePermit() bool {
 //
 // Requires external locking.
 func (cb *circuitBreaker[R]) open(execution failsafe.Execution[R]) {
-	cb.transitionTo(OpenState, execution, cb.config.openListener)
+	cb.transitionTo(OpenState, execution, cb.openListener)
 }
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) close() {
-	cb.transitionTo(ClosedState, nil, cb.config.closeListener)
+	cb.transitionTo(ClosedState, nil, cb.closeListener)
 }
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) halfOpen() {
-	cb.transitionTo(HalfOpenState, nil, cb.config.halfOpenListener)
+	cb.transitionTo(HalfOpenState, nil, cb.halfOpenListener)
 }
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) recordResult(result R, err error) {
-	if cb.config.IsFailure(result, err) {
+	if cb.IsFailure(result, err) {
 		cb.recordFailure(nil)
 	} else {
 		cb.recordSuccess()
@@ -332,17 +384,17 @@ func (cb *circuitBreaker[R]) recordResult(result R, err error) {
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) recordSuccess() {
-	cb.state.getStats().recordSuccess()
+	cb.state.recordSuccess()
 	cb.state.checkThresholdAndReleasePermit(nil)
 }
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) recordFailure(exec failsafe.Execution[R]) {
-	cb.state.getStats().recordFailure()
+	cb.state.recordFailure()
 	cb.state.checkThresholdAndReleasePermit(exec)
 }
 
 func (cb *circuitBreaker[R]) Reset() {
 	cb.close()
-	cb.state.getStats().reset()
+	cb.state.reset()
 }

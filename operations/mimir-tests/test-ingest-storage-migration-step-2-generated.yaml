@@ -1,0 +1,3292 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: alertmanager
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: compactor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: distributor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ingester-rollout
+  name: ingester-rollout
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      rollout-group: ingester
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: rollout-operator
+  name: rollout-operator
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: rollout-operator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-querier
+  name: ruler-querier
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-querier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-query-frontend
+  name: ruler-query-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-query-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler-query-scheduler
+  name: ruler-query-scheduler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler-query-scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: store-gateway-rollout
+  name: store-gateway-rollout
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      rollout-group: store-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rollout-operator
+  namespace: default
+---
+apiVersion: v1
+data:
+  overrides.yaml: |
+    overrides: {}
+kind: ConfigMap
+metadata:
+  name: overrides
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rollout-operator-role
+  namespace: default
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - get
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - list
+  - get
+  - watch
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets/status
+  verbs:
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rollout-operator-rolebinding
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rollout-operator-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
+  namespace: default
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: alertmanager-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: alertmanager-grpc
+    port: 9095
+    targetPort: 9095
+  - name: alertmanager-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: alertmanager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: compactor-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: compactor-grpc
+    port: 9095
+    targetPort: 9095
+  - name: compactor-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: compactor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: distributor-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: distributor-grpc
+    port: 9095
+    targetPort: 9095
+  - name: distributor-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: distributor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gossip-ring
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - appProtocol: tcp
+    name: gossip-ring
+    port: 7946
+    protocol: TCP
+    targetPort: 7946
+  selector:
+    gossip_ring_member: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-a
+  name: ingester-zone-a
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-a
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-a-partition
+  name: ingester-zone-a-partition
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-a-partition
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-b
+  name: ingester-zone-b
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-b
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-b-partition
+  name: ingester-zone-b-partition
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-b-partition
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-c
+  name: ingester-zone-c
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-c
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-c-partition
+  name: ingester-zone-c-partition
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-c-partition
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-index-queries
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: memcached-client
+    port: 11211
+    targetPort: 11211
+  - name: exporter-http-metrics
+    port: 9150
+    targetPort: 9150
+  selector:
+    name: memcached-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  ports:
+  - name: querier-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: querier-grpc
+    port: 9095
+    targetPort: 9095
+  - name: querier-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: querier
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  ports:
+  - name: query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  ports:
+  - name: query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler-discovery
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  publishNotReadyAddresses: true
+  selector:
+    name: query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  ports:
+  - name: ruler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-querier
+  name: ruler-querier
+  namespace: default
+spec:
+  ports:
+  - name: ruler-querier-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-querier-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ruler-querier-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ruler-querier
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-frontend
+  name: ruler-query-frontend
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ruler-query-frontend-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-frontend-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler-query-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-scheduler
+  name: ruler-query-scheduler
+  namespace: default
+spec:
+  ports:
+  - name: ruler-query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  selector:
+    name: ruler-query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ruler-query-scheduler
+  name: ruler-query-scheduler-discovery
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ruler-query-scheduler-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ruler-query-scheduler-grpc
+    port: 9095
+    targetPort: 9095
+  publishNotReadyAddresses: true
+  selector:
+    name: ruler-query-scheduler
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: store-gateway-multi-zone
+  name: store-gateway-multi-zone
+  namespace: default
+spec:
+  ports:
+  - name: store-gateway-http-metrics
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    rollout-group: store-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: store-gateway-zone-a
+  name: store-gateway-zone-a
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: store-gateway-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: store-gateway-grpc
+    port: 9095
+    targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: store-gateway-zone-a
+    rollout-group: store-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: store-gateway-zone-b
+  name: store-gateway-zone-b
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: store-gateway-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: store-gateway-grpc
+    port: 9095
+    targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: store-gateway-zone-b
+    rollout-group: store-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: store-gateway-zone-c
+  name: store-gateway-zone-c
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: store-gateway-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: store-gateway-grpc
+    port: 9095
+    targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: store-gateway-zone-c
+    rollout-group: store-gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: distributor
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: distributor
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: distributor
+    spec:
+      containers:
+      - args:
+        - -distributor.ha-tracker.enable=true
+        - -distributor.ha-tracker.enable-for-all-users=true
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.prefix=prom_ha/
+        - -distributor.ha-tracker.store=etcd
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-burst-size=200000
+        - -distributor.ingestion-rate-limit=10000
+        - -distributor.ingestion-tenant-shard-size=3
+        - -distributor.remote-timeout=5s
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
+        - -distributor.ring.prefix=
+        - -distributor.ring.store=memberlist
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.migration.distributor-send-to-ingesters-enabled=true
+        - -ingester.partition-ring.prefix=
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=1073741824
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=60s
+        - -server.grpc.keepalive.max-connection-age-grace=5m
+        - -server.grpc.keepalive.max-connection-idle=1m
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -target=distributor
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "8"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: distributor
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: "2"
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 100
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: distributor
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: querier
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 6
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: querier
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: querier
+    spec:
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=268435456
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
+        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=querier
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: GOMAXPROCS
+          value: "5"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: querier
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 24Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: querier
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-frontend
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: query-frontend
+    spec:
+      containers:
+      - args:
+        - -query-frontend.cache-results=true
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=30s
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: query-frontend
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 1200Mi
+          requests:
+            cpu: "2"
+            memory: 600Mi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 390
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: query-frontend
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-scheduler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: query-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: query-scheduler
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: query-scheduler
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rollout-operator
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: rollout-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        name: rollout-operator
+    spec:
+      containers:
+      - args:
+        - -kubernetes.namespace=default
+        image: grafana/rollout-operator:v0.19.1
+        imagePullPolicy: IfNotPresent
+        name: rollout-operator
+        ports:
+        - containerPort: 8001
+          name: http-metrics
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8001
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      serviceAccountName: rollout-operator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler
+  strategy:
+    rollingUpdate:
+      maxSurge: 50%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler
+    spec:
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -distributor.remote-timeout=10s
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
+        - -ingest-storage.migration.distributor-send-to-ingesters-enabled=true
+        - -ingester.partition-ring.prefix=
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.max-partial-query-length=768h
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.gcs.bucket-name=rules-bucket
+        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
+        - -ruler.max-rule-groups-per-tenant=70
+        - -ruler.max-rules-per-rule-group=20
+        - -ruler.query-frontend.address=dns:///ruler-query-frontend.default.svc.cluster.local.:9095
+        - -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size=104857600
+        - -ruler.ring.store=memberlist
+        - -ruler.rule-path=/rules
+        - -ruler.tenant-shard-size=2
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=ruler
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ruler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "16"
+            memory: 16Gi
+          requests:
+            cpu: "1"
+            memory: 6Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 600
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-querier
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 6
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-querier
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ruler-querier
+    spec:
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=268435456
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.frontend-client.grpc-max-send-msg-size=104857600
+        - -querier.max-concurrent=8
+        - -querier.max-partial-query-length=768h
+        - -querier.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=querier
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ruler-querier
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 24Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler-querier
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-query-frontend
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-query-frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: ruler-query-frontend
+    spec:
+      containers:
+      - args:
+        - -query-frontend.cache-results=false
+        - -query-frontend.max-cache-freshness=10m
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-frontend.max-total-query-length=12000h
+        - -query-frontend.query-sharding-target-series-per-shard=2500
+        - -query-frontend.results-cache.backend=memcached
+        - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.max-item-size=5242880
+        - -query-frontend.results-cache.memcached.timeout=500ms
+        - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=104857600
+        - -server.grpc.keepalive.max-connection-age=30s
+        - -server.grpc.keepalive.max-connection-age-grace=5m
+        - -server.grpc.keepalive.max-connection-idle=1m
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ruler-query-frontend
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 1200Mi
+          requests:
+            cpu: "2"
+            memory: 600Mi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 390
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler-query-frontend
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruler-query-scheduler
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: ruler-query-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: ruler-query-scheduler
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: ruler-query-scheduler
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -query-frontend.max-queriers-per-tenant=10
+        - -query-scheduler.max-outstanding-requests-per-tenant=100
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ruler-query-scheduler
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 2Gi
+          requests:
+            cpu: "2"
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
+      terminationGracePeriodSeconds: 180
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: alertmanager
+  name: alertmanager
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: alertmanager
+  serviceName: alertmanager
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: alertmanager
+    spec:
+      containers:
+      - args:
+        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
+        - -alertmanager.sharding-ring.replication-factor=3
+        - -alertmanager.sharding-ring.store=memberlist
+        - -alertmanager.storage.path=/data
+        - -alertmanager.web.external-url=http://test/alertmanager
+        - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
+        - -server.http-listen-port=8080
+        - -target=alertmanager
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: alertmanager
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 15Gi
+          requests:
+            cpu: "2"
+            memory: 10Gi
+        volumeMounts:
+        - mountPath: /data
+          name: alertmanager-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 900
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: alertmanager-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: compactor
+  serviceName: compactor
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: compactor
+    spec:
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -compactor.block-ranges=2h,12h,24h
+        - -compactor.blocks-retention-period=0
+        - -compactor.cleanup-interval=15m
+        - -compactor.compaction-concurrency=1
+        - -compactor.compaction-interval=30m
+        - -compactor.compactor-tenant-shard-size=1
+        - -compactor.data-dir=/data
+        - -compactor.deletion-delay=2h
+        - -compactor.first-level-compaction-wait-period=25m
+        - -compactor.max-closing-blocks-concurrency=2
+        - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
+        - -compactor.ring.prefix=
+        - -compactor.ring.store=memberlist
+        - -compactor.ring.wait-stability-min-duration=1m
+        - -compactor.split-and-merge-shards=0
+        - -compactor.split-groups=1
+        - -compactor.symbols-flushers-concurrency=4
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=compactor
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: compactor
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 6Gi
+          requests:
+            cpu: 1
+            memory: 6Gi
+        volumeMounts:
+        - mountPath: /data
+          name: compactor-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 900
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: compactor-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 250Gi
+      storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-a
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-a
+      rollout-group: ingester
+  serviceName: ingester-zone-a
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-a
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-a
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-a
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: ingester-a-only
+        - name: GOGC
+          value: "off"
+        - name: GOMAXPROCS
+          value: "9"
+        - name: GOMEMLIMIT
+          value: 1Gi
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        - name: Z
+          value: "123"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-a-partition
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-a-partition
+      rollout-group: ingester
+  serviceName: ingester-zone-a-partition
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-a-partition
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-a-partition
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-a-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.partition-ring.prefix=
+        - -ingester.push-grpc-method-enabled=false
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-a
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: ingester-a-only
+        - name: GOGC
+          value: "off"
+        - name: GOMAXPROCS
+          value: "9"
+        - name: GOMEMLIMIT
+          value: 1Gi
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        - name: Z
+          value: "123"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: ingester-zone-a
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-b
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      name: ingester-zone-b
+      rollout-group: ingester
+  serviceName: ingester-zone-b
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-b
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-b
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: GOMAXPROCS
+          value: "9"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-b-partition
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-b-partition
+      rollout-group: ingester
+  serviceName: ingester-zone-b-partition
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-b-partition
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-b-partition
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-b-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.partition-ring.prefix=
+        - -ingester.push-grpc-method-enabled=false
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-b
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: GOMAXPROCS
+          value: "9"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: ingester-zone-b
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-c
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      name: ingester-zone-c
+      rollout-group: ingester
+  serviceName: ingester-zone-c
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-c
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-c
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-c
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: GOMAXPROCS
+          value: "9"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-c-partition
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-c-partition
+      rollout-group: ingester
+  serviceName: ingester-zone-c-partition
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-c-partition
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-c-partition
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-c-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.partition-ring.prefix=
+        - -ingester.push-grpc-method-enabled=false
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-c
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: GOMAXPROCS
+          value: "9"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached
+  serviceName: memcached
+  template:
+    metadata:
+      labels:
+        name: memcached
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 6144
+        - -I 1m
+        - -c 16384
+        - -v
+        - --extended=track_sizes
+        image: memcached:1.6.28-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 9Gi
+          requests:
+            cpu: 500m
+            memory: 6552Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.14.4
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-frontend
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-frontend
+  serviceName: memcached-frontend
+  template:
+    metadata:
+      labels:
+        name: memcached-frontend
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-frontend
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        - --extended=track_sizes
+        image: memcached:1.6.28-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.14.4
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-index-queries
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+  serviceName: memcached-index-queries
+  template:
+    metadata:
+      labels:
+        name: memcached-index-queries
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-index-queries
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 1024
+        - -I 5m
+        - -c 16384
+        - -v
+        - --extended=track_sizes
+        image: memcached:1.6.28-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 500m
+            memory: 1176Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.14.4
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached-metadata
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+  serviceName: memcached-metadata
+  template:
+    metadata:
+      labels:
+        name: memcached-metadata
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                name: memcached-metadata
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -m 512
+        - -I 1m
+        - -c 16384
+        - -v
+        - --extended=track_sizes
+        image: memcached:1.6.28-alpine
+        imagePullPolicy: IfNotPresent
+        name: memcached
+        ports:
+        - containerPort: 11211
+          name: client
+        resources:
+          limits:
+            memory: 768Mi
+          requests:
+            cpu: 500m
+            memory: 638Mi
+      - args:
+        - --memcached.address=localhost:11211
+        - --web.listen-address=0.0.0.0:9150
+        image: prom/memcached-exporter:v0.14.4
+        imagePullPolicy: IfNotPresent
+        name: exporter
+        ports:
+        - containerPort: 9150
+          name: http-metrics
+  updateStrategy:
+    type: RollingUpdate
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    rollout-max-unavailable: "50"
+  labels:
+    rollout-group: store-gateway
+  name: store-gateway-zone-a
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: store-gateway-zone-a
+      rollout-group: store-gateway
+  serviceName: store-gateway-zone-a
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: store-gateway-zone-a
+        rollout-group: store-gateway
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-a
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.chunks-cache.backend=memcached
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.index-cache.backend=memcached
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.instance-availability-zone=zone-a
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -store-gateway.sharding-ring.unregister-on-shutdown=false
+        - -store-gateway.sharding-ring.wait-stability-min-duration=1m
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-store-gateways
+        - name: GOMAXPROCS
+          value: "5"
+        - name: GOMEMLIMIT
+          value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: store-gateway
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 18Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /data
+          name: store-gateway-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: store-gateway-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    rollout-max-unavailable: "50"
+  labels:
+    rollout-group: store-gateway
+  name: store-gateway-zone-b
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: store-gateway-zone-b
+      rollout-group: store-gateway
+  serviceName: store-gateway-zone-b
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: store-gateway-zone-b
+        rollout-group: store-gateway
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-b
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.chunks-cache.backend=memcached
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.index-cache.backend=memcached
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.instance-availability-zone=zone-b
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -store-gateway.sharding-ring.unregister-on-shutdown=false
+        - -store-gateway.sharding-ring.wait-stability-min-duration=1m
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: zone-b
+        - name: GOGC
+          value: "1000"
+        - name: GOMAXPROCS
+          value: "5"
+        - name: GOMEMLIMIT
+          value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: store-gateway
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 18Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /data
+          name: store-gateway-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: store-gateway-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: standard
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    rollout-max-unavailable: "50"
+  labels:
+    rollout-group: store-gateway
+  name: store-gateway-zone-c
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: store-gateway-zone-c
+      rollout-group: store-gateway
+  serviceName: store-gateway-zone-c
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: store-gateway-zone-c
+        rollout-group: store-gateway
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - store-gateway
+              - key: name
+                operator: NotIn
+                values:
+                - store-gateway-zone-c
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.bucket-store.chunks-cache.backend=memcached
+        - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.index-cache.backend=memcached
+        - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
+        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
+        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
+        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
+        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
+        - -blocks-storage.bucket-store.sync-interval=15m
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.instance-availability-zone=zone-c
+        - -store-gateway.sharding-ring.prefix=multi-zone/
+        - -store-gateway.sharding-ring.replication-factor=3
+        - -store-gateway.sharding-ring.store=memberlist
+        - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
+        - -store-gateway.sharding-ring.unregister-on-shutdown=false
+        - -store-gateway.sharding-ring.wait-stability-min-duration=1m
+        - -store-gateway.sharding-ring.zone-awareness-enabled=true
+        - -store-gateway.tenant-shard-size=3
+        - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-store-gateways
+        - name: GOMAXPROCS
+          value: "5"
+        - name: GOMEMLIMIT
+          value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
+        imagePullPolicy: IfNotPresent
+        name: store-gateway
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 18Gi
+          requests:
+            cpu: "1"
+            memory: 12Gi
+        volumeMounts:
+        - mountPath: /data
+          name: store-gateway-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: store-gateway-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: standard
+---
+apiVersion: etcd.database.coreos.com/v1beta2
+kind: EtcdCluster
+metadata:
+  annotations:
+    etcd.database.coreos.com/scope: clusterwide
+  name: etcd
+  namespace: default
+spec:
+  pod:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              etcd_cluster: etcd
+          topologyKey: kubernetes.io/hostname
+    annotations:
+      prometheus.io/port: "2379"
+      prometheus.io/scrape: "true"
+    etcdEnv:
+    - name: ETCD_AUTO_COMPACTION_RETENTION
+      value: 1h
+    labels:
+      name: etcd
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+  size: 3
+  version: 3.3.13

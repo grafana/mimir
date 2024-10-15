@@ -330,7 +330,7 @@ func TestMarkForDeletion(t *testing.T) {
 	}{
 		{
 			name:         "block marked for deletion",
-			preUpload:    func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			preUpload:    func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			blocksMarked: 1,
 		},
 		{
@@ -379,7 +379,7 @@ func TestMarkForNoCompact(t *testing.T) {
 	}{
 		{
 			name:         "block marked",
-			preUpload:    func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			preUpload:    func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			blocksMarked: 1,
 		},
 		{
@@ -410,6 +410,56 @@ func TestMarkForNoCompact(t *testing.T) {
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, ManualNoCompactReason, "", c)
 			require.NoError(t, err)
 			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
+		})
+	}
+}
+
+func TestUnMarkForNoCompact(t *testing.T) {
+	testutil.VerifyNoLeak(t)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	for tname, tcase := range map[string]struct {
+		setupTest     func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
+		expectedError func(id ulid.ULID) error
+	}{
+		"unmark existing block should succeed": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+				// upload blocks and no-compact marker
+				err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+				require.NoError(t, err)
+				m, err := json.Marshal(NoCompactMark{
+					ID:            id,
+					NoCompactTime: time.Now().Unix(),
+					Version:       NoCompactMarkVersion1,
+				})
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), NoCompactMarkFilename), bytes.NewReader(m)))
+			},
+			expectedError: func(_ ulid.ULID) error {
+				return nil
+			},
+		},
+		"unmark non-existing block should fail": {
+			setupTest: func(testing.TB, ulid.ULID, objstore.Bucket) {},
+			expectedError: func(id ulid.ULID) error {
+				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
+			},
+		},
+	} {
+		t.Run(tname, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			id, err := CreateBlock(ctx, tmpDir, fiveLabels,
+				100, 0, 1000, labels.FromStrings("ext1", "val1"))
+			require.NoError(t, err)
+			tcase.setupTest(t, id, bkt)
+			err = DeleteNoCompactMarker(ctx, log.NewNopLogger(), bkt, id)
+			if expErr := tcase.expectedError(id); expErr != nil {
+				require.EqualError(t, err, expErr.Error())
+			} else {
+				require.NoError(t, err)
+				_, ok := bkt.Objects()[path.Join(id.String(), NoCompactMarkFilename)]
+				require.False(t, ok)
+			}
 		})
 	}
 }

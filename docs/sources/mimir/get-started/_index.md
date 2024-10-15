@@ -18,11 +18,14 @@ You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/monitor-infrastructure/integrations/agent/flow/setup/install/).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>/set-up/install).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
-> **Note:** The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../references/architecture/deployment-modes#monolithic-mode" >}}).
-> For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../references/architecture/deployment-modes" >}}).
+{{< admonition type="note" >}}
+The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../references/architecture/deployment-modes#monolithic-mode" >}}).
+
+For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../references/architecture/deployment-modes" >}}).
+{{< /admonition >}}
 
 ## Download Grafana Mimir
 
@@ -99,9 +102,11 @@ store_gateway:
 ```
 <!-- prettier-ignore-end -->
 
-> **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
-> If possible and to help us understand more about how the open source community runs Mimir, we kindly ask you to keep the usage reporting feature enabled.
-> To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting#disable-the-anonymous-usage-statistics-reporting" >}}).
+{{< admonition type="note" >}}
+Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server to help Mimir maintainers understand how the open source community runs Mimir.
+
+To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting#disable-the-anonymous-usage-statistics-reporting" >}}).
+{{< /admonition >}}
 
 ## Run Grafana Mimir
 
@@ -151,30 +156,47 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
-## Configure Grafana Agent to write to Grafana Mimir
+## Configure Grafana Alloy to write to Grafana Mimir
 
-Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file, and restart Grafana Agent:
+Use the `prometheus.remote_write` component in Grafana Alloy to send metrics to Grafana Mimir. For example:
 
-```yaml
-remote_write:
-  - url: http://localhost:9009/api/v1/push
+```
+prometheus.remote_write "LABEL" {
+  endpoint {
+    url = http://localhost:9009/api/v1/push
+
+    ...
+  }
+
+  ...
+}
 ```
 
-The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir looks similar to this:
+The configuration for Alloy that scrapes itself and writes those metrics to Grafana Mimir looks similar to this:
 
-```yaml
-metrics:
-  wal_directory: /tmp/grafana-agent/wal
-
-  configs:
-    - name: agent
-      scrape_configs:
-        - job_name: agent
-          static_configs:
-            - targets: ["127.0.0.1:12345"]
-      remote_write:
-        - url: http://localhost:9009/api/v1/push
 ```
+prometheus.exporter.self "self_metrics" {
+}
+
+prometheus.scrape "self_scrape" {
+  targets    = prometheus.exporter.self.self_metrics.targets
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://localhost:9009/api/v1/push"
+  }
+}
+```
+
+For more information about setting up Alloy, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.remote_write/).
+
+## Monitor Grafana Mimir with the integration for Grafana Cloud
+
+Integrate with Grafana Cloud to monitor the health of your Mimir system. The self-hosted Mimir integration for Grafana Cloud includes dashboards, as well as recording and alerting rules, to help monitor the health of your cluster. This integration uses Grafana Alloy to scrape and send metrics to Mimir.
+
+For more information, refer to [Self-hosted Grafana Mimir integration for Grafana Cloud](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir).
 
 ## Query data in Grafana
 

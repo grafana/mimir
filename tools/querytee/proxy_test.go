@@ -25,24 +25,167 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var testRoutes = []Route{
-	{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}, ResponseComparator: &testComparator{}},
+	{
+		Path:               "/api/v1/query",
+		RouteName:          "api_v1_query",
+		Methods:            []string{"GET"},
+		ResponseComparator: &testComparator{},
+	},
+	{
+		Path:                "/api/v1/query_with_transform",
+		RouteName:           "api_v1_query_with_transform",
+		Methods:             []string{"POST"},
+		ResponseComparator:  &testComparator{},
+		RequestTransformers: []RequestTransformer{testRequestTransformer1, testRequestTransformer2},
+	},
 }
 
 type testComparator struct{}
 
-func (testComparator) Compare(_, _ []byte) (ComparisonResult, error) {
+func (testComparator) Compare(_, _ []byte, _ time.Time) (ComparisonResult, error) {
 	return ComparisonSuccess, nil
 }
 
-func Test_NewProxy(t *testing.T) {
-	cfg := ProxyConfig{}
+func testRequestTransformer1(r *http.Request, body []byte, _ *spanlogger.SpanLogger) (*http.Request, []byte, error) {
+	r = r.Clone(r.Context())
+	r.URL.Path = r.URL.Path + "/transformed_1"
+	body = append(body, []byte("from 1\n")...)
 
-	p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
-	assert.Equal(t, errMinBackends, err)
-	assert.Nil(t, p)
+	return r, body, nil
+}
+
+func testRequestTransformer2(r *http.Request, body []byte, _ *spanlogger.SpanLogger) (*http.Request, []byte, error) {
+	r = r.Clone(r.Context())
+	r.URL.Path = r.URL.Path + "/transformed_2"
+	body = append(body, []byte("from 2\n")...)
+
+	return r, body, nil
+}
+
+func Test_NewProxy(t *testing.T) {
+	testCases := map[string]struct {
+		cfg           ProxyConfig
+		expectedError string
+	}{
+		"empty config": {
+			cfg: ProxyConfig{
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "at least 1 backend is required",
+		},
+		"single endpoint, preferred backend set and exists": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah",
+				PreferredBackend:                   "blah",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "",
+		},
+		"single endpoint with subdirectory and port, preferred backend set and exists": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah.com:1234/some-sub-dir/and-another",
+				PreferredBackend:                   "blah.com",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "",
+		},
+		"single endpoint, preferred backend set and does not exist": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah",
+				PreferredBackend:                   "blah-2",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
+		},
+		"multiple endpoints, preferred backend set and exists": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				PreferredBackend:                   "blah",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "",
+		},
+		"multiple endpoints, preferred backend set and does not exist": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				PreferredBackend:                   "blah-2",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
+		},
+		"invalid endpoint": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "://blah",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: `invalid backend endpoint ://blah: parse "://blah": missing protocol scheme`,
+		},
+		"multiple endpoints, secondary request proportion less than 0": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				PreferredBackend:                   "blah",
+				SecondaryBackendsRequestProportion: -0.1,
+			},
+			expectedError: "secondary request proportion must be between 0 and 1 (inclusive)",
+		},
+		"multiple endpoints, secondary request proportion greater than 1": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				PreferredBackend:                   "blah",
+				SecondaryBackendsRequestProportion: 1.1,
+			},
+			expectedError: "secondary request proportion must be between 0 and 1 (inclusive)",
+		},
+		"multiple endpoints, secondary request proportion 1 and preferred backend set": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				PreferredBackend:                   "blah",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "",
+		},
+		"multiple endpoints, secondary request proportion 1 and preferred backend not set": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "",
+		},
+		"multiple endpoints, secondary request proportion not 1 and preferred backend set": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				PreferredBackend:                   "blah",
+				SecondaryBackendsRequestProportion: 0.7,
+			},
+			expectedError: "",
+		},
+		"multiple endpoints, secondary request proportion not 1 and preferred backend not set": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah,http://other-blah",
+				SecondaryBackendsRequestProportion: 0.7,
+			},
+			expectedError: "preferred backend must be set when secondary backends request proportion is not 1",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			p, err := NewProxy(testCase.cfg, log.NewNopLogger(), testRoutes, nil)
+
+			if testCase.expectedError == "" {
+				require.NoError(t, err)
+				require.NotNil(t, p)
+			} else {
+				require.EqualError(t, err, testCase.expectedError)
+				require.Nil(t, p)
+			}
+		})
+	}
 }
 
 func Test_Proxy_RequestsForwarding(t *testing.T) {
@@ -57,12 +200,16 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 	}
 
 	tests := map[string]struct {
+		requestPath         string
+		requestMethod       string
 		backends            []mockedBackend
 		preferredBackendIdx int
 		expectedStatus      int
 		expectedRes         string
 	}{
 		"one backend returning 2xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
 			},
@@ -70,6 +217,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:    querySingleMetric1,
 		},
 		"one backend returning 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
 			},
@@ -77,6 +226,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:    "",
 		},
 		"two backends without path prefix": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric2)},
@@ -86,6 +237,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"two backends with the same path prefix": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{
 					pathPrefix: "/prometheus",
@@ -101,6 +254,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"two backends with different path prefix": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{
 					pathPrefix: "/prefix-1",
@@ -116,6 +271,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"preferred backend returns 4xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 400, "")},
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
@@ -125,15 +282,19 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         "",
 		},
 		"preferred backend returns 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
-				{handler: mockQueryResponse("/api/v1/query", 500, "")},
-				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
+				{handler: mockQueryResponse("/api/v1/query", 500, querySingleMetric1)},
+				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric2)},
 			},
 			preferredBackendIdx: 0,
-			expectedStatus:      200,
+			expectedStatus:      500,
 			expectedRes:         querySingleMetric1,
 		},
 		"non-preferred backend returns 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
@@ -143,13 +304,24 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"all backends returns 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
-				{handler: mockQueryResponse("/api/v1/query", 500, "")},
+				{handler: mockQueryResponse("/api/v1/query", 500, querySingleMetric1)},
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
 			},
 			preferredBackendIdx: 0,
 			expectedStatus:      500,
-			expectedRes:         "",
+			expectedRes:         querySingleMetric1,
+		},
+		"request to route with outgoing request transformer": {
+			requestPath:   "/api/v1/query_with_transform",
+			requestMethod: http.MethodPost,
+			backends: []mockedBackend{
+				{handler: mockQueryResponseWithExpectedBody("/api/v1/query_with_transform/transformed_1/transformed_2", "from 1\nfrom 2\n", 200, querySingleMetric1)},
+			},
+			expectedStatus: 200,
+			expectedRes:    querySingleMetric1,
 		},
 	}
 
@@ -167,13 +339,14 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 
 			// Start the proxy.
 			cfg := ProxyConfig{
-				BackendEndpoints:         strings.Join(backendURLs, ","),
-				PreferredBackend:         strconv.Itoa(testData.preferredBackendIdx),
-				ServerHTTPServiceAddress: "localhost",
-				ServerHTTPServicePort:    0,
-				ServerGRPCServiceAddress: "localhost",
-				ServerGRPCServicePort:    0,
-				BackendReadTimeout:       time.Second,
+				BackendEndpoints:                   strings.Join(backendURLs, ","),
+				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
+				ServerHTTPServiceAddress:           "localhost",
+				ServerHTTPServicePort:              0,
+				ServerGRPCServiceAddress:           "localhost",
+				ServerGRPCServicePort:              0,
+				BackendReadTimeout:                 time.Second,
+				SecondaryBackendsRequestProportion: 1.0,
 			}
 
 			if len(backendURLs) == 2 {
@@ -188,8 +361,10 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			require.NoError(t, p.Start())
 
 			// Send a query request to the proxy.
-			endpoint := fmt.Sprintf("http://%s/api/v1/query", p.server.HTTPListenAddr())
-			res, err := http.Get(endpoint)
+			endpoint := fmt.Sprintf("http://%s"+testData.requestPath, p.server.HTTPListenAddr())
+			req, err := http.NewRequest(testData.requestMethod, endpoint, nil)
+			require.NoError(t, err)
+			res, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 
 			defer res.Body.Close()
@@ -475,6 +650,8 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 		// gRPC connection to proxy
 		grpcAddress := getServerAddress("grpc", p.server)
+
+		// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 		conn, err := grpc.Dial(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		require.NoError(t, err)
 		grpcClient := httpgrpc.NewHTTPClient(conn)
@@ -495,6 +672,10 @@ func TestProxyHTTPGRPC(t *testing.T) {
 }
 
 func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
+	return mockQueryResponseWithExpectedBody(path, "", status, res)
+}
+
+func mockQueryResponseWithExpectedBody(path string, expectedBody string, status int, res string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Ensure the path is the expected one.
 		if r.URL.Path != path {
@@ -502,11 +683,22 @@ func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
 			return
 		}
 
+		if expectedBody != "" {
+			actualBody, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			if string(actualBody) != expectedBody {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+
 		// Send back the mocked response.
 		w.WriteHeader(status)
-		if status == http.StatusOK {
-			_, _ = w.Write([]byte(res))
-		}
+		_, _ = w.Write([]byte(res))
 	}
 }
 

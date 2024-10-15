@@ -20,14 +20,18 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -39,19 +43,20 @@ import (
 // Config contains the configuration require to create a querier
 type Config struct {
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
-	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
-	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future" category:"advanced"`
+	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
 
 	StoreGatewayClient ClientConfig `yaml:"store_gateway_client"`
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunksFromIngesters             bool          `yaml:"prefer_streaming_chunks_from_ingesters" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
-	PreferStreamingChunksFromStoreGateways         bool          `yaml:"prefer_streaming_chunks_from_store_gateways" category:"experimental"`
+	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental" doc:"hidden"`
 	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
-	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"experimental"`
-	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
+	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
+	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+
+	QueryEngine               string `yaml:"query_engine" category:"experimental"`
+	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -59,25 +64,17 @@ type Config struct {
 
 const (
 	queryStoreAfterFlag = "querier.query-store-after"
-
-	// DefaultQuerierCfgQueryIngestersWithin is the default value for the deprecated querier config QueryIngestersWithin (it has been moved to a per-tenant limit instead)
-	DefaultQuerierCfgQueryIngestersWithin = 13 * time.Hour
-)
-
-var (
-	errBadLookbackConfigs = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
-	errEmptyTimeRange     = errors.New("empty time range")
+	prometheusEngine    = "prometheus"
+	mimirEngine         = "mimir"
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 
-	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
-	f.BoolVar(&cfg.PreferStreamingChunksFromIngesters, "querier.prefer-streaming-chunks-from-ingesters", true, "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.")
-	f.BoolVar(&cfg.PreferStreamingChunksFromStoreGateways, "querier.prefer-streaming-chunks-from-store-gateways", false, "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.")
+	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
 
 	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
@@ -88,10 +85,17 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
+	f.StringVar(&cfg.QueryEngine, "querier.query-engine", prometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
+	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
+
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
+	if cfg.QueryEngine != prometheusEngine && cfg.QueryEngine != mimirEngine {
+		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
+	}
+
 	return nil
 }
 
@@ -129,12 +133,12 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, mergeChunks, limits, queryMetrics, logger)
+	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
 
-	queryable := newQueryable(distributorQueryable, storeQueryable, mergeChunks, cfg, limits, queryMetrics, logger)
+	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -145,8 +149,34 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg))
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
+	opts, mqeOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+
+	// Experimental functions can only be enabled globally, and not on a per-engine basis.
+	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+
+	var eng promql.QueryEngine
+
+	switch cfg.QueryEngine {
+	case prometheusEngine:
+		eng = promql.NewEngine(opts)
+	case mimirEngine:
+		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, logger)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		if cfg.EnableQueryEngineFallback {
+			prometheusEngine := promql.NewEngine(opts)
+			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
+		} else {
+			eng = streamingEngine
+		}
+	default:
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
+	}
+
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
@@ -178,7 +208,6 @@ func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 func newQueryable(
 	distributor storage.Queryable,
 	blockStore storage.Queryable,
-	chunkIterFn chunkIteratorFunc,
 	cfg Config,
 	limits *validation.Overrides,
 	queryMetrics *stats.QueryMetrics,
@@ -186,16 +215,14 @@ func newQueryable(
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		return multiQuerier{
-			distributor:        distributor,
-			blockStore:         blockStore,
-			queryMetrics:       queryMetrics,
-			cfg:                cfg,
-			minT:               minT,
-			maxT:               maxT,
-			chunkIterFn:        chunkIterFn,
-			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
-			limits:             limits,
-			logger:             logger,
+			distributor:  distributor,
+			blockStore:   blockStore,
+			queryMetrics: queryMetrics,
+			cfg:          cfg,
+			minT:         minT,
+			maxT:         maxT,
+			limits:       limits,
+			logger:       logger,
 		}, nil
 
 	})
@@ -207,11 +234,9 @@ type multiQuerier struct {
 	blockStore   storage.Queryable
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
-	chunkIterFn  chunkIteratorFunc
 	minT, maxT   int64
 
-	maxQueryIntoFuture time.Duration
-	limits             *validation.Overrides
+	limits *validation.Overrides
 
 	logger log.Logger
 }
@@ -232,7 +257,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 		mq.queryMetrics,
 	))
 
-	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, mq.cfg.MaxQueryIntoFuture, spanlogger.FromContext(ctx, mq.logger))
+	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, spanlogger.FromContext(ctx, mq.logger))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,6 +275,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 			return nil, nil, err
 		}
 		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
 	}
 
 	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, mq.minT) {
@@ -258,6 +284,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 			return nil, nil, err
 		}
 		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("store-gateway").Inc()
 	}
 
 	return ctx, queriers, nil
@@ -300,15 +327,14 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, mq.maxQueryIntoFuture, spanLog)
+	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, spanLog)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
-		maxQueryLength := mq.limits.MaxLabelsQueryLength(userID)
-		startMs = clampMinTime(spanLog, startMs, endMs, -maxQueryLength, "max label query length")
+		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
 	}
 
 	// The time range may have been manipulated during the validation,
@@ -321,7 +347,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 
 	// Validate query time range.
 	if maxQueryLength := mq.limits.MaxPartialQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
-		return storage.ErrSeriesSet(validation.NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
+		return storage.ErrSeriesSet(NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
 	}
 
 	if len(queriers) == 1 {
@@ -351,8 +377,49 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	return mq.mergeSeriesSets(result)
 }
 
+func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
+	if maxLabelQueryLengthMs == 0 {
+		// It's unlimited.
+		return startMs
+	}
+	unsetStartTime := startMs == v1.MinTime.UnixMilli()
+	unsetEndTime := endMs == v1.MaxTime.UnixMilli()
+
+	switch {
+	case unsetStartTime && unsetEndTime:
+		// The user asked for "everything", but that's too expensive.
+		// We clamp the start, since the past likely has more data.
+		// Allow querying into the future because that will likely have much less data.
+		// Leaving end unchanged also allows to query the future for samples with timestamps in the future.
+		earliestAllowedStart := nowMs - maxLabelQueryLengthMs
+		logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+		startMs = earliestAllowedStart
+	case unsetStartTime:
+		// We can't provide all data since the beginning of time.
+		// But end was provided, so we use the end as the anchor.
+		earliestAllowedStart := endMs - maxLabelQueryLengthMs
+		logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+		startMs = earliestAllowedStart
+	case unsetEndTime:
+		// Start was provided, but not end.
+		// We clamp the start relative to now so that we don't query a lot of data.
+		if earliestAllowedStart := nowMs - maxLabelQueryLengthMs; earliestAllowedStart > startMs {
+			logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+			startMs = earliestAllowedStart
+		}
+	default:
+		// Both start and end were provided. We clamp the start.
+		// There's no strong reason to do this vs clamping end.
+		if earliestAllowedStart := endMs - maxLabelQueryLengthMs; earliestAllowedStart > startMs {
+			logClampEvent(spanLog, startMs, earliestAllowedStart, "min", "max label query length")
+			startMs = earliestAllowedStart
+		}
+	}
+	return startMs
+}
+
 // LabelValues implements storage.Querier.
-func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -362,7 +429,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	}
 
 	if len(queriers) == 1 {
-		return queriers[0].LabelValues(ctx, name, matchers...)
+		return queriers[0].LabelValues(ctx, name, hints, matchers...)
 	}
 
 	var (
@@ -374,11 +441,9 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	)
 
 	for _, querier := range queriers {
-		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
-		querier := querier
 		g.Go(func() error {
 			// NB: Values are sorted in Mimir already.
-			myValues, myWarnings, err := querier.LabelValues(ctx, name, matchers...)
+			myValues, myWarnings, err := querier.LabelValues(ctx, name, hints, matchers...)
 			if err != nil {
 				return err
 			}
@@ -399,7 +464,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -409,7 +474,7 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 	}
 
 	if len(queriers) == 1 {
-		return queriers[0].LabelNames(ctx, matchers...)
+		return queriers[0].LabelNames(ctx, hints, matchers...)
 	}
 
 	var (
@@ -421,11 +486,9 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 	)
 
 	for _, querier := range queriers {
-		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
-		querier := querier
 		g.Go(func() error {
 			// NB: Names are sorted in Mimir already.
-			myNames, myWarnings, err := querier.LabelNames(ctx, matchers...)
+			myNames, myWarnings, err := querier.LabelNames(ctx, hints, matchers...)
 			if err != nil {
 				return err
 			}
@@ -483,7 +546,7 @@ func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesS
 	}
 
 	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
-	chunksSet := partitionChunks(chunks, mq.minT, mq.maxT, mq.chunkIterFn)
+	chunksSet := partitionChunks(chunks)
 
 	if len(otherSets) == 0 {
 		return chunksSet
@@ -518,9 +581,7 @@ func (s *sliceSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, spanLog *spanlogger.SpanLogger) (int64, int64, error) {
-	endMs = clampMaxTime(spanLog, endMs, now, maxQueryIntoFuture, "max query into future")
-
+func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, spanLog *spanlogger.SpanLogger) (int64, int64, error) {
 	maxQueryLookback := limits.MaxQueryLookback(userID)
 	startMs = clampMinTime(spanLog, startMs, now, -maxQueryLookback, "max query lookback")
 
@@ -590,4 +651,32 @@ func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, mi
 		"original", util.TimeFromMillis(originalT).String(),
 		"updated", util.TimeFromMillis(clampedT).String(),
 	)
+}
+
+type tenantQueryLimitsProvider struct {
+	limits *validation.Overrides
+}
+
+func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	totalLimit := uint64(0)
+
+	for _, tenantID := range tenantIDs {
+		tenantLimit := p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
+
+		if tenantLimit == 0 {
+			// If any tenant is unlimited, then treat whole query as unlimited.
+			return 0, nil
+		}
+
+		// Given we'll enforce limits like the max chunks limit on a per-tenant basis (and therefore effectively allow the
+		// query to consume the sum of all tenants' limits), emulate equivalent behaviour with the memory consumption limit.
+		totalLimit += tenantLimit
+	}
+
+	return totalLimit, nil
 }

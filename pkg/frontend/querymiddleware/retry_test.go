@@ -35,7 +35,7 @@ func TestRetry(t *testing.T) {
 
 	for _, tc := range []struct {
 		name            string
-		handler         Handler
+		handler         MetricsQueryHandler
 		resp            Response
 		err             error
 		expectedRetries int
@@ -43,7 +43,7 @@ func TestRetry(t *testing.T) {
 		{
 			name:            "retry failures",
 			expectedRetries: 4,
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				if try.Inc() == 5 {
 					return &PrometheusResponse{Status: "Hello World"}, nil
 				}
@@ -54,7 +54,7 @@ func TestRetry(t *testing.T) {
 		{
 			name:            "don't retry 400s",
 			expectedRetries: 0,
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				return nil, errBadRequest
 			}),
 			err: errBadRequest,
@@ -62,7 +62,7 @@ func TestRetry(t *testing.T) {
 		{
 			name:            "don't retry bad-data",
 			expectedRetries: 0,
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				return nil, errUnprocessable
 			}),
 			err: errUnprocessable,
@@ -70,7 +70,7 @@ func TestRetry(t *testing.T) {
 		{
 			name:            "retry 500s",
 			expectedRetries: 5,
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				return nil, errInternal
 			}),
 			err: errInternal,
@@ -78,7 +78,7 @@ func TestRetry(t *testing.T) {
 		{
 			name:            "last error",
 			expectedRetries: 4,
-			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			handler: HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 				if try.Inc() == 5 {
 					return nil, errBadRequest
 				}
@@ -112,7 +112,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
-		HandlerFunc(func(c context.Context, r Request) (Response, error) {
+		HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 			try.Inc()
 			return nil, ctx.Err()
 		}),
@@ -122,7 +122,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 
 	ctx, cancel = context.WithCancel(context.Background())
 	_, err = newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
-		HandlerFunc(func(c context.Context, r Request) (Response, error) {
+		HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 			try.Inc()
 			cancel()
 			return nil, errors.New("failed")

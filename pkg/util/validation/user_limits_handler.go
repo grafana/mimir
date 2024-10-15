@@ -17,6 +17,7 @@ type UserLimitsResponse struct {
 	// Write path limits
 	IngestionRate             float64 `json:"ingestion_rate"`
 	IngestionBurstSize        int     `json:"ingestion_burst_size"`
+	IngestionBurstFactor      float64 `json:"ingestion_burst_factor"`
 	MaxGlobalSeriesPerUser    int     `json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric  int     `json:"max_global_series_per_metric"`
 	MaxGlobalExemplarsPerUser int     `json:"max_global_exemplars_per_user"`
@@ -51,6 +52,7 @@ func UserLimitsHandler(defaultLimits Limits, tenantLimits TenantLimits) http.Han
 			// Write path limits
 			IngestionRate:             userLimits.IngestionRate,
 			IngestionBurstSize:        userLimits.IngestionBurstSize,
+			IngestionBurstFactor:      userLimits.IngestionBurstFactor,
 			MaxGlobalSeriesPerUser:    userLimits.MaxGlobalSeriesPerUser,
 			MaxGlobalSeriesPerMetric:  userLimits.MaxGlobalSeriesPerMetric,
 			MaxGlobalExemplarsPerUser: userLimits.MaxGlobalExemplarsPerUser,

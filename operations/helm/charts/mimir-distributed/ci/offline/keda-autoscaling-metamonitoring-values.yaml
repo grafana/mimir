@@ -1,0 +1,44 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+kedaAutoscaling:
+  customHeaders:
+    X-Scope-OrgID: tenant-1
+
+metaMonitoring:
+  grafanaAgent:
+    metrics:
+      enabled: false
+      remote:
+        url: https://mimir.example.com/api/v1/push # test with setting a different remote for the monitoring
+
+distributor:
+  kedaAutoscaling:
+    enabled: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+ruler:
+  kedaAutoscaling:
+    enabled: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+querier:
+  kedaAutoscaling:
+    enabled: true
+    minReplicaCount: 2
+    maxReplicaCount: 10
+    querySchedulerInflightRequestsThreshold: 6
+
+query_frontend:
+  kedaAutoscaling:
+    enabled: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80

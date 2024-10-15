@@ -6,10 +6,12 @@
 package util
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/grafana/dskit/httpgrpc"
@@ -33,6 +35,19 @@ func FormatTimeMillis(ms int64) string {
 // FormatTimeModel returns a human readable version of the input time.
 func FormatTimeModel(t model.Time) string {
 	return TimeFromMillis(int64(t)).String()
+}
+
+// ParseTimeParam parses the desired time param from a Prometheus http request into an int64, milliseconds since epoch.
+func ParseTimeParam(r *http.Request, paramName string, defaultValue int64) (int64, error) {
+	val := r.FormValue(paramName)
+	if val == "" {
+		return defaultValue, nil
+	}
+	result, err := ParseTime(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid time value for '%s': %w", paramName, err)
+	}
+	return result, nil
 }
 
 // ParseTime parses the string into an int64, milliseconds since epoch.
@@ -97,4 +112,69 @@ func NewDisableableTicker(interval time.Duration) (func(), <-chan time.Time) {
 
 	tick := time.NewTicker(interval)
 	return func() { tick.Stop() }, tick.C
+}
+
+// NewVariableTicker wrap time.Ticker to Reset() the ticker with the next duration (picked from
+// input durations) after each tick. The last configured duration is the one that will be preserved
+// once previous ones have been applied.
+//
+// Returns a function for stopping the ticker, and the ticker channel.
+func NewVariableTicker(durations ...time.Duration) (func(), <-chan time.Time) {
+	if len(durations) == 0 {
+		panic("at least 1 duration required")
+	}
+
+	// Init the ticker with the 1st duration.
+	ticker := time.NewTicker(durations[0])
+	durations = durations[1:]
+
+	// If there was only 1 duration we can simply return the built-in ticker.
+	if len(durations) == 0 {
+		return ticker.Stop, ticker.C
+	}
+
+	// Create a channel over which our ticks will be sent.
+	ticks := make(chan time.Time, 1)
+
+	// Create a channel used to signal once this ticker is stopped.
+	stopped := make(chan struct{})
+
+	go func() {
+		for {
+			select {
+			case ts := <-ticker.C:
+				if len(durations) > 0 {
+					ticker.Reset(durations[0])
+					durations = durations[1:]
+				}
+
+				ticks <- ts
+
+			case <-stopped:
+				// Interrupt the loop once stopped.
+				return
+			}
+		}
+	}()
+
+	stopOnce := sync.Once{}
+	stop := func() {
+		stopOnce.Do(func() {
+			ticker.Stop()
+			close(stopped)
+		})
+	}
+
+	return stop, ticks
+}
+
+// UnixSeconds is Unix timestamp with seconds precision.
+type UnixSeconds int64
+
+func UnixSecondsFromTime(t time.Time) UnixSeconds {
+	return UnixSeconds(t.Unix())
+}
+
+func (t UnixSeconds) Time() time.Time {
+	return time.Unix(int64(t), 0)
 }

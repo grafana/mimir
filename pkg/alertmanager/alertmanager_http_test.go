@@ -10,20 +10,22 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMultitenantAlertmanager_GetStatusHandler(t *testing.T) {
 	store := prepareInMemoryAlertStore()
 	reg := prometheus.NewPedanticRegistry()
 	cfg := mockAlertmanagerConfig(t)
-	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, log.NewNopLogger(), reg)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, test.NewTestingLogger(t), reg)
 
 	req := httptest.NewRequest("GET", "http://alertmanager.cortex/status", nil)
 	w := httptest.NewRecorder()
-	am.GetStatusHandler().ServeHTTP(w, req)
+	am.StatusHandler(w, req)
 
 	resp := w.Result()
 	require.Equal(t, 200, w.Code)

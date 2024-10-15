@@ -16,7 +16,6 @@ import (
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 
@@ -76,31 +75,14 @@ func main() {
 
 	log.Println("Using index from", time.Unix(idx.UpdatedAt, 0).UTC().Format(time.RFC3339))
 
-	// convert index to metas.
-	deleted := map[ulid.ULID]bool{}
-	for _, id := range idx.BlockDeletionMarks.GetULIDs() {
-		deleted[id] = true
-	}
-
-	metas := map[ulid.ULID]*block.Meta{}
-	for _, b := range idx.Blocks {
-		if deleted[b.ID] {
-			continue
-		}
-		metas[b.ID] = b.ThanosMeta()
-		if metas[b.ID].Thanos.Labels == nil {
-			metas[b.ID].Thanos.Labels = map[string]string{}
-		}
-		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
-	}
-
+	metas := compactor.ConvertBucketIndexToMetasForCompactionJobPlanning(idx)
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced", Help: "Number of block metadata synced"},
 		[]string{"state"}, []string{block.MarkedForNoCompactionMeta},
 	)
 
 	for _, f := range []block.MetadataFilter{
 		// No need to exclude blocks marked for deletion, as we did that above already.
-		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil), true),
+		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil)),
 	} {
 		log.Printf("Filtering using %T\n", f)
 		err = f.Filter(ctx, metas, synced)

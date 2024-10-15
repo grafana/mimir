@@ -17,15 +17,17 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,8 +37,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -50,8 +55,8 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -64,36 +69,41 @@ import (
 
 // The various modules that make up Mimir.
 const (
-	ActivityTracker            string = "activity-tracker"
-	API                        string = "api"
-	SanityCheck                string = "sanity-check"
-	Ring                       string = "ring"
-	RuntimeConfig              string = "runtime-config"
-	Overrides                  string = "overrides"
-	OverridesExporter          string = "overrides-exporter"
-	Server                     string = "server"
-	ActiveGroupsCleanupService string = "active-groups-cleanup-service"
-	Distributor                string = "distributor"
-	DistributorService         string = "distributor-service"
-	Ingester                   string = "ingester"
-	IngesterService            string = "ingester-service"
-	Flusher                    string = "flusher"
-	Querier                    string = "querier"
-	Queryable                  string = "queryable"
-	StoreQueryable             string = "store-queryable"
-	QueryFrontend              string = "query-frontend"
-	QueryFrontendTripperware   string = "query-frontend-tripperware"
-	RulerStorage               string = "ruler-storage"
-	Ruler                      string = "ruler"
-	AlertManager               string = "alertmanager"
-	Compactor                  string = "compactor"
-	StoreGateway               string = "store-gateway"
-	MemberlistKV               string = "memberlist-kv"
-	QueryScheduler             string = "query-scheduler"
-	Vault                      string = "vault"
-	TenantFederation           string = "tenant-federation"
-	UsageStats                 string = "usage-stats"
-	All                        string = "all"
+	ActivityTracker                 string = "activity-tracker"
+	API                             string = "api"
+	SanityCheck                     string = "sanity-check"
+	IngesterRing                    string = "ingester-ring"
+	IngesterPartitionRing           string = "ingester-partitions-ring"
+	RuntimeConfig                   string = "runtime-config"
+	Overrides                       string = "overrides"
+	OverridesExporter               string = "overrides-exporter"
+	Server                          string = "server"
+	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
+	Distributor                     string = "distributor"
+	DistributorService              string = "distributor-service"
+	Ingester                        string = "ingester"
+	IngesterService                 string = "ingester-service"
+	Flusher                         string = "flusher"
+	Querier                         string = "querier"
+	Queryable                       string = "queryable"
+	StoreQueryable                  string = "store-queryable"
+	QueryFrontend                   string = "query-frontend"
+	QueryFrontendCodec              string = "query-frontend-codec"
+	QueryFrontendTripperware        string = "query-frontend-tripperware"
+	QueryFrontendTopicOffsetsReader string = "query-frontend-topic-offsets-reader"
+	RulerStorage                    string = "ruler-storage"
+	Ruler                           string = "ruler"
+	AlertManager                    string = "alertmanager"
+	Compactor                       string = "compactor"
+	StoreGateway                    string = "store-gateway"
+	MemberlistKV                    string = "memberlist-kv"
+	QueryScheduler                  string = "query-scheduler"
+	Vault                           string = "vault"
+	TenantFederation                string = "tenant-federation"
+	UsageStats                      string = "usage-stats"
+	BlockBuilder                    string = "block-builder"
+	ContinuousTest                  string = "continuous-test"
+	All                             string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
@@ -118,7 +128,7 @@ func newDefaultConfig() *Config {
 func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
 
-	a, err := api.New(t.Cfg.API, t.Cfg.Server, t.Server, util_log.Logger)
+	a, err := api.New(t.Cfg.API, t.Cfg.TenantFederation, t.Cfg.Server, t.Server, util_log.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +193,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
-	v, err := vault.NewVault(t.Cfg.Vault)
+	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +206,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ingester.IngesterPartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
@@ -262,7 +273,14 @@ func (t *Mimir) initVault() (services.Service, error) {
 		}
 	}
 
-	return nil, nil
+	runFunc := func(ctx context.Context) error {
+		err := t.Vault.KeepRenewingTokenLease(ctx)
+		// We don't want to turn Mimir into an unready state if Vault fails here
+		<-ctx.Done()
+		return err
+	}
+
+	return services.NewBasicService(nil, runFunc, nil), nil
 }
 
 func (t *Mimir) initSanityCheck() (services.Service, error) {
@@ -276,30 +294,27 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	var ingFn func() ingesterPushReceiver
-	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
-		ingFn = func() ingesterPushReceiver {
-			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
-			if t.Ingester == nil {
-				return nil
-			}
-			return t.Ingester
+	ingFn := func() pushReceiver {
+		// Return explicit nil if there's no ingester. We don't want to return typed-nil as interface value.
+		if t.Ingester == nil {
+			return nil
 		}
+		return t.Ingester
 	}
 
-	var distFn func() distributorPushReceiver
-	if t.Cfg.Distributor.LimitInflightRequestsUsingGrpcMethodLimiter {
-		distFn = func() distributorPushReceiver {
-			// Return explicit nil, if there's no distributor. We don't want to return typed-nil as interface value.
-			if t.Distributor == nil {
-				return nil
-			}
-			return t.Distributor
+	distFn := func() pushReceiver {
+		// Return explicit nil if there's no distributor. We don't want to return typed-nil as interface value.
+		if t.Distributor == nil {
+			return nil
 		}
+		return t.Distributor
 	}
 
 	// Installing this allows us to reject push requests received via gRPC early -- before they are fully read into memory.
 	t.Cfg.Server.GrpcMethodLimiter = newGrpcInflightMethodLimiter(ingFn, distFn)
+
+	// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
+	t.Cfg.Server.ReportHTTP4XXCodesInInstrumentationLabel = true
 
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
@@ -335,12 +350,31 @@ func (t *Mimir) initServer() (services.Service, error) {
 	return s, nil
 }
 
-func (t *Mimir) initRing() (serv services.Service, err error) {
-	t.Ring, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
+	t.IngesterRing, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, err
 	}
-	return t.Ring, nil
+	return t.IngesterRing, nil
+}
+
+func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
+	if !t.Cfg.IngestStorage.Enabled {
+		return nil, nil
+	}
+
+	kvClient, err := kv.NewClient(t.Cfg.Ingester.IngesterPartitionRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(t.Registerer, ingester.PartitionRingName+"-watcher"), util_log.Logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating KV store for ingester partitions ring watcher")
+	}
+
+	t.IngesterPartitionRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, kvClient, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	t.IngesterPartitionInstanceRing = ring.NewPartitionInstanceRing(t.IngesterPartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partitions ring state.
+	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
+
+	return t.IngesterPartitionRingWatcher, nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -349,23 +383,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		return nil, nil
 	}
 
-	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
-	t.Cfg.RuntimeConfig.Loader = loader.load
-
-	// DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
-	// We need to preserve the option in the frontend yaml for two releases
-	// If the frontend config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.12.0
-	if t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests != querymiddleware.DefaultDeprecatedCacheUnalignedRequests {
-		t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
-	}
-
-	// make sure to set default limits before we start loading configuration into memory
-	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
-	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
-	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
-
-	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
+	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
 		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
 		// anything in the start/stopping phase. Thus we can create it as part of runtime config
@@ -385,6 +403,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
@@ -435,12 +454,13 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isAnyModuleEnabled(Distributor, Write, All)
 
-	t.Cfg.Distributor.PreferStreamingChunksFromIngesters = t.Cfg.Querier.PreferStreamingChunksFromIngesters
 	t.Cfg.Distributor.StreamingChunksPerIngesterSeriesBufferSize = t.Cfg.Querier.StreamingChunksPerIngesterSeriesBufferSize
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
+	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
+	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -464,9 +484,12 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, registerer, util_log.Logger, t.ActivityTracker,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create queryable: %w", err)
+	}
 
 	// Use the distributor to return metric metadata by default
 	t.MetadataSupplier = t.Distributor
@@ -585,7 +608,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		}
 
 		// Add a middleware to extract the trace context and add a header.
-		internalQuerierRouter = nethttp.MiddlewareFunc(opentracing.GlobalTracer(), internalQuerierRouter.ServeHTTP, nethttp.OperationNameFunc(func(r *http.Request) string {
+		internalQuerierRouter = nethttp.MiddlewareFunc(opentracing.GlobalTracer(), internalQuerierRouter.ServeHTTP, nethttp.OperationNameFunc(func(*http.Request) string {
 			return "internalQuerier"
 		}))
 
@@ -600,7 +623,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
@@ -627,9 +650,10 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
+	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -669,11 +693,47 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	return t.Flusher, nil
 }
 
+// initQueryFrontendCodec initializes query frontend codec.
+// NOTE: Grafana Enterprise Metrics depends on this.
+func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.FrontendV2.LookBackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, nil)
+	return nil, nil
+}
+
+// initQueryFrontendTopicOffsetsReader instantiates the topic offsets reader used by the query-frontend
+// when the ingest storage is enabled.
+func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) {
+	if !t.Cfg.IngestStorage.Enabled {
+		return nil, nil
+	}
+
+	var err error
+
+	kafkaMetrics := ingest.NewKafkaReaderClientMetrics("query-frontend", t.Registerer)
+	kafkaClient, err := ingest.NewKafkaReaderClient(t.Cfg.IngestStorage.KafkaConfig, kafkaMetrics, util_log.Logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// The Kafka partitions may have been pre-provisioned. There are may be much more existing partitions in Kafka
+	// than the actual number we use. To improve performance, we only look up the actual partitions
+	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
+	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
+	// and the querier builds the replicaset of partitions to query.
+	getPartitionIDs := func(_ context.Context) ([]int32, error) {
+		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+	}
+
+	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+	return t.QueryFrontendTopicOffsetsReader, nil
+}
+
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
+
+	engineOpts, _, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -681,7 +741,9 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Overrides,
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
-		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
+		engineOpts,
+		engineExperimentalFunctionsEnabled,
+		t.QueryFrontendTopicOffsetsReader,
 		t.Registerer,
 	)
 	if err != nil {
@@ -694,8 +756,18 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
+	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
+		t.Cfg.Frontend,
+		t.Overrides,
+		t.Overrides,
+		t.Cfg.Server.GRPCListenPort,
+		util_log.Logger,
+		t.Registerer,
+		t.QueryFrontendCodec,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -710,9 +782,13 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		frontendSvc = frontendV2
 	}
 
-	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks that the frontend is ready to receive requests.
+	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
+	// that the frontend is ready to receive requests when running v1 or v2 of the query-frontend,
+	// i.e. not using the "downstream-url" feature.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	if frontendSvc != nil {
+		roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
@@ -754,14 +830,13 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// we do accept stale data for about a polling interval (2 intervals in the worst
 	// case scenario due to the jitter applied).
 	cacheTTL := t.Cfg.Ruler.PollInterval
-
-	t.RulerDirectStorage, t.RulerCachedStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, cacheTTL, util_log.Logger, t.Registerer)
+	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, cacheTTL, util_log.Logger, t.Registerer)
 	return
 }
 
 func (t *Mimir) initRuler() (serv services.Service, err error) {
-	if t.RulerDirectStorage == nil {
-		level.Info(util_log.Logger).Log("msg", "The ruler storage has not been configured.  Not starting the ruler.")
+	if t.RulerStorage == nil {
+		level.Info(util_log.Logger).Log("msg", "The ruler storage has not been configured. Not starting the ruler.")
 		return nil, nil
 	}
 
@@ -791,7 +866,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		if err != nil {
+			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
+		}
+
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
@@ -816,11 +895,24 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			queryFunc = rules.EngineQueryFunc(eng, queryable)
 		}
 	}
+
+	var concurrencyController ruler.MultiTenantRuleConcurrencyController
+	concurrencyController = &ruler.NoopMultiTenantConcurrencyController{}
+	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
+		concurrencyController = ruler.NewMultiTenantConcurrencyController(
+			util_log.Logger,
+			t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency,
+			t.Cfg.Ruler.IndependentRuleEvaluationConcurrencyMinDurationPercentage,
+			t.Registerer,
+			t.Overrides,
+		)
+	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
 		embeddedQueryable,
 		queryFunc,
+		concurrencyController,
 		t.Overrides,
 		t.Registerer,
 	)
@@ -846,8 +938,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		manager,
 		t.Registerer,
 		util_log.Logger,
-		t.RulerDirectStorage,
-		t.RulerCachedStorage,
+		t.RulerStorage,
 		t.Overrides,
 	)
 	if err != nil {
@@ -858,26 +949,45 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	t.API.RegisterRuler(t.Ruler)
 
 	// Expose HTTP configuration and prometheus-compatible Ruler APIs
-	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerDirectStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
+	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
 
 	return t.Ruler, nil
 }
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
+	mode := featurecontrol.FeatureClassicMode
+	if t.Cfg.Alertmanager.UTF8StrictMode {
+		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in UTF-8 strict mode")
+		mode = featurecontrol.FeatureUTF8StrictMode
+	} else {
+		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in classic mode")
+	}
+	features, err := featurecontrol.NewFlags(util_log.Logger, mode)
+	util_log.CheckFatal("initializing Alertmanager feature flags", err)
+
+	compatLogger := log.NewNopLogger()
+	if t.Cfg.Alertmanager.LogParsingLabelMatchers {
+		compatLogger = util_log.Logger
+	}
+	compat.InitFromFlags(compatLogger, features)
+
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
-	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, t.Registerer)
+	bCfg := bucketclient.BucketAlertStoreConfig{
+		FetchGrafanaConfig: t.Cfg.Alertmanager.GrafanaAlertmanagerCompatibilityEnabled,
+	}
+	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, bCfg, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
 
-	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, util_log.Logger, t.Registerer)
+	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, features, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
 
-	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.BuildInfoHandler)
+	t.API.RegisterAlertmanager(t.Alertmanager, t.Cfg.Alertmanager.EnableAPI, t.Cfg.Alertmanager.GrafanaAlertmanagerCompatibilityEnabled, t.BuildInfoHandler)
 	return t.Alertmanager, nil
 }
 
@@ -896,16 +1006,6 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
-
-	// TODO: Remove in Mimir 2.12.
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled != indexheader.DefaultIndexHeaderLazyLoadingEnabled {
-		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingEnabled = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingEnabled
-	}
-	// TODO: Remove in Mimir 2.12.
-	if t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout != indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout {
-		t.Cfg.BlocksStorage.BucketStore.IndexHeader.LazyLoadingIdleTimeout = t.Cfg.BlocksStorage.BucketStore.DeprecatedIndexHeaderLazyLoadingIdleTimeout
-	}
-
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
 	if err != nil {
 		return nil, err
@@ -920,6 +1020,7 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	// Append to the list of codecs instead of overwriting the value to allow third parties to inject their own codecs.
 	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetCodec())
+	t.Cfg.MemberlistKV.Codecs = append(t.Cfg.MemberlistKV.Codecs, ring.GetPartitionRingCodec())
 
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
@@ -935,6 +1036,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	// Update the config.
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Ingester.IngesterPartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Compactor.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
@@ -981,6 +1083,30 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	return t.UsageStatsReporter, nil
 }
 
+func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
+	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.BlockBuilder.BlocksStorage = t.Cfg.BlocksStorage
+	t.BlockBuilder, err = blockbuilder.New(t.Cfg.BlockBuilder, util_log.Logger, t.Registerer, t.Overrides)
+	if err != nil {
+		return nil, errors.Wrap(err, "block-builder init")
+	}
+	return t.BlockBuilder, nil
+}
+
+func (t *Mimir) initContinuousTest() (services.Service, error) {
+	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to initialize continuous-test client")
+	}
+
+	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
+	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+
+	return services.NewBasicService(nil, func(ctx context.Context) error {
+		return t.ContinuousTestManager.Run(ctx)
+	}, nil), nil
+}
+
 func (t *Mimir) setupModuleManager() error {
 	mm := modules.NewManager(util_log.Logger)
 
@@ -992,7 +1118,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
-	mm.RegisterModule(Ring, t.initRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
@@ -1004,7 +1131,9 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendTopicOffsetsReader, t.initQueryFrontendTopicOffsetsReader, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
@@ -1014,6 +1143,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
+	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
@@ -1022,34 +1153,38 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker, SanityCheck, UsageStats},
-		API:                      {Server},
-		MemberlistKV:             {API, Vault},
-		RuntimeConfig:            {API},
-		Ring:                     {API, RuntimeConfig, MemberlistKV, Vault},
-		Overrides:                {RuntimeConfig},
-		OverridesExporter:        {Overrides, MemberlistKV, Vault},
-		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:       {Ring, Overrides, Vault},
-		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                  {Overrides, API},
-		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
-		Querier:                  {TenantFederation, Vault},
-		StoreQueryable:           {Overrides, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides},
-		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
-		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},
-		RulerStorage:             {Overrides},
-		AlertManager:             {API, MemberlistKV, Overrides, Vault},
-		Compactor:                {API, MemberlistKV, Overrides, Vault},
-		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
-		TenantFederation:         {Queryable},
-		Write:                    {Distributor, Ingester},
-		Read:                     {QueryFrontend, Querier},
-		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		Server:                          {ActivityTracker, SanityCheck, UsageStats},
+		API:                             {Server},
+		MemberlistKV:                    {API, Vault},
+		RuntimeConfig:                   {API},
+		IngesterRing:                    {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
+		Overrides:                       {RuntimeConfig},
+		OverridesExporter:               {Overrides, MemberlistKV, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
+		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
+		Flusher:                         {Overrides, API},
+		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
+		Querier:                         {TenantFederation, Vault},
+		StoreQueryable:                  {Overrides, MemberlistKV},
+		QueryFrontendTripperware:        {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
+		QueryFrontend:                   {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontendTopicOffsetsReader: {IngesterPartitionRing},
+		QueryScheduler:                  {API, Overrides, MemberlistKV, Vault},
+		Ruler:                           {DistributorService, StoreQueryable, RulerStorage, Vault},
+		RulerStorage:                    {Overrides},
+		AlertManager:                    {API, MemberlistKV, Overrides, Vault},
+		Compactor:                       {API, MemberlistKV, Overrides, Vault},
+		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
+		TenantFederation:                {Queryable},
+		BlockBuilder:                    {API, Overrides},
+		ContinuousTest:                  {API},
+		Write:                           {Distributor, Ingester},
+		Read:                            {QueryFrontend, Querier},
+		Backend:                         {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		All:                             {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
@@ -34,9 +35,17 @@ import (
 var (
 	// readNoExtend is a ring.Operation that only selects instances marked as ring.ACTIVE.
 	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
-	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	// We include ring.PENDING instances as well to ensure we don't miss any instances that have
+	// recently started and we may not have observed in the ring.ACTIVE state yet.
+	// In the case where an ingester has just started, queriers may have only observed the ingester in the PENDING state,
+	// but distributors may have observed the ingester in the ACTIVE state and started sending samples.
+	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING}, nil)
+
+	errStreamClosed = cancellation.NewErrorf("stream closed")
 )
 
+// QueryExemplars returns exemplars with timestamp between from and to, for the series matching the input series
+// label matchers. The exemplars in the response are sorted by series labels.
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
 	var result *ingester_client.ExemplarQueryResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryExemplars", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
@@ -45,16 +54,19 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 			return err
 		}
 
-		// We ask for all ingesters without passing matchers because exemplar queries take in an array of label matchers.
-		replicationSet, err := d.GetIngesters(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
 			return err
 		}
 
-		result, err = d.queryIngestersExemplars(ctx, replicationSet, req)
+		results, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
+			return client.QueryExemplars(ctx, req)
+		})
 		if err != nil {
 			return err
 		}
+
+		result = mergeExemplarQueryResponses(results)
 
 		if s := opentracing.SpanFromContext(ctx); s != nil {
 			s.LogKV("series", len(result.Timeseries))
@@ -72,17 +84,14 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 		if err != nil {
 			return err
 		}
+		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
-		if d.cfg.PreferStreamingChunksFromIngesters {
-			req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
-		}
-
-		replicationSet, err := d.GetIngesters(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSet, req, queryMetrics)
+		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics)
 		if err != nil {
 			return err
 		}
@@ -100,23 +109,42 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 	return result, err
 }
 
-// GetIngesters returns a replication set including all ingesters.
-func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, error) {
+// getIngesterReplicationSetsForQuery returns a list of ring.ReplicationSet, containing ingester instances,
+// that must be queried for a read operation.
+//
+// If multiple ring.ReplicationSets are returned, each must be queried separately, and results merged.
+func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return ring.ReplicationSet{}, err
+		return nil, err
 	}
 
-	// If tenant uses shuffle sharding, we should only query ingesters which are
-	// part of the tenant's subring.
+	if d.cfg.IngestStorageConfig.Enabled {
+		shardSize := d.limits.IngestionPartitionsTenantShardSize(userID)
+		r := d.partitionsRing
+
+		// If tenant uses shuffle sharding, we should only query partitions which are part of the tenant's subring.
+		if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
+			r, err = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return r.GetReplicationSetsForOperation(readNoExtend)
+	}
+
+	// Lookup ingesters ring because ingest storage is disabled.
 	shardSize := d.limits.IngestionTenantShardSize(userID)
-	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
+	r := d.ingestersRing
+	r = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now())
 
-	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(readNoExtend)
+	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
+	if err != nil {
+		return nil, err
 	}
 
-	return d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
+	return []ring.ReplicationSet{replicationSet}, nil
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
@@ -144,27 +172,12 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 	return result
 }
 
-// queryIngestersExemplars queries the ingesters for exemplars.
-func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.ExemplarQueryRequest) (*ingester_client.ExemplarQueryResponse, error) {
-	// Fetch exemplars from multiple ingesters in parallel, using the replicationSet
-	// to deal with consistency.
-
-	results, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
-		return client.QueryExemplars(ctx, req)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return mergeExemplarQueryResponses(results), nil
-}
-
 func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryResponse) *ingester_client.ExemplarQueryResponse {
 	var keys []string
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
 	for _, r := range results {
 		for _, ts := range r.Timeseries {
-			lbls := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+			lbls := mimirpb.FromLabelAdaptersToKeyString(ts.Labels)
 			e, ok := exemplarResults[lbls]
 			if !ok {
 				exemplarResults[lbls] = ts
@@ -196,15 +209,17 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelFunc) (ingesterQueryResult, error) {
+	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
+	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Span.Finish()
-			cancelContext()
+			cancelContext(errStreamClosed)
 		}
 
 		var stream ingester_client.Ingester_QueryStreamClient
@@ -312,7 +327,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, streamingSeriesCount, queryLimiter, cleanup, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -328,13 +343,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	quorumConfig := d.queryQuorumConfig(ctx)
-	quorumConfig.IsTerminalError = func(err error) bool {
-		_, isLimitError := err.(validation.LimitError)
-		return isLimitError
-	}
+	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
+	quorumConfig.IsTerminalError = validation.IsLimitError
 
-	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, quorumConfig, queryIngester, cleanup)
+	results, err := ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSets, quorumConfig, queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
@@ -358,7 +370,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		// Accumulate any chunk series
 		for _, batch := range res.chunkseriesBatches {
 			for _, series := range batch {
-				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToChunkseries[key]
 				existing.Labels = series.Labels
 
@@ -374,7 +386,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		// Accumulate any time series
 		for _, batch := range res.timeseriesBatches {
 			for _, series := range batch {
-				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToTimeSeries[key]
 				existing.Labels = series.Labels
 				if existing.Samples == nil {
@@ -396,7 +408,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	resp := ingester_client.CombinedQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSet)),
+		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -415,10 +427,23 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 }
 
 // estimatedIngestersPerSeries estimates the number of ingesters that will have chunks for each streaming series.
-func (d *Distributor) estimatedIngestersPerSeries(replicationSet ring.ReplicationSet) int {
+func (d *Distributor) estimatedIngestersPerSeries(replicationSets []ring.ReplicationSet) int {
+	if d.cfg.IngestStorageConfig.Enabled {
+		// When the ingest storage is enabled, quorum is reached as soon as 1 series is queried
+		// from 1 ingester.
+		return 1
+	}
+
+	// When ingest storage is disabled we expect only 1 replication set. We check it anyway to
+	// avoid any issue in the future.
+	if len(replicationSets) != 1 {
+		return d.ingestersRing.ReplicationFactor()
+	}
+
+	replicationSet := replicationSets[0]
+
 	// Under normal circumstances, a quorum of ingesters will have chunks for each series, so here
 	// we return the number of ingesters required for quorum.
-
 	if replicationSet.MaxUnavailableZones > 0 {
 		// Zone-aware: quorum is replication factor less allowable unavailable zones.
 		return d.ingestersRing.ReplicationFactor() - replicationSet.MaxUnavailableZones

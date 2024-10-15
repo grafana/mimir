@@ -38,15 +38,16 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
 )
 
 const (
@@ -131,9 +132,16 @@ type Config struct {
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 
+	OutboundSyncQueuePollInterval time.Duration `yaml:"outbound_sync_queue_poll_interval" category:"experimental"`
+	InboundSyncQueuePollInterval  time.Duration `yaml:"inbound_sync_queue_poll_interval" category:"experimental"`
+
 	// Allow to override timers for testing purposes.
-	RingCheckPeriod             time.Duration `yaml:"-"`
-	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
+	RingCheckPeriod time.Duration `yaml:"-"`
+
+	MaxIndependentRuleEvaluationConcurrency                   int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
+	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
+
+	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -150,11 +158,16 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
 	}
 
+	if cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage < 0 {
+		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
+	}
+
 	return nil
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.ClientTLSConfig.CustomCompressors = []string{s2.Name}
 	cfg.ClientTLSConfig.RegisterFlagsWithPrefix("ruler.client", f)
 	cfg.Ring.RegisterFlags(f, logger)
 	cfg.Notifier.RegisterFlags(f)
@@ -186,14 +199,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
 
-	cfg.RingCheckPeriod = 5 * time.Second
-}
+	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
+	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
 
-func (cfg *Config) syncQueuePollFrequency() time.Duration {
-	if cfg.rulerSyncQueuePollFrequency > 0 {
-		return cfg.rulerSyncQueuePollFrequency
-	}
-	return defaultRulerSyncPollFrequency
+	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
+
+	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
+	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
+
+	cfg.RingCheckPeriod = 5 * time.Second
 }
 
 type rulerMetrics struct {
@@ -299,13 +313,12 @@ type MultiTenantManager interface {
 type Ruler struct {
 	services.Service
 
-	cfg         Config
-	lifecycler  *ring.BasicLifecycler
-	ring        *ring.Ring
-	directStore rulestore.RuleStore
-	cachedStore rulestore.RuleStore
-	manager     MultiTenantManager
-	limits      RulesLimits
+	cfg        Config
+	lifecycler *ring.BasicLifecycler
+	ring       *ring.Ring
+	store      rulestore.RuleStore
+	manager    MultiTenantManager
+	limits     RulesLimits
 
 	metrics *rulerMetrics
 
@@ -331,27 +344,21 @@ type Ruler struct {
 }
 
 // NewRuler creates a new ruler from a distributor and chunk store.
-func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, directStore, cachedStore rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
-	// If the cached store is not configured, just fallback to the direct one.
-	if cachedStore == nil {
-		cachedStore = directStore
-	}
-
-	return newRuler(cfg, manager, reg, logger, directStore, cachedStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
+func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, store rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
+	return newRuler(cfg, manager, reg, logger, store, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
 }
 
-func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, directStore, cachedStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
+func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, store rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:               cfg,
-		directStore:       directStore,
-		cachedStore:       cachedStore,
+		store:             store,
 		manager:           manager,
 		registry:          reg,
 		logger:            logger,
 		limits:            limits,
 		clientsPool:       clientPool,
-		outboundSyncQueue: newRulerSyncQueue(cfg.syncQueuePollFrequency()),
-		inboundSyncQueue:  newRulerSyncQueue(cfg.syncQueuePollFrequency()),
+		outboundSyncQueue: newRulerSyncQueue(cfg.OutboundSyncQueuePollInterval),
+		inboundSyncQueue:  newRulerSyncQueue(cfg.InboundSyncQueuePollInterval),
 		allowedTenants:    util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
 		metrics:           newRulerMetrics(reg),
 	}
@@ -618,7 +625,7 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rulespb.RuleGroupList) (map[string]rulespb.RuleGroupList, error) {
 	// Load rule groups.
 	start := time.Now()
-	missing, err := r.directStore.LoadRuleGroups(ctx, configs)
+	missing, err := r.store.LoadRuleGroups(ctx, configs)
 	r.metrics.loadRuleGroups.Observe(time.Since(start).Seconds())
 
 	if err != nil {
@@ -645,7 +652,12 @@ func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rule
 
 	// In order to reduce API calls to the object storage among all ruler replicas,
 	// we support lookup of stale data for a short period.
-	users, err := r.cachedStore.ListAllUsers(bucketcache.WithCacheLookupEnabled(ctx, cacheLookupEnabled))
+	var opts []rulestore.Option
+	if !cacheLookupEnabled {
+		opts = append(opts, rulestore.WithCacheDisabled())
+	}
+
+	users, err := r.store.ListAllUsers(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
 	}
@@ -696,11 +708,16 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 		concurrency = len(userRings)
 	}
 
+	var opts []rulestore.Option
+	if !cacheLookupEnabled {
+		opts = append(opts, rulestore.WithCacheDisabled())
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	for i := 0; i < concurrency; i++ {
 		g.Go(func() error {
 			for userID := range userCh {
-				groups, err := r.cachedStore.ListRuleGroupsForUserAndNamespace(bucketcache.WithCacheLookupEnabled(gctx, cacheLookupEnabled), userID, "")
+				groups, err := r.store.ListRuleGroupsForUserAndNamespace(gctx, userID, "", opts...)
 				if err != nil {
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
@@ -1096,20 +1113,24 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 					continue
 				}
 
-				alerts := []*AlertStateDesc{}
-				for _, a := range rule.ActiveAlerts() {
-					alerts = append(alerts, &AlertStateDesc{
-						State:           a.State.String(),
-						Labels:          mimirpb.FromLabelsToLabelAdapters(a.Labels),
-						Annotations:     mimirpb.FromLabelsToLabelAdapters(a.Annotations),
-						Value:           a.Value,
-						ActiveAt:        a.ActiveAt,
-						FiredAt:         a.FiredAt,
-						ResolvedAt:      a.ResolvedAt,
-						LastSentAt:      a.LastSentAt,
-						ValidUntil:      a.ValidUntil,
-						KeepFiringSince: a.KeepFiringSince,
-					})
+				var alerts []*AlertStateDesc
+				if !req.ExcludeAlerts {
+					activeAlerts := rule.ActiveAlerts()
+					alerts = make([]*AlertStateDesc, 0, len(activeAlerts))
+					for _, a := range activeAlerts {
+						alerts = append(alerts, &AlertStateDesc{
+							State:           a.State.String(),
+							Labels:          mimirpb.FromLabelsToLabelAdapters(a.Labels),
+							Annotations:     mimirpb.FromLabelsToLabelAdapters(a.Annotations),
+							Value:           a.Value,
+							ActiveAt:        a.ActiveAt,
+							FiredAt:         a.FiredAt,
+							ResolvedAt:      a.ResolvedAt,
+							LastSentAt:      a.LastSentAt,
+							ValidUntil:      a.ValidUntil,
+							KeepFiringSince: a.KeepFiringSince,
+						})
+					}
 				}
 				ruleDesc = &RuleStateDesc{
 					Rule: &rulespb.RuleDesc{
@@ -1157,15 +1178,15 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 }
 
 // IsMaxRuleGroupsLimited returns true if there is a limit set for the max
-// number of rule groups for the tenant.
-func (r *Ruler) IsMaxRuleGroupsLimited(userID string) bool {
-	return r.limits.RulerMaxRuleGroupsPerTenant(userID) > 0
+// number of rule groups for the tenant and namespace.
+func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
+	return r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace) > 0
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current
 // number of total rule groups in input and returns an error if so.
-func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
-	limit := r.limits.RulerMaxRuleGroupsPerTenant(userID)
+func (r *Ruler) AssertMaxRuleGroups(userID, namespace string, rg int) error {
+	limit := r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace)
 
 	if limit <= 0 {
 		return nil
@@ -1179,9 +1200,10 @@ func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
 }
 
 // AssertMaxRulesPerRuleGroup limit has not been reached compared to the current
-// number of rules in a rule group in input and returns an error if so.
-func (r *Ruler) AssertMaxRulesPerRuleGroup(userID string, rules int) error {
-	limit := r.limits.RulerMaxRulesPerRuleGroup(userID)
+// number of rules in a rule group and namespace combination in input, returns an error if so.
+// If the limit is set to 0 (or less), then there is no limit.
+func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) error {
+	limit := r.limits.RulerMaxRulesPerRuleGroup(userID, namespace)
 
 	if limit <= 0 {
 		return nil
@@ -1204,7 +1226,7 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	err = r.directStore.DeleteNamespace(req.Context(), userID, "") // Empty namespace = delete all rule groups.
+	err = r.store.DeleteNamespace(req.Context(), userID, "") // Empty namespace = delete all rule groups.
 	if err != nil && !errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 		respondServerError(logger, w, err.Error())
 		return
@@ -1218,8 +1240,8 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 
 func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	logger := util_log.WithContext(req.Context(), r.logger)
-
-	userIDs, err := r.directStore.ListAllUsers(req.Context())
+	// Disable caching when getting a list of users since this API is expected to be strongly consistent.
+	userIDs, err := r.store.ListAllUsers(req.Context(), rulestore.WithCacheDisabled())
 	if err != nil {
 		level.Error(logger).Log("msg", errListAllUser, "err", err)
 		http.Error(w, fmt.Sprintf("%s: %s", errListAllUser, err.Error()), http.StatusInternalServerError)
@@ -1235,12 +1257,14 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	err = concurrency.ForEachUser(req.Context(), userIDs, fetchRulesConcurrency, func(ctx context.Context, userID string) error {
-		rg, err := r.directStore.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		// Disable any caching when getting list of all rule groups since listing results
+		// are cached and not invalidated and this API is expected to be strongly consistent.
+		rg, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
 		if err != nil {
 			return errors.Wrapf(err, "failed to fetch ruler config for user %s", userID)
 		}
 		userRules := map[string]rulespb.RuleGroupList{userID: rg}
-		if missing, err := r.directStore.LoadRuleGroups(ctx, userRules); err != nil {
+		if missing, err := r.store.LoadRuleGroups(ctx, userRules); err != nil {
 			return errors.Wrapf(err, "failed to load ruler config for user %s", userID)
 		} else if len(missing) > 0 {
 			// This API is expected to be strongly consistent, so it's an error if any rule group was missing.
@@ -1290,7 +1314,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
+	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, _ *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		var err error
 
 		if rulerClientErr != nil {

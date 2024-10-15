@@ -18,19 +18,15 @@ import (
 )
 
 type BlocksConsistency struct {
-	uploadGracePeriod   time.Duration
-	deletionGracePeriod time.Duration
-	logger              log.Logger
+	uploadGracePeriod time.Duration
 
 	checksTotal  prometheus.Counter
 	checksFailed prometheus.Counter
 }
 
-func NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod time.Duration, logger log.Logger, reg prometheus.Registerer) *BlocksConsistency {
+func NewBlocksConsistency(uploadGracePeriod time.Duration, reg prometheus.Registerer) *BlocksConsistency {
 	return &BlocksConsistency{
-		uploadGracePeriod:   uploadGracePeriod,
-		deletionGracePeriod: deletionGracePeriod,
-		logger:              logger,
+		uploadGracePeriod: uploadGracePeriod,
 		checksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_consistency_checks_total",
 			Help: "Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.",
@@ -44,7 +40,7 @@ func NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod time.Duration, 
 
 // NewTracker creates a consistency tracker from the known blocks. It filters out any block uploaded within uploadGracePeriod
 // and with a deletion mark within deletionGracePeriod.
-func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark) BlocksConsistencyTracker {
+func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, logger log.Logger) BlocksConsistencyTracker {
 	blocksToTrack := make(map[ulid.ULID]struct{}, len(knownBlocks))
 	for _, block := range knownBlocks {
 		// Some recently uploaded blocks, already discovered by the querier, may not have been discovered
@@ -55,22 +51,10 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, knownDele
 		// - Blocks uploaded by compactor: the source blocks are marked for deletion but will continue to be
 		//   queried by queriers for a while (depends on the configured deletion marks delay).
 		if c.uploadGracePeriod > 0 && time.Since(block.GetUploadedAt()) < c.uploadGracePeriod {
-			level.Debug(c.logger).Log("msg", "block skipped from consistency check because it was uploaded recently", "block", block.ID.String(), "uploadedAt", block.GetUploadedAt().String())
+			level.Debug(logger).Log("msg", "block skipped from consistency check because it was uploaded recently; block will be queried at most once but not retried and failures will not cause the query to fail", "block", block.ID.String(), "uploadedAt", block.GetUploadedAt().String())
 			continue
 		}
 
-		// The store-gateway may offload blocks before the querier. If that happens, the querier will run a consistency check
-		// on blocks that can't be queried because they were offloaded. For this reason, we don't run the consistency check on any block
-		// which has been marked for deletion more then "grace period" time ago. Basically, the grace period is the time
-		// we still expect a block marked for deletion to be still queried.
-		if mark := knownDeletionMarks[block.ID]; mark != nil {
-			deletionTime := time.Unix(mark.DeletionTime, 0)
-
-			if c.deletionGracePeriod > 0 && time.Since(deletionTime) > c.deletionGracePeriod {
-				level.Debug(c.logger).Log("msg", "block skipped from consistency check because it is marked for deletion", "block", block.ID.String(), "deletionTime", deletionTime.String())
-				continue
-			}
-		}
 		blocksToTrack[block.ID] = struct{}{}
 	}
 
@@ -113,6 +97,8 @@ func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlock
 	return missingBlocks
 }
 
+// Complete should be called once the request tracked by this BlocksConsistencyTracker has been completed.
+// This function should NOT be called if the request is canceled or interrupted due to any error.
 func (c BlocksConsistencyTracker) Complete() {
 	c.checksTotal.Inc()
 

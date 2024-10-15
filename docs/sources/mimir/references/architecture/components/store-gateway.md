@@ -15,12 +15,7 @@ On the read path, the [querier]({{< relref "./querier" >}}) and the [ruler]({{< 
 ## Bucket index
 
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
-The store-gateway keeps the bucket view updated using one of the following options:
-
-- Periodically downloading the [bucket index]({{< relref "../bucket-index" >}}) (default)
-- Periodically scanning the bucket
-
-### Bucket index enabled (default)
+The store-gateway keeps the bucket view updated by periodically downloading the [bucket index]({{< relref "../bucket-index" >}}).
 
 To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
 
@@ -41,12 +36,6 @@ For example, if you're running the Grafana Mimir cluster in Kubernetes, you can 
 
 For more information about the index-header, refer to [Binary index-header documentation]({{< relref "../binary-index-header" >}}).
 
-### Bucket index disabled
-
-When the bucket index is disabled, the overall workflow is still nearly the same.
-The difference occurs during the discovery phase of the blocks at startup, and during the periodic checks.
-Iterations over the entire long-term storage download `meta.json` metadata files while filtering out blocks that don't belong to tenants in their shard.
-
 ## Blocks sharding and replication
 
 The store-gateway uses blocks sharding to horizontally scale blocks in a large cluster.
@@ -66,13 +55,19 @@ When the querier queries blocks via a store-gateway, the response contains the l
 If a querier attempts to query a block that the store-gateway has not loaded, the querier retries the query on a different store-gateway up to the `-store-gateway.sharding-ring.replication-factor` value, which by default is `3`.
 The query fails if the block can't be successfully queried from any replica.
 
-> **Note:** You must configure the [hash ring]({{< relref "../hash-ring" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+{{< admonition type="note" >}}
+You must configure the [hash ring]({{< relref "../hash-ring" >}}) via the `-store-gateway.sharding-ring.*` flags or their respective YAML configuration parameters.
+{{< /admonition >}}
 
 ### Sharding strategy
 
 The store-gateway uses shuffle-sharding to divide the blocks of each tenant across a subset of store-gateway instances.
 
-> **Note:** When shuffle-sharding is in use, the number of store-gateway instances that load the blocks of a tenant is limited, which means that the blast radius of issues introduced by the tenant's workload is confined to its shard instances.
+{{< admonition type="note" >}}
+When shuffle-sharding is in use, only a subset of store-gateway instances load the blocks of a tenant.
+
+This confines blast radius of issues introduced by the tenant's workload to its shard instances.
+{{< /admonition >}}
 
 The `-store-gateway.tenant-shard-size` flag (or their respective YAML configuration parameters) determines the default number of store-gateway instances per tenant.
 The `store_gateway_tenant_shard_size` in the limits overrides can override the shard size on a per-tenant basis.
@@ -119,11 +114,15 @@ Keeping the index-header on the local disk makes query execution faster.
 ### Index-header lazy loading
 
 By default, a store-gateway downloads the index-headers to disk and doesn't load them to memory until required.
-When required by a query, index-headers are memory-mapped and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
+When required by a query, index-headers are loaded and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
 
 Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=false` to disable index-header lazy loading.
-When disabled, the store-gateway memory-maps all index-headers, which provides faster access to the data in the index-header.
-However, in a cluster with a large number of blocks, each store-gateway might have a large amount of memory-mapped index-headers, regardless of how frequently they are used at query time.
+When disabled, the store-gateway loads all index-headers at startup, which provides faster access to the data in the index-header when querying at the cost of longer startup times.
+However, in a cluster with a large number of blocks, each store-gateway might have a large amount of loaded index-headers, regardless of how frequently they are used at query time.
+
+When the index-header is loaded, only a portion of it is kept in memory to reduce memory usage.
+The rest of the index-header is read from disk as required.
+This requires that store-gateways have memory available to be used by the operating system for caching disk accesses.
 
 ## Caching
 
@@ -188,7 +187,9 @@ Chunks can only be cached in Memcached.
 To enable chunks cache, set `-blocks-storage.bucket-store.chunks-cache.backend=memcached`.
 You can configure the Memcached client via flags that include the prefix `-blocks-storage.bucket-store.chunks-cache.memcached.*`.
 
-> **Note:** There are additional low-level flags that begin with the prefix `-blocks-storage.bucket-store.chunks-cache.*` that you can use to configure chunks cache.
+{{< admonition type="note" >}}
+There are additional low-level flags that begin with the prefix `-blocks-storage.bucket-store.chunks-cache.*` that you can use to configure chunks cache.
+{{< /admonition >}}
 
 ### Metadata cache
 
@@ -204,11 +205,17 @@ Using the metadata cache reduces the number of API calls to long-term storage an
 
 To enable metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
 
-> **Note**: Currently, only `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< admonition type="note" >}}
+Mimir only supports the `memcached` backend for the metadata cache.
+
+The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< /admonition >}}
 
 Additional flags for configuring metadata cache begin with the prefix `-blocks-storage.bucket-store.metadata-cache.*`. By configuring TTL to zero or a negative value, caching of given item type is disabled.
 
-> **Note:** The same memcached backend cluster should be shared between store-gateways and queriers.\_
+{{< admonition type="note" >}}
+You should use the same Memcached backend cluster for both the store-gateways and queriers.
+{{< /admonition >}}
 
 ## Store-gateway HTTP endpoints
 
@@ -217,4 +224,4 @@ Additional flags for configuring metadata cache begin with the prefix `-blocks-s
 
 ## Store-gateway configuration
 
-For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuration-parameters#store_gateway" >}}).
+For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../../configure/configuration-parameters#store_gateway" >}}).

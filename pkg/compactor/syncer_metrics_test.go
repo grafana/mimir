@@ -13,15 +13,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSyncerMetrics(t *testing.T) {
+	logger := test.NewTestingLogger(t)
 	reg := prometheus.NewPedanticRegistry()
 
 	sm := newAggregatedSyncerMetrics(reg)
-	sm.gatherThanosSyncerMetrics(generateTestData(12345))
-	sm.gatherThanosSyncerMetrics(generateTestData(76543))
-	sm.gatherThanosSyncerMetrics(generateTestData(22222))
+	sm.gatherThanosSyncerMetrics(generateTestData(12345), logger)
+	sm.gatherThanosSyncerMetrics(generateTestData(76543), logger)
+	sm.gatherThanosSyncerMetrics(generateTestData(22222), logger)
 	// total base = 111110
 
 	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`

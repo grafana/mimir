@@ -1,0 +1,40 @@
+exclusions:
+  template-instance-rule:
+    reason: We don't use "instance" dashboard template variable.
+  target-instance-rule:
+    reason: We don't want to enforce "instance" selector in every query.
+  template-job-rule:
+    reason: We don't want to make "job" selector a dashboard template variable.
+  target-job-rule:
+    reason: We don't want to make "job" selector to be "$job" but we want to explicitly set the actual label matcher regexp.
+  target-rate-interval-rule:
+    reason: Some panels intentionally use an explicit time window instead of $__rate_interval.
+    entries:
+    - dashboard: Mimir / Top tenants
+      panel: Top $limit users by received samples rate in last 5m
+    - dashboard: Mimir / Top tenants
+      panel: Top $limit users by discarded samples rate in last 5m
+    - dashboard: Mimir / Top tenants
+      panel: Top $limit users by received exemplars rate in last 5m
+  target-promql-rule:
+    reason: Skipping in dashboards where the linter parses a Loki query as Prometheus one, or we define label matchers as template variables.
+    entries:
+    - dashboard: Mimir / Slow queries
+    - dashboard: Mimir / Queries
+  template-datasource-rule:
+    reason: We prefer to keep calling "datasource" the Prometheus datasource to keep consistency between dashboards.
+    entries:
+    - dashboard: Mimir / Slow queries
+  panel-title-description-rule:
+    reason: We have many panels without description. This exclusion can be removed once we'll have added a description for each panel (if we'll ever do it).
+  template-on-time-change-reload-rule:
+    reason: We don't want to refresh "cluster" and "namespace" each time the time range changes, given we don't expect it to change frequently.
+    entries:
+    - variable: cluster
+    - variable: namespace
+  alert-summary-missing-rule:
+    reason: We don't set the summary on alerts.
+  alert-description-missing-rule:
+    reason: We don't set the description on alerts.
+  panel-units-rule:
+    reason: We have many panels without an unit defined. We should fix it but it's low priority.

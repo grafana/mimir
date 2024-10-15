@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -26,12 +25,18 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	commoncfg "github.com/prometheus/common/config"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
+	"github.com/prometheus/alertmanager/tracing"
 	"github.com/prometheus/alertmanager/types"
 )
+
+var tracer = otel.Tracer("github.com/prometheus/alertmanager/notify/webhook")
 
 // Notifier implements a Notifier for generic webhooks.
 type Notifier struct {
@@ -48,6 +53,10 @@ func New(conf *config.WebhookConfig, t *template.Template, l log.Logger, httpOpt
 	if err != nil {
 		return nil, err
 	}
+
+	// instrument for tracing
+	client.Transport = tracing.Transport(client.Transport, "webhook")
+
 	return &Notifier{
 		conf:   conf,
 		tmpl:   t,
@@ -55,11 +64,7 @@ func New(conf *config.WebhookConfig, t *template.Template, l log.Logger, httpOpt
 		client: client,
 		// Webhooks are assumed to respond with 2xx response codes on a successful
 		// request and 5xx response codes are assumed to be recoverable.
-		retrier: &notify.Retrier{
-			CustomDetailsFunc: func(_ int, body io.Reader) string {
-				return errDetails(body, conf.URL.String())
-			},
-		},
+		retrier: &notify.Retrier{},
 	}, nil
 }
 
@@ -83,6 +88,11 @@ func truncateAlerts(maxAlerts uint64, alerts []*types.Alert) ([]*types.Alert, ui
 
 // Notify implements the Notifier interface.
 func (n *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
+	ctx, span := tracer.Start(ctx, "webhook.Notifier.Notify", trace.WithAttributes(
+		attribute.Int("alerts", len(alerts)),
+	))
+	defer span.End()
+
 	alerts, numTruncated := truncateAlerts(n.conf.MaxAlerts, alerts)
 	data := notify.GetTemplateData(ctx, n.tmpl, alerts, n.logger)
 
@@ -125,15 +135,4 @@ func (n *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, er
 		return shouldRetry, notify.NewErrorWithReason(notify.GetFailureReasonFromStatusCode(resp.StatusCode), err)
 	}
 	return shouldRetry, err
-}
-
-func errDetails(body io.Reader, url string) string {
-	if body == nil {
-		return url
-	}
-	bs, err := io.ReadAll(body)
-	if err != nil {
-		return url
-	}
-	return fmt.Sprintf("%s: %s", url, string(bs))
 }

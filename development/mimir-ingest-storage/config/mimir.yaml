@@ -1,0 +1,101 @@
+multitenancy_enabled: false
+
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint:          minio:9000
+      access_key_id:     mimir
+      secret_access_key: supersecret
+      insecure:          true
+
+ingest_storage:
+  enabled:       true
+  kafka:
+    address: kafka:9092
+    topic:   mimir-ingest
+    last_produced_offset_poll_interval: 500ms
+
+ingester:
+  track_ingester_owned_series: true
+
+  partition_ring:
+    min_partition_owners_count:       2
+    min_partition_owners_duration:    10s
+    delete_inactive_partition_after:  1m
+
+blocks_storage:
+  s3:
+    bucket_name:       mimir-blocks
+  tsdb:
+    dir: /data/ingester
+
+  bucket_store:
+    index_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    chunks_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    metadata_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+
+memberlist:
+  # Use write replicas as seed nodes.
+  join_members:
+    - mimir-write-zone-a-1
+    - mimir-write-zone-b-1
+    - mimir-write-zone-a-2
+    - mimir-write-zone-b-2
+    - mimir-write-zone-a-3
+    - mimir-write-zone-b-3
+
+ruler:
+  rule_path: /data/ruler
+  # Each ruler is configured to route alerts to the Alertmanager running within the same component.
+  alertmanager_url: http://localhost:8080/alertmanager
+  # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
+  for_grace_period: 1s
+  # Evaluate rules via query-frontend (remote rule evaluation).
+  query_frontend:
+    address: dns:///mimir-read-1:9095
+
+ruler_storage:
+  s3:
+    bucket_name:       mimir-ruler
+  cache:
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
+
+query_scheduler:
+  service_discovery_mode: "ring"
+  prioritize_query_components: true
+
+alertmanager:
+  data_dir: /data/alertmanager
+  fallback_config_file: ./config/alertmanager-fallback-config.yaml
+  external_url: http://localhost:8006/alertmanager
+
+alertmanager_storage:
+  s3:
+    bucket_name: mimir-alertmanager
+
+overrides_exporter:
+  ring:
+    enabled: true
+    wait_stability_min_duration: 30s
+
+limits:
+  native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000
+
+runtime_config:
+  file: ./config/runtime.yaml

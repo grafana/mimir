@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/results-cache/results-cache-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-configmap-values-mimir-results-cache
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: results-cache
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-configmap-values
+      app.kubernetes.io/component: results-cache
+  maxUnavailable: 1

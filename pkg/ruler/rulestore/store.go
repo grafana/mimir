@@ -21,18 +21,44 @@ var (
 	ErrUserNotFound = errors.New("no rule groups found for user")
 )
 
+// Options are per-call options that can be used to modify the behavior of RuleStore methods.
+type Options struct {
+	DisableCache bool
+}
+
+// CollectOptions applies one or more Option callbacks to produce an Options struct.
+func CollectOptions(opts ...Option) *Options {
+	o := &Options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	return o
+}
+
+// Option is a callback the modifies per-call options for RuleStore methods.
+type Option func(opts *Options)
+
+// WithCacheDisabled returns an Option callback to disable any caching used
+// by a RuleStore method call.
+func WithCacheDisabled() Option {
+	return func(opts *Options) {
+		opts.DisableCache = true
+	}
+}
+
 // RuleStore is used to store and retrieve rules.
 // Methods starting with "List" prefix may return partially loaded groups: with only group Name, Namespace and User fields set.
 // To make sure that rules within each group are loaded, client must use LoadRuleGroups method.
 type RuleStore interface {
 	// ListAllUsers returns all users with rule groups configured.
-	ListAllUsers(ctx context.Context) ([]string, error)
+	ListAllUsers(ctx context.Context, opts ...Option) ([]string, error)
 
 	// ListRuleGroupsForUserAndNamespace returns all the active rule groups for a user from given namespace.
 	// It *MUST* populate fields User, Namespace, Name of all rule groups.
 	// It *MAY* populate the actual rules.
 	// If namespace is empty, groups from all namespaces are returned.
-	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error)
+	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...Option) (rulespb.RuleGroupList, error)
 
 	// LoadRuleGroups loads rules for each rule group in the map.
 	//

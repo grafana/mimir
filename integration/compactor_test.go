@@ -90,13 +90,13 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		for _, chk := range spec.Chunks {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
-				ts, h := it.AtHistogram()
+				ts, h := it.AtHistogram(nil)
 				samples = append(samples, sample{t: ts, h: h})
 			}
 		}
 		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
 
-		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.SeriesSpec{&spec})
+		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
 
 		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))
@@ -149,8 +149,10 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
 
 			for _, c := range chks {
-				c.Chunk, err = chkReader.Chunk(c)
+				chunk, iter, err := chkReader.ChunkOrIterable(c)
 				require.NoError(t, err)
+				require.Nil(t, iter)
+				c.Chunk = chunk
 
 				it := c.Chunk.Iterator(nil)
 				for {
@@ -159,7 +161,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 					if valType == chunkenc.ValNone {
 						break
 					} else if valType == chunkenc.ValHistogram {
-						ts, h := it.AtHistogram()
+						ts, h := it.AtHistogram(nil)
 						samples = append(samples, sample{
 							t: ts,
 							h: h,
@@ -228,6 +230,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 func must[T any](v T, err error) T {

@@ -6,8 +6,11 @@
 package commands
 
 import (
+	"sort"
+
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
@@ -51,5 +54,12 @@ func AnalyzeRuleFiles(ruleFiles []string) (*analyze.MetricsInRuler, error) {
 			}
 		}
 	}
+	var metricsUsed model.LabelValues
+	for metric := range output.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
+	}
+	sort.Sort(metricsUsed)
+	output.MetricsUsed = metricsUsed
+
 	return output, nil
 }

@@ -7,7 +7,9 @@ package batch
 
 import (
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -18,6 +20,9 @@ type chunkIterator struct {
 	chunk GenericChunk
 	it    chunk.Iterator
 	batch chunk.Batch
+
+	hPool  *zeropool.Pool[*histogram.Histogram]
+	fhPool *zeropool.Pool[*histogram.FloatHistogram]
 }
 
 func (i *chunkIterator) reset(chunk GenericChunk) {
@@ -27,8 +32,6 @@ func (i *chunkIterator) reset(chunk GenericChunk) {
 	i.batch.Index = 0
 }
 
-// Seek advances the iterator forward to the value at or after
-// the given timestamp.
 func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.
@@ -38,7 +41,7 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 
 	// If the seek is to the middle of the current batch, and size fits, we can
 	// shortcut.
-	if i.batch.Length > 0 && t >= i.batch.Timestamps[0] && t <= i.batch.Timestamps[i.batch.Length-1] {
+	if i.batch.Length > 0 && t <= i.batch.Timestamps[i.batch.Length-1] {
 		i.batch.Index = 0
 		for i.batch.Index < i.batch.Length && t > i.batch.Timestamps[i.batch.Index] {
 			i.batch.Index++
@@ -47,9 +50,8 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 			return i.batch.ValueType
 		}
 	}
-
 	if typ := i.it.FindAtOrAfter(model.Time(t)); typ != chunkenc.ValNone {
-		i.batch = i.it.Batch(size, typ)
+		i.batch = i.it.Batch(size, typ, i.hPool, i.fhPool)
 		if i.batch.Length > 0 {
 			return typ
 		}
@@ -59,7 +61,7 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 
 func (i *chunkIterator) Next(size int) chunkenc.ValueType {
 	if typ := i.it.Scan(); typ != chunkenc.ValNone {
-		i.batch = i.it.Batch(size, typ)
+		i.batch = i.it.Batch(size, typ, i.hPool, i.fhPool)
 		if i.batch.Length > 0 {
 			return typ
 		}

@@ -201,6 +201,7 @@ func assertRejectedQueriesMetricValue(t *testing.T, c prometheus.Collector, expe
 		cortex_querier_queries_rejected_total{reason="max-fetched-chunk-bytes-per-query"} %v
 		cortex_querier_queries_rejected_total{reason="max-fetched-chunks-per-query"} %v
 		cortex_querier_queries_rejected_total{reason="max-estimated-fetched-chunks-per-query"} %v
+		cortex_querier_queries_rejected_total{reason="max-estimated-memory-consumption-per-query"} 0
 		`,
 		expectedMaxSeries,
 		expectedMaxChunkBytes,

@@ -8,8 +8,8 @@ package batch
 import (
 	"fmt"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -38,7 +38,10 @@ func (c GenericChunk) Iterator(reuse chunk.Iterator) chunk.Iterator {
 
 // iterator iterates over batches.
 type iterator interface {
-	// Seek to the batch at (or after) time t.
+	// Seek advances the iterator forward to batch containing the sample at or after the given timestamp.
+	// If the current batch contains a sample at or after the given timestamp, then Seek retains the current batch.
+	//
+	// The batch's Index is advanced to point to the sample at or after the given timestamp.
 	Seek(t int64, size int) chunkenc.ValueType
 
 	// Next moves to the next batch.
@@ -56,17 +59,17 @@ type iterator interface {
 }
 
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
-func NewChunkMergeIterator(it chunkenc.Iterator, chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
+func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk) chunkenc.Iterator {
 	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {
 		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
 	}
 
-	return NewGenericChunkMergeIterator(it, converted)
+	return NewGenericChunkMergeIterator(it, lbls, converted)
 }
 
 // NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
-func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) chunkenc.Iterator {
+func NewGenericChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []GenericChunk) chunkenc.Iterator {
 	var iter *mergeIterator
 
 	adapter, ok := it.(*iteratorAdapter)
@@ -76,7 +79,7 @@ func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) c
 		iter = newMergeIterator(nil, chunks)
 	}
 
-	return newIteratorAdapter(adapter, iter)
+	return newIteratorAdapter(adapter, iter, lbls)
 }
 
 // iteratorAdapter turns a batchIterator into a chunkenc.Iterator.
@@ -86,24 +89,26 @@ type iteratorAdapter struct {
 	batchSize  int
 	curr       chunk.Batch
 	underlying iterator
+	labels     labels.Labels
 }
 
-func newIteratorAdapter(it *iteratorAdapter, underlying iterator) chunkenc.Iterator {
+func newIteratorAdapter(it *iteratorAdapter, underlying iterator, lbls labels.Labels) chunkenc.Iterator {
 	if it != nil {
 		it.batchSize = 1
 		it.underlying = underlying
 		it.curr = chunk.Batch{}
+		it.labels = lbls
 		return it
 	}
 	return &iteratorAdapter{
 		batchSize:  1,
 		underlying: underlying,
+		labels:     lbls,
 	}
 }
 
 // Seek implements chunkenc.Iterator.
 func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
-
 	// Optimisation: fulfill the seek using current batch if possible.
 	if a.curr.Length > 0 && a.curr.Index < a.curr.Length {
 		if t <= a.curr.Timestamps[a.curr.Index] {
@@ -156,24 +161,39 @@ func (a *iteratorAdapter) At() (int64, float64) {
 	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
 }
 
-// AtHistogram implements chunkenc.Iterator.
-func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
+// AtHistogram implements chunkenc.Iterator. It copies and returns the underlying histogram.
+// If a pointer to a histogram is passed as parameter, the underlying histogram is copied there.
+// Otherwise, a new histogram is created.
+func (a *iteratorAdapter) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	if a.curr.ValueType != chunkenc.ValHistogram {
 		panic(fmt.Sprintf("Cannot read histogram from batch %v", a.curr.ValueType))
 	}
-	return a.curr.Timestamps[a.curr.Index], (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
+	if h == nil {
+		h = &histogram.Histogram{}
+	}
+	fromH := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
+	fromH.CopyTo(h)
+	return a.curr.Timestamps[a.curr.Index], h
 }
 
-// AtFloatHistogram implements chunkenc.Iterator.
-func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+// AtFloatHistogram implements chunkenc.Iterator. It copies and returns the underlying float histogram.
+// If a pointer to a float histogram is passed as parameter, the underlying float histogram is copied there.
+// Otherwise, a new float histogram is created.
+func (a *iteratorAdapter) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	if fh == nil {
+		fh = &histogram.FloatHistogram{}
+	}
 	// The promQL engine works on Float Histograms even if the underlying data is an integer histogram
 	// and will call AtFloatHistogram on a Histogram
 	if a.curr.ValueType == chunkenc.ValFloatHistogram {
-		return a.curr.Timestamps[a.curr.Index], (*histogram.FloatHistogram)(a.curr.PointerValues[a.curr.Index])
+		fromFH := (*histogram.FloatHistogram)(a.curr.PointerValues[a.curr.Index])
+		fromFH.CopyTo(fh)
+		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	if a.curr.ValueType == chunkenc.ValHistogram {
-		h := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
-		return a.curr.Timestamps[a.curr.Index], h.ToFloat()
+		fromH := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
+		fromH.ToFloat(fh)
+		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	panic(fmt.Sprintf("Cannot read floathistogram from batch %v", a.curr.ValueType))
 }
@@ -185,5 +205,9 @@ func (a *iteratorAdapter) AtT() int64 {
 
 // Err implements chunkenc.Iterator.
 func (a *iteratorAdapter) Err() error {
+	if err := a.underlying.Err(); err != nil {
+		return fmt.Errorf("error reading chunks for series %s: %w", a.labels, err)
+	}
+
 	return nil
 }

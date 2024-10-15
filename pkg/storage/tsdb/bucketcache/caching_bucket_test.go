@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -290,7 +291,7 @@ func TestChunksCaching(t *testing.T) {
 			cfg := NewCachingBucketConfig()
 			cfg.CacheGetRange(cfgName, cache, isTSDBChunkFile, subrangeSize, cache, time.Hour, time.Hour, tc.maxGetRangeRequests)
 
-			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, nil, nil)
+			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			assert.NoError(t, err)
 
 			ctx := context.Background()
@@ -366,7 +367,7 @@ func TestInvalidOffsetAndLength(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGetRange("chunks", cache, func(string) bool { return true }, 10000, cache, time.Hour, time.Hour, 3)
 
-	c, err := NewCachingBucket("test", b, cfg, nil, nil)
+	c, err := NewCachingBucket("test", b, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	r, err := c.GetRange(context.Background(), "test", -1, 1000)
@@ -411,7 +412,7 @@ func TestCachedIter(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheIter(cfgName, cache, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
@@ -503,7 +504,7 @@ func TestExists(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Exists() should return cached value on cache hit", func(t *testing.T) {
@@ -536,6 +537,9 @@ func TestExists(t *testing.T) {
 		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
 		verifyExists(ctx, t, cb, filename, false, true, true, cfgName) // Reused cache result.
 
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
 		// Calling Exists() with cache lookup disabled should lookup the object storage and also update the cached value.
 		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, true, false, false, cfgName)
 		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
@@ -553,7 +557,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, func(string) bool { return false }, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Exists() should not use the cache when caching is disabled for the given object", func(t *testing.T) {
@@ -607,7 +611,7 @@ func TestGet(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Get() should cache non-existence of the requested object if it doesn't exist", func(t *testing.T) {
@@ -650,6 +654,9 @@ func TestGet(t *testing.T) {
 		data := []byte("content-3")
 		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
 
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
 		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
 		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, data, false, false, cfgName)
 
@@ -662,6 +669,9 @@ func TestGet(t *testing.T) {
 		// Pre-condition: the content and existence is looked up from the cache by default.
 		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
 		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
 
 		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
 		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, nil, false, false, cfgName)
@@ -685,7 +695,7 @@ func TestGetTooBigObject(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -709,7 +719,7 @@ func TestGetPartialRead(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -772,7 +782,7 @@ func TestAttributes(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Attributes() should not cache non existing objects", func(t *testing.T) {
@@ -809,6 +819,9 @@ func TestAttributes(t *testing.T) {
 		// A call to Attributes() should cache the object attributes.
 		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, false, cfgName)
 		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, true, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
 
 		// Modify the object.
 		secondData := append(firstData, []byte("with additional data")...)
@@ -907,6 +920,86 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestMutationInvalidatesCache(t *testing.T) {
+	inmem := objstore.NewInMemBucket()
+
+	// We reuse cache between tests (!)
+	c := cache.NewMockCache()
+	ctx := context.Background()
+
+	const cfgName = "test"
+	cfg := NewCachingBucketConfig()
+	cfg.CacheGet(cfgName, c, matchAll, 1024, time.Minute, time.Minute, time.Minute)
+	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
+	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
+
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	t.Run("invalidated on upload", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 14, true, false, cfgName)
+
+		// Do an upload via the CachingBucket and ensure the first read after does not come from cache.
+		require.NoError(t, cb.Upload(ctx, "/object-1", strings.NewReader("test content 12")))
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		c.Advance(2 * invalidationLockTTL)
+
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 15, true, false, cfgName)
+	})
+
+	t.Run("invalidated on delete", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 14, true, false, cfgName)
+
+		// Delete via the CachingBucket and ensure the first read after does not come from cache but non-existence is cached.
+		require.NoError(t, cb.Delete(ctx, "/object-1"))
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		c.Advance(2 * invalidationLockTTL)
+
+		verifyGet(ctx, t, cb, "/object-1", nil, true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", false, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", -1, true, false, cfgName)
+	})
+
+	t.Run("item not cached immediately after invalidation", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+
+		// Do an upload via the CachingBucket and ensure all reads after do not come from cache until
+		// locks are allowed to expire.
+		require.NoError(t, cb.Upload(ctx, "/object-1", strings.NewReader("test content 12")))
+
+		// Verify that we can read the object but none of the reads come from cache.
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		c.Advance(2 * invalidationLockTTL)
+
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, true, cfgName)
+	})
 }
 
 func BenchmarkCachingKey(b *testing.B) {

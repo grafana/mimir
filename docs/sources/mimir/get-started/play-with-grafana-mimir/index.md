@@ -116,15 +116,16 @@ as a new set of time series. In this section you're going to configure a recordi
 offered by Grafana.
 
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
-2. Click "New alert rule", which also allows you to configure recording rules.
+2. Click **New recording rule**, which also allows you to configure recording rules.
 3. Configure the recording rule:
-   1. Select `Mimir or Loki recording rule` in the top selector.
-   2. Choose `Mimir` in the "Select data source" field.
-   3. Type `sum(up)` in the "Metrics browser" query field.
-   4. Type `sum:up` in the "Rule name" field.
-   5. Type `example-namespace` in the "Namespace" field.
-   6. Type `example-group` in the "Group" field.
-   7. From the upper-right corner, click the **Save and exit** button.
+   1. Select **Mimir or Loki recording rule** in the top selector.
+   1. Choose **Mimir** in the **Select data source** field.
+   1. Type `sum:up` in the **Rule name** field.
+   1. Choose **Code** in the **Builder | Code** field on the right.
+   1. Type `sum(up)` in the **Metrics browser** query field.
+   1. Type `example-namespace` in the **Namespace** field.
+   1. Type `example-group` in the **Group** field.
+   1. From the upper-right corner, click the **Save and exit** button.
 
 Your `sum:up` recording rule will show the number of Mimir instances that are `up`, meaning reachable to be scraped. The
 rule is now being created in Grafana Mimir ruler and will be soon available for querying:
@@ -143,14 +144,14 @@ alerts to Grafana Mimir Alertmanager. In this section you're going to configure 
 tooling offered by Grafana.
 
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
-2. Click to "New alert rule".
+2. Click **New alert rule**.
 3. Configure the alert rule:
-   1. Select `Mimir or Loki alert` in the top selector.
-   2. Choose `Mimir` in the "Select data source" field.
-   3. Type `up == 0` in the "Metrics browser" query field.
-   4. Type `MimirNotRunning` in the "Rule name" field.
-   5. Select `example-namespace` in the "Namespace" field.
-   6. Select `example-group` in the "Group" field.
+   1. Select **Mimir or Loki alert** in the top selector.
+   2. Choose **Mimir** in the **Select data source** field.
+   3. Type `up == 0` in the **Metrics browser** query field.
+   4. Type `MimirNotRunning` in the **Rule name** field.
+   5. Select `example-namespace` in the **Namespace** field.
+   6. Select `example-group` in the **Group** field.
    7. From the upper-right corner, click the **Save and exit** button.
 
 Your `MimirNotRunning` alert rule is now being created in Grafana Mimir ruler and is expected to fire when the number of

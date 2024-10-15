@@ -15,8 +15,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+type instrumentMiddleware struct {
+	next        MetricsQueryHandler
+	name        string
+	durationCol instrument.Collector
+}
+
 // newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.
-func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) Middleware {
+func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) MetricsQueryMiddleware {
 	var durationCol instrument.Collector
 
 	// Support the case metrics shouldn't be tracked (ie. unit tests).
@@ -26,22 +32,28 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 		durationCol = &noopCollector{}
 	}
 
-	return MiddlewareFunc(func(next Handler) Handler {
-		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
-			var resp Response
-			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-				sp := opentracing.SpanFromContext(ctx)
-				if sp != nil {
-					req.LogToSpan(sp)
-				}
-
-				var err error
-				resp, err = next.Do(ctx, req)
-				return err
-			})
-			return resp, err
-		})
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+		return &instrumentMiddleware{
+			next:        next,
+			name:        name,
+			durationCol: durationCol,
+		}
 	})
+}
+
+func (h *instrumentMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	var resp Response
+	err := instrument.CollectedRequest(ctx, h.name, h.durationCol, instrument.ErrorCode, func(ctx context.Context) error {
+		sp := opentracing.SpanFromContext(ctx)
+		if sp != nil {
+			req.AddSpanTags(sp)
+		}
+
+		var err error
+		resp, err = h.next.Do(ctx, req)
+		return err
+	})
+	return resp, err
 }
 
 // instrumentMiddlewareMetrics holds the metrics tracked by newInstrumentMiddleware.

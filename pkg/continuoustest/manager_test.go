@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/modules"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -72,7 +73,7 @@ func TestManager_SmokeTest(t *testing.T) {
 		defer cancel()
 		err := manager.Run(ctx)
 
-		require.NoError(t, err)
+		require.EqualError(t, err, modules.ErrStopProcess.Error())
 		require.Equal(t, dummyTest.runs, 1)
 	})
 

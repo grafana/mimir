@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/store-gateway/store-gateway-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: keda-autoscaling-values-mimir-store-gateway
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/component: store-gateway
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: keda-autoscaling-values
+      app.kubernetes.io/component: store-gateway
+  maxUnavailable: 1

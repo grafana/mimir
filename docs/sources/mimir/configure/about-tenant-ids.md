@@ -30,7 +30,12 @@ Tenant IDs must be less-than or equal-to 150 bytes or characters in length and c
   - Open parenthesis (`(`)
   - Close parenthesis (`)`)
 
-> **Note:** For security reasons, `.` and `..` are not valid tenant IDs.
-> **Note:** The tenant ID `__mimir_cluster` is unsupported because its name is used internally by Mimir.
+{{< admonition type="note" >}}
+For security reasons, `.` and `..` aren't valid tenant IDs.
+{{< /admonition >}}
 
-All other characters, including slashes and whitespace, are not supported.
+{{< admonition type="note" >}}
+`__mimir_cluster` isn't a valid tenant ID because Mimir uses the name internally.
+{{< /admonition >}}
+
+All other characters, including slashes and whitespace, aren't supported.

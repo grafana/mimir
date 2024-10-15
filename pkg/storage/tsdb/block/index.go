@@ -559,9 +559,12 @@ OUTER:
 }
 
 func verifyChunks(cr *chunks.Reader, cm chunks.Meta) error {
-	ch, err := cr.Chunk(cm)
+	ch, iter, err := cr.ChunkOrIterable(cm)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
+	}
+	if iter != nil {
+		return errors.Errorf("chunk %d: ChunkOrIterable shouldn't return an iterable", cm.Ref)
 	}
 
 	cb := ch.Bytes()
@@ -577,17 +580,11 @@ func verifyChunks(cr *chunks.Reader, cm chunks.Meta) error {
 	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 		samples++
 
-		var ts int64
-		switch valType {
-		case chunkenc.ValFloat:
-			ts, _ = it.At()
-		case chunkenc.ValHistogram:
-			ts, _ = it.AtHistogram()
-		case chunkenc.ValFloatHistogram:
-			ts, _ = it.AtFloatHistogram()
-		default:
+		if valType != chunkenc.ValFloat && valType != chunkenc.ValHistogram && valType != chunkenc.ValFloatHistogram {
 			return errors.Errorf("unsupported value type %v in chunk %d", valType, cm.Ref)
 		}
+
+		ts := it.AtT()
 
 		if firstSample {
 			firstSample = false
@@ -629,7 +626,7 @@ type indexReader interface {
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
 	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
-	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
+	LabelNamesFor(ctx context.Context, p index.Postings) ([]string, error)
 	Close() error
 }
 
@@ -680,10 +677,14 @@ func rewrite(
 		builder.Sort()
 
 		for i, c := range chks {
-			chks[i].Chunk, err = chunkr.Chunk(c)
+			chunk, iter, err := chunkr.ChunkOrIterable(c)
 			if err != nil {
 				return errors.Wrap(err, "chunk read")
 			}
+			if iter != nil {
+				return errors.New("unexpected chunk iterable returned")
+			}
+			chks[i].Chunk = chunk
 		}
 
 		chks, err := sanitizeChunkSequence(chks, meta.MinTime, meta.MaxTime, ignoreChkFns)

@@ -97,6 +97,10 @@ sum(rate(http_requests_total{cluster="ops-tools1"}[1m]))
 )`,
 			expected: `sum(sum(rate(http_requests_total{cluster="us-central1"}[1m])) / sum(rate(http_requests_total{cluster="ops-tools1"}[1m])))`,
 		},
+		{
+			input:    `sum({__name__="",a="x"})`,
+			expected: `sum({__name__="",a="x"})`,
+		},
 	}
 
 	for i, c := range testExpr {
@@ -134,8 +138,10 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	mapper, err := NewSharding(ctx, 2, log.NewNopLogger(), NewMapperStats())
+
+	summer, err := NewQueryShardSummer(ctx, 2, VectorSquasher, log.NewNopLogger(), NewMapperStats())
 	require.NoError(t, err)
+	mapper := NewSharding(summer)
 
 	_, err = mapper.Map(expr)
 	require.NoError(t, err)

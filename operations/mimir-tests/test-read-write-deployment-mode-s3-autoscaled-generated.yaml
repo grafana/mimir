@@ -527,7 +527,6 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
@@ -541,12 +540,14 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -555,8 +556,8 @@ spec:
         - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1024"
-        image: grafana/mimir:2.10.4
+          value: "5000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -581,6 +582,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -617,7 +619,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.9.0
+        image: grafana/rollout-operator:v0.19.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -631,7 +633,6 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            cpu: "1"
             memory: 200Mi
           requests:
             cpu: 100m
@@ -668,7 +669,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -683,7 +684,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -722,7 +723,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -737,7 +738,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -776,7 +777,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -791,7 +792,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -830,7 +831,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -845,7 +846,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -905,15 +906,14 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -936,6 +936,8 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
@@ -945,6 +947,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -979,7 +982,10 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -990,7 +996,10 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1090,15 +1099,14 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -1121,6 +1129,8 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
@@ -1130,6 +1140,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -1164,7 +1175,10 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -1175,7 +1189,10 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1275,15 +1292,14 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -1306,6 +1322,8 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
@@ -1315,6 +1333,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -1349,7 +1368,10 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -1360,7 +1382,10 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1465,11 +1490,14 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-a
         - -ingester.ring.num-tokens=512
@@ -1483,15 +1511,19 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1596,11 +1628,14 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-b
         - -ingester.ring.num-tokens=512
@@ -1614,15 +1649,19 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1727,11 +1766,14 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
@@ -1745,15 +1787,19 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1846,9 +1892,19 @@ spec:
       behavior:
         scaleDown:
           policies:
-          - periodSeconds: 60
+          - periodSeconds: 120
             type: Percent
             value: 10
+          stabilizationWindowSeconds: 600
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 60
   maxReplicaCount: 20
   minReplicaCount: 2
   pollingInterval: 10
@@ -1857,8 +1913,15 @@ spec:
   triggers:
   - metadata:
       metricName: cortex_mimir_read_hpa_default
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="mimir-backend",namespace="default",quantile="0.75"}[5m]))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="mimir-backend",namespace="default",quantile="0.5"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
     name: cortex_mimir_read_hpa_default
+    type: prometheus
+  - metadata:
+      metricName: cortex_mimir_read_hpa_default_requests_duration
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="mimir-read",namespace="default"}[1m]))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "6"
+    name: cortex_mimir_read_hpa_default_requests_duration
     type: prometheus

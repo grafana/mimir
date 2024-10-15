@@ -110,13 +110,11 @@ func TestBlockQuerierSeries(t *testing.T) {
 				},
 			},
 			expectedMetric: labels.FromStrings("foo", "bar"),
-			expectedErr:    `cannot iterate chunk for series: {foo="bar"}: EOF`,
+			expectedErr:    `error reading chunks for series {foo="bar"}: EOF`,
 		},
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			series := newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(testData.series.Labels), testData.series.Chunks)
 
@@ -298,13 +296,10 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 
 	// Test while calling .At() after varying numbers of samples have been consumed
 	for _, callAtEvery := range []uint32{1, 3, 100, 971, 1000} {
-		// Change scope of the variable to have tests working fine when running in parallel.
-		callAtEvery := callAtEvery
-
 		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
 			t.Parallel()
 
-			advance := func(it chunkenc.Iterator, wantTs int64) chunkenc.ValueType { return it.Next() }
+			advance := func(it chunkenc.Iterator, _ int64) chunkenc.ValueType { return it.Next() }
 			ss := getSeriesSet()
 
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
@@ -589,4 +584,132 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 			}
 		}
 	}
+}
+
+func TestBlockQuerierSeriesIterator_ShouldMergeOverlappingChunks(t *testing.T) {
+	// Create 3 chunks with overlapping timeranges, but each sample is only in 1 chunk.
+	chunk1 := createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 3, F: 3}, promql.FPoint{T: 7, F: 7})
+	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 9, F: 9})
+	chunk3 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 6, F: 6}, promql.FPoint{T: 8, F: 8})
+
+	permutations := [][]storepb.AggrChunk{
+		{chunk1, chunk2, chunk3},
+		{chunk1, chunk3, chunk2},
+		{chunk2, chunk1, chunk3},
+		{chunk2, chunk3, chunk1},
+		{chunk3, chunk1, chunk2},
+		{chunk3, chunk2, chunk1},
+	}
+
+	for idx, permutation := range permutations {
+		t.Run(fmt.Sprintf("permutation %d", idx), func(t *testing.T) {
+			it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), permutation)
+
+			var actual []promql.FPoint
+			for it.Next() != chunkenc.ValNone {
+				ts, value := it.At()
+				actual = append(actual, promql.FPoint{T: ts, F: value})
+
+				require.Equal(t, ts, it.AtT())
+			}
+
+			require.NoError(t, it.Err())
+
+			require.Equal(t, []promql.FPoint{
+				{T: 1, F: 1},
+				{T: 2, F: 2},
+				{T: 3, F: 3},
+				{T: 4, F: 4},
+				{T: 5, F: 5},
+				{T: 6, F: 6},
+				{T: 7, F: 7},
+				{T: 8, F: 8},
+				{T: 9, F: 9},
+			}, actual)
+		})
+	}
+}
+
+func TestBlockQuerierSeriesIterator_ShouldMergeNonOverlappingChunks(t *testing.T) {
+	chunk1 := createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 3, F: 3})
+	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 6, F: 6})
+
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2})
+
+	var actual []promql.FPoint
+	for it.Next() != chunkenc.ValNone {
+		ts, value := it.At()
+		actual = append(actual, promql.FPoint{T: ts, F: value})
+
+		require.Equal(t, ts, it.AtT())
+	}
+
+	require.NoError(t, it.Err())
+
+	require.Equal(t, []promql.FPoint{
+		{T: 1, F: 1},
+		{T: 2, F: 2},
+		{T: 3, F: 3},
+		{T: 4, F: 4},
+		{T: 5, F: 5},
+		{T: 6, F: 6},
+	}, actual)
+}
+
+func TestBlockQuerierSeriesIterator_SeekWithNonOverlappingChunks(t *testing.T) {
+	chunk1 := createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 3, F: 3})
+	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 6, F: 6})
+	chunk3 := createAggrChunkWithSamples(promql.FPoint{T: 7, F: 7}, promql.FPoint{T: 8, F: 8}, promql.FPoint{T: 9, F: 9})
+
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+
+	// Seek to middle of first chunk.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
+	ts, value := it.At()
+	require.Equal(t, int64(2), ts)
+	require.Equal(t, 2.0, value)
+
+	// Seek to end of first chunk.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
+	ts, value = it.At()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, 3.0, value)
+
+	// Seek to the start of the second chunk.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(4))
+	ts, value = it.At()
+	require.Equal(t, int64(4), ts)
+	require.Equal(t, 4.0, value)
+
+	// Seek to the middle of the last chunk, and check all the remaining points are as we expect.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(8))
+
+	var actual []promql.FPoint
+	for {
+		ts, value := it.At()
+		actual = append(actual, promql.FPoint{T: ts, F: value})
+
+		require.Equal(t, ts, it.AtT())
+
+		// Keep consuming points until we've exhausted all remaining points.
+		if it.Next() == chunkenc.ValNone {
+			break
+		}
+	}
+
+	require.NoError(t, it.Err())
+
+	require.Equal(t, []promql.FPoint{
+		{T: 8, F: 8},
+		{T: 9, F: 9},
+	}, actual)
+}
+
+func TestBlockQuerierSeriesIterator_SeekPastEnd(t *testing.T) {
+	chunk1 := createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 3, F: 3})
+	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 6, F: 6})
+	chunk3 := createAggrChunkWithSamples(promql.FPoint{T: 7, F: 7}, promql.FPoint{T: 8, F: 8}, promql.FPoint{T: 9, F: 9})
+
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+	require.Equal(t, chunkenc.ValNone, it.Seek(10))
 }

@@ -23,23 +23,28 @@ const READ_HOSTNAME = __ENV.K6_READ_HOSTNAME || fail('K6_READ_HOSTNAME environme
  */
 const SCHEME = __ENV.K6_SCHEME || 'http';
 /**
- * Username to use for HTTP bearer authentication.
+ * Username to use for HTTP basic authentication for writes.
  * @constant {string}
  */
-const USERNAME = __ENV.K6_USERNAME || '';
+const WRITE_USERNAME = __ENV.K6_WRITE_USERNAME || '';
 /**
- * Authentication token to use for HTTP bearer authentication on requests to write path.
+ * Username to use for HTTP basic authentication for reads.
  * @constant {string}
-*/
+ */
+const READ_USERNAME = __ENV.K6_READ_USERNAME || '';
+/**
+ * Authentication token to use for HTTP basic authentication on requests to write path.
+ * @constant {string}
+ */
 const WRITE_TOKEN = __ENV.K6_WRITE_TOKEN || '';
 /**
- * Authentication token to use for HTTP bearer authentication on requests to read path.
+ * Authentication token to use for HTTP basic authentication on requests to read path.
  * @constant {string}
-*/
+ */
 const READ_TOKEN = __ENV.K6_READ_TOKEN || '';
 /**
  * Number of remote write requests to send every SCRAPE_INTERVAL_SECONDS.
- * Note that the effective rate is multipled by HA_REPLICAS.
+ * Note that the effective rate is multiplied by HA_REPLICAS.
  * @constant {number}
  */
 const WRITE_REQUEST_RATE = parseInt(__ENV.K6_WRITE_REQUEST_RATE || 1);
@@ -90,16 +95,33 @@ const HA_REPLICAS = parseInt(__ENV.K6_HA_REPLICAS || 1);
  */
 const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
 /**
- * Tenant ID to read from/write to.
+ * Tenant ID to write to. Note that this option is mutually exclusive with
+ * using the write username (HTTP basic auth).
  * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
  * @constant {string}
-*/
-const TENANT_ID = __ENV.K6_TENANT_ID || '';
+ */
+const WRITE_TENANT_ID = __ENV.K6_WRITE_TENANT_ID || '';
+
+/**
+ * Tenant ID to read from to. Note that this option is mutually exclusive with
+ * using the read username (HTTP basic auth).
+ * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
+ * @constant {string}
+ */
+const READ_TENANT_ID = __ENV.K6_READ_TENANT_ID || '';
+
+/**
+ * Project ID to send k6 cloud tests to.
+ * @type {*|string}
+ */
+const PROJECT_ID = __ENV.K6_PROJECT_ID || '';
 
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
 
-const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_ID });
+const write_client_headers = get_write_authentication_headers()
+
+const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: WRITE_TENANT_ID, headers:  write_client_headers });
 
 const query_client_headers = {
     'User-Agent': 'k6-load-test',
@@ -127,6 +149,12 @@ const query_request_rates = {
  * @constant {object}
  */
 export const options = {
+    ext: {
+        loadimpact: {
+            projectID: PROJECT_ID || '',
+        }
+    },
+
     thresholds: {
         // SLA: 99.9% of writes succeed.
         'checks{type:write}': ['rate > 0.999'],
@@ -483,10 +511,6 @@ function align_timestamp_to_step(ts, step) {
  * @returns {string}
  */
 function get_remote_write_url() {
-    if (USERNAME !== '' || WRITE_TOKEN !== '') {
-        return `${SCHEME}://${USERNAME}:${WRITE_TOKEN}@${WRITE_HOSTNAME}/api/v1/push`;
-    }
-
     return `${SCHEME}://${WRITE_HOSTNAME}/api/v1/push`;
 }
 
@@ -496,22 +520,39 @@ function get_remote_write_url() {
  */
 function get_read_authentication_headers() {
     let auth_headers = new Map();
-    
-    if (USERNAME !== '' || READ_TOKEN !== '') {
-        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${USERNAME}:${READ_TOKEN}`)}`)
-    }
-    
-    if (TENANT_ID !== '') {
-        auth_headers.set('X-Scope-OrgID', TENANT_ID)
 
+    if (READ_USERNAME !== '' || READ_TOKEN !== '') {
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${READ_USERNAME}:${READ_TOKEN}`)}`)
     }
-    
+
+    if (READ_TENANT_ID !== '') {
+        auth_headers.set('X-Scope-OrgID', READ_TENANT_ID)
+    }
+
+    return auth_headers;
+}
+
+/**
+ * Returns the HTTP Authentication header to use on the write path.
+ * @returns {map}
+ */
+function get_write_authentication_headers() {
+    let auth_headers = new Map();
+
+    if (WRITE_USERNAME !== '' || WRITE_TOKEN !== '') {
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${WRITE_USERNAME}:${WRITE_TOKEN}`)}`)
+    }
+
+    if (WRITE_TENANT_ID !== '') {
+        auth_headers.set('X-Scope-OrgID', WRITE_TENANT_ID)
+    }
+
     return auth_headers;
 }
 
 /**
  * Runs a range query randomly generated based on the configured distribution defined in range_query_distribution.
- * It validate that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
+ * It validates that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
  */
 export function run_range_query() {
     const name = "range query";
@@ -562,7 +603,7 @@ export function run_instant_query_high_cardinality() {
 
 /**
  * Runs an instant query randomly generated based on the configured distribution defined in instant_query_distribution.
- * It validate that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
+ * It validates that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
  * Instant queries are run with a time one minute in the past to simulate rule evaluations.
  */
 export function run_instant_query(name, config) {

@@ -38,6 +38,7 @@
         <th>Samples</th>
         <th>Chunks</th>
         <th>Labels</th>
+        <th>No Compact</th>
         {{ if .ShowSources }}
         <th>Sources</th>{{ end }}
         {{ if .ShowParents }}
@@ -63,6 +64,12 @@
             <td>{{ .Stats.NumSamples }}</td>
             <td>{{ .Stats.NumChunks }}</td>
             <td>{{ .Labels }}</td>
+            <td>
+                {{ range $i, $source := .NoCompactDetails }}
+                    {{ if $i }}<br>{{ end }}
+                    {{ . }}
+                {{ end }}
+            </td>
             {{ if $page.ShowSources }}
                 <td>
                     {{ range $i, $source := .Sources }}

@@ -1,0 +1,157 @@
+{{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler-query-frontend") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler-query-frontend") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ruler_query_frontend.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  {{- if or (not .Values.ruler_query_frontend.kedaAutoscaling.enabled) (.Values.ruler_query_frontend.kedaAutoscaling.preserveReplicas) }}
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
+  {{- if or (or (kindIs "int64" .Values.ruler_query_frontend.replicas) (kindIs "float64" .Values.ruler_query_frontend.replicas)) (.Values.ruler_query_frontend.replicas) }}
+  replicas: {{ .Values.ruler_query_frontend.replicas }}
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler-query-frontend") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.ruler_query_frontend.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "ruler-query-frontend") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler-query-frontend") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.ruler_query_frontend.priorityClassName }}
+      priorityClassName: {{ .Values.ruler_query_frontend.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler-query-frontend") | nindent 8 }}
+      {{- with .Values.ruler_query_frontend.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: ruler-query-frontend
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=query-frontend"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-query-frontend.cache-results=false"
+            - "-query-frontend.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
+          {{- range $key, $value := .Values.ruler_query_frontend.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.ruler_query_frontend.extraVolumeMounts }}
+              {{ toYaml .Values.ruler_query_frontend.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+              {{- if .Values.ruler_query_frontend.persistence.subPath }}
+              subPath: {{ .Values.ruler_query_frontend.persistence.subPath }}
+              {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ruler_query_frontend.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ruler_query_frontend.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ruler_query_frontend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.ruler_query_frontend.containerSecurityContext | nindent 12 }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ruler_query_frontend.env }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_frontend }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ruler_query_frontend.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+{{- if .Values.ruler_query_frontend.extraContainers }}
+{{ toYaml .Values.ruler_query_frontend.extraContainers | indent 8}}
+{{- end }}
+      {{- with .Values.ruler_query_frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ruler_query_frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler-query-frontend") | nindent 6 }}
+      {{- with .Values.ruler_query_frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.ruler_query_frontend.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.ruler_query_frontend.extraVolumes }}
+        {{ toYaml .Values.ruler_query_frontend.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+{{- end }}

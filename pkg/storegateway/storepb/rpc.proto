@@ -23,26 +23,6 @@ option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
-/// Store represents API against instance that stores XOR encoded values with label set metadata (e.g Prometheus metrics).
-service Store {
-  /// Series streams each Series (Labels and chunk/downsampling chunk) for given label matchers and time range.
-  ///
-  /// Series should strictly stream full series after series, optionally split by time. This means that a single frame can contain
-  /// partition of the single series, but once a new series is started to be streamed it means that no more data will
-  /// be sent for previous one.
-  /// Series has to be sorted.
-  ///
-  /// There is no requirements on chunk sorting, however it is recommended to have chunk sorted by chunk min time.
-  /// This heavily optimizes the resource usage on Querier / Federated Queries.
-  rpc Series(SeriesRequest) returns (stream SeriesResponse);
-
-  /// LabelNames returns all label names constrained by the given matchers.
-  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse);
-
-  /// LabelValues returns all label values for given label name.
-  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse);
-}
-
 message SeriesRequest {
   int64 min_time = 1;
   int64 max_time = 2;

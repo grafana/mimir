@@ -34,8 +34,9 @@ const (
 )
 
 type LabelNamesRequest struct {
-	Matchers []*labels.Matcher
-	Limit    int
+	Matchers    []*labels.Matcher
+	CountMethod CountMethod
+	Limit       int
 }
 
 // Strings returns a full representation of the request. The returned string can be
@@ -50,6 +51,10 @@ func (r *LabelNamesRequest) String() string {
 		}
 		b.WriteString(matcher.String())
 	}
+
+	// Add count method.
+	b.WriteRune(stringParamSeparator)
+	b.WriteString(string(r.CountMethod))
 
 	// Add limit.
 	b.WriteRune(stringParamSeparator)
@@ -81,6 +86,11 @@ func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, e
 	}
 
 	parsed.Limit, err = extractLimit(values)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed.CountMethod, err = extractCountMethod(values)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +277,25 @@ func extractCountMethod(values url.Values) (countMethod CountMethod, err error) 
 
 type ActiveSeriesRequest struct {
 	Matchers []*labels.Matcher
+}
+
+type ActiveMetricWithBucketCount struct {
+	Metric         string  `json:"metric"`
+	SeriesCount    uint64  `json:"series_count"`
+	BucketCount    uint64  `json:"bucket_count"`
+	AvgBucketCount float64 `json:"avg_bucket_count"`
+	MinBucketCount uint64  `json:"min_bucket_count"`
+	MaxBucketCount uint64  `json:"max_bucket_count"`
+}
+
+func (m *ActiveMetricWithBucketCount) UpdateAverage() {
+	m.AvgBucketCount = float64(m.BucketCount) / float64(m.SeriesCount)
+}
+
+type ActiveNativeHistogramMetricsResponse struct {
+	Data   []ActiveMetricWithBucketCount `json:"data"`
+	Status string                        `json:"status,omitempty"`
+	Error  string                        `json:"error,omitempty"`
 }
 
 // DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.

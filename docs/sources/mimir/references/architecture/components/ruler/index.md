@@ -25,10 +25,12 @@ To evaluate rules, the ruler connects directly to ingesters and store-gateways, 
 
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../../configuration-parameters#querier" >}})
-- [Distributor]({{< relref "../../../configuration-parameters#distributor" >}})
+- [Querier]({{< relref "../../../../configure/configuration-parameters#querier" >}})
+- [Distributor]({{< relref "../../../../configure/configuration-parameters#distributor" >}})
 
-> **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
+{{< admonition type="note" >}}
+When you use the internal mode, the ruler uses no query acceleration techniques and the evaluation of very high cardinality queries could take longer than the evaluation interval, which may lead to missing data points in the evaluated recording rules.
+{{< /admonition >}}
 
 [//]: # "Diagram source of ruler interactions https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_938"
 
@@ -94,12 +96,15 @@ unavailability).
 The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
 present on series returned with cross-tenant query federation.
 
-> **Note**: Federated rule groups allow data from multiple source tenants to be written into a single
-> destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a
-> federated rule group that aggregates over `tenant-b`'s data (e.g. `sum(metric_b)`) and writes the result back
-> into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b`'s data is copied to `tenant-a` (albeit
-> aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
-> rules via `-ruler.tenant-federation.enabled`.
+{{< admonition type="note" >}}
+Federated rule groups allow data from multiple source tenants to be written into a single destination tenant.
+This makes the separation of tenants' data less clear.
+
+For example, `tenant-a` has a federated rule group that aggregates over `tenant-b`'s data like `sum(metric_b)` and writes the result back into `tenant-a`'s storage as the metric `sum:metric_b`.
+Now `tenant-a` contains some of `tenant-b`'s data.
+
+Have this in mind when configuring the access control layer in front of Mimir and when enabling federated rules via `-ruler.tenant-federation.enabled`.
+{{< /admonition >}}
 
 ## Sharding
 
@@ -143,7 +148,9 @@ The ruler supports the following backends:
 
 The `local` storage backend reads [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) from the local filesystem.
 
-> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref "#via-the-http-configuration-api" >}}).
+{{< admonition type="note" >}}
+Local storage is a read-only backend that doesn't support the creation and deletion of rules through the [Configuration API](#via-the-http-configuration-api).
+{{< /admonition >}}
 
 When all rulers have the same rule files, local storage supports ruler sharding.
 To facilitate sharding in Kubernetes, mount a [Kubernetes ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) into every ruler pod.

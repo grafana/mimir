@@ -56,7 +56,9 @@ Writes to the Mimir cluster are successful if a majority of ingesters received t
 If the Mimir cluster loses a minority of ingesters, the in-memory series samples held by the lost ingesters are available in at least one other ingester, meaning no time series samples are lost.
 If a majority of ingesters fail, time series might be lost if the failure affects all the ingesters holding the replicas of a specific time series.
 
-> **Note:** Replication only happens at write time. If an ingester is unavailable during a period when writes are actively being written to other ingesters, that particular ingester will never recover those missed samples.
+{{< admonition type="note" >}}
+Replication only happens at write time. If an ingester is unavailable during a period when writes are actively being written to other ingesters, that particular ingester will never recover those missed samples.
+{{< /admonition >}}
 
 ### Write-ahead log
 
@@ -95,3 +97,15 @@ For more information on shuffle sharding, refer to [Configuring shuffle sharding
 Out-of-order samples are discarded by default. If the system writing samples to Mimir produces out-of-order samples, you can enable ingestion of such samples.
 
 For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../../configure/configure-out-of-order-samples-ingestion" >}}).
+
+## Read-only mode
+
+You can put ingesters in "read-only" mode through calling the [Prepare Instance Ring Downscale]({{< relref "../../http-api/index.md#prepare-instance-ring-downscale" >}}) API endpoint.
+Ingesters in read-only mode don't receive write requests, but can still receive read requests.
+Ingesters in read-only mode are not part of the shuffle shard for the write operation.
+
+Read-only mode is useful in downscaling scenarios and is a preparation for later shutdown of the ingester.
+
+Ingester ring states like JOINING, ACTIVE, or LEAVING are separate from read-only mode.
+An ingester that is both ACTIVE and read-only does not receive write requests.
+Read-only mode is stored in the hash ring as well.

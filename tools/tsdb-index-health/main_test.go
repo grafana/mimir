@@ -19,7 +19,6 @@ import (
 )
 
 func TestGatherIndexHealthStats(t *testing.T) {
-	userID := "user"
 	tmpDir := t.TempDir()
 
 	spec1 := block.SeriesSpec{
@@ -48,7 +47,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec1, &spec2})
+	meta, err := block.GenerateBlockFromSpec(tmpDir, []*block.SeriesSpec{&spec1, &spec2})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())
@@ -85,6 +84,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 func must[T any](v T, err error) T {

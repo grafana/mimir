@@ -31,6 +31,7 @@ func labelNamesAndValues(
 	matchers []*labels.Matcher,
 	messageSizeThreshold int,
 	stream client.Ingester_LabelNamesAndValuesServer,
+	filter func(name, value string) (bool, error),
 ) error {
 	ctx := stream.Context()
 
@@ -60,6 +61,17 @@ func labelNamesAndValues(
 		if err != nil {
 			return err
 		}
+
+		filteredValues := values[:0]
+		for _, val := range values {
+			if ok, err := filter(labelName, val); err != nil {
+				return err
+			} else if ok {
+				// This append is safe because filteredValues is strictly smaller than values.
+				filteredValues = append(filteredValues, val)
+			}
+		}
+		values = filteredValues
 
 		lastAddedValueIndex := -1
 		for i, val := range values {

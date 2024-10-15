@@ -39,6 +39,8 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/queue"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -47,7 +49,7 @@ const (
 )
 
 func TestFrontend(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
@@ -143,7 +145,8 @@ func TestFrontendCheckReady(t *testing.T) {
 			}()
 
 			for i := 0; i < tt.connectedClients; i++ {
-				f.requestQueue.RegisterQuerierConnection("test")
+				querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), "test")
+				require.NoError(t, f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
 			}
 			err = f.CheckReady(context.Background())
 			errMsg := ""
@@ -161,7 +164,7 @@ func TestFrontendCheckReady(t *testing.T) {
 // the underlying query is correctly cancelled _and not retried_.
 func TestFrontendCancel(t *testing.T) {
 	var tries atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		tries.Inc()
 	})
@@ -189,7 +192,7 @@ func TestFrontendCancel(t *testing.T) {
 }
 
 func TestFrontendMetricsCleanup(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
@@ -220,10 +223,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 
 		fr.cleanupInactiveUserMetrics("1")
 
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_query_frontend_queue_length Number of queries in the queue.
-				# TYPE cortex_query_frontend_queue_length gauge
-			`), "cortex_query_frontend_queue_length"))
+		util_test.AssertGatherAndCompare(t, reg, "", "cortex_query_frontend_queue_length")
 	}
 
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
@@ -238,7 +238,7 @@ func TestFrontendStats(t *testing.T) {
 
 	tl := testLogger{}
 
-	test := func(addr string, fr *Frontend) {
+	test := func(addr string, _ *Frontend) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
 		require.NoError(t, err)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
@@ -351,7 +351,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	go grpcServer.Serve(grpcListen) //nolint:errcheck
 
 	var worker services.Service
-	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler), logger, nil)
+	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), worker))
 

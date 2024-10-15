@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -50,8 +51,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	test.VerifyNoLeakTestMain(m)
+}
+
 func TestBucketStores_InitialSync(t *testing.T) {
-	test.VerifyNoLeak(t)
 
 	userToMetric := map[string]string{
 		"user-1": "series_1",
@@ -70,8 +74,9 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
 	require.NoError(t, err)
 
 	// Query series before the initial sync.
@@ -81,8 +86,13 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		assert.Empty(t, warnings)
 		assert.Empty(t, seriesSet)
 	}
-
-	require.NoError(t, stores.InitialSync(ctx))
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
 
 	// Query series after the initial sync.
 	for userID, metricName := range userToMetric {
@@ -114,7 +124,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 200
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
@@ -133,31 +143,34 @@ func TestBucketStores_InitialSync(t *testing.T) {
 }
 
 func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
-	test.VerifyNoLeak(t)
-
+	const tenantID = "user-1"
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
 	storageDir := t.TempDir()
 
 	// Generate a block for the user in the storage.
-	generateStorageBlock(t, storageDir, "user-1", "series_1", 10, 100, 15)
-
+	generateStorageBlock(t, storageDir, tenantID, "series_1", 10, 100, 15)
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	createBucketIndex(t, bucket, tenantID)
 
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Initial sync should succeed even if a transient error occurs.
-	require.NoError(t, stores.InitialSync(ctx))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
 
 	// Query series after the initial sync.
-	seriesSet, warnings, err := querySeries(t, stores, "user-1", "series_1", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, tenantID, "series_1", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
@@ -195,8 +208,6 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 }
 
 func TestBucketStores_SyncBlocks(t *testing.T) {
-	test.VerifyNoLeak(t)
-
 	const (
 		userID     = "user-1"
 		metricName = "series_1"
@@ -210,13 +221,18 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Run an initial sync to discover 1 block.
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
-	require.NoError(t, stores.InitialSync(ctx))
+	createBucketIndex(t, bucket, userID)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
 
 	// Query a range for which we have no samples.
 	seriesSet, warnings, err := querySeries(t, stores, userID, metricName, 150, 180)
@@ -226,6 +242,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	// Generate another block and sync blocks again.
 	generateStorageBlock(t, storageDir, userID, metricName, 100, 200, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.SyncBlocks(ctx))
 
 	seriesSet, warnings, err = querySeries(t, stores, userID, metricName, 150, 180)
@@ -249,7 +266,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 200
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
@@ -267,14 +284,13 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	assert.Greater(t, testutil.ToFloat64(stores.syncLastSuccess), float64(0))
 }
 
-func TestBucketStores_syncUsersBlocks(t *testing.T) {
-	test.VerifyNoLeak(t)
-
+func TestBucketStores_ownedUsers(t *testing.T) {
 	allUsers := []string{"user-1", "user-2", "user-3"}
 
 	tests := map[string]struct {
 		shardingStrategy ShardingStrategy
-		expectedStores   int32
+		allowedTenants   *util.AllowedTenants
+		expectedStores   int
 	}{
 		"when sharding is disabled all users should be synced": {
 			shardingStrategy: newNoShardingStrategy(),
@@ -288,29 +304,35 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 			}(),
 			expectedStores: 2,
 		},
+		"when user is disabled, their stores should not be created": {
+			shardingStrategy: newNoShardingStrategy(),
+			allowedTenants:   util.NewAllowedTenants(nil, []string{"user-2"}),
+			expectedStores:   2,
+		},
+
+		"when single user is enabled, only their stores should be created": {
+			shardingStrategy: newNoShardingStrategy(),
+			allowedTenants:   util.NewAllowedTenants([]string{"user-3"}, nil),
+			expectedStores:   1,
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := prepareStorageConfig(t)
-			cfg.BucketStore.TenantSyncConcurrency = 2
 
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
 
-			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
+			stores, err := NewBucketStores(cfg, testData.shardingStrategy, bucketClient, testData.allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Sync user stores and count the number of times the callback is called.
-			var storesCount atomic.Int32
-			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *BucketStore) error {
-				storesCount.Inc()
-				return nil
-			})
+			ownedUsers, err := stores.ownedUsers(context.Background())
 
 			assert.NoError(t, err)
 			bucketClient.AssertNumberOfCalls(t, "Iter", 1)
-			assert.Equal(t, storesCount.Load(), testData.expectedStores)
+			assert.Len(t, ownedUsers, testData.expectedStores)
 		})
 	}
 }
@@ -324,8 +346,6 @@ func TestBucketStores_Series_ShouldCorrectlyQuerySeriesSpanningMultipleChunks(t 
 }
 
 func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits(t *testing.T) {
-	test.VerifyNoLeak(t)
-
 	const (
 		userID                = "user-1"
 		overriddenChunksLimit = 1000000
@@ -367,11 +387,16 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
 			require.NoError(t, err)
 
+			var allowedTenants *util.AllowedTenants
 			reg := prometheus.NewPedanticRegistry()
-			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, overrides, log.NewNopLogger(), reg)
+			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
 			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), stores))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+			})
 
-			store, err := stores.getOrCreateStore(userID)
+			store, err := stores.getOrCreateStore(context.Background(), userID)
 			require.NoError(t, err)
 
 			chunksLimit := overrides.MaxChunksPerQuery(userID)
@@ -419,11 +444,16 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
-	require.NoError(t, stores.InitialSync(ctx))
+	createBucketIndex(t, bucket, userID)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
 
 	tests := map[string]struct {
 		reqMinTime int64
@@ -468,40 +498,68 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
+	fixtureDir := filepath.Join("fixtures", "test-query-block-with-ooo-chunks")
+	storageDir := t.TempDir()
 
-	// Generate a single block with 1 series and a lot of samples.
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
+
 	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
 	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
-	specs := []*block.SeriesSpec{
-		// Series with out of order chunks.
-		{
-			Labels: seriesWithOutOfOrderChunks,
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+
+	// Utility function originally used to generate a block with out of order chunks
+	// used by this test. The block has been generated commenting out the checks done
+	// by TSDB block Writer to prevent OOO chunks writing.
+	_ = func() {
+		specs := []*block.SeriesSpec{
+			// Series with out of order chunks.
+			{
+				Labels: seriesWithOutOfOrderChunks,
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+				},
 			},
-		},
-		// Series with out of order and overlapping chunks.
-		{
-			Labels: seriesWithOverlappingChunks,
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+			// Series with out of order and overlapping chunks.
+			{
+				Labels: seriesWithOverlappingChunks,
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+				},
 			},
-		},
+		}
+
+		_, err := block.GenerateBlockFromSpec(fixtureDir, specs)
+		require.NoError(t, err)
 	}
 
-	storageDir := t.TempDir()
-	_, err := block.GenerateBlockFromSpec(userID, filepath.Join(storageDir, userID), specs)
+	// Copy blocks from fixtures dir to the test bucket.
+	entries, err := os.ReadDir(fixtureDir)
 	require.NoError(t, err)
 
-	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
-	require.NoError(t, err)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
 
+		blockID, err := ulid.Parse(entry.Name())
+		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
+
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil))
+	}
+
+	createBucketIndex(t, bkt, userID)
+
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	require.NoError(t, stores.InitialSync(ctx))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
 
 	tests := map[string]struct {
 		minT                                int64
@@ -548,7 +606,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			nextSeriesIdx := 0
 
 			if testData.expectedSamplesForOutOfOrderChunks != nil {
-				assert.Equal(t, seriesWithOutOfOrderChunks, seriesSet[nextSeriesIdx].PromLabels())
+				assert.Equal(t, seriesWithOutOfOrderChunks, promLabels(seriesSet[nextSeriesIdx]))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -558,7 +616,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			}
 
 			if testData.expectedSamplesForOverlappingChunks != nil {
-				assert.Equal(t, seriesWithOverlappingChunks, seriesSet[nextSeriesIdx].PromLabels())
+				assert.Equal(t, seriesWithOverlappingChunks, promLabels(seriesSet[nextSeriesIdx]))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -566,6 +624,10 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func promLabels(m *storepb.Series) labels.Labels {
+	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }
 
 func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
@@ -619,7 +681,7 @@ func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, 
 		}},
 	}
 
-	srv := newBucketStoreTestServer(t, stores)
+	srv := newStoreGatewayTestServer(t, stores)
 	seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
 
 	return seriesSet, warnings, err
@@ -630,8 +692,6 @@ func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context 
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
-	test.VerifyNoLeak(t)
-
 	const (
 		user1 = "user-1"
 		user2 = "user-2"
@@ -653,16 +713,23 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 
 	sharding := userShardingStrategy{}
 
+	var allowedTenants *util.AllowedTenants
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, &sharding, bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
 	// Perform sync.
 	sharding.users = []string{user1, user2}
-	require.NoError(t, stores.InitialSync(ctx))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, stores))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), stores))
+	})
 	require.Equal(t, []string{user1, user2}, getUsersInDir(t, cfg.BucketStore.SyncDir))
 
 	metricNames := []string{"cortex_bucket_store_block_drops_total", "cortex_bucket_store_block_loads_total", "cortex_bucket_store_blocks_loaded"}
@@ -986,3 +1053,24 @@ func must[T any](v T, err error) T {
 	}
 	return v
 }
+
+func TestTimeoutGate_CancellationRace(t *testing.T) {
+	gate := timeoutGate{
+		delegate: alwaysSuccessfulAfterDelayGate{time.Second},
+		timeout:  time.Nanosecond,
+	}
+
+	err := gate.Start(context.Background())
+	require.NoError(t, err, "must not return failure if delegated gate returns success even after timeout expires")
+}
+
+type alwaysSuccessfulAfterDelayGate struct {
+	delay time.Duration
+}
+
+func (a alwaysSuccessfulAfterDelayGate) Start(_ context.Context) error {
+	<-time.After(a.delay)
+	return nil
+}
+
+func (a alwaysSuccessfulAfterDelayGate) Done() {}

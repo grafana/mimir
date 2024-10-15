@@ -70,6 +70,21 @@
           },
         },
         {
+          // Alert if compactor ran out of disk space in the last 24h.
+          // This is a non-transient condition which requires an operator to look at it even if it happens only once.
+          alert: $.alertName('CompactorHasRunOutOfDiskSpace'),
+          expr: |||
+            increase(cortex_compactor_disk_out_of_space_errors_total{}[24h]) >= 1
+          |||,
+          labels: {
+            severity: 'critical',
+            reason: 'non-transient',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has run out of disk space.' % $._config,
+          },
+        },
+        {
           // Alert if the compactor has not uploaded anything in the last 24h.
           alert: $.alertName('CompactorHasNotUploadedBlocks'),
           'for': '15m',
@@ -110,37 +125,37 @@
           },
         },
         {
-          // Alert if compactor has tried to compact blocks with out-of-order chunks.
-          alert: $.alertName('CompactorSkippedBlocksWithOutOfOrderChunks'),
+          // Alert if compactor has tried to compact unhealthy blocks.
+          alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
           'for': '1m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"}[5m]) > 0
-          |||,
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 0
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored blocks with out of order chunks.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
           },
         },
         {
-          // Alert if compactor has tried to compact blocks with out-of-order chunks.
+          // Alert if compactor has tried to compact unhealthy blocks.
           // Any number greater than 1 over the last 30 minutes should be investigated quickly as it could start to impact the read path.
-          alert: $.alertName('CompactorSkippedBlocksWithOutOfOrderChunks'),
+          alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
           'for': '30m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"}[5m]) > 1
-          |||,
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 1
+          ||| % $.alertRangeInterval(5),
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored blocks with out of order chunks.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
           },
         },
       ],
     },
   ],
 
-  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
 }

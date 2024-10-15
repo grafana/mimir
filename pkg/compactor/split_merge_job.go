@@ -131,6 +131,19 @@ func (g blocksGroup) maxTime() int64 {
 	return max
 }
 
+// maxCompactionLevel returns the highest Compaction.Level across all blocks in the group.
+func (g blocksGroup) maxCompactionLevel() int {
+	maxLevel := g.blocks[0].Compaction.Level
+
+	for _, b := range g.blocks[1:] {
+		if b.Compaction.Level > maxLevel {
+			maxLevel = b.Compaction.Level
+		}
+	}
+
+	return maxLevel
+}
+
 // getNonShardedBlocks returns the list of non-sharded blocks.
 func (g blocksGroup) getNonShardedBlocks() []*block.Meta {
 	var out []*block.Meta

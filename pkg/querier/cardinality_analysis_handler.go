@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -39,7 +42,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers)
+		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
 			respondFromError(err, w)
 			return
@@ -80,7 +83,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 	})
 }
 
-func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
+func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
@@ -101,19 +104,77 @@ func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.
 			return
 		}
 
-		res, err := distributor.ActiveSeries(ctx, req.Matchers)
+		res, err := d.ActiveSeries(ctx, req.Matchers)
 		if err != nil {
+			if errors.Is(err, distributor.ErrResponseTooLarge) {
+				// http.StatusRequestEntityTooLarge (413) is about the request (not the response)
+				// body size, but it's the closest we have, and we're using the same status code
+				// in the query scheduler to express the same error condition.
+				http.Error(w, fmt.Errorf("%w: try increasing the requested shard count", err).Error(), http.StatusRequestEntityTooLarge)
+				return
+			}
 			respondFromError(err, w)
 			return
 		}
 
 		var json = jsoniter.ConfigCompatibleWithStandardLibrary
-		bytes, err := json.Marshal(activeSeriesResponse{Data: res})
+		bytes, err := json.Marshal(api.ActiveSeriesResponse{Data: res})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(bytes)))
+		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
+
+		// Nothing we can do about this error, so ignore it.
+		_, _ = w.Write(bytes)
+	})
+}
+
+func ActiveNativeHistogramMetricsHandler(d Distributor, limits *validation.Overrides) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		// Guarantee request's context is for a single tenant id
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if !limits.CardinalityAnalysisEnabled(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
+			return
+		}
+
+		req, err := cardinality.DecodeActiveSeriesRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		res, err := d.ActiveNativeHistogramMetrics(ctx, req.Matchers)
+		if err != nil {
+			if errors.Is(err, distributor.ErrResponseTooLarge) {
+				// http.StatusRequestEntityTooLarge (413) is about the request (not the response)
+				// body size, but it's the closest we have, and we're using the same status code
+				// in the query scheduler to express the same error condition.
+				http.Error(w, fmt.Errorf("%w: try increasing the requested shard count", err).Error(), http.StatusRequestEntityTooLarge)
+				return
+			}
+			respondFromError(err, w)
+			return
+		}
+
+		var json = jsoniter.ConfigCompatibleWithStandardLibrary
+		bytes, err := json.Marshal(res)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(bytes)))
+		w.Header().Set(worker.ResponseStreamingEnabledHeader, "true")
 
 		// Nothing we can do about this error, so ignore it.
 		_, _ = w.Write(bytes)
@@ -121,7 +182,7 @@ func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.
 }
 
 func respondFromError(err error, w http.ResponseWriter) {
-	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 	if !ok {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -130,16 +191,16 @@ func respondFromError(err error, w http.ResponseWriter) {
 	w.Write(httpResp.Body) //nolint
 }
 
-// toLabelNamesCardinalityResponse converts ingester's response to LabelNamesCardinalityResponse
-func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValuesResponse, limit int) *LabelNamesCardinalityResponse {
+// toLabelNamesCardinalityResponse converts ingester's response to api.LabelNamesCardinalityResponse
+func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValuesResponse, limit int) *api.LabelNamesCardinalityResponse {
 	labelsWithValues := response.Items
 	sortByValuesCountAndName(labelsWithValues)
 	valuesCountTotal := getValuesCountTotal(labelsWithValues)
-	items := make([]*LabelNamesCardinalityItem, util_math.Min(len(labelsWithValues), limit))
+	items := make([]*api.LabelNamesCardinalityItem, util_math.Min(len(labelsWithValues), limit))
 	for i := 0; i < len(items); i++ {
-		items[i] = &LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, LabelValuesCount: len(labelsWithValues[i].Values)}
+		items[i] = &api.LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, LabelValuesCount: len(labelsWithValues[i].Values)}
 	}
-	return &LabelNamesCardinalityResponse{
+	return &api.LabelNamesCardinalityResponse{
 		LabelValuesCountTotal: valuesCountTotal,
 		LabelNamesCount:       len(response.Items),
 		Cardinality:           items,
@@ -162,33 +223,22 @@ func getValuesCountTotal(labelsWithValues []*ingester_client.LabelValues) int {
 	return valuesCountTotal
 }
 
-type LabelNamesCardinalityResponse struct {
-	LabelValuesCountTotal int                          `json:"label_values_count_total"`
-	LabelNamesCount       int                          `json:"label_names_count"`
-	Cardinality           []*LabelNamesCardinalityItem `json:"cardinality"`
-}
-
-type LabelNamesCardinalityItem struct {
-	LabelName        string `json:"label_name"`
-	LabelValuesCount int    `json:"label_values_count"`
-}
-
-func toLabelValuesCardinalityResponse(seriesCountTotal uint64, cardinalityResponse *ingester_client.LabelValuesCardinalityResponse, limit int) *labelValuesCardinalityResponse {
-	labels := make([]labelNamesCardinality, 0, len(cardinalityResponse.Items))
+func toLabelValuesCardinalityResponse(seriesCountTotal uint64, cardinalityResponse *ingester_client.LabelValuesCardinalityResponse, limit int) *api.LabelValuesCardinalityResponse {
+	labels := make([]api.LabelNamesCardinality, 0, len(cardinalityResponse.Items))
 
 	for _, cardinalityItem := range cardinalityResponse.Items {
 		var labelValuesSeriesCountTotal uint64
-		cardinality := make([]labelValuesCardinality, 0, len(cardinalityItem.LabelValueSeries))
+		cardinality := make([]api.LabelValuesCardinality, 0, len(cardinalityItem.LabelValueSeries))
 
 		for labelValue, seriesCount := range cardinalityItem.LabelValueSeries {
 			labelValuesSeriesCountTotal += seriesCount
-			cardinality = append(cardinality, labelValuesCardinality{
+			cardinality = append(cardinality, api.LabelValuesCardinality{
 				LabelValue:  labelValue,
 				SeriesCount: seriesCount,
 			})
 		}
 
-		labels = append(labels, labelNamesCardinality{
+		labels = append(labels, api.LabelNamesCardinality{
 			LabelName:        cardinalityItem.LabelName,
 			LabelValuesCount: uint64(len(cardinalityItem.LabelValueSeries)),
 			SeriesCount:      labelValuesSeriesCountTotal,
@@ -196,15 +246,15 @@ func toLabelValuesCardinalityResponse(seriesCountTotal uint64, cardinalityRespon
 		})
 	}
 
-	return &labelValuesCardinalityResponse{
+	return &api.LabelValuesCardinalityResponse{
 		SeriesCountTotal: seriesCountTotal,
 		Labels:           sortByLabelValuesSeriesCountAndLabelName(labels),
 	}
 }
 
-// sortByLabelValuesSeriesCountAndLabelName sorts labelNamesCardinality array in DESC order by SeriesCount and
+// sortByLabelValuesSeriesCountAndLabelName sorts api.LabelNamesCardinality array in DESC order by SeriesCount and
 // ASC order by LabelName
-func sortByLabelValuesSeriesCountAndLabelName(labelNamesCardinality []labelNamesCardinality) []labelNamesCardinality {
+func sortByLabelValuesSeriesCountAndLabelName(labelNamesCardinality []api.LabelNamesCardinality) []api.LabelNamesCardinality {
 	sort.Slice(labelNamesCardinality, func(l, r int) bool {
 		left := labelNamesCardinality[l]
 		right := labelNamesCardinality[r]
@@ -213,9 +263,9 @@ func sortByLabelValuesSeriesCountAndLabelName(labelNamesCardinality []labelNames
 	return labelNamesCardinality
 }
 
-// sortBySeriesCountAndLabelValue sorts labelValuesCardinality array in DESC order by SeriesCount and
+// sortBySeriesCountAndLabelValue sorts api.LabelValuesCardinality array in DESC order by SeriesCount and
 // ASC order by LabelValue
-func sortBySeriesCountAndLabelValue(labelValuesCardinality []labelValuesCardinality) []labelValuesCardinality {
+func sortBySeriesCountAndLabelValue(labelValuesCardinality []api.LabelValuesCardinality) []api.LabelValuesCardinality {
 	sort.Slice(labelValuesCardinality, func(l, r int) bool {
 		left := labelValuesCardinality[l]
 		right := labelValuesCardinality[r]
@@ -224,30 +274,9 @@ func sortBySeriesCountAndLabelValue(labelValuesCardinality []labelValuesCardinal
 	return labelValuesCardinality
 }
 
-func limitLabelValuesCardinality(labelValuesCardinality []labelValuesCardinality, limit int) []labelValuesCardinality {
+func limitLabelValuesCardinality(labelValuesCardinality []api.LabelValuesCardinality, limit int) []api.LabelValuesCardinality {
 	if len(labelValuesCardinality) <= limit {
 		return labelValuesCardinality
 	}
 	return labelValuesCardinality[:limit]
-}
-
-type labelValuesCardinality struct {
-	LabelValue  string `json:"label_value"`
-	SeriesCount uint64 `json:"series_count"`
-}
-
-type labelNamesCardinality struct {
-	LabelName        string                   `json:"label_name"`
-	LabelValuesCount uint64                   `json:"label_values_count"`
-	SeriesCount      uint64                   `json:"series_count"`
-	Cardinality      []labelValuesCardinality `json:"cardinality"`
-}
-
-type labelValuesCardinalityResponse struct {
-	SeriesCountTotal uint64                  `json:"series_count_total"`
-	Labels           []labelNamesCardinality `json:"labels"`
-}
-
-type activeSeriesResponse struct {
-	Data []labels.Labels `json:"data"`
 }

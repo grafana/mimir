@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -94,7 +95,7 @@ func TestConfig_Validate(t *testing.T) {
 		expected string
 	}{
 		"should pass with the default config": {
-			setup:    func(cfg *Config) {},
+			setup:    func(*Config) {},
 			expected: "",
 		},
 		"should pass with only 1 block range period": {
@@ -131,11 +132,12 @@ func TestConfig_Validate(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			logger := testutil.NewTestingLogger(t)
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
 
-			if actualErr := cfg.Validate(); testData.expected != "" {
+			if actualErr := cfg.Validate(logger); testData.expected != "" {
 				assert.EqualError(t, actualErr, testData.expected)
 			} else {
 				assert.NoError(t, actualErr)
@@ -583,7 +585,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		`level=info component=compactor user=user-1 msg="start of GC"`,
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FS51A7GQ1RQWV35DBVYQM4KF (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-1 msg="start of compactions"`,
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
@@ -591,7 +593,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		`level=info component=compactor user=user-2 msg="start of GC"`,
 		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTW0ZCPDDNV4BV83Q2SV4QAZ (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FRSF035J26D6CGX7STCSD1KG (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-2 msg="start of compactions"`,
-		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -725,7 +727,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@414047632870839233-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FS51A7GQ1RQWV35DBVYQM4KF (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-1 msg="start of compactions"`,
 		`level=info component=compactor user=user-1 msg="max compaction time reached, no more compactions will be started"`,
-		`level=info component=compactor user=user-1 groupKey=0@12695595599644216241-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@12695595599644216241-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -965,7 +967,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 		"cortex_compactor_block_cleanup_started_total", "cortex_compactor_block_cleanup_completed_total", "cortex_compactor_block_cleanup_failed_total",
 		"cortex_bucket_blocks_count", "cortex_bucket_blocks_marked_for_deletion_count", "cortex_bucket_index_last_successful_update_timestamp_seconds",
 	}
-	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+	testutil.AssertGatherAndCompare(t, registry, `
 		# TYPE cortex_compactor_runs_started_total counter
 		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
 		cortex_compactor_runs_started_total 1
@@ -1004,7 +1006,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 		# TYPE cortex_compactor_block_cleanup_failed_total counter
 		# HELP cortex_compactor_block_cleanup_failed_total Total number of blocks cleanup runs failed.
 		cortex_compactor_block_cleanup_failed_total 0
-	`), testedMetrics...))
+	`, testedMetrics...)
 }
 
 func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunning(t *testing.T) {
@@ -1076,7 +1078,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor user=user-1 msg="start of GC"`,
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FSTQ95C8FS0ZAGTQS2EF1NEG (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-1 msg="start of compactions"`,
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
@@ -1084,7 +1086,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor user=user-2 msg="start of GC"`,
 		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTW0ZCPDDNV4BV83Q2SV4QAZ (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FSV54G6QFQH1G9QE93G3B9TB (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-2 msg="start of compactions"`,
-		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -1271,11 +1273,11 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 
 	storageDir := t.TempDir()
 
-	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock1Spec)
+	meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), sourceBlock1Spec)
 	require.NoError(t, err)
-	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock2Spec)
+	meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), sourceBlock2Spec)
 	require.NoError(t, err)
-	_, err = block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock3Spec)
+	_, err = block.GenerateBlockFromSpec(filepath.Join(storageDir, user), sourceBlock3Spec)
 	require.NoError(t, err)
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
@@ -1291,13 +1293,13 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	mockCall.RunFn = func(args mock.Arguments) {
 		dir := args.Get(0).(string)
 
-		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, compactedBlockSpec)
+		compactedMeta, err := block.GenerateBlockFromSpec(dir, compactedBlockSpec)
 		require.NoError(t, err)
 		f, err := os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
 		require.NoError(t, err)
 		defer f.Close()
 
-		mockCall.ReturnArguments = mock.Arguments{compactedMeta.ULID, nil}
+		mockCall.ReturnArguments = mock.Arguments{[]ulid.ULID{compactedMeta.ULID}, nil}
 	}
 
 	// Start the compactor
@@ -1350,7 +1352,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	c, _, tsdbPlanner, logs, registry := prepareWithConfigProvider(t, cfg, bucketClient, limits)
 
 	// Mock the planner as if there's no compaction to do, in order to simplify tests.
-	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, nil).Run(func(args mock.Arguments) {
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{}, nil).Run(func(mock.Arguments) {
 		// As soon as the first Plan() is called by the compactor, we do switch
 		// the instance to LEAVING state. This way,  after this call, we expect the compactor
 		// to skip next compaction job because not owned anymore by this instance.
@@ -1391,7 +1393,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 job="stage: split, range start: 1574863200000, range end: 1574870400000, shard: 1_of_4, blocks: 01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-27 14:00:00 +0000 UTC, max time: 2019-11-27 16:00:00 +0000 UTC)"`,
 		// The ownership check is failing because, to keep this test simple, we've just switched
 		// the instance state to LEAVING and there are no other instances in the ring.
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-split-4_of_4-1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-split-4_of_4-1574776800000-1574784000000 job_type=split msg="compaction job succeeded" block_count=1`,
 		`level=info component=compactor user=user-1 msg="skipped compaction because unable to check whether the job is owned by the compactor instance" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 err="at least 1 live replicas required, could only find 0 - unhealthy instances: 1.2.3.4:0"`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
@@ -1460,13 +1462,13 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 		}))},
 	}}
 
-	user1Meta1, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	user1Meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-1"), spec)
 	require.NoError(t, err)
-	user1Meta2, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	user1Meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-1"), spec)
 	require.NoError(t, err)
-	user2Meta1, err := block.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	user2Meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-2"), spec)
 	require.NoError(t, err)
-	user2Meta2, err := block.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	user2Meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-2"), spec)
 	require.NoError(t, err)
 
 	// Mock the last modified timestamp returned for each of the block's meta.json.
@@ -1663,7 +1665,7 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 	var log *concurrency.SyncBuffer
 
 	for i, c := range compactors {
-		owned, err := c.shardingStrategy.compactorOwnUser(userID)
+		owned, err := c.shardingStrategy.compactorOwnsUser(userID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1781,11 +1783,11 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 	logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
 	registry := prometheus.NewRegistry()
 
-	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
+	bucketClientFactory := func(context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
 
-	blocksCompactorFactory := func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
+	blocksCompactorFactory := func(context.Context, Config, log.Logger, prometheus.Registerer) (Compactor, Planner, error) {
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
@@ -1846,14 +1848,14 @@ func (m *tsdbCompactorMock) Plan(dir string) ([]string, error) {
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) ([]ulid.ULID, error) {
 	args := m.Called(dest, b, mint, maxt, parent)
-	return args.Get(0).(ulid.ULID), args.Error(1)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) ([]ulid.ULID, error) {
 	args := m.Called(dest, dirs, open)
-	return args.Get(0).(ulid.ULID), args.Error(1)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
 func (m *tsdbCompactorMock) CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error) {
@@ -2099,7 +2101,6 @@ func TestOwnUser(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -2159,9 +2160,9 @@ func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, 
 	for _, c := range comps {
 		var f func(string) (bool, error)
 		if reason == ownUserReasonCompactor {
-			f = c.shardingStrategy.compactorOwnUser
+			f = c.shardingStrategy.compactorOwnsUser
 		} else {
-			f = c.shardingStrategy.blocksCleanerOwnUser
+			f = c.shardingStrategy.blocksCleanerOwnsUser
 		}
 		ok, err := f(user)
 		require.NoError(t, err)
@@ -2181,15 +2182,118 @@ func stopServiceFn(t *testing.T, serv services.Service) func() {
 }
 
 func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
-	// Generate a single block with out of order chunks.
+	const user = "user"
+
+	var (
+		ctx        = context.Background()
+		storageDir = t.TempDir()
+		fixtureDir = filepath.Join("fixtures", "test-ooo-compaction")
+	)
+
+	// Utility function originally used to generate a block with out of order chunks
+	// used by this test. The block has been generated commenting out the checks done
+	// by TSDB block Writer to prevent OOO chunks writing.
+	_ = func() {
+		specs := []*block.SeriesSpec{
+			{
+				Labels: labels.FromStrings("case", "out_of_order"),
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)})),
+					// Extend block to cover 2h.
+					must(chunks.ChunkFromSamples([]chunks.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+				},
+			},
+		}
+
+		_, err := block.GenerateBlockFromSpec(fixtureDir, specs)
+		require.NoError(t, err)
+
+		_, err = block.GenerateBlockFromSpec(fixtureDir, specs)
+		require.NoError(t, err)
+	}
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+	userBkt := bucket.NewUserBucketClient(user, bkt, nil)
+
+	// Copy blocks from fixtures dir to the test bucket.
+	var metas []*block.Meta
+
+	entries, err := os.ReadDir(fixtureDir)
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		blockDir := filepath.Join(fixtureDir, entry.Name())
+
+		blockID, err := ulid.Parse(entry.Name())
+		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
+
+		meta, err := block.ReadMetaFromDir(blockDir)
+		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
+
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
+
+		metas = append(metas, meta)
+	}
+
+	// We expect 2 blocks have been copied.
+	require.Len(t, metas, 2)
+
+	cfg := prepareConfig(t)
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return(metas, nil)
+
+	// Start the compactor
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+
+	// Wait until a compaction run has been completed.
+	test.Poll(t, 10*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	// Stop the compactor.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+
+	// Verify that compactor has found block with out of order chunks, and this block is now marked for no-compaction.
+	r := regexp.MustCompile("level=info component=compactor user=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
+	matches := r.FindStringSubmatch(logs.String())
+	require.Len(t, matches, 2) // Entire string match + single group match.
+
+	skippedBlock := matches[1]
+	require.True(t, skippedBlock == metas[0].ULID.String() || skippedBlock == metas[1].ULID.String())
+
+	m := &block.NoCompactMark{}
+	require.NoError(t, block.ReadMarker(ctx, log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, skippedBlock), m))
+	require.Equal(t, skippedBlock, m.ID.String())
+	require.NotZero(t, m.NoCompactTime)
+	require.Equal(t, block.NoCompactReason(block.OutOfOrderChunksNoCompactReason), m.Reason)
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 1
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+	`),
+		"cortex_compactor_blocks_marked_for_no_compaction_total",
+	))
+}
+
+func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
+	// Generate a single block with a single chunk.
 	specs := []*block.SeriesSpec{
 		{
-			Labels: labels.FromStrings("case", "out_of_order"),
+			Labels: labels.FromStrings("case", "critical"),
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)})),
-				// Extend block to cover 2h.
-				must(chunks.ChunkFromSamples([]chunks.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(0, 0, nil, nil),
+					newSample(2*time.Hour.Milliseconds()-1, 1, nil, nil),
+				})),
 			},
 		},
 	}
@@ -2198,10 +2302,14 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 
 	storageDir := t.TempDir()
 	// We need two blocks to start compaction.
-	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
-	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
+
+	// Force chunk to fall out of the block time range by modifying MaxTime.
+	meta1.MaxTime -= 1000
+	meta2.MaxTime -= 1000
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
@@ -2222,7 +2330,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	// Stop the compactor.
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
-	// Verify that compactor has found block with out of order chunks, and this block is now marked for no-compaction.
+	// Verify that compactor has found the unhealthy block, and this block is now marked for no-compaction.
 	r := regexp.MustCompile("level=info component=compactor user=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
 	matches := r.FindStringSubmatch(logs.String())
 	require.Len(t, matches, 2) // Entire string match + single group match.
@@ -2234,12 +2342,13 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	require.NoError(t, block.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, skippedBlock), m))
 	require.Equal(t, skippedBlock, m.ID.String())
 	require.NotZero(t, m.NoCompactTime)
-	require.Equal(t, block.NoCompactReason(block.OutOfOrderChunksNoCompactReason), m.Reason)
+	require.Equal(t, block.NoCompactReason(block.CriticalNoCompactReason), m.Reason)
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
-		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 1
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 1
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
@@ -2269,6 +2378,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 type bucketWithMockedAttributes struct {

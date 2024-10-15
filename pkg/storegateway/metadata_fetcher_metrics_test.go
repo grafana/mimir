@@ -13,12 +13,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMetadataFetcherMetrics(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	metrics := NewMetadataFetcherMetrics()
+	metrics := NewMetadataFetcherMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(metrics)
 
 	metrics.AddUserRegistry("user1", populateMetadataFetcherMetrics(3))

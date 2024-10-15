@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -37,6 +38,10 @@ type blockStreamingQuerierSeriesSet struct {
 	nextSeriesIndex int
 
 	currSeries storage.Series
+
+	// For debug logging.
+	chunkInfo     *chunkinfologger.ChunkInfoLogger
+	remoteAddress string
 }
 
 type chunkStreamReader interface {
@@ -61,7 +66,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
 	return true
 }
 
@@ -78,12 +83,15 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
+		chunkInfo:      chunkInfo,
+		lastOne:        lastOne,
+		remoteAddress:  remoteAddress,
 	}
 }
 
@@ -91,6 +99,11 @@ type blockStreamingQuerierSeries struct {
 	labels                       labels.Labels
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
+
+	// For debug logging.
+	chunkInfo     *chunkinfologger.ChunkInfoLogger
+	lastOne       bool
+	remoteAddress string
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -107,6 +120,13 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		}
 		allChunks = append(allChunks, chks...)
 	}
+
+	if bqs.chunkInfo != nil {
+		bqs.chunkInfo.StartSeries(bqs.labels)
+		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
+		bqs.chunkInfo.EndSeries(bqs.lastOne)
+	}
+
 	if len(allChunks) == 0 {
 		// should not happen in practice, but we have a unit test for it
 		return series.NewErrIterator(errors.New("no chunks"))
@@ -116,12 +136,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return allChunks[i].MinTime < allChunks[j].MinTime
 	})
 
-	it, err := newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
-	if err != nil {
-		return series.NewErrIterator(err)
-	}
-
-	return it
+	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
@@ -132,6 +147,7 @@ type storeGatewayStreamReader struct {
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
 	stats               *stats.Stats
+	metrics             *blocksStoreQueryableMetrics
 	log                 log.Logger
 
 	chunkCountEstimateChan chan int
@@ -141,13 +157,14 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
 		ctx:                 ctx,
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
 		stats:               stats,
+		metrics:             metrics,
 		log:                 log,
 	}
 }
@@ -193,8 +210,18 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error {
 	totalSeries := 0
 	totalChunks := 0
+	defer func() {
+		s.metrics.chunksTotal.Add(float64(totalChunks))
+	}()
 
 	translateReceivedError := func(err error) error {
+		if errors.Is(err, context.Canceled) {
+			// If there's a more detailed cancellation reason available, return that.
+			if cause := context.Cause(s.ctx); cause != nil {
+				return fmt.Errorf("aborted stream because query was cancelled: %w", cause)
+			}
+		}
+
 		if !errors.Is(err, io.EOF) {
 			return err
 		}
@@ -252,10 +279,10 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 		totalChunks += numChunks
 		if err := s.queryLimiter.AddChunks(numChunks); err != nil {
-			return validation.LimitError(err.Error())
+			return err
 		}
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-			return validation.LimitError(err.Error())
+			return err
 		}
 
 		s.stats.AddFetchedChunks(uint64(numChunks))
@@ -268,6 +295,13 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 }
 
 func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) error {
+	if err := s.ctx.Err(); err != nil {
+		// If the context is already cancelled, stop now for the same reasons as below.
+		// We do this extra check here to ensure that we don't get unlucky and continue to send to seriesChunksChan even if
+		// the context is cancelled because the consumer of the stream is reading faster than we can read new batches.
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
+	}
+
 	select {
 	case <-s.ctx.Done():
 		// Why do we abort if the context is done?
@@ -358,7 +392,7 @@ func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
+				if validation.IsLimitError(err) {
 					return err
 				}
 				return errors.Wrapf(err, "attempted to read series at index %v from store-gateway chunks stream, but the stream has failed", seriesIndex)

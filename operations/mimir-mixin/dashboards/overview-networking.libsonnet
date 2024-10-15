@@ -3,6 +3,7 @@ local filename = 'mimir-overview-networking.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'e15c71d372cc541367a088f10d9fcd92' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Overview networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRowIf($._config.gateway_enabled, $.containerNetworkingRowByComponent('Gateway', 'gateway'))

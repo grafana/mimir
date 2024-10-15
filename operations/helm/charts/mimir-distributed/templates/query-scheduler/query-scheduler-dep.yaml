@@ -28,8 +28,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
+      {{- with .Values.query_scheduler.initContainers }}
       initContainers:
-        {{- toYaml .Values.query_scheduler.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -44,14 +46,15 @@ spec:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
-            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           {{- range $key, $value := .Values.query_scheduler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
           volumeMounts:
             {{- if .Values.query_scheduler.extraVolumeMounts }}
               {{ toYaml .Values.query_scheduler.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
@@ -83,6 +86,8 @@ spec:
             {{- toYaml .Values.query_scheduler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.query_scheduler.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.query_scheduler }}
+          {{- if or .Values.global.extraEnv .Values.query_scheduler.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -90,6 +95,12 @@ spec:
             {{- with .Values.query_scheduler.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.query_scheduler.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -97,16 +108,23 @@ spec:
             {{- with .Values.query_scheduler.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.query_scheduler.extraContainers }}
 {{ toYaml .Values.query_scheduler.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.query_scheduler.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.query_scheduler.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.query_scheduler.affinity }}
       affinity:
-        {{- toYaml .Values.query_scheduler.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
+      {{- with .Values.query_scheduler.tolerations }}
       tolerations:
-        {{- toYaml .Values.query_scheduler.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.query_scheduler.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -119,9 +137,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.query_scheduler.extraVolumes }}
-{{ toYaml .Values.query_scheduler.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.query_scheduler.extraVolumes }}
+        {{ toYaml .Values.query_scheduler.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries

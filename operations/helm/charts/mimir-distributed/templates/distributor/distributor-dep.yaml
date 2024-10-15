@@ -8,9 +8,11 @@ metadata:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if or (not .Values.distributor.kedaAutoscaling.enabled) (.Values.distributor.kedaAutoscaling.preserveReplicas) }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   {{- if or (or (kindIs "int64" .Values.distributor.replicas) (kindIs "float64" .Values.distributor.replicas)) (.Values.distributor.replicas) }}
   replicas: {{ .Values.distributor.replicas }}
+  {{- end }}
   {{- end }}
   selector:
     matchLabels:
@@ -31,8 +33,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "distributor") | nindent 8 }}
+      {{- with .Values.distributor.initContainers }}
       initContainers:
-        {{- toYaml .Values.distributor.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -47,6 +51,13 @@ spec:
             - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # When write requests go through distributors via gRPC, we want gRPC clients to re-resolve the distributors DNS
+            # endpoint before the distributor process is terminated, in order to avoid any failures during graceful shutdown.
+            # To achieve it, we set a shutdown delay greater than the gRPC max connection age.
+            - "-server.grpc.keepalive.max-connection-age=60s"
+            - "-server.grpc.keepalive.max-connection-age-grace=5m"
+            - "-server.grpc.keepalive.max-connection-idle=1m"
+            - "-shutdown-delay=90s"
           {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
             {{- if not .Values.ingester.zoneAwareReplication.migration.writePath }}
             - "-ingester.ring.zone-awareness-enabled=false"
@@ -62,6 +73,9 @@ spec:
             {{- if .Values.distributor.extraVolumeMounts }}
               {{ toYaml .Values.distributor.extraVolumeMounts | nindent 12}}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             {{- if .Values.enterprise.enabled }}
@@ -72,7 +86,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.distributor.persistence.subPath }}
               subPath: {{ .Values.distributor.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -93,6 +109,9 @@ spec:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
+          {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.distributor }}
+          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -100,12 +119,17 @@ spec:
             {{- with .Values.distributor.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
             {{- if $cpu_request }}
             {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled 8 | toString | toYaml }}
             {{- end }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -113,16 +137,23 @@ spec:
             {{- with .Values.distributor.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.distributor.extraContainers }}
 {{ toYaml .Values.distributor.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.distributor.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.distributor.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.distributor.affinity }}
       affinity:
-        {{- toYaml .Values.distributor.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "distributor") | nindent 6 }}
+      {{- with .Values.distributor.tolerations }}
       tolerations:
-        {{- toYaml .Values.distributor.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.distributor.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -135,9 +166,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.distributor.extraVolumes }}
-{{ toYaml .Values.distributor.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.distributor.extraVolumes }}
+        {{- toYaml .Values.distributor.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{- toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries

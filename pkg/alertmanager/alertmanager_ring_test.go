@@ -49,8 +49,6 @@ func TestIsHealthyForAlertmanagerOperations(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			actual := testData.instance.IsHealthy(RingOp, testData.timeout, time.Now())
 			assert.Equal(t, testData.expected, actual)

@@ -1,0 +1,22 @@
+---
+# Source: mimir-distributed/charts/minio/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-ingress-values-minio
+  labels:
+    app: minio
+    chart: minio-5.2.0
+    release: test-ingress-values
+    heritage: Helm
+    monitoring: "true"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+  selector:
+    app: minio
+    release: test-ingress-values

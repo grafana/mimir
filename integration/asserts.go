@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -33,8 +34,8 @@ var (
 	// Service-specific metrics prefixes which shouldn't be used by any other service.
 	serviceMetricsPrefixes = map[ServiceType][]string{
 		Distributor:    {},
-		Ingester:       {"!cortex_ingester_client", "cortex_ingester"},                                                          // The metrics prefix cortex_ingester_client may be used by other components so we ignore it.
-		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "!cortex_querier_queries", "cortex_querier"}, // The metrics prefix cortex_querier_storegateway, cortex_querier_blocks and cortex_querier_queries may be used by other components so we ignore it.
+		Ingester:       {"!cortex_ingester_client", "cortex_ingester"},                                                                                   // The metrics prefix cortex_ingester_client may be used by other components so we ignore it.
+		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "!cortex_querier_queries", "!cortex_querier_query", "cortex_querier"}, // The metrics prefix cortex_querier_storegateway, cortex_querier_blocks, cortex_querier_queries, and cortex_querier_query may be used by other components so we ignore it.
 		QueryFrontend:  {"cortex_frontend", "cortex_query_frontend"},
 		QueryScheduler: {"cortex_query_scheduler"},
 		AlertManager:   {"cortex_alertmanager"},
@@ -95,4 +96,57 @@ func getBlacklistedMetricsPrefixesByService(serviceType ServiceType) []string {
 	}
 
 	return blacklist
+}
+
+func assertServiceMetricsNotMatching(t *testing.T, metricName string, services ...*e2emimir.MimirService) {
+	for _, service := range services {
+		if service == nil {
+			continue
+		}
+
+		metrics, err := service.Metrics()
+		require.NoError(t, err)
+
+		if isRawMetricsContainingMetricName(metricName, metrics) {
+			assert.Failf(t, "the service %s exported metrics include the metric name %s but it should not export it", service.Name(), metricName)
+		}
+	}
+}
+
+func assertServiceMetricsMatching(t *testing.T, metricName string, services ...*e2emimir.MimirService) {
+	for _, service := range services {
+		if service == nil {
+			continue
+		}
+
+		metrics, err := service.Metrics()
+		require.NoError(t, err)
+
+		if !isRawMetricsContainingMetricName(metricName, metrics) {
+			assert.Failf(t, "the service %s exported metrics don't include the metric name %s but it should export it", service.Name(), metricName)
+		}
+	}
+}
+
+func isRawMetricsContainingMetricName(metricName string, metrics string) bool {
+	metricNameRegex := regexp.MustCompile("^[^ \\{]+")
+
+	// Ensure no metric name matches the input one.
+	for _, metricLine := range strings.Split(metrics, "\n") {
+		metricLine = strings.TrimSpace(metricLine)
+		if metricLine == "" || strings.HasPrefix(metricLine, "#") {
+			continue
+		}
+
+		actualMetricName := metricNameRegex.FindStringSubmatch(metricLine)
+		if len(actualMetricName) != 1 {
+			continue
+		}
+
+		if actualMetricName[0] == metricName {
+			return true
+		}
+	}
+
+	return false
 }

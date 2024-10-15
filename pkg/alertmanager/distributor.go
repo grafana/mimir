@@ -75,7 +75,16 @@ func (d *Distributor) isQuorumWritePath(p string) bool {
 }
 
 func (d *Distributor) isUnaryWritePath(p string) bool {
-	return strings.HasSuffix(p, "/silences")
+	if strings.HasSuffix(p, "/silences") {
+		return true
+	}
+	if strings.HasSuffix(p, "/api/v1/grafana/templates/test") {
+		return true
+	}
+	if strings.HasSuffix(p, "/api/v1/grafana/receivers/test") {
+		return true
+	}
+	return false
 }
 
 func (d *Distributor) isUnaryDeletePath(p string) bool {
@@ -83,26 +92,28 @@ func (d *Distributor) isUnaryDeletePath(p string) bool {
 }
 
 func (d *Distributor) isQuorumReadPath(p string) (bool, merger.Merger) {
-	if strings.HasSuffix(p, "/v1/alerts") {
-		return true, merger.V1Alerts{}
-	}
 	if strings.HasSuffix(p, "/v2/alerts") {
 		return true, merger.V2Alerts{}
 	}
 	if strings.HasSuffix(p, "/v2/alerts/groups") {
 		return true, merger.V2AlertGroups{}
 	}
-	if strings.HasSuffix(p, "/v1/silences") {
-		return true, merger.V1Silences{}
-	}
-	if strings.HasSuffix(path.Dir(p), "/v1/silence") {
-		return true, merger.V1SilenceID{}
-	}
 	if strings.HasSuffix(p, "/v2/silences") {
 		return true, merger.V2Silences{}
 	}
 	if strings.HasSuffix(path.Dir(p), "/v2/silence") {
 		return true, merger.V2SilenceID{}
+	}
+	return false, nil
+}
+
+func (d *Distributor) isAllReadPath(p string) (bool, merger.Merger) {
+	// When querying receivers status, we need to wait for responses from all three replicas
+	// for best quality results. This is because any of the three could have sent a
+	// notification. This does mean that some requests might fail if a replica is unavailable
+	// but it has not left the ring or been deemed Unhealthy yet.
+	if strings.HasSuffix(p, "/api/v1/grafana/receivers") {
+		return true, merger.ExperimentalReceivers{}
 	}
 	return false, nil
 }
@@ -142,6 +153,10 @@ func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) 
 			d.doQuorum(userID, w, r, logger, m)
 			return
 		}
+		if ok, m := d.isAllReadPath(r.URL.Path); ok {
+			d.doAll(userID, w, r, logger, m)
+			return
+		}
 
 		// All other paths are just passed to a random replica.
 		// This is primarily used for serving the web user interface.
@@ -150,6 +165,76 @@ func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	http.Error(w, "route not supported by distributor", http.StatusNotFound)
+}
+
+func (d *Distributor) doAll(userID string, w http.ResponseWriter, r *http.Request, logger log.Logger, m merger.Merger) {
+	var body []byte
+	var err error
+	if r.Body != nil {
+		body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
+		if err != nil {
+			if util.IsRequestBodyTooLarge(err) {
+				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			level.Error(logger).Log("msg", "failed to read the request body during write", "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	grpcHeaders := httpToHttpgrpcHeaders(r.Header)
+
+	// Only get the set of replicas which contain the specified user.
+	key := shardByUser(userID)
+	replicationSet, err := d.alertmanagerRing.Get(key, RingOp, nil, nil, nil)
+	if err != nil {
+		respondFromError(err, w, logger)
+		return
+	}
+
+	// Force waiting for responses from all healthy replicas.
+	replicationSet.MaxErrors = 0
+
+	results, err := replicationSet.Do(r.Context(), 0, func(ctx context.Context, instance *ring.InstanceDesc) (any, error) {
+		ctx = user.InjectOrgID(ctx, userID)
+		sp, ctx := opentracing.StartSpanFromContext(ctx, "Distributor.doAll")
+		defer sp.Finish()
+
+		resp, err := d.doRequest(ctx, *instance, &httpgrpc.HTTPRequest{
+			Method:  r.Method,
+			Url:     r.RequestURI,
+			Body:    body,
+			Headers: grpcHeaders,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.Code/100 != 2 {
+			return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+		}
+
+		return resp, nil
+	})
+
+	if err != nil {
+		respondFromError(err, w, logger)
+		return
+	}
+
+	responses := make([]*httpgrpc.HTTPResponse, len(results))
+	for i := range results {
+		responses[i] = results[i].(*httpgrpc.HTTPResponse)
+	}
+
+	if len(results) > 0 {
+		respondFromMultipleHTTPGRPCResponses(w, logger, responses, m)
+	} else {
+		// This should not happen.
+		level.Error(logger).Log("msg", "distributor did not receive any response from alertmanagers, but there were no errors")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
 
 func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Request, logger log.Logger, m merger.Merger) {
@@ -245,7 +330,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 	sp, ctx := opentracing.StartSpanFromContext(r.Context(), "Distributor.doUnary")
 	defer sp.Finish()
 	// Until we have a mechanism to combine the results from multiple alertmanagers,
-	// we forward the request to only only of the alertmanagers.
+	// we forward the request to only one of the alertmanagers.
 	amDesc := replicationSet.Instances[rand.Intn(len(replicationSet.Instances))]
 	resp, err := d.doRequest(ctx, amDesc, req)
 	if err != nil {
@@ -257,7 +342,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 }
 
 func respondFromError(err error, w http.ResponseWriter, logger log.Logger) {
-	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 	if !ok {
 		level.Error(logger).Log("msg", "failed to process the request to the alertmanager", "err", err)
 		http.Error(w, "Failed to process the request to the alertmanager", http.StatusInternalServerError)

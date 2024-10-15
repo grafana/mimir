@@ -14,24 +14,27 @@ import (
 
 // Config holds the config options for Swift backend
 type Config struct {
-	AuthVersion       int            `yaml:"auth_version"`
-	AuthURL           string         `yaml:"auth_url"`
-	Username          string         `yaml:"username"`
-	UserDomainName    string         `yaml:"user_domain_name"`
-	UserDomainID      string         `yaml:"user_domain_id"`
-	UserID            string         `yaml:"user_id"`
-	Password          flagext.Secret `yaml:"password"`
-	DomainID          string         `yaml:"domain_id"`
-	DomainName        string         `yaml:"domain_name"`
-	ProjectID         string         `yaml:"project_id"`
-	ProjectName       string         `yaml:"project_name"`
-	ProjectDomainID   string         `yaml:"project_domain_id"`
-	ProjectDomainName string         `yaml:"project_domain_name"`
-	RegionName        string         `yaml:"region_name"`
-	ContainerName     string         `yaml:"container_name"`
-	MaxRetries        int            `yaml:"max_retries" category:"advanced"`
-	ConnectTimeout    time.Duration  `yaml:"connect_timeout" category:"advanced"`
-	RequestTimeout    time.Duration  `yaml:"request_timeout" category:"advanced"`
+	ApplicationCredentialID     string         `yaml:"application_credential_id"`
+	ApplicationCredentialName   string         `yaml:"application_credential_name"`
+	ApplicationCredentialSecret flagext.Secret `yaml:"application_credential_secret"`
+	AuthVersion                 int            `yaml:"auth_version"`
+	AuthURL                     string         `yaml:"auth_url"`
+	Username                    string         `yaml:"username"`
+	UserDomainName              string         `yaml:"user_domain_name"`
+	UserDomainID                string         `yaml:"user_domain_id"`
+	UserID                      string         `yaml:"user_id"`
+	Password                    flagext.Secret `yaml:"password"`
+	DomainID                    string         `yaml:"domain_id"`
+	DomainName                  string         `yaml:"domain_name"`
+	ProjectID                   string         `yaml:"project_id"`
+	ProjectName                 string         `yaml:"project_name"`
+	ProjectDomainID             string         `yaml:"project_domain_id"`
+	ProjectDomainName           string         `yaml:"project_domain_name"`
+	RegionName                  string         `yaml:"region_name"`
+	ContainerName               string         `yaml:"container_name"`
+	MaxRetries                  int            `yaml:"max_retries" category:"advanced"`
+	ConnectTimeout              time.Duration  `yaml:"connect_timeout" category:"advanced"`
+	RequestTimeout              time.Duration  `yaml:"request_timeout" category:"advanced"`
 }
 
 // RegisterFlags registers the flags for Swift storage
@@ -41,6 +44,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // RegisterFlagsWithPrefix registers the flags for Swift storage with the provided prefix
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.ApplicationCredentialID, prefix+"swift.application-credential-id", "", "OpenStack Swift application credential id")
+	f.StringVar(&cfg.ApplicationCredentialName, prefix+"swift.application-credential-name", "", "OpenStack Swift application credential name")
+	f.Var(&cfg.ApplicationCredentialSecret, prefix+"swift.application-credential-secret", "OpenStack Swift application credential secret")
 	f.IntVar(&cfg.AuthVersion, prefix+"swift.auth-version", 0, "OpenStack Swift authentication API version. 0 to autodetect.")
 	f.StringVar(&cfg.AuthURL, prefix+"swift.auth-url", "", "OpenStack Swift authentication URL")
 	f.StringVar(&cfg.Username, prefix+"swift.username", "", "OpenStack Swift username.")

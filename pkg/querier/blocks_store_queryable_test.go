@@ -6,33 +6,47 @@
 package querier
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	gogoStatus "github.com/gogo/status"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -42,8 +56,9 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -82,7 +97,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		queryLimiter      *limiter.QueryLimiter
 		expectedSeries    []seriesResult
 		expectedErr       error
-		expectedMetrics   string
+		expectedMetrics   func(streamingEnabled bool) string
 		queryShardID      string
 	}{
 		"no block in the storage matching the query time range": {
@@ -135,6 +150,59 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 2
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 1
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"a single store-gateway instance holds the required blocks (single returned series) - multiple chunks per series for stats": {
 			finderResult: bucketindex.Blocks{
@@ -163,6 +231,59 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						{t: minT + 1, v: 2},
 					},
 				},
+			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 2
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 1
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
 			},
 		},
 		"a single store-gateway instance holds the required blocks (multiple returned series)": {
@@ -196,6 +317,59 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 3
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 1
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"multiple store-gateway instances holds the required blocks without overlapping series (single returned series)": {
 			finderResult: bucketindex.Blocks{
@@ -224,6 +398,59 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						{t: minT + 1, v: 2},
 					},
 				},
+			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 2
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 2
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
 			},
 		},
 		"multiple store-gateway instances holds the required blocks with overlapping series (single returned series)": {
@@ -255,6 +482,59 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 3
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 2
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"multiple store-gateway instances holds the required blocks with overlapping series (multiple returned series)": {
 			finderResult: bucketindex.Blocks{
@@ -264,7 +544,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			storeSetResponses: []interface{}{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
-						mockSeriesResponse(series1Label, minT+1, 2),
+						mockSeriesResponse(series1Label, minT+1, 2), // a chunk is written for each mockSeriesResponse
 						mockSeriesResponse(series2Label, minT, 1),
 						mockHintsResponse(block1),
 					}}: {block1},
@@ -297,7 +577,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
-			expectedMetrics: `
+			expectedMetrics: func(_ bool) string {
+				return `
 				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
 				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
@@ -333,7 +614,62 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
-			`,
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 6
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
+		},
+		"a single store-gateway instance returns no response implies querying another instance for the same blocks (consistency check passed)": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				// First attempt returns a client whose response does not include all expected blocks.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1", mockedSeriesResponses: nil,
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "2.2.2.2", mockedSeriesResponses: []*storepb.SeriesResponse{mockHintsResponse(block1)},
+					}: {block1},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+		},
+		"two store-gateway instances returning no response causes consistency check to fail": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+			},
+			storeSetResponses: []interface{}{
+				// First attempt returns a client whose response does not include all expected blocks.
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "1.1.1.1", mockedSeriesResponses: nil,
+					}: {block1},
+				},
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr: "2.2.2.2", mockedSeriesResponses: nil,
+					}: {block1},
+				},
+				// Third attempt returns an error because there are no other store-gateways left.
+				errors.New("no store-gateway remaining after exclude"),
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedErr:  newStoreConsistencyCheckFailedError([]ulid.ULID{block1}),
 		},
 		"a single store-gateway instance has some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
@@ -355,6 +691,64 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: noOpQueryLimiter,
 			expectedErr:  newStoreConsistencyCheckFailedError([]ulid.ULID{block2}),
+			expectedMetrics: func(streamingEnabled bool) string {
+				expectedChunksTotal := 2
+				if streamingEnabled {
+					expectedChunksTotal = 0
+				}
+
+				return fmt.Sprintf(`
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total %d
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 0
+				cortex_querier_storegateway_instances_hit_per_query_sum 0
+				cortex_querier_storegateway_instances_hit_per_query_count 0
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 0
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 0
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 1
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`, expectedChunksTotal)
+			},
 		},
 		"multiple store-gateway instances have some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
@@ -381,6 +775,64 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: noOpQueryLimiter,
 			expectedErr:  newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}),
+			expectedMetrics: func(streamingEnabled bool) string {
+				expectedChunksTotal := 2
+				if streamingEnabled {
+					expectedChunksTotal = 0
+				}
+
+				return fmt.Sprintf(`
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 4
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 4
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total %d
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 0
+				cortex_querier_storegateway_instances_hit_per_query_sum 0
+				cortex_querier_storegateway_instances_hit_per_query_count 0
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 0
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 0
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 0
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 1
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`, expectedChunksTotal)
+			},
 		},
 		"multiple store-gateway instances have some missing blocks but queried from a replica during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -433,7 +885,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
-			expectedMetrics: `
+			expectedMetrics: func(_ bool) string {
+				return `
 				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
 				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
@@ -469,7 +922,19 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
-			`,
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"max chunks per query limit greater then the number of chunks fetched": {
 			finderResult: bucketindex.Blocks{
@@ -496,6 +961,59 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
+			expectedMetrics: func(_ bool) string {
+				return `
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 2
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_instances_hit_per_query_sum 1
+				cortex_querier_storegateway_instances_hit_per_query_count 1
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"max chunks per query limit hit while fetching chunks at first attempt": {
 			finderResult: bucketindex.Blocks{
@@ -513,7 +1031,79 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(1),
+			expectedMetrics: func(streamingEnabled bool) string {
+				data := struct {
+					ChunksTotal            int
+					ConsistencyChecksTotal int
+					InstancesPerQuery      int
+					RefetchesPerQuery      int
+				}{
+					ChunksTotal:            1,
+					ConsistencyChecksTotal: 0,
+					InstancesPerQuery:      0,
+					RefetchesPerQuery:      0,
+				}
+
+				if streamingEnabled {
+					data.ChunksTotal = 2
+					data.ConsistencyChecksTotal = 1
+					data.InstancesPerQuery = 1
+					data.RefetchesPerQuery = 1
+				}
+
+				return mustExecuteTemplate(`
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total {{.ChunksTotal}}
+
+				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_sum {{.InstancesPerQuery}}
+				cortex_querier_storegateway_instances_hit_per_query_count {{.InstancesPerQuery}}
+
+				# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+				# TYPE cortex_querier_storegateway_refetches_per_query histogram
+				cortex_querier_storegateway_refetches_per_query_bucket{le="0"} {{.RefetchesPerQuery}}
+				cortex_querier_storegateway_refetches_per_query_bucket{le="1"} {{.RefetchesPerQuery}}
+				cortex_querier_storegateway_refetches_per_query_bucket{le="2"} {{.RefetchesPerQuery}}
+				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} {{.RefetchesPerQuery}}
+				cortex_querier_storegateway_refetches_per_query_sum 0
+				cortex_querier_storegateway_refetches_per_query_count {{.RefetchesPerQuery}}
+
+				# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+				# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+				cortex_querier_blocks_consistency_checks_failed_total 0
+
+				# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+				# TYPE cortex_querier_blocks_consistency_checks_total counter
+				cortex_querier_blocks_consistency_checks_total {{.ConsistencyChecksTotal}}
+			`, data)
+			},
 		},
 		"max estimated chunks per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -531,7 +1121,79 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxEstimatedChunksPerQueryLimitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxEstimatedChunksPerQueryLimitError(1),
+			expectedMetrics: func(streamingEnabled bool) string {
+				data := struct {
+					ChunksTotal            int
+					ConsistencyChecksTotal int
+					InstancesPerQuery      int
+					RefetchesPerQuery      int
+				}{
+					ChunksTotal:            1,
+					ConsistencyChecksTotal: 0,
+					InstancesPerQuery:      0,
+					RefetchesPerQuery:      0,
+				}
+
+				if streamingEnabled {
+					data.ChunksTotal = 0
+					data.ConsistencyChecksTotal = 1
+					data.InstancesPerQuery = 1
+					data.RefetchesPerQuery = 1
+				}
+
+				return mustExecuteTemplate(`
+					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+					# TYPE cortex_querier_blocks_found_total counter
+					cortex_querier_blocks_found_total 2
+
+					# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+					# TYPE cortex_querier_blocks_queried_total counter
+					cortex_querier_blocks_queried_total 2
+
+					# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+					# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+					cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total {{.ChunksTotal}}
+
+					# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+					# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_sum {{.InstancesPerQuery}}
+					cortex_querier_storegateway_instances_hit_per_query_count {{.InstancesPerQuery}}
+
+					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+					# TYPE cortex_querier_storegateway_refetches_per_query histogram
+					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} {{.RefetchesPerQuery}}
+					cortex_querier_storegateway_refetches_per_query_bucket{le="1"} {{.RefetchesPerQuery}}
+					cortex_querier_storegateway_refetches_per_query_bucket{le="2"} {{.RefetchesPerQuery}}
+					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} {{.RefetchesPerQuery}}
+					cortex_querier_storegateway_refetches_per_query_sum 0
+					cortex_querier_storegateway_refetches_per_query_count {{.RefetchesPerQuery}}
+
+					# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+					# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+					cortex_querier_blocks_consistency_checks_failed_total 0
+
+					# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+					# TYPE cortex_querier_blocks_consistency_checks_total counter
+					cortex_querier_blocks_consistency_checks_total {{.ConsistencyChecksTotal}}
+				`, data)
+			},
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -569,7 +1231,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 3)),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(3),
 		},
 		"max series per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -587,7 +1249,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxSeriesHitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxSeriesHitLimitError(1),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -605,7 +1267,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, 8)),
+			expectedErr:  limiter.NewMaxChunkBytesHitLimitError(8),
 		},
 		"blocks with non-matching shard are filtered out": {
 			finderResult: bucketindex.Blocks{
@@ -635,7 +1297,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
-			expectedMetrics: `
+			expectedMetrics: func(_ bool) string {
+				return `
 					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
 					# TYPE cortex_querier_blocks_found_total counter
 					cortex_querier_blocks_found_total 4
@@ -672,7 +1335,19 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
-			`,
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
+
+					# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+					# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+					cortex_querier_blocks_consistency_checks_failed_total 0
+
+					# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+					# TYPE cortex_querier_blocks_consistency_checks_total counter
+					cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"all blocks are queried if shards don't match": {
 			finderResult: bucketindex.Blocks{
@@ -702,7 +1377,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
-			expectedMetrics: `
+			expectedMetrics: func(_ bool) string {
+				return `
 					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
 					# TYPE cortex_querier_blocks_found_total counter
 					cortex_querier_blocks_found_total 4
@@ -739,7 +1415,19 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
-			`,
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
+
+					# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+					# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+					cortex_querier_blocks_consistency_checks_failed_total 0
+
+					# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+					# TYPE cortex_querier_blocks_consistency_checks_total counter
+					cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
 			finderResult: bucketindex.Blocks{
@@ -769,7 +1457,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					},
 				},
 			},
-			expectedMetrics: `
+			expectedMetrics: func(_ bool) string {
+				return `
 					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
 					# TYPE cortex_querier_blocks_found_total counter
 					cortex_querier_blocks_found_total 1
@@ -806,7 +1495,19 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 1
 					cortex_querier_storegateway_refetches_per_query_count 1
-			`,
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 1
+
+					# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+					# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+					cortex_querier_blocks_consistency_checks_failed_total 0
+
+					# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+					# TYPE cortex_querier_blocks_consistency_checks_total counter
+					cortex_querier_blocks_consistency_checks_total 1
+			`
+			},
 		},
 	}
 
@@ -849,7 +1550,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 					stores := &blocksStoreSetMock{mockedResponses: storeSetResponses}
 					finder := &blocksFinderMock{}
-					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
+					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
@@ -862,7 +1563,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						maxT:        maxT,
 						finder:      finder,
 						stores:      stores,
-						consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+						consistency: NewBlocksConsistency(0, reg),
 						logger:      log.NewNopLogger(),
 						metrics:     newBlocksStoreQueryableMetrics(reg),
 						limits:      testData.limits,
@@ -897,50 +1598,265 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 							assert.False(t, set.Next())
 							assert.Nil(t, set.Warnings())
 						}
-						return
-					}
+					} else {
+						require.NoError(t, set.Err())
+						assert.Len(t, set.Warnings(), 0)
 
-					require.NoError(t, set.Err())
-					assert.Len(t, set.Warnings(), 0)
+						// Read all returned series and their values.
+						var actualSeries []seriesResult
+						var it chunkenc.Iterator
+						for set.Next() {
+							var actualValues []valueResult
 
-					// Read all returned series and their values.
-					var actualSeries []seriesResult
-					var it chunkenc.Iterator
-					for set.Next() {
-						var actualValues []valueResult
+							it = set.At().Iterator(it)
+							for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+								assert.Equal(t, valType, chunkenc.ValFloat)
+								t, v := it.At()
+								actualValues = append(actualValues, valueResult{
+									t: t,
+									v: v,
+								})
+							}
 
-						it = set.At().Iterator(it)
-						for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-							assert.Equal(t, valType, chunkenc.ValFloat)
-							t, v := it.At()
-							actualValues = append(actualValues, valueResult{
-								t: t,
-								v: v,
+							require.NoError(t, it.Err())
+
+							actualSeries = append(actualSeries, seriesResult{
+								lbls:   set.At().Labels(),
+								values: actualValues,
 							})
 						}
-
-						require.NoError(t, it.Err())
-
-						actualSeries = append(actualSeries, seriesResult{
-							lbls:   set.At().Labels(),
-							values: actualValues,
-						})
+						require.NoError(t, set.Err())
+						assert.Equal(t, testData.expectedSeries, actualSeries)
+						assert.Equal(t, seriesCount, int(st.FetchedSeriesCount))
+						assert.Equal(t, chunksCount, int(st.FetchedChunksCount))
 					}
-					require.NoError(t, set.Err())
-					assert.Equal(t, testData.expectedSeries, actualSeries)
-					assert.Equal(t, seriesCount, int(st.FetchedSeriesCount))
-					assert.Equal(t, chunksCount, int(st.FetchedChunksCount))
 
 					// Assert on metrics (optional, only for test cases defining it).
-					if testData.expectedMetrics != "" {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
-							"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
-							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
+					if testData.expectedMetrics != nil {
+						if expectedMetrics := testData.expectedMetrics(streaming); expectedMetrics != "" {
+							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+								"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
+								"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
+								"cortex_querier_query_storegateway_chunks_total", "cortex_querier_blocks_consistency_checks_total", "cortex_querier_blocks_consistency_checks_failed_total"))
+						}
 					}
 				})
 			}
 		})
 	}
+}
+
+func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhileRunningRequestOnStoreGateway(t *testing.T) {
+	const (
+		tenantID   = "user-1"
+		metricName = "test_metric"
+		minT       = int64(math.MinInt64)
+		maxT       = int64(math.MaxInt64)
+	)
+
+	var (
+		block1 = ulid.MustNew(1, nil)
+		logger = test.NewTestingLogger(t)
+	)
+
+	// Create an utility to easily run each test case in isolation.
+	prepareTestCase := func(t *testing.T) (*mockStoreGatewayServer, *blocksStoreQuerier, *prometheus.Registry) {
+		// Create a GRPC server used to query the mocked service.
+		grpcServer := grpc.NewServer()
+		t.Cleanup(grpcServer.GracefulStop)
+
+		srv := &mockStoreGatewayServer{}
+		storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
+
+		listener, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+
+		go func() {
+			require.NoError(t, grpcServer.Serve(listener))
+		}()
+
+		// Mock the blocks finder.
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, nil)
+
+		// Create a real gRPC client connecting to the gRPC server we control in this test.
+		clientCfg := grpcclient.Config{}
+		flagext.DefaultValues(&clientCfg)
+
+		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, client.Close())
+		})
+
+		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
+		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+			// These tests only require 1 mocked response, but we mock it multiple times to make debugging easier
+			// when the tests fail because the request is retried (even if we expect not to be retried).
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+		}}
+
+		reg := prometheus.NewPedanticRegistry()
+		q := &blocksStoreQuerier{
+			minT:        minT,
+			maxT:        maxT,
+			finder:      finder,
+			stores:      stores,
+			consistency: NewBlocksConsistency(0, reg),
+			logger:      logger,
+			metrics:     newBlocksStoreQueryableMetrics(reg),
+			limits:      &blocksStoreLimitsMock{},
+		}
+
+		return srv, q, reg
+	}
+
+	t.Run("Series()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of Series().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q, reg := prepareTestCase(t)
+
+		srv.onSeries = func(*storepb.SeriesRequest, storegatewaypb.StoreGateway_SeriesServer) error {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		sp := &storage.SelectHints{Start: minT, End: maxT}
+		set := q.Select(ctx, true, sp, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, set.Err(), context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+
+		// Ensure no consistency check failure is tracked when context is canceled.
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+			# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+			cortex_querier_blocks_consistency_checks_failed_total 0
+
+			# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+			# TYPE cortex_querier_blocks_consistency_checks_total counter
+			cortex_querier_blocks_consistency_checks_total 0
+			`),
+			"cortex_querier_blocks_consistency_checks_total",
+			"cortex_querier_blocks_consistency_checks_failed_total"))
+	})
+
+	t.Run("LabelNames()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelNames().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q, reg := prepareTestCase(t)
+
+		srv.onLabelNames = func(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelNamesResponse{}, nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelNames(ctx, &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+
+		// Ensure no consistency check failure is tracked when context is canceled.
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+			# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+			cortex_querier_blocks_consistency_checks_failed_total 0
+
+			# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+			# TYPE cortex_querier_blocks_consistency_checks_total counter
+			cortex_querier_blocks_consistency_checks_total 0
+			`),
+			"cortex_querier_blocks_consistency_checks_total",
+			"cortex_querier_blocks_consistency_checks_failed_total"))
+	})
+
+	t.Run("LabelValues()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelValues().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q, reg := prepareTestCase(t)
+
+		srv.onLabelValues = func(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelValuesResponse{}, nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+
+		// Ensure no consistency check failure is tracked when context is canceled.
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_blocks_consistency_checks_failed_total Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+			# TYPE cortex_querier_blocks_consistency_checks_failed_total counter
+			cortex_querier_blocks_consistency_checks_failed_total 0
+
+			# HELP cortex_querier_blocks_consistency_checks_total Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.
+			# TYPE cortex_querier_blocks_consistency_checks_total counter
+			cortex_querier_blocks_consistency_checks_total 0
+			`),
+			"cortex_querier_blocks_consistency_checks_total",
+			"cortex_querier_blocks_consistency_checks_failed_total"))
+	})
 }
 
 func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
@@ -1009,14 +1925,14 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 				{ID: block},
-			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+			}, nil)
 
 			q := &blocksStoreQuerier{
 				minT:        minT,
 				maxT:        maxT,
 				finder:      finder,
 				stores:      stores,
-				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(reg),
 				limits:      &blocksStoreLimitsMock{},
@@ -1438,6 +2354,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_refetches_per_query_sum 2
 				cortex_querier_storegateway_refetches_per_query_count 1
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
@@ -1509,21 +2428,21 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 				finder := &blocksFinderMock{}
-				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
+				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
 				}
 
 				if testFunc == "LabelNames" {
-					names, warnings, err := q.LabelNames(ctx)
+					names, warnings, err := q.LabelNames(ctx, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -1540,7 +2459,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					values, warnings, err := q.LabelValues(ctx, labels.MetricName)
+					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -1580,14 +2499,14 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder := &blocksFinderMock{}
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 					{ID: block1},
-				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+				}, nil)
 
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
@@ -1596,9 +2515,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				var err error
 				switch testFunc {
 				case "LabelNames":
-					_, _, err = q.LabelNames(ctx)
+					_, _, err = q.LabelNames(ctx, &storage.LabelHints{})
 				case "LabelValues":
-					_, _, err = q.LabelValues(ctx, labels.MetricName)
+					_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 				}
 
 				require.Error(t, err)
@@ -1652,7 +2571,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), error(nil))
 
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
@@ -1661,7 +2580,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				maxT:            testData.queryMaxT,
 				finder:          finder,
 				stores:          &blocksStoreSetMock{},
-				consistency:     NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+				consistency:     NewBlocksConsistency(0, nil),
 				logger:          log.NewNopLogger(),
 				metrics:         newBlocksStoreQueryableMetrics(nil),
 				limits:          &blocksStoreLimitsMock{},
@@ -1722,12 +2641,41 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			expectedMinT:         util.TimeToMillis(now.Add(-sevenDays)),
 			expectedMaxT:         util.TimeToMillis(now),
 		},
+
+		"should manipulate query on large time range over the limit": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(now.Add(-thirtyDays).Add(-100 * time.Hour)),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should manipulate the start of a query without start time": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(v1.MinTime),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should not manipulate query without end time, we allow querying arbitrarily into the future": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(now.Add(-time.Hour)),
+			queryMaxT:            util.TimeToMillis(v1.MaxTime),
+			expectedMinT:         util.TimeToMillis(now.Add(-time.Hour)),
+			expectedMaxT:         util.TimeToMillis(v1.MaxTime),
+		},
+		"should manipulate the start of a query without start or end time, we allow querying arbitrarily into the future, but not the past": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(v1.MinTime),
+			queryMaxT:            util.TimeToMillis(v1.MaxTime),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(v1.MaxTime),
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), error(nil))
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
@@ -1735,7 +2683,7 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				maxT:        testData.queryMaxT,
 				finder:      finder,
 				stores:      &blocksStoreSetMock{},
-				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(nil),
 				limits: &blocksStoreLimitsMock{
@@ -1743,17 +2691,28 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames(ctx)
-			require.NoError(t, err)
-			require.Len(t, finder.Calls, 1)
-			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
-			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
+			assertCalledWithMinMaxTime := func() {
+				const delta = float64(5000)
+				require.Len(t, finder.Calls, 1)
+				gotStartMillis := finder.Calls[0].Arguments.Get(2).(int64)
+				assert.InDeltaf(t, testData.expectedMinT, gotStartMillis, delta, "expected start %s, got %s", util.TimeFromMillis(testData.expectedMinT).UTC(), util.TimeFromMillis(gotStartMillis).UTC())
+				gotEndMillis := finder.Calls[0].Arguments.Get(3).(int64)
+				assert.InDeltaf(t, testData.expectedMaxT, gotEndMillis, delta, "expected end %s, got %s", util.TimeFromMillis(testData.expectedMinT).UTC(), util.TimeFromMillis(gotEndMillis).UTC())
+				finder.Calls = finder.Calls[1:]
+			}
 
-			_, _, err = q.LabelValues(ctx, "foo")
-			require.Len(t, finder.Calls, 2)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
-			assert.Equal(t, testData.expectedMaxT, finder.Calls[1].Arguments.Get(3))
+			// Assert on the time range of the actual executed query (5s delta).
+			t.Run("LabelNames", func(t *testing.T) {
+				_, _, err := q.LabelNames(ctx, &storage.LabelHints{})
+				require.NoError(t, err)
+				assertCalledWithMinMaxTime()
+			})
+
+			t.Run("LabelValues", func(t *testing.T) {
+				_, _, err := q.LabelValues(ctx, "foo", &storage.LabelHints{})
+				require.NoError(t, err)
+				assertCalledWithMinMaxTime()
+			})
 		})
 	}
 }
@@ -1843,7 +2802,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
 						{ID: block1},
 						{ID: block2},
-					}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+					}, error(nil))
 
 					// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
 					gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: append(testData.storeGateway1Responses, mockHintsResponse(block1))}
@@ -1865,7 +2824,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
@@ -2023,9 +2982,9 @@ type blocksFinderMock struct {
 	mock.Mock
 }
 
-func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, map[ulid.ULID]*bucketindex.BlockDeletionMark, error) {
+func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error) {
 	args := m.Called(ctx, userID, minT, maxT)
-	return args.Get(0).(bucketindex.Blocks), args.Get(1).(map[ulid.ULID]*bucketindex.BlockDeletionMark), args.Error(2)
+	return args.Get(0).(bucketindex.Blocks), args.Error(1)
 }
 
 type storeGatewayClientMock struct {
@@ -2300,20 +3259,131 @@ func valuesFromSeries(name string, series ...labels.Labels) []string {
 	return values
 }
 
-func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
+func TestStoreConsistencyCheckFailedErr(t *testing.T) {
+	t.Run("Error() should return an human readable error message", func(t *testing.T) {
+		err := newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)})
+		assert.Equal(t, `failed to fetch some blocks (err-mimir-store-consistency-check-failed). The failed blocks are: 00000000010000000000000000`, err.Error())
+	})
+
+	t.Run("should support errors.Is()", func(t *testing.T) {
+		err := newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)})
+		assert.True(t, errors.Is(err, &storeConsistencyCheckFailedErr{}))
+
+		wrapped := errors.Wrap(err, "wrapped")
+		assert.True(t, errors.Is(wrapped, &storeConsistencyCheckFailedErr{}))
+	})
+
+	t.Run("should support errors.As()", func(t *testing.T) {
+		var target *storeConsistencyCheckFailedErr
+
+		err := newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)})
+		assert.ErrorAs(t, err, &target)
+
+		wrapped := errors.Wrap(err, "wrapped")
+		assert.ErrorAs(t, wrapped, &target)
+	})
+}
+
+func TestShouldRetry(t *testing.T) {
 	tests := map[string]struct {
-		err error
-		msg string
+		err      error
+		expected bool
 	}{
-		"newStoreConsistencyCheckFailedError": {
-			err: newStoreConsistencyCheckFailedError([]ulid.ULID{ulid.MustNew(1, nil)}),
-			msg: `failed to fetch some blocks (err-mimir-store-consistency-check-failed). The failed blocks are: 00000000010000000000000000`,
+		"should not retry on context canceled": {
+			err:      context.Canceled,
+			expected: false,
+		},
+		"should not retry on wrapped context canceled": {
+			err:      errors.Wrap(context.Canceled, "test"),
+			expected: false,
+		},
+		"should not retry on deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: false,
+		},
+		"should not retry on wrapped deadline exceeded": {
+			err:      errors.Wrap(context.DeadlineExceeded, "test"),
+			expected: false,
+		},
+		"should not retry on gRPC error with status code = 422": {
+			err:      status.Error(http.StatusUnprocessableEntity, "test"),
+			expected: false,
+		},
+		"should not retry on wrapped gRPC error with status code = 422": {
+			err:      errors.Wrap(status.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: false,
+		},
+		"should not retry on gogo error with status code = 422": {
+			err:      gogoStatus.Error(http.StatusUnprocessableEntity, "test"),
+			expected: false,
+		},
+		"should not retry on wrapped gogo error with status code = 422": {
+			err:      errors.Wrap(gogoStatus.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: false,
+		},
+		"should retry on gRPC error with status code != 422": {
+			err:      status.Error(http.StatusInternalServerError, "test"),
+			expected: true,
+		},
+		"should retry on grpc.ErrClientConnClosing": {
+			// Ignore deprecation warning for now
+			// nolint:staticcheck
+			err:      grpc.ErrClientConnClosing,
+			expected: true,
+		},
+		"should retry on wrapped grpc.ErrClientConnClosing": {
+			// Ignore deprecation warning for now
+			// nolint:staticcheck
+			err:      globalerror.WrapGRPCErrorWithContextError(context.Background(), grpc.ErrClientConnClosing),
+			expected: true,
+		},
+		"should retry on generic error": {
+			err:      errors.New("test"),
+			expected: true,
+		},
+		"should retry stop query on store-gateway instance limit": {
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
+			expected: true,
+		},
+		"should retry on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
+			expected: true,
+		},
+		"should retry on any other mimirpb error": {
+			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}).Err(),
+			expected: true,
+		},
+		"should retry on any unknown error detail": {
+			err: func() error {
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"})
+				require.NoError(t, createErr)
+				return st.Err()
+			}(),
+			expected: true,
+		},
+		"should retry on multiple error details": {
+			err: func() error {
+				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
+				require.NoError(t, createErr)
+				return st.Err()
+			}(),
+			expected: true,
 		},
 	}
 
-	for testName, tc := range tests {
+	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, tc.msg, tc.err.Error())
+			assert.Equal(t, testData.expected, shouldRetry(testData.err))
 		})
 	}
+}
+
+func mustExecuteTemplate(tmpl string, data any) string {
+	buffer := bytes.NewBuffer(nil)
+
+	if err := template.Must(template.New("").Parse(tmpl)).Execute(buffer, data); err != nil {
+		panic(err)
+	}
+
+	return buffer.String()
 }

@@ -44,6 +44,9 @@ type ingesterMetrics struct {
 	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
 
+	// Owned series
+	ownedSeriesPerUser *prometheus.GaugeVec
+
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
 	maxSeriesGauge               prometheus.GaugeFunc
@@ -185,6 +188,11 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
 		}, []string{"reason"}),
+
+		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_owned_series",
+			Help: "Number of currently owned series per user.",
+		}, []string{"user"}),
 
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,
@@ -392,6 +400,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
+	m.ownedSeriesPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
@@ -411,24 +420,26 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 }
 
 type discardedMetrics struct {
-	sampleOutOfBounds    *prometheus.CounterVec
-	sampleOutOfOrder     *prometheus.CounterVec
-	sampleTooOld         *prometheus.CounterVec
-	sampleTooFarInFuture *prometheus.CounterVec
-	newValueForTimestamp *prometheus.CounterVec
-	perUserSeriesLimit   *prometheus.CounterVec
-	perMetricSeriesLimit *prometheus.CounterVec
+	sampleOutOfBounds      *prometheus.CounterVec
+	sampleOutOfOrder       *prometheus.CounterVec
+	sampleTooOld           *prometheus.CounterVec
+	sampleTooFarInFuture   *prometheus.CounterVec
+	newValueForTimestamp   *prometheus.CounterVec
+	perUserSeriesLimit     *prometheus.CounterVec
+	perMetricSeriesLimit   *prometheus.CounterVec
+	invalidNativeHistogram *prometheus.CounterVec
 }
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
-		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
-		sampleTooOld:         validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
-		sampleTooFarInFuture: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
-		newValueForTimestamp: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
-		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
-		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
+		sampleOutOfBounds:      validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleOutOfOrder:       validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
+		sampleTooOld:           validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
+		sampleTooFarInFuture:   validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
+		newValueForTimestamp:   validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
+		perUserSeriesLimit:     validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
+		perMetricSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
+		invalidNativeHistogram: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogram),
 	}
 }
 
@@ -440,6 +451,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.newValueForTimestamp.DeletePartialMatch(filter)
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
+	m.invalidNativeHistogram.DeletePartialMatch(filter)
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
@@ -450,6 +462,7 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.newValueForTimestamp.DeleteLabelValues(userID, group)
 	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
+	m.invalidNativeHistogram.DeleteLabelValues(userID, group)
 }
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.

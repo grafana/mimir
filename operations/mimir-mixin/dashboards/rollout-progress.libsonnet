@@ -5,14 +5,24 @@ local filename = 'mimir-rollout-progress.json';
 (import 'dashboard-queries.libsonnet') {
   local config = $.queries {
     namespace_matcher: $.namespaceMatcher(),
-    per_cluster_label: $._config.per_cluster_label,
-    write_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.distributor),
-    read_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.query_frontend),
+    requests_per_second_metric: if $._config.gateway_enabled then $.queries.gateway.requestsPerSecondMetric else $.queries.distributor.requestsPerSecondMetric,
+    write_job_selector: if $._config.gateway_enabled then $.jobSelector($._config.job_names.gateway) else $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', $.queries.write_http_routes_regex)],
+    read_job_selector: if $._config.gateway_enabled then $.jobSelector($._config.job_names.gateway) else $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)],
+    workload_label_replace_open:
+      std.repeat('label_replace(', std.length($._config.rollout_dashboard.workload_label_replaces)),
+    workload_label_replace_close:
+      (if std.length($._config.rollout_dashboard.workload_label_replaces) > 0 then ', ' else '')
+      + std.join(', ', [
+        '"workload", "%(replacement)s", "%(src_label)s", "%(regex)s")' % replace
+        for replace in $._config.rollout_dashboard.workload_label_replaces
+      ]),
   },
 
   [filename]:
+    assert std.md5(filename) == '7f0b5567d543a1698e695b530eb7f5de' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Rollout progress') + { uid: std.md5(filename) })
-    .addClusterSelectorTemplates(false) + {
+    .addClusterSelectorTemplates(false)
+    .addShowNativeLatencyVariable() + {
       // This dashboard uses the new grid system in order to place panels (using gridPos).
       // Because of this we can't use the mixin's addRow() and addPanel().
       schemaVersion: 27,
@@ -28,92 +38,56 @@ local filename = 'mimir-rollout-progress.json';
             // After the grouping, the resulting label is called "cortex_service".
             |||
               (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas_updated", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas_updated{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas_updated{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 /
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
               ) and (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 > 0
               )
             ||| % config,
             |||
               (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas_ready", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas_ready{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas_ready{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 /
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
               ) and (
-                sum by(cortex_service) (
-                  label_replace(
-                    label_replace(
-                      label_replace(
-                        {__name__=~"kube_(deployment|statefulset)_status_replicas", %(namespace_matcher)s},
-                        "cortex_service", "$1", "deployment", "(.+)"
-                      ),
-                      "cortex_service", "$1", "statefulset", "(.+)"
-                    ),
-                    # Strip the -zone-X suffix, if there is one
-                    "cortex_service", "$1", "cortex_service", "(.*?)(?:-zone-[a-z])?"
-                  )
+                sum by (workload) (
+                  %(workload_label_replace_open)s
+                    kube_deployment_status_replicas{%(namespace_matcher)s}
+                    or
+                    kube_statefulset_status_replicas{%(namespace_matcher)s}
+                  %(workload_label_replace_close)s
                 )
                 > 0
               )
@@ -128,6 +102,7 @@ local filename = 'mimir-rollout-progress.json';
           min=0,
           max=1
         ) +
+        $.showAllTooltip +
         {
           id: 1,
           gridPos: { h: 13, w: 10, x: 0, y: 0 },
@@ -150,14 +125,11 @@ local filename = 'mimir-rollout-progress.json';
           options+: {
             xField: 'Workload',
             orientation: 'horizontal',
-            tooltip+: {
-              mode: 'multi',
-            },
           },
           transformations: [
             {
               id: 'joinByField',
-              options: { byField: 'cortex_service', mode: 'outer' },
+              options: { byField: 'workload', mode: 'outer' },
             },
             {
               id: 'organize',
@@ -167,7 +139,7 @@ local filename = 'mimir-rollout-progress.json';
                   'Time 2': true,
                 },
                 renameByName: {
-                  cortex_service: 'Workload',
+                  workload: 'Workload',
                   'Value #A': 'Updated',
                   'Value #B': 'Ready',
                 },
@@ -191,49 +163,56 @@ local filename = 'mimir-rollout-progress.json';
         // Writes
         //
         $.panel('Writes - 2xx') +
-        $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"2.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
-        ||| % config, thresholds=[
-          { color: 'green', value: null },
-        ]) + {
+        $.ncSumCountRateStatPanel(
+          metric=config.requests_per_second_metric,
+          selectors=config.write_job_selector,
+          extra_selector=[utils.selector.re('status_code', '2.+')],
+          thresholds=[{ color: 'green', value: null }],
+        ) + {
           id: 2,
           gridPos: { h: 4, w: 2, x: 10, y: 0 },
         },
 
         $.panel('Writes - 4xx') +
-        $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"4.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
-        ||| % config, thresholds=[
-          { color: 'green', value: null },
-          { color: 'orange', value: 0.2 },
-          { color: 'red', value: 0.5 },
-        ]) + {
+        $.ncSumCountRateStatPanel(
+          metric=config.requests_per_second_metric,
+          selectors=config.write_job_selector,
+          extra_selector=[utils.selector.re('status_code', '4.+')],
+          thresholds=[
+            { color: 'green', value: null },
+            { color: 'orange', value: 0.2 },
+            { color: 'red', value: 0.5 },
+          ]
+        ) + {
           id: 3,
           gridPos: { h: 4, w: 2, x: 12, y: 0 },
         },
 
         $.panel('Writes - 5xx') +
-        $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"5.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
-        ||| % config, thresholds=[
-          { color: 'green', value: null },
-          { color: 'red', value: 0.01 },
-        ]) + {
+        $.ncSumCountRateStatPanel(
+          metric=config.requests_per_second_metric,
+          selectors=config.write_job_selector,
+          extra_selector=[utils.selector.re('status_code', '5.+')],
+          thresholds=[
+            { color: 'green', value: null },
+            { color: 'red', value: 0.01 },
+          ]
+        ) + {
           id: 4,
           gridPos: { h: 4, w: 2, x: 14, y: 0 },
         },
 
         $.panel('Writes 99th latency') +
-        $.newStatPanel(|||
-          histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}))
-        ||| % config, unit='s', thresholds=[
-          { color: 'green', value: null },
-          { color: 'orange', value: 0.2 },
-          { color: 'red', value: 0.5 },
-        ]) + {
+        $.ncLatencyStatPanel(
+          quantile='0.99',
+          metric=config.requests_per_second_metric,
+          selectors=config.write_job_selector,
+          thresholds=[
+            { color: 'green', value: null },
+            { color: 'orange', value: 0.2 },
+            { color: 'red', value: 0.5 },
+          ]
+        ) + {
           id: 5,
           gridPos: { h: 4, w: 8, x: 16, y: 0 },
         },
@@ -242,49 +221,56 @@ local filename = 'mimir-rollout-progress.json';
         // Reads
         //
         $.panel('Reads - 2xx') +
-        $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"2.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
-        ||| % config, thresholds=[
-          { color: 'green', value: null },
-        ]) + {
+        $.ncSumCountRateStatPanel(
+          metric=config.requests_per_second_metric,
+          selectors=config.read_job_selector,
+          extra_selector=[utils.selector.re('status_code', '2.+')],
+          thresholds=[{ color: 'green', value: null }],
+        ) + {
           id: 6,
           gridPos: { h: 4, w: 2, x: 10, y: 4 },
         },
 
         $.panel('Reads - 4xx') +
-        $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"4.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
-        ||| % config, thresholds=[
-          { color: 'green', value: null },
-          { color: 'orange', value: 0.01 },
-          { color: 'red', value: 0.05 },
-        ]) + {
+        $.ncSumCountRateStatPanel(
+          metric=config.requests_per_second_metric,
+          selectors=config.read_job_selector,
+          extra_selector=[utils.selector.re('status_code', '4.+')],
+          thresholds=[
+            { color: 'green', value: null },
+            { color: 'orange', value: 0.01 },
+            { color: 'red', value: 0.05 },
+          ]
+        ) + {
           id: 7,
           gridPos: { h: 4, w: 2, x: 12, y: 4 },
         },
 
         $.panel('Reads - 5xx') +
-        $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"5.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
-        ||| % config, thresholds=[
-          { color: 'green', value: null },
-          { color: 'red', value: 0.01 },
-        ]) + {
+        $.ncSumCountRateStatPanel(
+          metric=config.requests_per_second_metric,
+          selectors=config.read_job_selector,
+          extra_selector=[utils.selector.re('status_code', '5.+')],
+          thresholds=[
+            { color: 'green', value: null },
+            { color: 'red', value: 0.01 },
+          ]
+        ) + {
           id: 8,
           gridPos: { h: 4, w: 2, x: 14, y: 4 },
         },
 
         $.panel('Reads 99th latency') +
-        $.newStatPanel(|||
-          histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}))
-        ||| % config, unit='s', thresholds=[
-          { color: 'green', value: null },
-          { color: 'orange', value: 1 },
-          { color: 'red', value: 2.5 },
-        ]) + {
+        $.ncLatencyStatPanel(
+          quantile='0.99',
+          metric=config.requests_per_second_metric,
+          selectors=config.read_job_selector,
+          thresholds=[
+            { color: 'green', value: null },
+            { color: 'orange', value: 1 },
+            { color: 'red', value: 2.5 },
+          ]
+        ) + {
           id: 9,
           gridPos: { h: 4, w: 8, x: 16, y: 4 },
         },
@@ -382,25 +368,41 @@ local filename = 'mimir-rollout-progress.json';
         //
         // Performance comparison with 24h ago
         //
-        $.panel('Latency vs 24h ago') +
-        $.queryPanel([|||
-          1 - (
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"} offset 24h))[1h:])
-            /
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}))[1h:])
-          )
-        ||| % config, |||
-          1 - (
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"} offset 24h))[1h:])
-            /
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}))[1h:])
-          )
-        ||| % config], ['writes', 'reads']) + {
-          yaxes: $.yaxes({
-            format: 'percentunit',
-            min: null,  // Can be negative.
-          }),
-
+        $.timeseriesPanel('Latency vs 24h ago') +
+        $.queryPanel(
+          local write = $.ncAvgHistogramQuantile(
+            quantile='0.99',
+            metric=config.requests_per_second_metric,
+            selectors=config.write_job_selector,
+            offset='24h',
+            rate_interval='1h:'
+          );
+          local read = $.ncAvgHistogramQuantile(
+            quantile='0.99',
+            metric=config.requests_per_second_metric,
+            selectors=config.read_job_selector,
+            offset='24h',
+            rate_interval='1h:'
+          );
+          [
+            utils.showClassicHistogramQuery(write),
+            utils.showNativeHistogramQuery(write),
+            utils.showClassicHistogramQuery(read),
+            utils.showNativeHistogramQuery(read),
+          ],
+          ['writes', 'writes', 'reads', 'reads']
+        ) +
+        {
+          fieldConfig: {
+            defaults: {
+              unit: 'percentunit',
+              custom: {
+                fillOpacity: 10,
+              },
+            },
+          },
+        } +
+        {
           id: 12,
           gridPos: { h: 8, w: 8, x: 16, y: 8 },
         },

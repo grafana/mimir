@@ -73,7 +73,7 @@ func testPartitionChunksOutputIsSortedByLabels(t *testing.T, encoding chunk.Enco
 		allChunks = append(allChunks, ch)
 	}
 
-	res := partitionChunks(allChunks, 0, 1000, mergeChunks)
+	res := partitionChunks(allChunks)
 
 	// collect labels from each series
 	var seriesLabels []labels.Labels

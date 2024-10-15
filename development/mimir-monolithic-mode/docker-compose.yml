@@ -1,4 +1,3 @@
-version: '3.4'
 services:
 
   consul:
@@ -22,7 +21,7 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v2.47.2
+    image: prom/prometheus:v2.54.1
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -33,7 +32,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:10.2.1
+    image: grafana/grafana:10.4.10
     ports:
       - 3000:3000
     volumes:
@@ -44,22 +43,20 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.37.4
+    image: grafana/agent:v0.43.3
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
     ports:
       - 9091:9091
 
-  grafana-agent-flow:
+  grafana-alloy:
     profiles:
-      - grafana-agent-flow
-    image: grafana/agent:v0.37.4
-    environment:
-      - AGENT_MODE=flow
-    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
+      - grafana-alloy
+    image: grafana/alloy:v1.4.2
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
-      - ./config/grafana-agent.river:/etc/agent/config.river
+      - ./config/config.alloy:/etc/alloy/config.alloy
     ports:
       - 9092:9092
 
@@ -114,7 +111,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.87.0
+    image: otel/opentelemetry-collector-contrib:0.110.0
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -129,7 +126,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.87.0
+    image: otel/opentelemetry-collector-contrib:0.110.0
     profiles:
       - otel-collector-otlp-push
     volumes:

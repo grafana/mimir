@@ -15,7 +15,7 @@ type Executor[R any] interface {
 
 	// Apply performs an execution by calling PreExecute and returning any result, else calling the innerFn PostExecute.
 	//
-	// If a Executor delays or blocks during execution, it must check that the execution was not canceled in the
+	// If an Executor delays or blocks during execution, it must check that the execution was not canceled in the
 	// meantime, else return the ExecutionInternal.Result if it was.
 	Apply(innerFn func(failsafe.Execution[R]) *common.PolicyResult[R]) func(failsafe.Execution[R]) *common.PolicyResult[R]
 
@@ -37,8 +37,6 @@ type Executor[R any] interface {
 type BaseExecutor[R any] struct {
 	Executor[R]
 	*BaseFailurePolicy[R]
-	// Index of the policy relative to other policies in a composition, starting at 0 with the innermost policy.
-	PolicyIndex int
 }
 
 var _ Executor[any] = &BaseExecutor[any]{}

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -31,29 +33,42 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
 	}
 
+	lbls := labels.EmptyLabels()
+
 	for _, scenario := range scenarios {
-		name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d",
-			scenario.numChunks,
-			scenario.numSamplesPerChunk,
-			scenario.duplicationFactor)
+		for _, encoding := range []chunk.Encoding{chunk.PrometheusXorChunk, chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
+			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
+			chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
+			var it chunkenc.Iterator
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
 
-		chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, chunk.PrometheusXorChunk)
-		var it chunkenc.Iterator
-		b.Run(name, func(b *testing.B) {
-			b.ReportAllocs()
+				var (
+					h  *histogram.Histogram
+					fh *histogram.FloatHistogram
+				)
+				for n := 0; n < b.N; n++ {
+					it = NewChunkMergeIterator(it, lbls, chunks)
+					for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+						switch valType {
+						case chunkenc.ValFloat:
+							it.At()
+						case chunkenc.ValHistogram:
+							_, h = it.AtHistogram(h)
+						case chunkenc.ValFloatHistogram:
+							_, fh = it.AtFloatHistogram(fh)
+						default:
+							panic(fmt.Sprintf("Unknown type detected %v", valType))
+						}
+					}
 
-			for n := 0; n < b.N; n++ {
-				it = NewChunkMergeIterator(it, chunks, 0, 0)
-				for it.Next() != chunkenc.ValNone {
-					it.At()
+					// Ensure no error occurred.
+					if it.Err() != nil {
+						b.Fatal(it.Err().Error())
+					}
 				}
-
-				// Ensure no error occurred.
-				if it.Err() != nil {
-					b.Fatal(it.Err().Error())
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -62,7 +77,7 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
 	chunks := []chunk.Chunk{chunkOne, chunkTwo}
 
-	sut := NewChunkMergeIterator(nil, chunks, 0, 0)
+	sut := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks)
 
 	// Following calls mimics Prometheus's query engine behaviour for VectorSelector.
 	require.Equal(t, chunkenc.ValFloat, sut.Next())

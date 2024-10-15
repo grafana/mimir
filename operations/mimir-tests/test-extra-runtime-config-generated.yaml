@@ -516,6 +516,8 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
@@ -526,18 +528,21 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml,/etc/another-config/runtimeconfig.yaml
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.10.4
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -564,6 +569,7 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 100
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -627,6 +633,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -636,8 +643,8 @@ spec:
         - name: GOMAXPROCS
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1024"
-        image: grafana/mimir:2.10.4
+          value: "5000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -664,6 +671,7 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -702,7 +710,6 @@ spec:
     spec:
       containers:
       - args:
-        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
@@ -713,12 +720,17 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml,/etc/another-config/runtimeconfig.yaml
+        - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -743,6 +755,7 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -794,7 +807,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -819,6 +832,7 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: new-config-map
@@ -860,6 +874,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
@@ -881,12 +896,16 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -960,6 +979,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml,/etc/another-config/runtimeconfig.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -target=alertmanager
         - -usage-stats.installation-mode=jsonnet
@@ -968,7 +988,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.10.4
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1056,6 +1076,8 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
@@ -1070,7 +1092,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1164,6 +1186,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
@@ -1180,7 +1203,12 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.4
+        env:
+        - name: GOMAXPROCS
+          value: "9"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1264,7 +1292,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1279,7 +1307,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1318,7 +1346,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1333,7 +1361,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1372,7 +1400,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1387,7 +1415,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1426,7 +1454,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1441,7 +1469,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1485,15 +1513,14 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -1510,6 +1537,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -1523,7 +1552,9 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.10.4
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.14.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

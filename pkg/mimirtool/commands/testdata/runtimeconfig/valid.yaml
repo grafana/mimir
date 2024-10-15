@@ -1,0 +1,28 @@
+distributor_limits:
+    max_inflight_push_requests: 2000
+    max_inflight_push_requests_bytes: 1.431655765e+09
+ingester_limits:
+    max_inflight_push_requests: 30000
+    max_inflight_push_requests_bytes: 5.36870912e+08
+    max_ingestion_rate: 300000
+    max_series: 3e+06
+    max_tenants: 500
+overrides:
+    "007":
+        active_series_custom_trackers:
+            section: '{section="00"}'
+        compactor_split_and_merge_shards: 2
+        compactor_split_groups: 2
+        compactor_tenant_shard_size: 2
+        ingestion_burst_size: 2.25e+07
+        ingestion_rate: 2.25e+06
+        ingestion_tenant_shard_size: 336
+        max_global_metadata_per_metric: 10
+        max_global_metadata_per_user: 2.56e+06
+        max_global_series_per_user: 1.2e+07
+        max_queriers_per_tenant: 120
+        query_sharding_total_shards: 8
+        ruler_max_rule_groups_per_tenant: 300
+        ruler_max_rules_per_rule_group: 50
+        ruler_tenant_shard_size: 8
+        store_gateway_tenant_shard_size: 24

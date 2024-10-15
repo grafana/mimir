@@ -6,6 +6,7 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -13,6 +14,8 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -173,4 +176,103 @@ func TestNewDisableableTicker_Disabled(t *testing.T) {
 	default:
 		break
 	}
+}
+
+func TestUnixSecondsJSON(t *testing.T) {
+	now := time.Now()
+
+	type obj struct {
+		Val UnixSeconds `json:"val,omitempty"`
+	}
+
+	type testCase struct {
+		obj  obj
+		json string
+	}
+
+	for _, tc := range []testCase{
+		{obj: obj{Val: 0}, json: `{}`},
+		{obj: obj{Val: UnixSecondsFromTime(now)}, json: fmt.Sprintf(`{"val":%d}`, now.Unix())},
+	} {
+		t.Run(tc.json, func(t *testing.T) {
+			out, err := json.Marshal(tc.obj)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.json, string(out))
+
+			var newObj obj
+			err = json.Unmarshal([]byte(tc.json), &newObj)
+			require.NoError(t, err)
+			require.Equal(t, tc.obj, newObj)
+		})
+	}
+}
+
+func TestVariableTicker(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	t.Run("should tick at configured durations", func(t *testing.T) {
+		t.Parallel()
+
+		startTime := time.Now()
+		stop, tickerChan := NewVariableTicker(time.Second, 2*time.Second)
+		t.Cleanup(stop)
+
+		// Capture the timing of 3 ticks.
+		var ticks []time.Time
+		for len(ticks) < 3 {
+			ticks = append(ticks, <-tickerChan)
+		}
+
+		tolerance := 250 * time.Millisecond
+		assert.InDelta(t, ticks[0].Sub(startTime).Seconds(), 1*time.Second.Seconds(), float64(tolerance))
+		assert.InDelta(t, ticks[1].Sub(startTime).Seconds(), 3*time.Second.Seconds(), float64(tolerance))
+		assert.InDelta(t, ticks[2].Sub(startTime).Seconds(), 5*time.Second.Seconds(), float64(tolerance))
+	})
+
+	t.Run("should not close the channel on stop function called", func(t *testing.T) {
+		t.Parallel()
+
+		for _, durations := range [][]time.Duration{{time.Second}, {time.Second, 2 * time.Second}} {
+			durations := durations
+
+			t.Run(fmt.Sprintf("durations: %v", durations), func(t *testing.T) {
+				t.Parallel()
+
+				stop, tickerChan := NewVariableTicker(durations...)
+				stop()
+
+				select {
+				case <-tickerChan:
+					t.Error("should not close the channel and not send any further tick")
+				case <-time.After(2 * time.Second):
+					// All good.
+				}
+			})
+		}
+	})
+
+	t.Run("stop function should be idempotent", func(t *testing.T) {
+		t.Parallel()
+
+		for _, durations := range [][]time.Duration{{time.Second}, {time.Second, 2 * time.Second}} {
+			durations := durations
+
+			t.Run(fmt.Sprintf("durations: %v", durations), func(t *testing.T) {
+				t.Parallel()
+
+				stop, tickerChan := NewVariableTicker(durations...)
+
+				// Call stop() twice.
+				stop()
+				stop()
+
+				select {
+				case <-tickerChan:
+					t.Error("should not close the channel and not send any further tick")
+				case <-time.After(2 * time.Second):
+					// All good.
+				}
+			})
+		}
+	})
 }

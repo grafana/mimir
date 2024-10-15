@@ -6,7 +6,7 @@ metadata:
   name: metamonitoring-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.2.0
     release: metamonitoring-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: metamonitoring-values
       annotations:
-        checksum/secrets: fb38487b7932ff939a243eacaf1ca0c16e1799e76cd56f0ce7bdb31386268a9c
-        checksum/config: 7bd76d5586d064605c14e21a812db02c6f3857279202bedc8fce2eb44565b4a4
+        checksum/secrets: e24157698bdd5ff3d9fb73ed3c2bb2fdc169c9690916dc0950c8e6ae61361c62
+        checksum/config: ecfbd42658d285789cd470c0bde1f56d3773105e4991b46aea3ccb65367457ee
     spec:
       securityContext:
         runAsUser: 1000
@@ -39,7 +39,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

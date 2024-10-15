@@ -7,7 +7,9 @@ package rules
 
 import (
 	"testing"
+	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
@@ -151,6 +153,13 @@ func Test_rulesEqual(t *testing.T) {
 }
 
 func TestCompareGroups(t *testing.T) {
+	ruleOne := rulefmt.RuleNode{
+		Record:      yaml.Node{Value: "one"},
+		Expr:        yaml.Node{Value: "up"},
+		Annotations: map[string]string{"a": "b", "c": "d"},
+		Labels:      nil,
+	}
+
 	tests := []struct {
 		name        string
 		groupOne    rwrulefmt.RuleGroup
@@ -161,28 +170,14 @@ func TestCompareGroups(t *testing.T) {
 			name: "identical configs",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			expectedErr: nil,
@@ -193,28 +188,14 @@ func TestCompareGroups(t *testing.T) {
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-2", "tenant-1"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1", "tenant-2"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			expectedErr: nil,
@@ -223,34 +204,14 @@ func TestCompareGroups(t *testing.T) {
 			name: "different rule length",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne, ruleOne},
 				},
 			},
 			expectedErr: errDiffRuleLen,
@@ -259,15 +220,8 @@ func TestCompareGroups(t *testing.T) {
 			name: "identical rw configs",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 				RWConfigs: []rwrulefmt.RemoteWriteConfig{
 					{URL: "localhost"},
@@ -275,15 +229,8 @@ func TestCompareGroups(t *testing.T) {
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 				RWConfigs: []rwrulefmt.RemoteWriteConfig{
 					{URL: "localhost"},
@@ -295,15 +242,8 @@ func TestCompareGroups(t *testing.T) {
 			name: "different rw config lengths",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 				RWConfigs: []rwrulefmt.RemoteWriteConfig{
 					{URL: "localhost"},
@@ -311,15 +251,8 @@ func TestCompareGroups(t *testing.T) {
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 				RWConfigs: []rwrulefmt.RemoteWriteConfig{
 					{URL: "localhost"},
@@ -332,15 +265,8 @@ func TestCompareGroups(t *testing.T) {
 			name: "different rw configs",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 				RWConfigs: []rwrulefmt.RemoteWriteConfig{
 					{URL: "localhost"},
@@ -348,15 +274,8 @@ func TestCompareGroups(t *testing.T) {
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "example_group",
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
 				},
 				RWConfigs: []rwrulefmt.RemoteWriteConfig{
 					{URL: "localhost2"},
@@ -370,28 +289,14 @@ func TestCompareGroups(t *testing.T) {
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1", "tenant-3"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1", "tenant-2"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			expectedErr: errDiffSourceTenants,
@@ -402,28 +307,14 @@ func TestCompareGroups(t *testing.T) {
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1", "tenant-2"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1", "tenant-1"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			expectedErr: errDiffSourceTenants,
@@ -434,31 +325,153 @@ func TestCompareGroups(t *testing.T) {
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
 					SourceTenants: []string{"tenant-1", "tenant-1"},
-					Rules: []rulefmt.RuleNode{
-						{
-							Record:      yaml.Node{Value: "one"},
-							Expr:        yaml.Node{Value: "up"},
-							Annotations: map[string]string{"a": "b", "c": "d"},
-							Labels:      nil,
-						},
-					},
+					Rules:         []rulefmt.RuleNode{ruleOne},
 				},
 			},
 			expectedErr: nil,
+		},
+		{
+			name: "evaluation delay is set only in one of the two rule groups",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(2 * time.Minute)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			expectedErr: errDiffEvaluationDelay,
+		},
+		{
+			name: "evaluation delay is set in both rule groups but with different value",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(2 * time.Minute)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			expectedErr: errDiffEvaluationDelay,
+		},
+		{
+			name: "evaluation delay is set in both rule groups with same value",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+		},
+		{
+			name: "evaluation delay is set only in one rule group but with zero value (in Mimir ruler we treat it as not being set)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(0)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+		},
+		{
+			name: "query offset is set only in one of the two rule groups",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Minute)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			expectedErr: errDiffQueryOffset,
+		},
+		{
+			name: "query offset is set in both rule groups but with different value",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Minute)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			expectedErr: errDiffQueryOffset,
+		},
+		{
+			name: "query offset is set in both rule groups with same value",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
+		},
+		{
+			name: "query offset is set only in one rule group but with zero value (in Mimir ruler we treat it as not being set)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(0)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -467,4 +480,8 @@ func TestCompareGroups(t *testing.T) {
 			assert.ErrorIs(t, actualErr, tt.expectedErr)
 		})
 	}
+}
+
+func pointerOf[T any](value T) *T {
+	return &value
 }

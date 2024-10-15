@@ -5,6 +5,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
+  local envVar = $.core.v1.envVar,
 
   // Utils.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
@@ -30,6 +31,11 @@
   mimir_write_zone_b_args:: $.ingester_zone_b_args {},
   mimir_write_zone_c_args:: $.ingester_zone_c_args {},
 
+  mimir_write_node_affinity_matchers:: [],
+  mimir_write_zone_a_node_affinity_matchers:: $.mimir_write_node_affinity_matchers,
+  mimir_write_zone_b_node_affinity_matchers:: $.mimir_write_node_affinity_matchers,
+  mimir_write_zone_c_node_affinity_matchers:: $.mimir_write_node_affinity_matchers,
+
   mimir_write_ports::
     std.uniq(
       std.sort(
@@ -48,7 +54,10 @@
     $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('mimir-write-data', '/data'),
     ]) +
-    $.jaeger_mixin,
+    $.jaeger_mixin +
+    container.withEnvMixin([
+      envVar.new('JAEGER_REPORTER_MAX_QUEUE_SIZE', '1000'),
+    ]),
 
   local mimir_write_data_pvc =
     pvc.new() +
@@ -66,11 +75,12 @@
       },
     )),
 
-  newMimirWriteZoneStatefulset(zone, container)::
+  newMimirWriteZoneStatefulset(zone, container, nodeAffinityMatchers=[])::
     local name = 'mimir-write-zone-%s' % zone;
     local replicas = std.ceil($._config.mimir_write_replicas / 3);
 
     $.newMimirStatefulSet(name, replicas, container, mimir_write_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'mimir-write' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.mimir_write_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'mimir-write' }) +
@@ -113,13 +123,13 @@
     $.newMimirWriteZoneContainer('c', $.mimir_write_zone_c_args),
 
   mimir_write_zone_a_statefulset: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirWriteZoneStatefulset('a', $.mimir_write_zone_a_container),
+    $.newMimirWriteZoneStatefulset('a', $.mimir_write_zone_a_container, $.mimir_write_zone_a_node_affinity_matchers),
 
   mimir_write_zone_b_statefulset: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirWriteZoneStatefulset('b', $.mimir_write_zone_b_container),
+    $.newMimirWriteZoneStatefulset('b', $.mimir_write_zone_b_container, $.mimir_write_zone_b_node_affinity_matchers),
 
   mimir_write_zone_c_statefulset: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirWriteZoneStatefulset('c', $.mimir_write_zone_c_container),
+    $.newMimirWriteZoneStatefulset('c', $.mimir_write_zone_c_container, $.mimir_write_zone_c_node_affinity_matchers),
 
   mimir_write_zone_a_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneService($.mimir_write_zone_a_statefulset),

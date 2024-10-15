@@ -8,7 +8,7 @@ should_be_namespaced(contents) {
 }
 
 should_be_namespaced(contents) {
-	not contents.kind in ["PodSecurityPolicy", "Namespace"]
+	not contents.kind in ["ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "MutatingWebhookConfiguration", "Namespace", "PodSecurityPolicy", "ValidatingWebhookConfiguration"]
 }
 
 metadata_has_namespace(metadata) {
@@ -132,4 +132,50 @@ deny[msg] {
 
 	some field, value in required_security_context
 	object.get(pod_spec.securityContext, field, "") != value
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg = sprintf("Resource has empty nodeSelector, but shouldn't %s", [object_display_name[i]])
+
+	obj.kind in ["StatefulSet", "Deployment"]
+	nodeSelector := obj.spec.template.spec.nodeSelector
+
+	not is_ignored_deployment(obj)
+	keys := object.keys(nodeSelector)
+	count(keys) == 0
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg = sprintf("Resource has empty affinity, but shouldn't %s", [object_display_name[i]])
+
+	obj.kind in ["StatefulSet", "Deployment"]
+	affinity := obj.spec.template.spec.affinity
+
+	not is_ignored_deployment(obj)
+	keys := object.keys(affinity)
+	count(keys) == 0
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg = sprintf("Resource has empty initContainers, but shouldn't %s", [object_display_name[i]])
+
+	obj.kind in ["StatefulSet", "Deployment"]
+	initContainers := obj.spec.template.spec.initContainers
+
+	not is_ignored_deployment(obj)
+	count(initContainers) == 0
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg = sprintf("Resource has empty tolerations, but shouldn't %s", [object_display_name[i]])
+
+	obj.kind in ["StatefulSet", "Deployment"]
+	tolerations := obj.spec.template.spec.tolerations
+
+	not is_ignored_deployment(obj)
+	count(tolerations) == 0
 }

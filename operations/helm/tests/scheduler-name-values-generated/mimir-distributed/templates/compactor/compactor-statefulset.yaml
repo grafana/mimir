@@ -25,7 +25,9 @@ spec:
     type: RollingUpdate
   serviceName: scheduler-name-values-mimir-compactor
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -53,12 +55,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -68,9 +64,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: scheduler-name-values
             app.kubernetes.io/component: compactor
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -126,5 +120,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:

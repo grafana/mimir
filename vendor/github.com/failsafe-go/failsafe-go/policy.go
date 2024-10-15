@@ -8,7 +8,7 @@ import (
 type Policy[R any] interface {
 	// ToExecutor returns a policy.Executor capable of handling an execution for the Policy.
 	// The typeToken parameter helps catch mismatches between R types when composing policies.
-	ToExecutor(policyIndex int, typeToken R) any
+	ToExecutor(typeToken R) any
 }
 
 /*
@@ -21,9 +21,14 @@ FailurePolicyBuilder builds a Policy that allows configurable conditions to dete
     policy handling.
 */
 type FailurePolicyBuilder[S any, R any] interface {
-	// HandleErrors specifies the errors to handle as failures. Any errors that evaluate to true for errors.Is and the
+	// HandleErrors specifies the errors to handle as failures. Any errs that evaluate to true for errors.Is and the
 	// execution error will be handled.
-	HandleErrors(errors ...error) S
+	HandleErrors(errs ...error) S
+
+	// HandleErrorTypes specifies the errors whose types should be handled as failures. Any execution errors or their
+	// Unwrapped parents whose type matches any of the errs' types will be handled. This is similar to the check that
+	// errors.As performs.
+	HandleErrorTypes(errs ...any) S
 
 	// HandleResult specifies the results to handle as failures. Any result that evaluates to true for reflect.DeepEqual and
 	// the execution result will be handled. This method is only considered when a result is returned from an execution, not
@@ -49,6 +54,6 @@ type DelayablePolicyBuilder[S any, R any] interface {
 	// WithDelay configures the time to delay between execution attempts.
 	WithDelay(delay time.Duration) S
 
-	// WithDelayFunc accepts a function that configures the time to delay before the next execution attempt.
-	WithDelayFunc(delayFn DelayFunc[R]) S
+	// WithDelayFunc configures a function that returns the time to delay before the next execution attempt.
+	WithDelayFunc(delayFunc DelayFunc[R]) S
 }

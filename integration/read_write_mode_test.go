@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -60,7 +59,7 @@ func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName strin
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -113,7 +112,7 @@ func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster read
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -215,7 +214,7 @@ func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName s
 		expectedVector = model.Vector{
 			&model.Sample{
 				Metric:    metric,
-				Histogram: mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(series[0].Histograms[0])),
+				Histogram: mimirpb.FromHistogramToPromHistogram(series[0].Histograms[0].ToIntHistogram()),
 				Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
 			},
 		}
@@ -287,7 +286,7 @@ receivers:
 	// Verify alert is firing
 	require.NoError(t, cluster.backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_alertmanager_alerts_received_total"}, e2e.WaitMissingMetrics))
 
-	alerts, err := client.GetAlertsV1(context.Background())
+	alerts, err := client.GetAlerts(context.Background())
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
 	require.Equal(t, testAlertName, alerts[0].Name())
@@ -308,7 +307,6 @@ func TestReadWriteModeCompaction(t *testing.T) {
 		// Frequently cleanup old blocks.
 		// While this doesn't test the compaction functionality of the compactor, it does verify that the compactor
 		// is correctly configured and able to interact with storage, which is the intention of this test.
-		"-compactor.cleanup-interval":        "2s",
 		"-compactor.blocks-retention-period": "5s",
 	})
 
@@ -341,6 +339,7 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets := []map[string]string{
 		CommonStorageBackendFlags(),
+		BlocksStorageFlags(),
 		{
 			"-memberlist.join": "mimir-backend-1",
 		},

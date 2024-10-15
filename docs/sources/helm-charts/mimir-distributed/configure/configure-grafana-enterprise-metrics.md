@@ -14,11 +14,11 @@ From the Grafana Helm chart point of view, the main differences between Grafana 
 
 ## Before you begin
 
-- Follow the instructions and [Choose a name for your GEM cluster](/docs/enterprise-metrics/{{< param "gem_docs_version" >}}/setup/#choose-a-name-for-your-gem-cluster).
+- Follow the instructions and [Choose a name for your GEM cluster](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/setup/#choose-a-name-for-your-gem-cluster).
 
   It is recommended, but not required to use the same name as the Helm release. For example if the cluster name is `mygem`, you'd install the chart with `helm install mygem grafana/mimir-distributed`.
 
-- Follow the instruction in [Get a GEM license](/docs/enterprise-metrics/{{< param "gem_docs_version" >}}/setup/#get-a-gem-license) to acquire a license.
+- Follow the instruction in [Get a GEM license](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/setup/#get-a-gem-license) to acquire a license.
 
 ## Handling the license file
 

@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type newGenericQueryCacheFunc func(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
+type newGenericQueryCacheFunc func(cache cache.Cache, splitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
 
 type testGenericQueryCacheRequestType struct {
 	reqPath        string
@@ -119,7 +119,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 				data, err := res.Marshal()
 				require.NoError(t, err)
 
-				c.StoreAsync(map[string][]byte{reqHashedCacheKey: data}, time.Minute)
+				c.SetMultiAsync(map[string][]byte{reqHashedCacheKey: data}, time.Minute)
 			},
 			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(200, []byte(`{content:"fresh"}`)),
@@ -131,8 +131,8 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 			expectedStoredToCache:    false, // Should not store anything to the cache.
 		},
 		"should fetch the response from the downstream and overwrite the cached response if corrupted": {
-			init: func(t *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
-				c.StoreAsync(map[string][]byte{reqHashedCacheKey: []byte("corrupted")}, time.Minute)
+			init: func(_ *testing.T, c cache.Cache, _, reqHashedCacheKey string) {
+				c.SetMultiAsync(map[string][]byte{reqHashedCacheKey: []byte("corrupted")}, time.Minute)
 			},
 			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(200, []byte(`{content:"fresh"}`)),
@@ -149,7 +149,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 				data, err := res.Marshal()
 				require.NoError(t, err)
 
-				c.StoreAsync(map[string][]byte{reqHashedCacheKey: data}, time.Minute)
+				c.SetMultiAsync(map[string][]byte{reqHashedCacheKey: data}, time.Minute)
 			},
 			cacheTTL:                 time.Minute,
 			downstreamRes:            downstreamRes(200, []byte(`{content:"fresh"}`)),
@@ -226,7 +226,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
 						reg := prometheus.NewPedanticRegistry()
-						rt := newRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
+						rt := newRoundTripper(cacheBackend, DefaultCacheKeyGenerator{codec: NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)}, limits, downstream, testutil.NewLogger(t), reg)
 						res, err := rt.RoundTrip(req)
 						require.NoError(t, err)
 

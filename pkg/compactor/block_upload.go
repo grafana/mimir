@@ -20,10 +20,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -44,6 +47,7 @@ const (
 
 var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+var errValidationCompleted = cancellation.NewErrorf("validation completed")
 
 // StartBlockUpload handles request for starting block upload.
 //
@@ -229,16 +233,34 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *bloc
 		}
 	}
 
+	blockMinTime := timestamp.Time(meta.MinTime)
+	blockMaxTime := timestamp.Time(meta.MaxTime)
+
 	// validate data is within the retention period
 	retention := c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID)
 	if retention > 0 {
 		threshold := time.Now().Add(-retention)
-		if time.UnixMilli(meta.MaxTime).Before(threshold) {
-			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
+		if blockMaxTime.Before(threshold) {
 			return httpError{
-				message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
+				message:    fmt.Sprintf("block max time (%s) older than retention period", blockMaxTime.String()),
 				statusCode: http.StatusUnprocessableEntity,
 			}
+		}
+	}
+
+	blockDuration := blockMaxTime.Sub(blockMinTime)
+	maxRange := c.compactorCfg.BlockRanges[len(c.compactorCfg.BlockRanges)-1]
+	if blockDuration > maxRange {
+		return httpError{
+			message:    fmt.Sprintf("block duration (%v) is larger than max configured compactor time range (%v)", model.Duration(blockDuration), model.Duration(maxRange)),
+			statusCode: http.StatusUnprocessableEntity,
+		}
+	}
+
+	if blockMaxTime.After(blockMinTime.Truncate(maxRange).Add(maxRange)) {
+		return httpError{
+			message:    fmt.Sprintf("block time range crosses boundary of configured compactor time range (%v)", model.Duration(maxRange)),
+			statusCode: http.StatusUnprocessableEntity,
 		}
 	}
 
@@ -345,7 +367,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 
 	{
 		var wg sync.WaitGroup
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancelCause(context.Background())
 
 		// start a go routine that updates the validation file's timestamp every heartbeat interval
 		wg.Add(1)
@@ -356,7 +378,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 
 		if err := validation(ctx); err != nil {
 			level.Error(logger).Log("msg", "error while validating block", "err", err)
-			cancel()
+			cancel(cancellation.NewErrorf("validating block failed: %w", err))
 			wg.Wait()
 			err := c.uploadValidationWithError(context.Background(), blockID, userBkt, err.Error())
 			if err != nil {
@@ -365,7 +387,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 			return
 		}
 
-		cancel()
+		cancel(errValidationCompleted)
 		wg.Wait() // use waitgroup to ensure validation ts update is complete
 	}
 
@@ -478,8 +500,9 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 	// validate that times are in the past
 	now := time.Now()
 	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
-		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d",
-			meta.MinTime, meta.MaxTime)
+		return fmt.Sprintf("block time(s) greater than the present: minTime=%d (%s), maxTime=%d (%s)",
+			meta.MinTime, formatTime(time.UnixMilli(meta.MinTime)),
+			meta.MaxTime, formatTime(time.UnixMilli(meta.MaxTime)))
 	}
 
 	// Mark block source
@@ -675,10 +698,6 @@ func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter,
 	)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 
 	s, _, v, err := c.getBlockUploadState(r.Context(), userBkt, blockID)
 	if err != nil {
@@ -828,7 +847,7 @@ func (c *MultitenantCompactor) uploadValidation(ctx context.Context, blockID uli
 	return c.uploadValidationWithError(ctx, blockID, userBkt, "")
 }
 
-func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket, cancelFn func(), interval time.Duration) {
+func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, logger log.Logger, blockID ulid.ULID, userBkt objstore.Bucket, cancelFn context.CancelCauseFunc, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -838,7 +857,7 @@ func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, lo
 		case <-ticker.C:
 			if err := c.uploadValidation(ctx, blockID, userBkt); err != nil {
 				level.Warn(logger).Log("msg", "error during periodic update of validation file", "err", err)
-				cancelFn()
+				cancelFn(cancellation.NewErrorf("periodic update of validation file failed: %w", err))
 				return
 			}
 		}

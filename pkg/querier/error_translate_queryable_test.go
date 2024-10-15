@@ -44,7 +44,7 @@ func TestApiStatusCodes(t *testing.T) {
 		},
 
 		{
-			err:            validation.LimitError("limit exceeded"),
+			err:            validation.NewLimitError("limit exceeded"),
 			expectedString: "limit exceeded",
 			expectedCode:   422,
 		},
@@ -168,7 +168,10 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		nil,
 		nil,
 		false,
+		nil,
 		false,
+		false,
+		0,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
@@ -198,11 +201,11 @@ type errorTestQuerier struct {
 	err error
 }
 
-func (t errorTestQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (t errorTestQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (t errorTestQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 

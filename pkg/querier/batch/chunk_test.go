@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -35,10 +36,10 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	iter := &chunkIterator{}
 
 	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 
 	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -96,7 +97,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusHistogramChunk:
 		assertPoint = func(i int) {
 			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
-			ts, h := iter.AtHistogram()
+			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(nextExpectedTS)), h, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
@@ -104,7 +105,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusFloatHistogramChunk:
 		assertPoint = func(i int) {
 			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
-			ts, fh := iter.AtFloatHistogram()
+			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(nextExpectedTS)), fh, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
@@ -132,7 +133,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusHistogramChunk:
 		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
 			require.Equal(t, chunkenc.ValHistogram, valType)
-			ts, h := iter.AtHistogram()
+			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(expectedTS)), h)
 			require.NoError(t, iter.Err())
@@ -140,7 +141,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusFloatHistogramChunk:
 		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
 			require.Equal(t, chunkenc.ValFloatHistogram, valType)
-			ts, fh := iter.AtFloatHistogram()
+			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(expectedTS)), fh)
 			require.NoError(t, iter.Err())
@@ -153,7 +154,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 		expectedTS := int64(i * int(step/time.Millisecond))
 		assertPoint(expectedTS, iter.Seek(expectedTS))
 
-		for j := i + 1; j < i+points/10; j++ {
+		for j := i + 1; j < i+points/10 && j < points; j++ {
 			expectedTS := int64(j * int(step/time.Millisecond))
 			assertPoint(expectedTS, iter.Next())
 		}
@@ -195,11 +196,11 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (i *mockIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, &histogram.Histogram{}
 }
 
-func (i *mockIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (i *mockIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, &histogram.FloatHistogram{}
 }
 
@@ -207,7 +208,7 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType) chunk.Batch {
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) chunk.Batch {
 	batch := chunk.Batch{
 		Length:    chunk.BatchSize,
 		ValueType: valueType,
@@ -220,4 +221,41 @@ func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType) chunk.Batch {
 
 func (i *mockIterator) Err() error {
 	return nil
+}
+
+func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
+	chunkTimestamps := []int64{50, 60, 70, 80, 90, 100}
+
+	ch := chunkenc.NewXORChunk()
+	app, err := ch.Appender()
+	require.NoError(t, err)
+	for _, ts := range chunkTimestamps {
+		app.Append(ts, float64(ts))
+	}
+
+	genericChunk := NewGenericChunk(chunkTimestamps[0], chunkTimestamps[len(chunkTimestamps)-1], func(reuse chunk.Iterator) chunk.Iterator {
+		chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+		require.NoError(t, err)
+		require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
+
+		// We should never need to reset this iterator, as the Seek call below should be satisfiable by the initial batch.
+		return &chunkIteratorThatForbidsFindAtOrAfter{chk.NewIterator(reuse)}
+	})
+
+	it := &chunkIterator{}
+	it.reset(genericChunk)
+
+	require.Equal(t, chunkenc.ValFloat, it.Next(2))
+	require.Equal(t, int64(50), it.AtTime())
+
+	require.Equal(t, chunkenc.ValFloat, it.Seek(45, 1))
+	require.Equal(t, int64(50), it.AtTime())
+}
+
+type chunkIteratorThatForbidsFindAtOrAfter struct {
+	chunk.Iterator
+}
+
+func (it *chunkIteratorThatForbidsFindAtOrAfter) FindAtOrAfter(model.Time) chunkenc.ValueType {
+	panic("FindAtOrAfter should never be called")
 }

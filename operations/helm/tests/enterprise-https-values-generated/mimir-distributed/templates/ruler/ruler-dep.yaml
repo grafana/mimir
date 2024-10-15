@@ -44,8 +44,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: ruler
           imagePullPolicy: IfNotPresent
@@ -53,6 +51,7 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
           volumeMounts:
               
             - mountPath: /certs
@@ -66,7 +65,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -98,11 +96,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -112,9 +107,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: enterprise-https-values
             app.kubernetes.io/component: ruler
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 600
       volumes:
         - name: config
           configMap:
@@ -128,6 +121,7 @@ spec:
         - name: runtime-config
           configMap:
             name: enterprise-https-values-mimir-runtime
+        
         - name: tls-certs
           secret:
             secretName: tls-certs

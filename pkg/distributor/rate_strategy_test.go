@@ -6,6 +6,7 @@
 package distributor
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,7 +29,7 @@ func TestIngestionRateStrategy(t *testing.T) {
 		mockRing := newReadLifecyclerMock()
 		mockRing.On("HealthyInstancesCount").Return(2)
 
-		strategy := newGlobalRateStrategy(newIngestionRateStrategy(overrides), mockRing)
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
 		assert.Equal(t, strategy.Limit("test"), float64(500))
 		assert.Equal(t, strategy.Burst("test"), 10000)
 	})
@@ -38,6 +39,51 @@ func TestIngestionRateStrategy(t *testing.T) {
 
 		assert.Equal(t, strategy.Limit("test"), float64(rate.Inf))
 		assert.Equal(t, strategy.Burst("test"), 0)
+	})
+	t.Run("Burst factor should be 3x the per distributor limit", func(t *testing.T) {
+		// Init limits overrides
+		overrides, err := validation.NewOverrides(validation.Limits{
+			IngestionRate:        float64(1000),
+			IngestionBurstFactor: 3,
+		}, nil)
+		require.NoError(t, err)
+
+		mockRing := newReadLifecyclerMock()
+		mockRing.On("HealthyInstancesCount").Return(2)
+
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
+		assert.Equal(t, strategy.Limit("test"), float64(500))
+		assert.Equal(t, strategy.Burst("test"), 1500)
+	})
+	t.Run("Burst factor should be set to to max int if limit is too large", func(t *testing.T) {
+		// Init limits overrides
+		overrides, err := validation.NewOverrides(validation.Limits{
+			IngestionRate:        float64(math.MaxInt),
+			IngestionBurstFactor: 3,
+		}, nil)
+		require.NoError(t, err)
+
+		mockRing := newReadLifecyclerMock()
+		mockRing.On("HealthyInstancesCount").Return(2)
+
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
+		assert.Equal(t, strategy.Limit("test"), float64(math.MaxInt)/2)
+		assert.Equal(t, strategy.Burst("test"), math.MaxInt)
+	})
+	t.Run("Burst factor should be set to to max int if limit is rate.inf", func(t *testing.T) {
+		// Init limits overrides
+		overrides, err := validation.NewOverrides(validation.Limits{
+			IngestionRate:        math.MaxFloat64,
+			IngestionBurstFactor: 3,
+		}, nil)
+		require.NoError(t, err)
+
+		mockRing := newReadLifecyclerMock()
+		mockRing.On("HealthyInstancesCount").Return(2)
+
+		strategy := newGlobalRateStrategyWithBurstFactor(overrides, mockRing)
+		assert.Equal(t, strategy.Limit("test"), math.MaxFloat64)
+		assert.Equal(t, strategy.Burst("test"), math.MaxInt)
 	})
 }
 

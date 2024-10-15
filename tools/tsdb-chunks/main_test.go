@@ -18,7 +18,6 @@ import (
 )
 
 func TestTSDBChunks(t *testing.T) {
-	userID := "user"
 	tmpDir := t.TempDir()
 
 	spec := block.SeriesSpec{
@@ -37,7 +36,7 @@ func TestTSDBChunks(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec})
+	meta, err := block.GenerateBlockFromSpec(tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
 	co := test.CaptureOutput(t)
@@ -85,6 +84,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 func must[T any](v T, err error) T {

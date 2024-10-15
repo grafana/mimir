@@ -10,6 +10,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
+
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
 func TestPostings_Expand(t *testing.T) {
@@ -24,8 +26,7 @@ func TestPostings_Expand(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl))
-
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
@@ -56,8 +57,7 @@ func TestPostings_Seek(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl))
-
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
@@ -70,7 +70,7 @@ func TestPostings_Seek(t *testing.T) {
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)
 
-	// See to a series that is not active.
+	// Seek to a series that is not active.
 	require.True(t, activeSeriesPostings.Seek(3))
 	// The next active series is 4.
 	require.Equal(t, storage.SeriesRef(4), activeSeriesPostings.At())
@@ -88,8 +88,7 @@ func TestPostings_SeekToEnd(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&Matchers{}, time.Duration(ttl))
-
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
@@ -102,7 +101,7 @@ func TestPostings_SeekToEnd(t *testing.T) {
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)
 
-	// See to a series that is not active.
+	// Seek to a series that is not active.
 	// There are no active series after 3, so Seek should return false.
 	require.False(t, activeSeriesPostings.Seek(3))
 }

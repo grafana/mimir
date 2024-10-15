@@ -64,6 +64,11 @@ function generate_manifests() {
   INTERMEDIATE_OUTPUT_DIR=$2
   OUTPUT_DIR=$3
 
+  # Get the pid of the subshell calling this function in a portable way.
+  # Do not use BASHPID because some shells don't support it.
+  # shellcheck disable=SC2016
+  PID=$(exec sh -c 'echo "$PPID"')
+
   echo ""
   echo "Templating $TEST_NAME"
   ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns" "--set-string" "regoTestGenerateValues=true")
@@ -74,7 +79,7 @@ function generate_manifests() {
     ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
   fi
 
-  echo "Rendering helm test $TEST_NAME in PID $BASHPID: 'helm template ${ARGS[*]}'"
+  echo "Rendering helm test $TEST_NAME in PID $PID: 'helm template ${ARGS[*]}'"
   helm template "${ARGS[@]}" 1>/dev/null
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
   rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"

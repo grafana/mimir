@@ -23,6 +23,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -31,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -147,7 +150,7 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
-				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(nil), point.H)
 			},
 		},
 
@@ -220,7 +223,9 @@ func TestQuerier(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _ := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
 			testRangeQuery(t, queryable, through, q)
 		})
 	}
@@ -296,7 +301,9 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	require.NoError(t, err)
+
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
@@ -314,6 +321,166 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		{T: 1635746640000, F: 78},
 		{T: 1635746700000, F: 80},
 	}, m[0].Floats)
+}
+
+// TestBatchMergeChunks is a regression test to catch one particular case
+// when the Batch merger iterator was corrupting memory by not copying
+// Batches by value because the Batch itself was not possible to copy
+// by value.
+func TestBatchMergeChunks(t *testing.T) {
+	var (
+		logger     = log.NewNopLogger()
+		queryStart = mustParseTime("2021-11-01T06:00:00Z")
+		queryEnd   = mustParseTime("2021-11-01T06:01:00Z")
+		queryStep  = time.Second
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	s1 := []mimirpb.Sample{}
+	s2 := []mimirpb.Sample{}
+
+	for i := 0; i < 12; i++ {
+		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
+		if i != 9 { // let series 3 miss a point
+			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
+		}
+	}
+
+	c1 := convertToChunks(t, samplesToInterface(s1))
+	c2 := convertToChunks(t, samplesToInterface(s2))
+	chunks12 := []client.Chunk{}
+	chunks12 = append(chunks12, c1...)
+	chunks12 = append(chunks12, c2...)
+
+	chunks21 := []client.Chunk{}
+	chunks21 = append(chunks21, c2...)
+	chunks21 = append(chunks21, c1...)
+
+	// Mock distributor to return chunks that need merging.
+	distributor := &mockDistributor{}
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		client.CombinedQueryStreamResponse{
+			Chunkseries: []client.TimeSeriesChunk{
+				// Series with chunks in the 1,2 order, that need merge
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+					Chunks: chunks12,
+				},
+				// Series with chunks in the 2,1 order, that need merge
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
+					Chunks: chunks21,
+				},
+			},
+		},
+		nil)
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		Logger:     logger,
+		MaxSamples: 1e6,
+		Timeout:    1 * time.Minute,
+	})
+
+	queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+
+	r := query.Exec(ctx)
+	m, err := r.Matrix()
+	require.NoError(t, err)
+
+	require.Equal(t, 2, m.Len())
+	require.ElementsMatch(t, m[0].Floats, m[1].Floats)
+	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
+}
+
+func BenchmarkQueryExecute(b *testing.B) {
+	var (
+		logger    = log.NewNopLogger()
+		queryStep = time.Second
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(b, err)
+
+	scenarios := []struct {
+		numChunks          int
+		numSamplesPerChunk int
+		duplicationFactor  int
+	}{
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
+	}
+
+	for _, scenario := range scenarios {
+		for _, encoding := range []chunk.Encoding{
+			chunk.PrometheusXorChunk,
+			chunk.PrometheusHistogramChunk,
+			chunk.PrometheusFloatHistogramChunk,
+		} {
+			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
+			queryStart := time.Now().Add(-time.Second * time.Duration(scenario.numChunks*scenario.numSamplesPerChunk))
+			queryEnd := time.Now()
+			chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, queryStart, queryStep, encoding)
+			// Mock distributor to return chunks that need merging.
+			distributor := &mockDistributor{}
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+				client.CombinedQueryStreamResponse{
+					Chunkseries: []client.TimeSeriesChunk{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+							Chunks: chunks,
+						},
+					},
+				},
+				nil)
+
+			engine := promql.NewEngine(promql.EngineOpts{
+				Logger:     logger,
+				MaxSamples: 1e6,
+				Timeout:    1 * time.Minute,
+			})
+
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+			require.NoError(b, err)
+
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
+					require.NoError(b, err)
+
+					r := query.Exec(ctx)
+					m, err := r.Matrix()
+					require.NoError(b, err)
+
+					require.Equal(b, 1, m.Len())
+				}
+			})
+		}
+	}
 }
 
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
@@ -371,6 +538,22 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	return queryable, ts
 }
 
+func createChunks(b require.TestingT, numChunks, numSamplesPerChunk, duplicationFactor int, queryStart time.Time, step time.Duration, enc chunk.Encoding) []client.Chunk {
+	result := make([]chunk.Chunk, 0, numChunks)
+
+	for d := 0; d < duplicationFactor; d++ {
+		for c := 0; c < numChunks; c++ {
+			minTime := queryStart.Add(step * time.Duration(c*numSamplesPerChunk))
+			maxTime := minTime.Add(step * time.Duration(numSamplesPerChunk))
+			result = append(result, mkChunk(b, model.TimeFromUnixNano(minTime.UnixNano()), model.TimeFromUnixNano(maxTime.UnixNano()), step, enc))
+		}
+	}
+
+	chunks, err := client.ToChunks(result)
+	require.NoError(b, err)
+	return chunks
+}
+
 func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
@@ -424,7 +607,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
 	})
-	cfg := Config{}
+	cfg := Config{QueryEngine: prometheusEngine}
 	for _, c := range testCases {
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
@@ -437,7 +620,8 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			// block storage will not be hit; provide nil querier
 			var storeQueryable storage.Queryable
 
-			queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
@@ -458,45 +642,34 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	}
 }
 
-func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
+func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 	const engineLookbackDelta = 5 * time.Minute
 
 	now := time.Now()
 
 	tests := map[string]struct {
-		maxQueryIntoFuture time.Duration
-		queryStartTime     time.Time
-		queryEndTime       time.Time
-		expectedSkipped    bool
-		expectedStartTime  time.Time
-		expectedEndTime    time.Time
+		queryStartTime    time.Time
+		queryEndTime      time.Time
+		expectedStartTime time.Time
+		expectedEndTime   time.Time
 	}{
 		"should manipulate query if end time is after the limit": {
-			maxQueryIntoFuture: 10 * time.Minute,
-			queryStartTime:     now.Add(-5 * time.Hour),
-			queryEndTime:       now.Add(1 * time.Hour),
-			expectedStartTime:  now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
-			expectedEndTime:    now.Add(10 * time.Minute),
+			queryStartTime:    now.Add(-5 * time.Hour),
+			queryEndTime:      now.Add(1 * time.Hour),
+			expectedStartTime: now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
+			expectedEndTime:   now.Add(1 * time.Hour),
 		},
-		"should not manipulate query if end time is far in the future but limit is disabled": {
-			maxQueryIntoFuture: 0,
-			queryStartTime:     now.Add(-5 * time.Hour),
-			queryEndTime:       now.Add(100 * time.Hour),
-			expectedStartTime:  now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
-			expectedEndTime:    now.Add(100 * time.Hour),
+		"should not manipulate query if end time is far in the future": {
+			queryStartTime:    now.Add(-5 * time.Hour),
+			queryEndTime:      now.Add(100 * time.Hour),
+			expectedStartTime: now.Add(-5 * time.Hour).Add(-engineLookbackDelta),
+			expectedEndTime:   now.Add(100 * time.Hour),
 		},
-		"should not manipulate query if end time is in the future but below the limit": {
-			maxQueryIntoFuture: 10 * time.Minute,
-			queryStartTime:     now.Add(-100 * time.Minute),
-			queryEndTime:       now.Add(5 * time.Minute),
-			expectedStartTime:  now.Add(-100 * time.Minute).Add(-engineLookbackDelta),
-			expectedEndTime:    now.Add(5 * time.Minute),
-		},
-		"should skip executing a query outside the allowed time range": {
-			maxQueryIntoFuture: 10 * time.Minute,
-			queryStartTime:     now.Add(50 * time.Minute),
-			queryEndTime:       now.Add(60 * time.Minute),
-			expectedSkipped:    true,
+		"should manipulate query if start time is far in the future": {
+			queryStartTime:    now.Add(50 * time.Minute),
+			queryEndTime:      now.Add(60 * time.Minute),
+			expectedStartTime: now.Add(50 * time.Minute).Add(-engineLookbackDelta),
+			expectedEndTime:   now.Add(60 * time.Minute),
 		},
 	}
 
@@ -511,7 +684,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	for name, c := range tests {
-		cfg.MaxQueryIntoFuture = c.maxQueryIntoFuture
 		t.Run(name, func(t *testing.T) {
 			// We don't need to query any data for this test, so an empty store is fine.
 			distributor := &mockDistributor{}
@@ -521,7 +693,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
@@ -532,16 +706,11 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			_, err = r.Matrix()
 			require.Nil(t, err)
 
-			if !c.expectedSkipped {
-				// Assert on the time range of the actual executed query (5s delta).
-				delta := float64(5000)
-				require.Len(t, distributor.Calls, 1)
-				assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
-				assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(3).(model.Time)), delta)
-			} else {
-				// Ensure no query has been executed (because skipped).
-				assert.Len(t, distributor.Calls, 0)
-			}
+			// Assert on the time range of the actual executed query (5s delta).
+			delta := float64(5000)
+			require.Len(t, distributor.Calls, 1)
+			assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+			assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(3).(model.Time)), delta)
 		})
 	}
 }
@@ -571,13 +740,13 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			query:          "rate(foo[31d])",
 			queryStartTime: time.Now().Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.Errorf("expanding series: %s", validation.NewMaxQueryLengthError(745*time.Hour, 720*time.Hour)),
+			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError(745*time.Hour, 720*time.Hour)),
 		},
 		"should forbid query on large time range over the limit and short rate time window": {
 			query:          "rate(foo[1m])",
 			queryStartTime: time.Now().Add(-maxQueryLength).Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.Errorf("expanding series: %s", validation.NewMaxQueryLengthError((721*time.Hour)+time.Minute, 720*time.Hour)),
+			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError((721*time.Hour)+time.Minute, 720*time.Hour)),
 		},
 	}
 
@@ -593,7 +762,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			// We don't need to query any data for this test, so an empty distributor is fine.
 			distributor := &emptyDistributor{}
-			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 
 			// Create the PromQL engine to execute the query.
 			engine := promql.NewEngine(promql.EngineOpts{
@@ -687,9 +857,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 		},
 	}
 
+	logger := log.NewNopLogger()
 	// Create the PromQL engine to execute the queries.
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             logger,
 		ActiveQueryTracker: nil,
 		MaxSamples:         1e6,
 		LookbackDelta:      engineLookbackDelta,
@@ -714,7 +885,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 				require.NoError(t, err)
@@ -741,7 +913,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+				require.NoError(t, err)
+
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
@@ -776,11 +950,13 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+				require.NoError(t, err)
+
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelNames(ctx, matchers...)
+				_, _, err = q.LabelNames(ctx, &storage.LabelHints{}, matchers...)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -802,11 +978,13 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+				require.NoError(t, err)
+
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelValues(ctx, labels.MetricName)
+				_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -828,7 +1006,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 // Check that time range of /series is restricted by maxLabelsQueryLength.
 // LabelName and LabelValues are checked in TestBlocksStoreQuerier_MaxLabelsQueryRange(),
 // because the implementation of those makes it really hard to do in Querier.
-func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
+func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 	const (
 		thirtyDays = 30 * 24 * time.Hour
 	)
@@ -849,6 +1027,34 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			expectedMetadataStartTime: now.Add(-thirtyDays),
 			expectedMetadataEndTime:   now,
 		},
+		"should not manipulate query short time range within the limit": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            now.Add(-time.Hour),
+			queryEndTime:              now,
+			expectedMetadataStartTime: now.Add(-time.Hour),
+			expectedMetadataEndTime:   now,
+		},
+		"should manipulate the start of a query without start time": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            v1.MinTime,
+			queryEndTime:              now,
+			expectedMetadataStartTime: now.Add(-thirtyDays),
+			expectedMetadataEndTime:   now,
+		},
+		"should not manipulate query without end time, we allow querying arbitrarily into the future": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            now.Add(-time.Hour),
+			queryEndTime:              v1.MaxTime,
+			expectedMetadataStartTime: now.Add(-time.Hour),
+			expectedMetadataEndTime:   v1.MaxTime,
+		},
+		"should manipulate the start of a query without start or end time, we allow querying arbitrarily into the future, but not the past": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            v1.MinTime,
+			queryEndTime:              v1.MaxTime,
+			expectedMetadataStartTime: now.Add(-thirtyDays),
+			expectedMetadataEndTime:   v1.MaxTime,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -861,6 +1067,8 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
 			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			limits.MaxPartialQueryLength = testData.maxLabelsQueryLength
+			limits.MaxTotalQueryLength = testData.maxLabelsQueryLength
 			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
@@ -868,33 +1076,35 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 			// block storage will not be hit; provide nil querier
 			var storeQueryable storage.Queryable
 
-			t.Run("series", func(t *testing.T) {
-				distributor := &mockDistributor{}
-				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
+			distributor := &mockDistributor{}
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
-				require.NoError(t, err)
+			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 
-				hints := &storage.SelectHints{
-					Start: util.TimeToMillis(testData.queryStartTime),
-					End:   util.TimeToMillis(testData.queryEndTime),
-					Func:  "series",
-				}
-				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+			require.NoError(t, err)
 
-				set := q.Select(ctx, false, hints, matcher)
-				require.False(t, set.Next()) // Expected to be empty.
-				require.NoError(t, set.Err())
+			hints := &storage.SelectHints{
+				Start: util.TimeToMillis(testData.queryStartTime),
+				End:   util.TimeToMillis(testData.queryEndTime),
+				Func:  "series",
+			}
+			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
 
-				// Assert on the time range of the actual executed query (5s delta).
-				delta := float64(5000)
-				require.Len(t, distributor.Calls, 1)
-				assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
-			})
+			set := q.Select(ctx, false, hints, matcher)
+			require.False(t, set.Next()) // Expected to be empty.
+			require.NoError(t, set.Err())
 
+			// Assert on the time range of the actual executed query (5s delta).
+			delta := float64(5000)
+			require.Len(t, distributor.Calls, 1)
+			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+			gotStartMillis := int64(distributor.Calls[0].Arguments.Get(1).(model.Time))
+			assert.InDeltaf(t, util.TimeToMillis(testData.expectedMetadataStartTime), gotStartMillis, delta, "expected start %s, got %s", testData.expectedMetadataStartTime.UTC(), util.TimeFromMillis(gotStartMillis).UTC())
+			gotEndMillis := int64(distributor.Calls[0].Arguments.Get(2).(model.Time))
+			assert.InDeltaf(t, util.TimeToMillis(testData.expectedMetadataEndTime), gotEndMillis, delta, "expected end %s, got %s", testData.expectedMetadataEndTime.UTC(), util.TimeFromMillis(gotEndMillis).UTC())
 		})
 	}
 }
@@ -920,7 +1130,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 	require.Len(t, m, 1)
 	series := m[0]
-	require.Equal(t, q.labels, series.Metric)
+	promtestutil.RequireEqual(t, q.labels, series.Metric)
 	require.Equal(t, q.samples(from, through, step), len(series.Floats)+len(series.Histograms))
 	var ts int64
 	for _, point := range series.Floats {
@@ -936,7 +1146,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 type errDistributor struct{}
 
-func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
 	return nil, errors.New("method is not implemented")
 }
 
@@ -970,9 +1180,13 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	return nil, errDistributorError
+}
+
 type emptyDistributor struct{}
 
-func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
 	return nil, errors.New("method is not implemented")
 }
 
@@ -1006,6 +1220,10 @@ func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.Label
 
 func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
 	return nil, nil
+}
+
+func (d *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
@@ -1075,7 +1293,8 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _ := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
@@ -1111,10 +1330,10 @@ func TestConfig_ValidateLimits(t *testing.T) {
 		expected error
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config, limits *validation.Limits) {},
+			setup: func(*Config, *validation.Limits) {},
 		},
 		"should pass if 'query store after' is enabled and shuffle-sharding is disabled": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(cfg *Config, _ *validation.Limits) {
 				cfg.QueryStoreAfter = time.Hour
 			},
 		},
@@ -1310,16 +1529,94 @@ func (m *mockBlocksStorageQuerier) Select(ctx context.Context, sortSeries bool, 
 	return args.Get(0).(storage.SeriesSet)
 }
 
-func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	args := m.Called(ctx, name, matchers)
+func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, name, hints, matchers)
 	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
-func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	args := m.Called(ctx, matchers)
+func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, matchers, hints)
 	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
 func (m *mockBlocksStorageQuerier) Close() error {
 	return nil
+}
+
+func TestTenantQueryLimitsProvider(t *testing.T) {
+	tenantLimits := &staticTenantLimits{
+		limits: map[string]*validation.Limits{
+			"user-1": {
+				MaxEstimatedMemoryConsumptionPerQuery: 1000,
+			},
+			"user-2": {
+				MaxEstimatedMemoryConsumptionPerQuery: 10,
+			},
+			"user-3": {
+				MaxEstimatedMemoryConsumptionPerQuery: 3000,
+			},
+			"unlimited-user": {
+				MaxEstimatedMemoryConsumptionPerQuery: 0,
+			},
+		},
+	}
+
+	overrides, err := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
+	require.NoError(t, err)
+
+	provider := &tenantQueryLimitsProvider{
+		limits: overrides,
+	}
+
+	testCases := map[string]struct {
+		ctx           context.Context
+		expectedLimit uint64
+		expectedError error
+	}{
+		"no tenant ID provided": {
+			ctx:           context.Background(),
+			expectedError: user.ErrNoOrgID,
+		},
+		"single tenant ID provided, has limit": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1"),
+			expectedLimit: 1000,
+		},
+		"single tenant ID provided, unlimited": {
+			ctx:           user.InjectOrgID(context.Background(), "unlimited-user"),
+			expectedLimit: 0,
+		},
+		"multiple tenant IDs provided, all have limits": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedLimit: 4010,
+		},
+		"multiple tenant IDs provided, one unlimited": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|unlimited-user|user-3"),
+			expectedLimit: 0,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualLimit, actualErr := provider.GetMaxEstimatedMemoryConsumptionPerQuery(testCase.ctx)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, actualErr)
+				require.Equal(t, testCase.expectedLimit, actualLimit)
+			} else {
+				require.ErrorIs(t, actualErr, testCase.expectedError)
+			}
+		})
+	}
+}
+
+type staticTenantLimits struct {
+	limits map[string]*validation.Limits
+}
+
+func (s *staticTenantLimits) ByUserID(userID string) *validation.Limits {
+	return s.limits[userID]
+}
+
+func (s *staticTenantLimits) AllByUserID() map[string]*validation.Limits {
+	return s.limits
 }

@@ -4,6 +4,8 @@ package block
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -34,7 +37,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 	require.NoError(t, err)
 	bkt = BucketWithGlobalMarkers(bkt)
 
-	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil)
+	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, nil)
 	require.NoError(t, err)
 
 	t.Run("should return no metas and no partials on no block in the storage", func(t *testing.T) {
@@ -156,7 +159,7 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 	require.NoError(t, err)
 	bkt = BucketWithGlobalMarkers(bkt)
 
-	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil)
+	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, nil)
 	require.NoError(t, err)
 
 	t.Run("should return no metas and no partials on no block in the storage", func(t *testing.T) {
@@ -284,7 +287,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Create a fetcher and fetch block metas to populate the cache on disk.
 	reg1 := prometheus.NewPedanticRegistry()
-	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil)
+	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil, nil)
 	require.NoError(t, err)
 	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
 	require.NoError(t, actualErr)
@@ -306,7 +309,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Create a new fetcher and fetch blocks again. This time we expect all meta.json to be loaded from cache.
 	reg2 := prometheus.NewPedanticRegistry()
-	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil)
+	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil, nil)
 	require.NoError(t, err)
 	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
 	require.NoError(t, actualErr)
@@ -327,6 +330,61 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 	`), "thanos_objstore_bucket_operations_total"))
 }
 
+func TestMetaFetcher_ShouldNotParseMetaJsonFilesAgain(t *testing.T) {
+	var (
+		ctx        = context.Background()
+		logger     = log.NewNopLogger()
+		fetcherDir = t.TempDir()
+	)
+
+	// Create a bucket client.
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+	require.NoError(t, err)
+
+	// Upload few blocks.
+	block1ID, block1Dir := createTestBlock(t)
+	require.NoError(t, Upload(ctx, logger, bkt, block1Dir, nil))
+	block2ID, block2Dir := createTestBlock(t)
+	require.NoError(t, Upload(ctx, logger, bkt, block2Dir, nil))
+
+	// We disable min compaction level and sources, to cache ALL parsed meta json files.
+	metaCache := NewMetaCache(100, 0, 0)
+
+	// Create a fetcher and fetch block metas to populate the cache on disk and metaCache.
+	reg1 := prometheus.NewPedanticRegistry()
+	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil, metaCache)
+	require.NoError(t, err)
+	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
+	require.NoError(t, actualErr)
+	require.Len(t, actualMetas, 2)
+	require.Contains(t, actualMetas, block1ID)
+	require.Contains(t, actualMetas, block2ID)
+
+	items, _, hits, misses := metaCache.Stats()
+	require.Equal(t, 2, items)
+	require.Equal(t, 0, hits)
+	require.Equal(t, 2, misses)
+
+	// Now delete meta.json files on local disk, to prove that values from metaCache are reused.
+	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block1ID.String(), MetaFilename)))
+	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block2ID.String(), MetaFilename)))
+
+	// Create a new fetcher and fetch blocks again. This time we expect all meta.json to be loaded from meta cache.
+	reg2 := prometheus.NewPedanticRegistry()
+	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil, metaCache)
+	require.NoError(t, err)
+	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
+	require.NoError(t, actualErr)
+	require.Len(t, actualMetas, 2)
+	require.Contains(t, actualMetas, block1ID)
+	require.Contains(t, actualMetas, block2ID)
+
+	items, _, hits, misses = metaCache.Stats()
+	require.Equal(t, 2, items)
+	require.Equal(t, 2, hits)
+	require.Equal(t, 2, misses)
+}
+
 func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 	var err error
 
@@ -342,4 +400,59 @@ func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 
 	blockDir = filepath.Join(parentDir, blockID.String())
 	return
+}
+
+func TestMetaCache(t *testing.T) {
+	meta1 := Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
+			Compaction: tsdb.BlockMetaCompaction{Level: 5, Sources: generateULIDs(10)},
+		},
+	}
+
+	levelTooLow := Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
+			Compaction: tsdb.BlockMetaCompaction{Level: 2, Sources: generateULIDs(10)},
+		},
+	}
+
+	notEnoughSources := Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
+			Compaction: tsdb.BlockMetaCompaction{Level: 10, Sources: generateULIDs(2)},
+		},
+	}
+
+	levelTooLowAndNotEnoughSources := Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
+			Compaction: tsdb.BlockMetaCompaction{Level: 1, Sources: generateULIDs(1)},
+		},
+	}
+
+	cache := NewMetaCache(10, 3, 5)
+	cache.Put(&meta1)
+	cache.Put(&levelTooLow)
+	cache.Put(&notEnoughSources)
+	cache.Put(&levelTooLowAndNotEnoughSources)
+
+	require.Equal(t, &meta1, cache.Get(meta1.ULID))
+	require.Nil(t, cache.Get(levelTooLow.ULID))
+	require.Nil(t, cache.Get(notEnoughSources.ULID))
+	require.Nil(t, cache.Get(levelTooLowAndNotEnoughSources.ULID))
+
+	items, size, hits, misses := cache.Stats()
+	require.Equal(t, 1, items)
+	require.Equal(t, MetaBytesSize(&meta1)+sizeOfUlid, size)
+	require.Equal(t, 1, hits)
+	require.Equal(t, 3, misses)
+}
+
+func generateULIDs(count int) []ulid.ULID {
+	result := make([]ulid.ULID, 0, count)
+	for i := 0; i < count; i++ {
+		result = append(result, ulid.MustNew(ulid.Now(), crypto_rand.Reader))
+	}
+	return result
 }

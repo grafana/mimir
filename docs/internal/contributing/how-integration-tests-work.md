@@ -47,4 +47,4 @@ Integration tests have `requires_docker` tag (`// +build requires_docker` line f
 
 ## Isolation
 
-Each integration test runs in isolation. For each integration test, we do create a Docker network, start Mimir and its dependencies containers, push/query series to/from Mimir and run assertions on it. Once the test has done, both the Docker network and containers are terminated and deleted.
+Each integration test runs in isolation. For each integration test, we do create a Docker network, start Mimir and its dependencies containers, push/query series to/from Mimir and run assertions on it. Once the test is done, both the Docker network and containers are terminated and deleted.

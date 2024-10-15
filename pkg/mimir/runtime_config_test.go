@@ -10,18 +10,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+	m.Run()
+}
+
 // Given limits are usually loaded via a config file, and that
 // a configmap is limited to 1MB, we need to minimise the limits file.
 // One way to do it is via YAML anchors.
 func TestRuntimeConfigLoader_ShouldLoadAnchoredYAML(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(validation.Limits{})
-
 	yamlFile := strings.NewReader(`
 overrides:
   '1234': &id001
@@ -39,21 +45,19 @@ overrides:
 	runtimeCfg, err := loader.load(yamlFile)
 	require.NoError(t, err)
 
-	limits := validation.Limits{
-		IngestionRate:                       1500,
-		IngestionBurstSize:                  15000,
-		MaxGlobalSeriesPerUser:              15000,
-		MaxGlobalSeriesPerMetric:            7000,
-		RulerMaxRulesPerRuleGroup:           20,
-		RulerMaxRuleGroupsPerTenant:         20,
-		NotificationRateLimitPerIntegration: validation.NotificationRateLimitMap{},
-	}
+	expected := getDefaultLimits()
+	expected.IngestionRate = 1500
+	expected.IngestionBurstSize = 15000
+	expected.MaxGlobalSeriesPerUser = 15000
+	expected.MaxGlobalSeriesPerMetric = 7000
+	expected.RulerMaxRulesPerRuleGroup = 20
+	expected.RulerMaxRuleGroupsPerTenant = 20
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
 	require.Equal(t, 3, len(loadedLimits))
-	require.Equal(t, limits, *loadedLimits["1234"])
-	require.Equal(t, limits, *loadedLimits["1235"])
-	require.Equal(t, limits, *loadedLimits["1236"])
+	require.True(t, cmp.Equal(expected, *loadedLimits["1234"], cmp.AllowUnexported(validation.Limits{})))
+	require.True(t, cmp.Equal(expected, *loadedLimits["1235"], cmp.AllowUnexported(validation.Limits{})))
+	require.True(t, cmp.Equal(expected, *loadedLimits["1236"], cmp.AllowUnexported(validation.Limits{})))
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
@@ -129,7 +133,7 @@ func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 	}{
 		{
 			name: "successful validate doesn't return error",
-			validate: func(limits validation.Limits) error {
+			validate: func(validation.Limits) error {
 				return nil
 			},
 		},
@@ -138,7 +142,7 @@ func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 		},
 		{
 			name: "unsuccessful validate returns error",
-			validate: func(limits validation.Limits) error {
+			validate: func(validation.Limits) error {
 				return errors.New("validation failed")
 			},
 			hasError: true,
@@ -160,4 +164,10 @@ overrides:
 			}
 		})
 	}
+}
+
+func getDefaultLimits() validation.Limits {
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
 }

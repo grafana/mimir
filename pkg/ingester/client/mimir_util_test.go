@@ -20,7 +20,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -32,6 +31,7 @@ func TestSendQueryStream(t *testing.T) {
 		return listen.Dial()
 	}
 
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(bufDialer), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
@@ -79,7 +79,7 @@ func TestSendQueryStream(t *testing.T) {
 	// Try to receive the response and assert the error we get is the context.Canceled
 	// wrapped within a gRPC error.
 	_, err = stream.Recv()
-	s, ok := status.FromError(err)
+	s, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok)
 	require.Equal(t, codes.Canceled, s.Code())
 

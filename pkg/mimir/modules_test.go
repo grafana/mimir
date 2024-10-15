@@ -159,11 +159,9 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 			require.NoError(t, err)
 
 			if testData.expectedInit {
-				assert.NotNil(t, mimir.RulerDirectStorage)
-				assert.NotNil(t, mimir.RulerCachedStorage)
+				assert.NotNil(t, mimir.RulerStorage)
 			} else {
-				assert.Nil(t, mimir.RulerDirectStorage)
-				assert.Nil(t, mimir.RulerCachedStorage)
+				assert.Nil(t, mimir.RulerStorage)
 			}
 		})
 	}
@@ -176,6 +174,7 @@ func TestMultiKVSetup(t *testing.T) {
 		All: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
@@ -183,6 +182,7 @@ func TestMultiKVSetup(t *testing.T) {
 
 		Ruler: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ruler.Ring.Common.KVStore.Multi.ConfigProvider)
 		},
@@ -194,10 +194,12 @@ func TestMultiKVSetup(t *testing.T) {
 		Distributor: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},
 
 		Ingester: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},
 
 		StoreGateway: func(t *testing.T, c Config) {
@@ -207,6 +209,7 @@ func TestMultiKVSetup(t *testing.T) {
 		Querier: func(t *testing.T, c Config) {
 			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},
 
 		Compactor: func(t *testing.T, c Config) {
@@ -327,6 +330,7 @@ func TestInitVault(t *testing.T) {
 	require.NotNil(t, mimir.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ingester.IngesterPartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader)

@@ -260,3 +260,7 @@
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{- if and .Values.ingress.enabled .Values.gateway.ingress.enabled -}}
+{{- fail "You have selected both ingress.enabled and gateway.ingress.enabled, you must select either ingress or gateway but not both" -}}
+{{- end -}}

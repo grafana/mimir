@@ -26,27 +26,51 @@ import (
 )
 
 var (
-	// DoNotLogErrorHeaderKey is a header key used for marking non-loggable errors. More precisely, if an HTTP response
+	// DoNotLogErrorHeaderKey is a header name used for marking non-loggable errors. More precisely, if an HTTP response
 	// has a status code 5xx, and contains a header with key DoNotLogErrorHeaderKey and any values, the generated error
 	// will be marked as non-loggable.
 	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
+
+	// ErrorMessageHeaderKey is a header name for header that contains error message that should be used when Server.Handle
+	// (httpgrpc.HTTP/Handle implementation) decides to return the response as an error, using status.ErrorProto.
+	// Normally Server.Handle would use entire response body as a error message, but Message field of rcp.Status object
+	// is a string, and if body contains non-utf8 bytes, marshalling of this object will fail.
+	ErrorMessageHeaderKey = http.CanonicalHeaderKey("X-ErrorMessage")
 )
+
+type contextType int
+
+const handledByHttpgrpcServer contextType = 0
+
+type Option func(*Server)
+
+func WithReturn4XXErrors(s *Server) {
+	s.return4XXErrors = true
+}
+
+func applyServerOptions(s *Server, opts ...Option) *Server {
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
 
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
 // servers must implement.
 type Server struct {
-	handler http.Handler
+	handler         http.Handler
+	return4XXErrors bool
 }
 
 // NewServer makes a new Server.
-func NewServer(handler http.Handler) *Server {
-	return &Server{
-		handler: handler,
-	}
+func NewServer(handler http.Handler, opts ...Option) *Server {
+	return applyServerOptions(&Server{handler: handler}, opts...)
 }
 
 // Handle implements HTTPServer.
 func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	ctx = context.WithValue(ctx, handledByHttpgrpcServer, true)
+
 	req, err := httpgrpc.ToHTTPRequest(ctx, r)
 	if err != nil {
 		return nil, err
@@ -62,19 +86,35 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 		header.Del(DoNotLogErrorHeaderKey) // remove before converting to httpgrpc resp
 	}
 
+	errorMessageFromHeader := ""
+	if msg, ok := header[ErrorMessageHeaderKey]; ok {
+		errorMessageFromHeader = msg[0]
+		header.Del(ErrorMessageHeaderKey) // remove before converting to httpgrpc resp
+	}
+
 	resp := &httpgrpc.HTTPResponse{
 		Code:    int32(recorder.Code),
 		Headers: httpgrpc.FromHeader(header),
 		Body:    recorder.Body.Bytes(),
 	}
-	if recorder.Code/100 == 5 {
-		err := httpgrpc.ErrorFromHTTPResponse(resp)
+	if s.shouldReturnError(resp) {
+		var err error
+		if errorMessageFromHeader != "" {
+			err = httpgrpc.ErrorFromHTTPResponseWithMessage(resp, errorMessageFromHeader)
+		} else {
+			err = httpgrpc.ErrorFromHTTPResponse(resp)
+		}
 		if doNotLogError {
 			err = middleware.DoNotLogError{Err: err}
 		}
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (s Server) shouldReturnError(resp *httpgrpc.HTTPResponse) bool {
+	mask := resp.GetCode() / 100
+	return mask == 5 || (s.return4XXErrors && mask == 4)
 }
 
 // Client is a http.Handler that forwards the request over gRPC.
@@ -146,7 +186,7 @@ func NewClient(address string) (*Client, error) {
 		),
 	}
 
-	conn, err := grpc.Dial(address, dialOptions...)
+	conn, err := grpc.NewClient(address, dialOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -188,4 +228,14 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+// IsHandledByHttpgrpcServer returns true if context is associated with HTTP request that was initiated by
+// Server.Handle, which is an implementation of httpgrpc.HTTP/Handle gRPC method.
+func IsHandledByHttpgrpcServer(ctx context.Context) bool {
+	val := ctx.Value(handledByHttpgrpcServer)
+	if v, ok := val.(bool); ok {
+		return v
+	}
+	return false
 }

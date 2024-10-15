@@ -5,13 +5,13 @@ on:
   pull_request:
     types: [opened, synchronize]
     paths:
-      - mimir-build-image/Dockerfile  
+      - mimir-build-image/Dockerfile
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-jobs: 
+jobs:
   build_and_push:
     runs-on: ubuntu-latest
     permissions:
@@ -19,9 +19,9 @@ jobs:
       contents: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
-    # We want to allow running github actions for all contributors, but don't want all contributors to be able to 
+    # We want to allow running github actions for all contributors, but don't want all contributors to be able to
     # publish new build images just by sending the PR. Hence this change.
-    if: github.event.pull_request.author_association == 'MEMBER' || github.actor == 'renovate[bot]'
+    if: ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association )}} || github.actor == 'renovate[bot]'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -79,10 +79,10 @@ jobs:
         run: | 
           if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
            gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
-           a new commit will automatically be added to this PR with new image version \\\`$IMAGE:$TAG\\\`. This can take up to 1 hour."
+           a new commit will automatically be added to this PR with new image version \`$IMAGE:$TAG\`. This can take up to 1 hour."
           else
             echo "This PR will not trigger a build of mimir-build-image"
-            gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies \\\`mimir-build-image/Dockerfile\\\`, but the image \\\`$IMAGE:$TAG\\\` already exists."
+            gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies \`mimir-build-image/Dockerfile\`, but the image \`$IMAGE:$TAG\` already exists."
           fi
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -95,7 +95,7 @@ jobs:
         run: |
           echo "Building and Pushing Docker Image"
           make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
-      
+
       - name: Compare built tag with Makefile
         id: compare_tag
         run: |
@@ -107,7 +107,7 @@ jobs:
             echo "Built tag is different from the one in Makefile"
             echo "isDifferent=true" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Add commit to PR in order to update Build Image version
         if: steps.compare_tag.outputs.isDifferent == 'true'
         run: |
@@ -124,7 +124,7 @@ jobs:
             git add Makefile
             git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
             git push origin HEAD
-          fi 
+          fi
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
           TAG: ${{ steps.compute_hash.outputs.tag }}

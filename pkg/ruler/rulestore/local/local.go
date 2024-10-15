@@ -7,38 +7,26 @@ package local
 
 import (
 	"context"
-	"flag"
 	"os"
 	"path/filepath"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
 )
-
-const (
-	Name = "local"
-)
-
-type Config struct {
-	Directory string `yaml:"directory"`
-}
-
-// RegisterFlagsWithPrefix registers flags with the input prefix.
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Directory, prefix+"local.directory", "", "Directory to scan for rules")
-}
 
 // Client expects to load already existing rules located at:
 //
 //	cfg.Directory / userID / namespace
 type Client struct {
-	cfg    Config
+	cfg    rulestore.LocalStoreConfig
 	loader promRules.GroupLoader
 }
 
-func NewLocalRulesClient(cfg Config, loader promRules.GroupLoader) (*Client, error) {
+func NewLocalRulesClient(cfg rulestore.LocalStoreConfig, loader promRules.GroupLoader) (*Client, error) {
 	if cfg.Directory == "" {
 		return nil, errors.New("directory required for local rules config")
 	}
@@ -49,7 +37,7 @@ func NewLocalRulesClient(cfg Config, loader promRules.GroupLoader) (*Client, err
 	}, nil
 }
 
-func (l *Client) ListAllUsers(_ context.Context) ([]string, error) {
+func (l *Client) ListAllUsers(_ context.Context, _ ...rulestore.Option) ([]string, error) {
 	root := l.cfg.Directory
 	infos, err := os.ReadDir(root)
 	if err != nil {
@@ -81,12 +69,22 @@ func (l *Client) ListAllUsers(_ context.Context) ([]string, error) {
 }
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore. This method also loads the rules.
-func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error) {
-	if namespace != "" {
-		return l.loadAllRulesGroupsForUserAndNamespace(ctx, userID, namespace)
+func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
+	if namespace == "" {
+		return l.loadAllRulesGroupsForUser(ctx, userID)
 	}
 
-	return l.loadAllRulesGroupsForUser(ctx, userID)
+	rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to load rule group for user %s and namespace %s", userID, namespace)
+	}
+
+	var list rulespb.RuleGroupList
+	for _, rg := range rulegroups.Groups {
+		desc := rulespb.ToProto(userID, namespace, rg)
+		list = append(list, desc)
+	}
+	return list, nil
 }
 
 func (l *Client) LoadRuleGroups(_ context.Context, _ map[string]rulespb.RuleGroupList) (rulespb.RuleGroupList, error) {
@@ -95,8 +93,22 @@ func (l *Client) LoadRuleGroups(_ context.Context, _ map[string]rulespb.RuleGrou
 }
 
 // GetRuleGroup implements RuleStore
-func (l *Client) GetRuleGroup(_ context.Context, _, _, _ string) (*rulespb.RuleGroupDesc, error) {
-	return nil, errors.New("GetRuleGroup unsupported in rule local store")
+func (l *Client) GetRuleGroup(ctx context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {
+	if namespace == "" {
+		return nil, errors.New("empty namespace")
+	}
+
+	rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to load rule group for user %s and namespace %s", userID, namespace)
+	}
+
+	for _, rg := range rulegroups.Groups {
+		if rg.Name == group {
+			return rulespb.ToProto(userID, namespace, rg), nil
+		}
+	}
+	return nil, rulestore.ErrGroupNotFound
 }
 
 // SetRuleGroup implements RuleStore
@@ -115,7 +127,7 @@ func (l *Client) DeleteNamespace(_ context.Context, _, _ string) error {
 }
 
 func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (rulespb.RuleGroupList, error) {
-	var allLists rulespb.RuleGroupList
+	var list rulespb.RuleGroupList
 
 	root := filepath.Join(l.cfg.Directory, userID)
 	infos, err := os.ReadDir(root)
@@ -143,31 +155,25 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 			continue
 		}
 
-		list, err := l.loadAllRulesGroupsForUserAndNamespace(ctx, userID, namespace)
+		rulegroups, err := l.loadRawRulesGroupsForUserAndNamespace(ctx, userID, namespace)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to list rule group for user %s and namespace %s", userID, namespace)
+			return nil, errors.Wrapf(err, "failed to load rule group for user %s and namespace %s", userID, namespace)
 		}
-
-		allLists = append(allLists, list...)
-	}
-
-	return allLists, nil
-}
-
-func (l *Client) loadAllRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (rulespb.RuleGroupList, error) {
-	filename := filepath.Join(l.cfg.Directory, userID, namespace)
-
-	rulegroups, allErrors := l.loader.Load(filename)
-	if len(allErrors) > 0 {
-		return nil, errors.Wrapf(allErrors[0], "error parsing %s", filename)
-	}
-
-	var list rulespb.RuleGroupList
-
-	for _, group := range rulegroups.Groups {
-		desc := rulespb.ToProto(userID, namespace, group)
-		list = append(list, desc)
+		for _, rg := range rulegroups.Groups {
+			desc := rulespb.ToProto(userID, namespace, rg)
+			list = append(list, desc)
+		}
 	}
 
 	return list, nil
+}
+
+func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (*rulefmt.RuleGroups, error) {
+	filename := filepath.Join(l.cfg.Directory, userID, namespace)
+
+	rulegroups, errs := l.loader.Load(filename)
+	if len(errs) > 0 {
+		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
+	}
+	return rulegroups, nil
 }

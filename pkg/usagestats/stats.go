@@ -67,6 +67,26 @@ func GetAndResetInt(name string) *expvar.Int {
 	return stat
 }
 
+// GetFloat returns a new Float stats object for the given name.
+// It creates the stats object if it doesn't exist yet.
+func GetFloat(name string) *expvar.Float {
+	existing := expvar.Get(statsPrefix + name)
+	if existing != nil {
+		if i, ok := existing.(*expvar.Float); ok {
+			return i
+		}
+		panic(fmt.Sprintf("%v is set to a non-float value", name))
+	}
+	return expvar.NewFloat(statsPrefix + name)
+}
+
+// GetAndResetFloat calls GetFloat and then reset it to 0.
+func GetAndResetFloat(name string) *expvar.Float {
+	stat := GetFloat(name)
+	stat.Set(0)
+	return stat
+}
+
 type Counter struct {
 	total     *atomic.Int64
 	rate      *atomic.Float64

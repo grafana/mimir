@@ -26,7 +26,7 @@ type CA struct {
 }
 
 func New(name string) *CA {
-	key, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -71,7 +71,7 @@ func (ca *CA) WriteCACertificate(path string) error {
 }
 
 func (ca *CA) WriteCertificate(template *x509.Certificate, certPath string, keyPath string) error {
-	key, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		return err
 	}

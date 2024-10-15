@@ -7,13 +7,13 @@ package distributor
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http"
 	"strconv"
-	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -21,7 +21,9 @@ import (
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -33,46 +35,40 @@ import (
 // PushFunc defines the type of the push. It is similar to http.HandlerFunc.
 type PushFunc func(ctx context.Context, req *Request) error
 
-// parserFunc defines how to read the body the request from an HTTP request
-type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error)
-
-// Wrap a slice in a struct so we can store a pointer in sync.Pool
-type bufHolder struct {
-	buf []byte
-}
+// parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
+type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
 
 var (
-	bufferPool = sync.Pool{
-		New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
-	}
-	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
-	errNonPositiveMaxBackoffExponent = errors.New("max backoff exponent should be a positive value")
+	errNonPositiveMinBackoffDuration = errors.New("min-backoff should be greater than or equal to 1s")
+	errNonPositiveMaxBackoffDuration = errors.New("max-backoff should be greater than or equal to 1s")
 )
 
 const (
-	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
-	statusClientClosedRequest     = 499
+	SkipLabelNameValidationHeader  = "X-Mimir-SkipLabelNameValidation"
+	SkipLabelCountValidationHeader = "X-Mimir-SkipLabelCountValidation"
+
+	statusClientClosedRequest = 499
 )
 
 type RetryConfig struct {
-	Enabled            bool `yaml:"enabled" category:"experimental"`
-	BaseSeconds        int  `yaml:"base_seconds" category:"experimental"`
-	MaxBackoffExponent int  `yaml:"max_backoff_exponent" category:"experimental"`
+	Enabled    bool          `yaml:"enabled" category:"advanced"`
+	MinBackoff time.Duration `yaml:"min_backoff" category:"advanced"`
+	MaxBackoff time.Duration `yaml:"max_backoff" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", false, "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
-	f.IntVar(&cfg.BaseSeconds, "distributor.retry-after-header.base-seconds", 3, "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.")
-	f.IntVar(&cfg.MaxBackoffExponent, "distributor.retry-after-header.max-backoff-exponent", 5, "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.")
+	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", true, "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
+	f.DurationVar(&cfg.MinBackoff, "distributor.retry-after-header.min-backoff", 6*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
+	f.DurationVar(&cfg.MaxBackoff, "distributor.retry-after-header.max-backoff", 96*time.Second, "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.")
 }
 
 func (cfg *RetryConfig) Validate() error {
-	if cfg.BaseSeconds < 1 {
-		return errRetryBaseLessThanOneSecond
+	if cfg.MinBackoff < time.Second {
+		return errNonPositiveMinBackoffDuration
 	}
-	if cfg.MaxBackoffExponent < 1 {
-		return errNonPositiveMaxBackoffExponent
+	if cfg.MaxBackoff < time.Second {
+		return errNonPositiveMaxBackoffDuration
 	}
 	return nil
 }
@@ -80,19 +76,31 @@ func (cfg *RetryConfig) Validate() error {
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
+	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest, _ log.Logger) ([]byte, error) {
-		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
+	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
-		return res, err
+		if err != nil {
+			return err
+		}
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(protoBodySize))
+
+		return nil
 	})
 }
 
@@ -108,10 +116,24 @@ func (e distributorMaxWriteMessageSizeErr) Error() string {
 	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
+type distributorMaxOTLPRequestSizeErr struct {
+	actual, limit int
+}
+
+func (e distributorMaxOTLPRequestSizeErr) Error() string {
+	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
+	if e.actual < 0 {
+		msgSizeDesc = ""
+	}
+	return globalerror.DistributorMaxOTLPRequestSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming OTLP request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), maxOTLPRequestSizeFlag)
+}
+
 func handler(
 	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
@@ -124,37 +146,50 @@ func handler(
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
-				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
 				logger = utillog.WithSourceIPs(source, logger)
 			}
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			bufHolder := bufferPool.Get().(*bufHolder)
+			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			buf, err := parser(ctx, r, maxRecvMsgSize, bufHolder.buf, &req, logger)
-			if err != nil {
+
+			userID, err := tenant.TenantID(ctx)
+			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
+				return nil, nil, errors.Wrap(err, "failed to get tenant ID")
+			}
+
+			// userID might be empty if none was in the ctx, in this case just use the default setting.
+			if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+				// The user is not allowed to send exemplars, so there is no need to unmarshal them.
+				// Optimization to avoid the allocations required for unmarshaling exemplars.
+				req.SkipUnmarshalingExemplars = true
+			}
+
+			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
-				bufferPool.Put(bufHolder)
+				rb.CleanUp()
 				return nil, nil, err
-			}
-			// If decoding allocated a bigger buffer, put that one back in the pool.
-			if buf = buf[:cap(buf)]; len(buf) > len(bufHolder.buf) {
-				bufHolder.buf = buf
 			}
 
 			if allowSkipLabelNameValidation {
-				req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
+				req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
 			} else {
-				req.SkipLabelNameValidation = false
+				req.SkipLabelValidation = false
+			}
+
+			if allowSkipLabelCountValidation {
+				req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
+			} else {
+				req.SkipLabelCountValidation = false
 			}
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
-				bufferPool.Put(bufHolder)
+				rb.CleanUp()
 			}
 			return &req.WriteRequest, cleanup, nil
 		}
@@ -170,12 +205,20 @@ func handler(
 				msg  string
 			)
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+				// This code is needed for a correct handling of errors returned by the supplier function.
+				// These errors are created by using the httpgrpc package.
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code, msg = toHTTPStatus(ctx, err, limits), err.Error()
+				code = toHTTPStatus(ctx, err, limits)
+				msg = err.Error()
 			}
 			if code != 202 {
-				level.Error(logger).Log("msg", "push error", "err", err)
+				// This error message is consistent with error message in OTLP handler, and ingester's ingest-storage pushToStorage method.
+				msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
+				if code/100 == 4 {
+					msgs = append(msgs, "insight", true)
+				}
+				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, code, retryCfg)
 			http.Error(w, msg, code)
@@ -183,22 +226,27 @@ func handler(
 	})
 }
 
-func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffExponent int) string {
+func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) string {
+	const jitterFactor = 0.5
+
 	retryAttempt, err := strconv.Atoi(retryAttemptHeader)
 	// If retry-attempt is not valid, set it to default 1
 	if err != nil || retryAttempt < 1 {
 		retryAttempt = 1
 	}
-	if retryAttempt > maxBackoffExponent {
-		retryAttempt = maxBackoffExponent
+
+	delaySeconds := minBackoff.Seconds() * math.Pow(2.0, float64(retryAttempt-1))
+	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
+	if jitterAmount := int64(delaySeconds * jitterFactor); jitterAmount > 0 {
+		// The random jitter can be negative too, so we generate a 2x greater the random number and subtract the jitter.
+		randomJitter := float64(rand.Int63n(jitterAmount*2+1) - jitterAmount)
+		delaySeconds += randomJitter
 	}
-	var minSeconds, maxSeconds int64
-	minSeconds = int64(baseSeconds) << (retryAttempt - 1)
-	maxSeconds = int64(minSeconds) << 1
+	// Jitter might have pushed the delaySeconds over maxBackoff or minBackoff, so we need to clamp it again.
+	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
+	delaySeconds = max(minBackoff.Seconds(), delaySeconds)
 
-	delaySeconds := minSeconds + rand.Int63n(maxSeconds-minSeconds)
-
-	return strconv.FormatInt(delaySeconds, 10)
+	return strconv.FormatInt(int64(delaySeconds), 10)
 }
 
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
@@ -209,31 +257,14 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		return http.StatusInternalServerError
 	}
 
-	var distributorErr distributorError
+	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
-		switch distributorErr.errorCause() {
-		case mimirpb.BAD_DATA:
-			return http.StatusBadRequest
-		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-			serviceOverloadErrorEnabled := false
-			userID, err := tenant.TenantID(ctx)
-			if err == nil {
-				serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-			}
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			if serviceOverloadErrorEnabled {
-				return StatusServiceOverloaded
-			}
-			return http.StatusTooManyRequests
-		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			return http.StatusAccepted
-		case mimirpb.TOO_MANY_CLUSTERS:
-			return http.StatusBadRequest
-		case mimirpb.TSDB_UNAVAILABLE:
-			return http.StatusServiceUnavailable
+		serviceOverloadErrorEnabled := false
+		userID, err := tenant.TenantID(ctx)
+		if err == nil {
+			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 		}
+		return errorCauseToHTTPStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
 	}
 
 	return http.StatusInternalServerError
@@ -248,7 +279,7 @@ func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode 
 	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
 		if retryCfg.Enabled {
 			retryAttemptHeader := r.Header.Get("Retry-Attempt")
-			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.BaseSeconds, retryCfg.MaxBackoffExponent)
+			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.MinBackoff, retryCfg.MaxBackoff)
 			w.Header().Set("Retry-After", retrySeconds)
 			if sp := opentracing.SpanFromContext(r.Context()); sp != nil {
 				sp.SetTag("retry-after", retrySeconds)

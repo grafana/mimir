@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,6 +23,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+const maxBufferPoolSize = 1024 * 1024
+
+var bufferPool = util.NewBucketedBufferPool(1e3, maxBufferPoolSize, 2)
 
 type parser struct {
 	processorConfig processorConfig
@@ -134,7 +137,9 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 
 	if rp.decodePush && req.Method == "POST" && strings.Contains(req.URL.Path, "/push") {
 		var matched bool
-		r.PushRequest, r.cleanup, matched = rp.decodePushRequest(req, body, rp.matchers)
+		rb := util.NewRequestBuffers(bufferPool)
+		r.cleanup = rb.CleanUp
+		r.PushRequest, matched = rp.decodePushRequest(req, body, rp.matchers, rb)
 		if !matched {
 			r.ignored = true
 		}
@@ -152,35 +157,13 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 	return &r
 }
 
-// Wrap a slice in a struct so we can store a pointer in sync.Pool
-type bufHolder struct {
-	buf []byte
-}
-
-var bufferPool = sync.Pool{
-	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
-}
-
-func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*labels.Matcher) (*pushRequest, func(), bool) {
+func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*labels.Matcher, buffers *util.RequestBuffers) (*pushRequest, bool) {
 	res := &pushRequest{Version: req.Header.Get("X-Prometheus-Remote-Write-Version")}
 
-	bufHolder := bufferPool.Get().(*bufHolder)
-
-	cleanup := func() {
-		bufferPool.Put(bufHolder)
-	}
-
 	var wr mimirpb.WriteRequest
-	buf, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, bufHolder.buf, &wr, util.RawSnappy)
-	if err != nil {
-		cleanup()
+	if _, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, buffers, &wr, util.RawSnappy); err != nil {
 		res.Error = fmt.Errorf("failed to decode decodePush request: %s", err).Error()
-		return nil, nil, true
-	}
-
-	// If decoding allocated a bigger buffer, put that one back in the pool.
-	if len(buf) > len(bufHolder.buf) {
-		bufHolder.buf = buf
+		return nil, true
 	}
 
 	// See if we find the matching series. If not, we ignore this request.
@@ -195,8 +178,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 		}
 
 		if !matched {
-			cleanup()
-			return nil, nil, false
+			return nil, false
 		}
 	}
 
@@ -218,7 +200,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 
 	res.Metadata = wr.Metadata
 
-	return res, cleanup, true
+	return res, true
 }
 
 func matches(lbls labels.Labels, matchers []*labels.Matcher) bool {

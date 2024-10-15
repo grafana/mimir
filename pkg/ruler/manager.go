@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -60,7 +61,8 @@ type DefaultMultiTenantManager struct {
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -294,9 +296,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"user": userID}, r.registry)
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
-	n = newRulerNotifier(&notifier.Options{
-		QueueCapacity: r.cfg.NotificationQueueCapacity,
-		Registerer:    reg,
+	var err error
+	if n, err = newRulerNotifier(&notifier.Options{
+		QueueCapacity:   r.cfg.NotificationQueueCapacity,
+		DrainOnShutdown: true,
+		Registerer:      reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			// Note: The passed-in context comes from the Prometheus notifier
 			// and does *not* contain the userID. So it needs to be added to the context
@@ -312,7 +316,9 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
-	}, log.With(r.logger, "user", userID))
+	}, log.With(r.logger, "user", userID)); err != nil {
+		return nil, err
+	}
 
 	n.run()
 
@@ -337,6 +343,8 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 			continue
 		}
 
+		// Stop manager in the background, so we don't block further resharding operations.
+		// The manager won't terminate until any inflight evaluations are complete.
 		go mngr.Stop()
 		delete(r.userManagers, userID)
 
@@ -349,6 +357,10 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 	}
 
 	r.managersTotal.Set(float64(len(r.userManagers)))
+
+	// Note that we don't remove any notifiers here:
+	// - stopping a notifier can take quite some time, as it needs to drain the notification queue (if enabled), and we don't want to block further resharding operations
+	// - we can safely reuse the notifier if the tenant is resharded back to this ruler in the future
 }
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
@@ -363,12 +375,6 @@ func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 }
 
 func (r *DefaultMultiTenantManager) Stop() {
-	r.notifiersMtx.Lock()
-	for _, n := range r.notifiers {
-		n.stop()
-	}
-	r.notifiersMtx.Unlock()
-
 	level.Info(r.logger).Log("msg", "stopping user managers")
 	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
@@ -385,6 +391,23 @@ func (r *DefaultMultiTenantManager) Stop() {
 	wg.Wait()
 	r.userManagerMtx.Unlock()
 	level.Info(r.logger).Log("msg", "all user managers stopped")
+
+	// Stop notifiers after all rule evaluations have finished, so that we have
+	// a chance to send any notifications generated while shutting down.
+	// rulerNotifier.stop() may take some time to complete if notifications need to be drained from the queue.
+	level.Info(r.logger).Log("msg", "stopping user notifiers")
+	wg = sync.WaitGroup{}
+	r.notifiersMtx.Lock()
+	for _, n := range r.notifiers {
+		wg.Add(1)
+		go func(n *rulerNotifier) {
+			defer wg.Done()
+			n.stop()
+		}(n)
+	}
+	wg.Wait()
+	r.notifiersMtx.Unlock()
+	level.Info(r.logger).Log("msg", "all user notifiers stopped")
 
 	// cleanup user rules directories
 	r.mapper.cleanup()
@@ -406,6 +429,11 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 	if !r.cfg.TenantFederation.Enabled && len(g.SourceTenants) > 0 {
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' is a federated rule group, "+
 			"but rules federation is disabled; please contact your service administrator to have it enabled", g.Name))
+	}
+
+	//nolint:staticcheck // We want to intentionally access a deprecated field
+	if g.EvaluationDelay != nil && g.QueryOffset != nil && *g.EvaluationDelay != *g.QueryOffset {
+		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
 
 	for i, r := range g.Rules {

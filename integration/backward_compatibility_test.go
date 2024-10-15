@@ -9,6 +9,7 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -32,6 +33,9 @@ import (
 // see TestParsePreviousImageVersionOverrides for the JSON format to use.
 func previousVersionImages(t *testing.T) map[string]e2emimir.FlagMapper {
 	if overrides := previousImageVersionOverrides(t); len(overrides) > 0 {
+		for key, mapper := range overrides {
+			overrides[key] = e2emimir.ChainFlagMappers(mapper, defaultPreviousVersionGlobalOverrides)
+		}
 		return overrides
 	}
 
@@ -89,8 +93,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Push some series to Mimir.
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1, _ := generateFloatSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, expectedVector2, _ := generateFloatSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series1, expectedVector1, _ := generateFloatSeries("series_1", series1Timestamp, prompb.Label{Name: "label_1", Value: "label_1"})
+	series2, expectedVector2, _ := generateFloatSeries("series_2", series2Timestamp, prompb.Label{Name: "label_2", Value: "label_2"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
@@ -111,7 +115,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Push another series to further compact another block and delete the first block
 	// due to expired retention.
 	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3, _ := generateFloatSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series3, expectedVector3, _ := generateFloatSeries("series_3", series3Timestamp, prompb.Label{Name: "label_3", Value: "label_3"})
 
 	res, err = c.Push(series3)
 	require.NoError(t, err)
@@ -136,19 +140,41 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
-	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 1, instantQueryTest{
-		expr:           "series_1",
-		time:           series1Timestamp,
-		expectedVector: expectedVector1,
-	}, instantQueryTest{
-		expr:           "series_2",
-		time:           series2Timestamp,
-		expectedVector: expectedVector2,
-	}, instantQueryTest{
-		expr:           "series_3",
-		time:           series3Timestamp,
-		expectedVector: expectedVector3,
-	})
+	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 1,
+		[]instantQueryTest{
+			{
+				expr:           "series_1",
+				time:           series1Timestamp,
+				expectedVector: expectedVector1,
+			}, {
+				expr:           "series_2",
+				time:           series2Timestamp,
+				expectedVector: expectedVector2,
+			}, {
+				expr:           "series_3",
+				time:           series3Timestamp,
+				expectedVector: expectedVector3,
+			},
+		},
+		[]remoteReadRequestTest{
+			{
+				metricName:         "series_1",
+				startTime:          series1Timestamp.Add(-time.Minute),
+				endTime:            series1Timestamp.Add(time.Minute),
+				expectedTimeseries: vectorToPrompbTimeseries(expectedVector1),
+			}, {
+				metricName:         "series_2",
+				startTime:          series2Timestamp.Add(-time.Minute),
+				endTime:            series2Timestamp.Add(time.Minute),
+				expectedTimeseries: vectorToPrompbTimeseries(expectedVector2),
+			}, {
+				metricName:         "series_3",
+				startTime:          series3Timestamp.Add(-time.Minute),
+				endTime:            series3Timestamp.Add(time.Minute),
+				expectedTimeseries: vectorToPrompbTimeseries(expectedVector3),
+			},
+		},
+	)
 }
 
 // Check for issues like https://github.com/cortexproject/cortex/issues/2356
@@ -192,11 +218,11 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 3, instantQueryTest{
+	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 3, []instantQueryTest{{
 		time:           now,
 		expr:           "series_1",
 		expectedVector: expectedVector,
-	})
+	}}, nil)
 }
 
 func checkQueries(
@@ -207,7 +233,8 @@ func checkQueries(
 	oldFlagsMapper e2emimir.FlagMapper,
 	s *e2e.Scenario,
 	numIngesters int,
-	instantQueries ...instantQueryTest,
+	instantQueries []instantQueryTest,
+	remoteReadRequests []remoteReadRequestTest,
 ) {
 	cases := map[string]struct {
 		queryFrontendOptions []e2emimir.Option
@@ -237,7 +264,7 @@ func checkQueries(
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			// Start query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, c.queryFrontendOptions...)
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, c.queryFrontendOptions...)
 			require.NoError(t, s.Start(queryFrontend))
 			defer func() {
 				require.NoError(t, s.Stop(queryFrontend))
@@ -269,11 +296,21 @@ func checkQueries(
 				require.NoError(t, err)
 
 				for _, query := range instantQueries {
-					t.Run(fmt.Sprintf("%s: %s", endpoint, query.expr), func(t *testing.T) {
+					t.Run(fmt.Sprintf("%s: instant query: %s", endpoint, query.expr), func(t *testing.T) {
 						result, err := c.Query(query.expr, query.time)
 						require.NoError(t, err)
 						require.Equal(t, model.ValVector, result.Type())
-						assert.Equal(t, query.expectedVector, result.(model.Vector))
+						require.Equal(t, query.expectedVector, result.(model.Vector))
+					})
+				}
+
+				for _, req := range remoteReadRequests {
+					t.Run(fmt.Sprintf("%s: remote read: %s", endpoint, req.metricName), func(t *testing.T) {
+						httpRes, result, _, err := c.RemoteRead(remoteReadQueryByMetricName(req.metricName, req.startTime, req.endTime))
+						require.NoError(t, err)
+						require.Equal(t, http.StatusOK, httpRes.StatusCode)
+						require.NotNil(t, result)
+						require.Equal(t, req.expectedTimeseries, result.Timeseries)
 					})
 				}
 			}
@@ -285,6 +322,13 @@ type instantQueryTest struct {
 	expr           string
 	time           time.Time
 	expectedVector model.Vector
+}
+
+type remoteReadRequestTest struct {
+	metricName         string
+	startTime          time.Time
+	endTime            time.Time
+	expectedTimeseries []*prompb.TimeSeries
 }
 
 type testingLogger interface{ Logf(string, ...interface{}) }

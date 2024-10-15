@@ -29,7 +29,7 @@ var (
 type InspectedEntryFactory func() *InspectedEntry
 
 // InspectedEntry is the structure that holds a configuration block or a single configuration parameters.
-// Blocks contain other other InspectedEntries.
+// Blocks contain other InspectedEntries.
 
 type EntryKind string
 

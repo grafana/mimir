@@ -12,7 +12,7 @@ metadata:
     "helm.sh/hook": test
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  backoffLimit: 5
+  backoffLimit: {{ .Values.smoke_test.backoffLimit }}
   completions: 1
   parallelism: 1
   selector:
@@ -37,16 +37,18 @@ spec:
         {{- toYaml .Values.smoke_test.initContainers | nindent 8 }}
       containers:
         - name: smoke-test
-          image: "{{ .Values.smoke_test.image.repository }}:{{ .Values.smoke_test.image.tag }}"
-          imagePullPolicy: {{ .Values.smoke_test.image.pullPolicy }}
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
+            - "-target=continuous-test"
+            - "-activity-tracker.filepath="
             - "-tests.smoke-test"
             - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
             - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
             - "-tests.tenant-id={{ .Values.smoke_test.tenantId }}"
             - "-tests.write-read-series-test.num-series=1000"
             - "-tests.write-read-series-test.max-query-age=48h"
-            - "-server.metrics-port={{ include "mimir.serverHttpListenPort" . }}"
+            - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             {{- range $key, $value := .Values.smoke_test.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -54,6 +56,10 @@ spec:
             {{- if .Values.smoke_test.extraVolumeMounts }}
               {{ toYaml .Values.smoke_test.extraVolumeMounts | nindent 12 }}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+          {{- if or .Values.global.extraEnv .Values.smoke_test.env }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -61,6 +67,8 @@ spec:
             {{- with .Values.smoke_test.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.smoke_test.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -68,9 +76,13 @@ spec:
             {{- with .Values.smoke_test.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
       restartPolicy: OnFailure
       volumes:
         {{- if .Values.smoke_test.extraVolumes }}
         {{ toYaml .Values.smoke_test.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
 {{- end }}

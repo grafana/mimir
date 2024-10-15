@@ -4,7 +4,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-# shellcheck disable=SC1090
+# shellcheck disable=SC1091
 . "$OS_ENV_DIR/mimir"
 
 if ! command -V systemctl >/dev/null 2>&1; then
@@ -28,7 +28,7 @@ install() {
     fi
 
     chmod 640 /etc/mimir/config.example.yaml
-    chown root:$MIMIR_GROUP /etc/mimir/config.example.yaml
+    chown root:"$MIMIR_GROUP" /etc/mimir/config.example.yaml
 
     printf "\033[32m Reload the service unit from disk\033[0m\n"
     systemctl daemon-reload ||:

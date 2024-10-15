@@ -41,8 +41,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: query-frontend
           imagePullPolicy: IfNotPresent
@@ -50,6 +48,9 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: runtime-config
               mountPath: /var/enterprise-metrics
@@ -86,11 +87,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "5000"
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -99,9 +97,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-query-frontend
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 390
       volumes:
         - name: config
           secret:

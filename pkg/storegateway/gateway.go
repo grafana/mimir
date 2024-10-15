@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -53,11 +54,17 @@ var (
 // Config holds the store gateway config.
 type Config struct {
 	ShardingRing RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
+
+	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
+	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 }
 
 // RegisterFlags registers the Config flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
+
+	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
+	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
 }
 
 // Validate the Config.
@@ -168,7 +175,15 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
 
-	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+	allowedTenants := util.NewAllowedTenants(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
+	if len(gatewayCfg.EnabledTenants) > 0 {
+		level.Info(logger).Log("msg", "store-gateway using enabled users", "enabled", gatewayCfg.EnabledTenants)
+	}
+	if len(gatewayCfg.DisabledTenants) > 0 {
+		level.Info(logger).Log("msg", "store-gateway using disabled users", "disabled", gatewayCfg.DisabledTenants)
+	}
+
+	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket stores")
 	}
@@ -235,14 +250,15 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 		}
 	}
 
-	// At this point, if sharding is enabled, the instance is registered with some tokens
-	// and we can run the initial synchronization.
+	// At this point, the instance is registered with some tokens
+	// and we can start the bucket stores.
 	g.bucketSync.WithLabelValues(syncReasonInitial).Inc()
-	if err = g.stores.InitialSync(ctx); err != nil {
-		return errors.Wrap(err, "initial blocks synchronization")
+	// We pass context.Background() because we want to control the shutdown of stores ourselves instead of stopping it immediately after when ctx is cancelled.
+	if err = services.StartAndAwaitRunning(context.Background(), g.stores); err != nil {
+		return errors.Wrap(err, "starting bucket stores")
 	}
 
-	// Now that the initial sync is done, we should have loaded all blocks
+	// After starting the store, we should have loaded all blocks
 	// assigned to our shard, so we can switch to ACTIVE and start serving
 	// requests.
 	if err = g.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
@@ -300,6 +316,10 @@ func (g *StoreGateway) stopping(_ error) error {
 	}
 
 	g.unsetPrepareShutdownMarker()
+
+	if err := services.StopAndAwaitTerminated(context.Background(), g.stores); err != nil {
+		level.Warn(g.logger).Log("msg", "failed to stop store-gateway stores", "err", err)
+	}
 	return nil
 }
 

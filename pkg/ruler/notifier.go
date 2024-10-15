@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"net/url"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/crypto/tls"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -24,6 +26,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/util"
 )
+
+var errRulerNotifierStopped = cancellation.NewErrorf("rulerNotifier stopped")
 
 type NotifierConfig struct {
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
@@ -42,30 +46,39 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 // of both actors.
 type rulerNotifier struct {
 	notifier  *notifier.Manager
-	sdCancel  context.CancelFunc
+	sdCancel  context.CancelCauseFunc
 	sdManager *discovery.Manager
 	wg        sync.WaitGroup
 	logger    gklog.Logger
 }
 
-func newRulerNotifier(o *notifier.Options, l gklog.Logger) *rulerNotifier {
-	sdCtx, sdCancel := context.WithCancel(context.Background())
+func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {
+	sdCtx, sdCancel := context.WithCancelCause(context.Background())
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(o.Registerer)
+	if err != nil {
+		return nil, err
+	}
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, l),
 		sdCancel:  sdCancel,
-		sdManager: discovery.NewManager(sdCtx, l),
+		sdManager: discovery.NewManager(sdCtx, l, o.Registerer, sdMetrics),
 		logger:    l,
-	}
+	}, nil
 }
 
 // run starts the notifier. This function doesn't block and returns immediately.
 func (rn *rulerNotifier) run() {
 	rn.wg.Add(2)
 	go func() {
-		if err := rn.sdManager.Run(); err != nil {
-			level.Error(rn.logger).Log("msg", "error starting notifier discovery manager", "err", err)
+		defer rn.wg.Done()
+
+		// Ignore context cancelled errors: cancelling the context is how we stop the manager when shutting down normally.
+		if err := rn.sdManager.Run(); err != nil && !errors.Is(err, context.Canceled) {
+			level.Error(rn.logger).Log("msg", "error running notifier discovery manager", "err", err)
+			return
 		}
-		rn.wg.Done()
+
+		level.Info(rn.logger).Log("msg", "notifier discovery manager stopped")
 	}()
 	go func() {
 		rn.notifier.Run(rn.sdManager.SyncCh())
@@ -85,15 +98,18 @@ func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 	return rn.sdManager.ApplyConfig(sdCfgs)
 }
 
+// stop stops the notifier and waits for it to terminate.
+//
+// Note that this can take quite some time if draining the notification queue is enabled.
 func (rn *rulerNotifier) stop() {
-	rn.sdCancel()
+	rn.sdCancel(errRulerNotifierStopped)
 	rn.notifier.Stop()
 	rn.wg.Wait()
 }
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*config.Config, error) {
+func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
 	if rulerConfig.AlertmanagerURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -110,7 +126,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*
 
 		var sdConfig discovery.Config
 		if isSD {
-			sdConfig = dnsSD(rulerConfig, resolver, qType, url)
+			sdConfig = dnsSD(rulerConfig, resolver, qType, url, rmi)
 		} else {
 			sdConfig = staticTarget(url)
 		}

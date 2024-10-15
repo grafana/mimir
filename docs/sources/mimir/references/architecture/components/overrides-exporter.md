@@ -21,9 +21,10 @@ For more information about configuring overrides, refer to [Runtime configuratio
 
 The overrides-exporter must be explicitly enabled.
 
-> **Warning:**
-> The metrics emitted by the overrides-exporter have high cardinality.
-> It's recommended to run only a single replica of the overrides-exporter to limit that cardinality.
+{{< admonition type="warning" >}}
+The metrics emitted by the overrides-exporter have high cardinality.
+It's recommended to run only a single replica of the overrides-exporter to limit that cardinality.
+{{< /admonition >}}
 
 With a `runtime.yaml` file as follows:
 

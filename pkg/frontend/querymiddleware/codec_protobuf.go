@@ -22,7 +22,7 @@ func (f protobufFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
-func (f protobufFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, error) {
+func (f protobufFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
 	status, err := mimirpb.StatusFromPrometheusString(resp.Status)
 	if err != nil {
 		return nil, err
@@ -37,6 +37,8 @@ func (f protobufFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, err
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
+		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
 	}
 
 	if resp.Data != nil {
@@ -184,7 +186,7 @@ func (protobufFormatter) encodeMatrixData(data []SampleStream) mimirpb.MatrixDat
 	return mimirpb.MatrixData{Series: series}
 }
 
-func (f protobufFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, error) {
+func (f protobufFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, error) {
 	var resp mimirpb.QueryResponse
 
 	if err := resp.Unmarshal(buf); err != nil {
@@ -212,6 +214,7 @@ func (f protobufFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, erro
 		Error:     resp.Error,
 		Data:      data,
 		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
 	}, nil
 }
 
@@ -321,6 +324,22 @@ func (f protobufFormatter) decodeMatrixData(data *mimirpb.MatrixData) (*Promethe
 		ResultType: model.ValMatrix.String(),
 		Result:     streams,
 	}, nil
+}
+
+func (f protobufFormatter) EncodeLabelsResponse(*PrometheusLabelsResponse) ([]byte, error) {
+	return nil, errors.New("protobuf labels encoding is not supported")
+}
+
+func (f protobufFormatter) DecodeLabelsResponse([]byte) (*PrometheusLabelsResponse, error) {
+	return nil, errors.New("protobuf labels decoding is not supported")
+}
+
+func (f protobufFormatter) EncodeSeriesResponse(*PrometheusSeriesResponse) ([]byte, error) {
+	return nil, errors.New("protobuf series encoding is not supported")
+}
+
+func (f protobufFormatter) DecodeSeriesResponse([]byte) (*PrometheusSeriesResponse, error) {
+	return nil, errors.New("protobuf series decoding is not supported")
 }
 
 func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {

@@ -21,7 +21,7 @@ results-cache:
   enabled: false
 ```
 
-Next, configure Mimir to connect to Redis using `structuredConfig`. Refer to [the configuration parameters reference] for Redis connection configuration options. For example:
+Next, configure Mimir to connect to Redis using `structuredConfig`. Refer to [the configuration parameters reference](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#redis) for Redis connection configuration options. For example:
 
 ```yaml
 mimir:
@@ -47,7 +47,3 @@ mimir:
         redis:
           endpoint: <redis-url>:6379
 ```
-
-{{% docs/reference %}}
-[the configuration parameters reference]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/configuration-parameters#redis"
-{{% /docs/reference %}}

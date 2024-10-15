@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -27,9 +28,14 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -50,7 +56,6 @@ const (
 	formatProtobuf = "protobuf"
 )
 
-var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 var allFormats = []string{formatJSON, formatProtobuf}
 
 // QueryFrontendConfig defines query-frontend transport configuration.
@@ -71,6 +76,7 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
 
+	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
@@ -95,6 +101,7 @@ func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
 	}
 	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(cfg.Address, opts...)
 	if err != nil {
 		return nil, err
@@ -143,8 +150,8 @@ func NewRemoteQuerier(
 }
 
 // Read satisfies Prometheus remote.ReadClient.
-// See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
-func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+// See: https://github.com/prometheus/prometheus/blob/28a830ed9f331e71549c24c2ac3b441033201e8f/storage/remote/client.go#L342
+func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
 	defer log.Span.Finish()
 
@@ -162,13 +169,13 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 		Method: http.MethodPost,
 		Url:    q.promHTTPPrefix + readEndpointPath,
 		Body:   snappy.Encode(nil, data),
-		Headers: []*httpgrpc.Header{
+		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
 			{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
-		},
+		}),
 	}
 
 	for _, mdw := range q.middlewares {
@@ -182,13 +189,26 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		}
 		return nil, err
 	}
 	if resp.Code/100 != 2 {
 		return nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
 	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
+
+	var contentType string
+	for _, h := range resp.GetHeaders() {
+		if strings.ToLower(h.GetKey()) == "content-type" {
+			contentType = h.GetValues()[0]
+			break
+		}
+	}
+	if len(contentType) > 0 && contentType != "application/x-protobuf" {
+		return nil, errors.Errorf("unexpected response content type %s expected application/x-protobuf", contentType)
+	}
 
 	uncompressed, err := snappy.Decode(nil, resp.Body)
 	if err != nil {
@@ -204,7 +224,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 	if len(rdResp.Results) != 1 {
 		return nil, errors.Errorf("responses: want %d, got %d", 1, len(rdResp.Results))
 	}
-	return rdResp.Results[0], nil
+
+	res := rdResp.Results[0]
+	return remote.FromQueryResult(sortSeries, res), nil
 }
 
 // Query performs a query for the given time.
@@ -218,15 +240,17 @@ func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (prom
 func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, logger log.Logger) (promql.Vector, error) {
 	req, err := q.createRequest(ctx, query, ts)
 	if err != nil {
-		return promql.Vector{}, nil
+		return promql.Vector{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
 	defer cancel()
 
-	resp, err := q.sendRequest(ctx, &req)
+	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		}
 		return promql.Vector{}, err
 	}
 	if resp.Code/100 != 2 {
@@ -265,12 +289,12 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 		Method: http.MethodPost,
 		Url:    q.promHTTPPrefix + queryEndpointPath,
 		Body:   body,
-		Headers: []*httpgrpc.Header{
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept"), Values: []string{acceptHeader}},
-		},
+		}),
 	}
 
 	for _, mdw := range q.middlewares {
@@ -282,7 +306,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	return req, nil
 }
 
-func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest, logger log.Logger) (*httpgrpc.HTTPResponse, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
 	retryConfig := backoff.Config{
@@ -295,12 +319,37 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	for {
 		resp, err := q.client.Handle(ctx, req)
 		if err == nil {
+			// Responses with status codes 4xx should always be considered erroneous.
+			// These errors shouldn't be retried because it is expected that
+			// running the same query gives rise to the same 4xx error.
+			if resp.Code/100 == 4 {
+				return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+			}
 			return resp, nil
 		}
+
+		// Bail out if the error is known to be not retriable.
+		switch code := grpcutil.ErrorToStatusCode(err); code {
+		case codes.ResourceExhausted:
+			// In case the server is configured with "grpc-max-send-msg-size-bytes",
+			// and the response exceeds this limit, there is no point retrying the request.
+			// This is a special case, refer to grafana/mimir#7216.
+			if strings.Contains(err.Error(), "message larger than max") {
+				return nil, err
+			}
+		default:
+			// In case the error was a wrapped HTTPResponse, its code represents HTTP status;
+			// 4xx errors shouldn't be retried because it is expected that
+			// running the same query gives rise to the same 4xx error.
+			if code/100 == 4 {
+				return nil, err
+			}
+		}
+
 		if !retry.Ongoing() {
 			return nil, err
 		}
-		level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
+		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 		retry.Wait()
 
 		// Avoid masking last known error if context was cancelled while waiting.
@@ -333,4 +382,18 @@ func getHeader(headers []*httpgrpc.Header, name string) string {
 	}
 
 	return ""
+}
+
+// injectHTTPGrpcReadConsistencyHeader reads the read consistency level from the ctx and, if defined, injects
+// it as an HTTP header to the list of input headers. This is required to propagate the read consistency
+// through the network when issuing an HTTPgRPC request.
+func injectHTTPGrpcReadConsistencyHeader(ctx context.Context, headers []*httpgrpc.Header) []*httpgrpc.Header {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
+		headers = append(headers, &httpgrpc.Header{
+			Key:    textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader),
+			Values: []string{level},
+		})
+	}
+
+	return headers
 }

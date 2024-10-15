@@ -41,6 +41,10 @@
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
+      // Relax pressure on KV store when running at scale.
+      'compactor.ring.heartbeat-period': '1m',
+      'compactor.ring.heartbeat-timeout': '4m',
+
       // The compactor wait period is the amount of time that compactors will wait before compacting
       // 1st level blocks (uploaded by ingesters) since the last block was uploaded. In the worst
       // case scenario, we have 1 ingester whose TSDB head compaction started at time 0 and another
@@ -84,6 +88,8 @@
 
   compactor_env_map:: {},
 
+  compactor_node_affinity_matchers:: [],
+
   compactor_container::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
@@ -96,13 +102,28 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newCompactorStatefulSet(name, container)::
+  newCompactorStatefulSet(name, container, nodeAffinityMatchers=[], concurrent_rollout_enabled=false, max_unavailable=1)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    $.mimirVolumeMounts,
+    $.mimirVolumeMounts +
+    (
+      if !concurrent_rollout_enabled then {} else
+        statefulSet.mixin.spec.selector.withMatchLabels({ name: 'compactor', 'rollout-group': 'compactor' }) +
+        statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
+        statefulSet.mixin.metadata.withLabelsMixin({ 'rollout-group': 'compactor' }) +
+        statefulSet.mixin.metadata.withAnnotationsMixin({ 'rollout-max-unavailable': std.toString(max_unavailable) }) +
+        statefulSet.mixin.spec.template.metadata.withLabelsMixin({ 'rollout-group': 'compactor' })
+    ),
 
   compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    $.newCompactorStatefulSet('compactor', $.compactor_container),
+    $.newCompactorStatefulSet(
+      'compactor',
+      $.compactor_container,
+      $.compactor_node_affinity_matchers,
+      $._config.cortex_compactor_concurrent_rollout_enabled,
+      $._config.cortex_compactor_max_unavailable,
+    ),
 
   compactor_service: if !$._config.is_microservices_deployment_mode then null else
     local service = $.core.v1.service;

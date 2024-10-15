@@ -136,26 +136,16 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
-## Generate some metrics for testing
+## Generate some test metrics
+
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
 In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
 
-1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
-   https://github.com/grafana/agent/tree/main/production/operator/crds.
+1. Deploy the Grafana Agent Operator Custom Resource Definitions (CRDs). For more information, refer to [Deploy the Agent Operator Custom Resource Definitions (CRDs)](https://grafana.com/docs/agent/latest/operator/getting-started/#deploy-the-agent-operator-custom-resource-definitions-crds) in the Grafana Agent documentation.
 
-   Helm only installs Custom Resource Definitions on an initial chart installation, and not on a chart upgrade.
-   For details, see [Some caveats and explanations](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/#some-caveats-and-explanations).
-
-   If you did not enable metamonitoring when the chart was first installed, you must manually install the CRDs before performing a Helm upgrade to enable metamonitoring.
-
-2. Install the CRDs on your cluster:
-
-   ```bash
-   kubectl create -f production/operator/crds/
-   ```
-
-3. Create a YAML file called `custom.yaml` for your Helm values overrides.
+1. Create a YAML file called `custom.yaml` for your Helm values overrides.
    Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
 
    ```yaml
@@ -170,9 +160,11 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
            - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
    ```
 
-   > **Note:** In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
+   {{< admonition type="note" >}}
+   In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
+   {{< /admonition >}}
 
-4. Upgrade Grafana Mimir by using the `helm` command:
+1. Upgrade Grafana Mimir by using the `helm` command:
 
    ```bash
    helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
@@ -259,7 +251,7 @@ Verify that an ingress controller is set up in the Kubernetes cluster, for examp
 
 ### Configure Prometheus to write to Grafana Mimir
 
-You can either configure Prometheus to write to Grafana Mimir or [configure Grafana Agent to write to Mimir](#configure-grafana-agent-to-write-to-grafana-mimir). Although you can configure both, you do not need to.
+You can either configure Prometheus to write to Grafana Mimir or [configure Grafana Alloy to write to Mimir](#configure-grafana-alloy-to-write-to-grafana-mimir). Although you can configure both, you don't need to.
 
 Make a choice based on whether or not you already have a Prometheus server set up:
 
@@ -301,54 +293,57 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
      > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by the Prometheus server, use the additional command-line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
 
-### Configure Grafana Agent to write to Grafana Mimir
+### Configure Grafana Alloy to write to Grafana Mimir
 
-You can either configure Grafana Agent to write to Grafana Mimir or [configure Prometheus to write to Mimir](#configure-prometheus-to-write-to-grafana-mimir). Although you can configure both, you do not need to.
+You can either configure Grafana Alloy to write to Grafana Mimir or [configure Prometheus to write to Mimir](#configure-prometheus-to-write-to-grafana-mimir). Although you can configure both, you don't need to.
 
-Make a choice based on whether or not you already have a Grafana Agent set up:
+Make a choice based on whether you already have Alloy set up:
 
-- For an existing Grafana Agent:
+- For an existing Alloy:
 
-  1. Add the following YAML snippet to your Grafana Agent metrics configurations (`metrics.configs`):
+  1. Add the following configuration snippet for the `prometheus.remote_write` component to your Alloy configuration file:
 
-     ```yaml
-     remote_write:
-       - url: http://<ingress-host>/api/v1/push
+     ```
+     prometheus.remote_write "LABEL" {
+       endpoint {
+         url = http://<ingress-host>/api/v1/push
+       }
+     }
      ```
 
-     In this case, your Grafana Agent will write metrics to Grafana Mimir, based on what is defined in the existing `metrics.configs.scrape_configs` configuration.
+  1. Add `forward_to = [prometheus.remote_write.LABEL.receiver]` to an existing pipeline.
 
-  1. Restart the Grafana Agent.
+  1. Restart Alloy.
 
-- For a Grafana Agent that does not exist yet:
+- For a new Alloy:
 
-  1. Write the following configuration to an `agent.yaml` file:
+  1. Write the following configuration to a `config.alloy` file:
 
-     ```yaml
-     metrics:
-       wal_directory: /tmp/grafana-agent/wal
+     ```
+     prometheus.exporter.self "self_metrics" {
+     }
 
-       configs:
-         - name: agent
-           scrape_configs:
-             - job_name: agent
-               static_configs:
-                 - targets: ["127.0.0.1:12345"]
-           remote_write:
-             - url: http://<ingress-host>/api/v1/push
+     prometheus.scrape "self_scrape" {
+       targets    = prometheus.exporter.self.self_metrics.targets
+       forward_to = [prometheus.remote_write.mimir.receiver]
+     }
+
+     prometheus.remote_write "mimir" {
+       endpoint {
+         url = "http://<ingress-host>/api/v1/push"
+       }
+     }
      ```
 
-     In this case, your Grafana Agent writes metrics to Grafana Mimir that it scrapes from itself.
-
-  1. Create an empty directory for the write ahead log (WAL) of the Grafana Agent
-
-  1. Start a Grafana Agent by using Docker:
+  1. Start Alloy by using Docker:
 
      ```bash
-     docker run -v <absolute-path-to-wal-directory>:/etc/agent/data -v <absolute-path-to>/agent.yaml:/etc/agent/agent.yaml -p 12345:12345 grafana/agent
+     docker run -v <absolute-path-to>/config.alloy:/etc/alloy/config.alloy -p 12345:12345 grafana/alloy:latest run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
      ```
 
-     > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by the Grafana Agent, use the additional command-line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
+     > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by Alloy, use the additional command-line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
+
+For more information about the `prometheus.remote_write` component, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.remote_write) in the Grafana Alloy documentation.
 
 ### Query metrics in Grafana
 

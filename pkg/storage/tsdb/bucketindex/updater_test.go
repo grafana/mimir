@@ -8,6 +8,7 @@ package bucketindex
 import (
 	"bytes"
 	"context"
+	"maps"
 	"path"
 	"testing"
 	"time"
@@ -188,11 +189,14 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_4"})
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_4"})
 
+	// Make copies of blocks without the compactor shard ID label.
 	block1WithoutCompactorShardID := block1
-	block1WithoutCompactorShardID.Thanos.Labels = nil
+	block1WithoutCompactorShardID.Thanos.Labels = maps.Clone(block1.Thanos.Labels)
+	delete(block1WithoutCompactorShardID.Thanos.Labels, mimir_tsdb.CompactorShardIDExternalLabel)
 
 	block2WithoutCompactorShardID := block2
-	block2WithoutCompactorShardID.Thanos.Labels = nil
+	block2WithoutCompactorShardID.Thanos.Labels = maps.Clone(block2.Thanos.Labels)
+	delete(block2WithoutCompactorShardID.Thanos.Labels, mimir_tsdb.CompactorShardIDExternalLabel)
 
 	// Double check that original block1 and block2 still have compactor shards set.
 	require.Equal(t, "1_of_4", block1.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
@@ -209,6 +213,7 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	// Now remove Compactor Shard ID from index.
 	for _, b := range returnedIdx.Blocks {
 		b.CompactorShardID = ""
+		delete(b.Labels, mimir_tsdb.CompactorShardIDExternalLabel)
 	}
 
 	// Try to update existing index. Since we didn't change the version, updater will reuse the index, and not update CompactorShardID field.
@@ -250,6 +255,10 @@ func assertBucketIndexEqual(t testing.TB, idx *Index, bkt objstore.Bucket, userI
 			MaxTime:          b.MaxTime,
 			UploadedAt:       getBlockUploadedAt(t, bkt, userID, b.ULID),
 			CompactorShardID: b.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+			Source:           "test",
+			CompactionLevel:  1,
+			OutOfOrder:       false,
+			Labels:           b.Thanos.Labels,
 		})
 	}
 

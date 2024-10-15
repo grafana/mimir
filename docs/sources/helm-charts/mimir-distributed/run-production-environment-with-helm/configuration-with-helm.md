@@ -10,7 +10,7 @@ aliases:
 
 # Manage the configuration of Grafana Mimir with Helm
 
-The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters] and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document describes the configuration parameters.
+The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document describes the configuration parameters.
 
 ## Overview
 
@@ -534,7 +534,3 @@ The example is generated with the following steps:
    ```
 
    Lines starting with "`-`" were removed and lines starting with "`+`" were added. The change to the annotation `checksum/config` means the pods will be restarted when this change is applied.
-
-{{% docs/reference %}}
-[configuration parameters]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/configuration-parameters"
-{{% /docs/reference %}}

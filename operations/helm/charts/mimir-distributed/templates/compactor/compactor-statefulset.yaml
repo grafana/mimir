@@ -9,6 +9,11 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.compactor.podManagementPolicy }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.compactor.persistentVolume.enableRetentionPolicy)  }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.compactor.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.compactor.persistentVolume.whenScaled }}
+  {{- end }}
   replicas: {{ .Values.compactor.replicas }}
   selector:
     matchLabels:
@@ -18,7 +23,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-compactor
   {{- if .Values.compactor.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
         {{- if .Values.compactor.persistentVolume.annotations }}
         annotations:
@@ -55,21 +62,29 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "compactor") | nindent 8 }}
+      {{- with .Values.compactor.initContainers }}
       initContainers:
-        {{- toYaml .Values.compactor.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- with .Values.compactor.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.compactor.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.compactor.affinity }}
       affinity:
-        {{- toYaml .Values.compactor.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "compactor") | nindent 6 }}
+      {{- with .Values.compactor.tolerations }}
       tolerations:
-        {{- toYaml .Values.compactor.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.compactor.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -88,6 +103,9 @@ spec:
         {{- end }}
         {{- if .Values.compactor.extraVolumes }}
         {{ toYaml .Values.compactor.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
         - name: active-queries
           emptyDir: {}
@@ -108,6 +126,9 @@ spec:
           volumeMounts:
             {{- if .Values.compactor.extraVolumeMounts }}
             {{ toYaml .Values.compactor.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+            {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -142,6 +163,8 @@ spec:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.compactor.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.compactor }}
+          {{- if or .Values.global.extraEnv .Values.compactor.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -149,6 +172,12 @@ spec:
             {{- with .Values.compactor.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.compactor.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -156,3 +185,4 @@ spec:
             {{- with .Values.compactor.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}

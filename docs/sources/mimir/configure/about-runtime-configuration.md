@@ -21,7 +21,9 @@ A Grafana Mimir operator can observe the configuration and use runtime configura
 
 Runtime configuration values take precedence over command-line options.
 
-If multiple runtime configuration files are specified the runtime config files will be merged in a left to right order.
+If multiple runtime configuration files are specified the runtime configuration files will be merged in a left to right order.
+
+Add a `.gz` extension to the configuration files that should be decompressed before parsing YAML.
 
 ## Enable runtime configuration
 
@@ -53,7 +55,7 @@ overrides:
 
 As a result, Grafana Mimir allows `tenant1` to send 50,000 SPS, and `tenant2` to send 75,000 SPS, while maintaining a 25,000 SPS rate limit on all other tenants.
 
-- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "../references/configuration-parameters#limits" >}}) block within the runtime configuration file.
+- On a per-tenant basis, you can override all of the limits listed in the [`limits`]({{< relref "./configuration-parameters#limits" >}}) block within the runtime configuration file.
 - For each tenant, you can override different limits.
 - For any tenant or limit that is not overridden in the runtime configuration file, you can inherit the limit values that are specified in the `limits` block.
 
@@ -64,7 +66,7 @@ Ingester limits ensure individual ingesters are not overwhelmed, regardless of a
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest or query load.
 
-Everything under the `instance_limits` section within the [`ingester`]({{< relref "../references/configuration-parameters#ingester" >}}) block can be overridden via runtime configuration.
+Everything under the `instance_limits` section within the [`ingester`]({{< relref "./configuration-parameters#ingester" >}}) block can be overridden via runtime configuration.
 The following example shows a portion of the runtime configuration that changes the ingester limits:
 
 ```yaml
@@ -82,7 +84,7 @@ Distributor limits ensure individual distributors are not overwhelmed, regardles
 
 The runtime configuration allows you to override initial values, which is useful for advanced operators who need to dynamically change them in response to changes in ingest load.
 
-Everything under the `instance_limits` section within the [`distributor`]({{< relref "../references/configuration-parameters#distributor" >}}) block can be overridden via runtime configuration.
+Everything under the `instance_limits` section within the [`distributor`]({{< relref "./configuration-parameters#distributor" >}}) block can be overridden via runtime configuration.
 The following example shows a portion of the runtime configuration that changes the distributor limits:
 
 ```yaml
@@ -99,4 +101,10 @@ An advanced runtime configuration option controls if ingesters transfer encoded 
 The parameter `ingester_stream_chunks_when_using_blocks` might only be used in runtime configuration.
 A value of `true` transfers encoded chunks, and a value of `false` transfers decoded series.
 
-> **Note:** The parameter `ingester_stream_chunks_when_using_blocks` in the runtime configuration can override the CLI flag `-ingester.stream-chunks-when-using-blocks`, which is enabled by default. We strongly recommend to keep it enabled, except in rare cases where you observe rules evaluation slowing down.
+{{< admonition type="note" >}}
+By default, `-ingester.stream-chunks-when-using-blocks` is `true` which enables transfer of encoded chunks.
+
+In runtime configuration, the parameter `ingester_stream_chunks_when_using_blocks` overrides the CLI flag `-ingester.stream-chunks-when-using-blocks`.
+
+It's strongly recommended that you keep the transfer of encoded chunks enabled, except in rare cases where you observe rules evaluation slowing down.
+{{< /admonition >}}

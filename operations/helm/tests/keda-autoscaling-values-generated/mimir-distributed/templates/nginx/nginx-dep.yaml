@@ -1,0 +1,92 @@
+---
+# Source: mimir-distributed/templates/nginx/nginx-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keda-autoscaling-values-mimir-nginx
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/component: nginx
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: keda-autoscaling-values
+      app.kubernetes.io/component: nginx
+  template:
+    metadata:
+      annotations:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: keda-autoscaling-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: nginx
+      namespace: "citestns"
+    spec:
+      serviceAccountName: keda-autoscaling-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: nginx
+          image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http-metric
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http-metric
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tmp
+              mountPath: /tmp
+            - name: docker-entrypoint-d-override
+              mountPath: /docker-entrypoint.d
+          resources:
+            {}
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: keda-autoscaling-values
+            app.kubernetes.io/component: nginx
+      volumes:
+        - name: config
+          configMap:
+            name: keda-autoscaling-values-mimir-nginx
+        - name: tmp
+          emptyDir: {}
+        - name: docker-entrypoint-d-override
+          emptyDir: {}

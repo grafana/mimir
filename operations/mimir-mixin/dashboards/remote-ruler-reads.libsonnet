@@ -3,12 +3,11 @@ local filename = 'mimir-remote-ruler-reads.json';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
-  // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
-  local rulerRoutesRegex = '/httpgrpc.HTTP/Handle|.*api_v1_query',
-
   [filename]:
+    assert std.md5(filename) == 'f103238f7f5ab2f1345ce650cbfbfe2f' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
       ($.row('Remote ruler reads dashboard description') { height: '175px', showTitle: false })
@@ -31,19 +30,7 @@ local filename = 'mimir-remote-ruler-reads.json';
        })
       .addPanel(
         $.panel('Evaluations / sec') +
-        $.statPanel(|||
-          sum(
-            rate(
-              cortex_request_duration_seconds_count{
-                %(queryFrontend)s,
-                route=~"%(rulerRoutesRegex)s"
-              }[$__rate_interval]
-            )
-          )
-        ||| % {
-          queryFrontend: $.jobMatcher($._config.job_names.ruler_query_frontend),
-          rulerRoutesRegex: rulerRoutesRegex,
-        }, format='reqps') +
+        $.statPanel(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.ruler_query_frontend.requestsPerSecondMetric, $.queries.ruler_query_frontend.readRequestsPerSecondSelector)), format='reqps') +
         $.panelDescription(
           'Evaluations per second',
           |||
@@ -52,53 +39,35 @@ local filename = 'mimir-remote-ruler-reads.json';
         ),
       )
     )
-    .addRow(
-      $.row('Query-frontend (dedicated to ruler)')
+    .addRows($.commonReadsDashboardsRows(
+      queryFrontendJobName=$._config.job_names.ruler_query_frontend,
+      querySchedulerJobName=$._config.job_names.ruler_query_scheduler,
+      querierJobName=$._config.job_names.ruler_querier,
+      queryRoutesRegex=$.queries.ruler_query_frontend_routes_regex,
+
+      rowTitlePrefix='Ruler-',
+    ))
+    .addRowIf(
+      $._config.autoscaling.ruler_querier.enabled,
+      $.row('Ruler-querier - autoscaling')
       .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
+        $.autoScalingActualReplicas('ruler_querier')
       )
       .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex], ''
-        )
-      )
-    )
-    .addRow(
-      $.row('Query-scheduler (dedicated to ruler)')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
-      )
-      .addPanel(
-        $.panel('Latency (time in queue)') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
-      )
-    )
-    .addRow(
-      $.row('Querier (dedicated to ruler)')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_querier), $.queries.read_http_routes_regex])
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.ruler_querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_querier), $.queries.read_http_routes_regex], ''
-        )
+        $.autoScalingFailuresPanel('ruler_querier')
       )
     )
     .addRowIf(
       $._config.autoscaling.ruler_querier.enabled,
-      $.cpuAndMemoryBasedAutoScalingRow('Ruler-Querier'),
+      $.row('')
+      .addPanel(
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ruler_querier', 'CPU', 'cpu')
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ruler_querier', 'memory', 'memory')
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ruler_querier', 'in-flight queries', 'queries')
+      )
     ),
 }

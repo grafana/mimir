@@ -8,13 +8,16 @@ package scheduler
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -24,19 +27,27 @@ import (
 	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
+var errFrontendDisconnected = cancellation.NewErrorf("frontend disconnected")
 
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
 type Scheduler struct {
@@ -53,8 +64,10 @@ type Scheduler struct {
 	requestQueue *queue.RequestQueue
 	activeUsers  *util.ActiveUsersCleanupService
 
-	pendingRequestsMu sync.Mutex
-	pendingRequests   map[requestKey]*schedulerRequest // Request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
+	inflightRequestsMu sync.Mutex
+	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
+	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
+	schedulerInflightRequests map[queue.RequestKey]*queue.SchedulerRequest
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -70,13 +83,8 @@ type Scheduler struct {
 	cancelledRequests        *prometheus.CounterVec
 	connectedQuerierClients  prometheus.GaugeFunc
 	connectedFrontendClients prometheus.GaugeFunc
-	queueDuration            prometheus.Histogram
+	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
-}
-
-type requestKey struct {
-	frontendAddr string
-	queryID      uint64
 }
 
 type connectedFrontend struct {
@@ -85,19 +93,24 @@ type connectedFrontend struct {
 	// This context is used for running all queries from the same frontend.
 	// When last frontend connection is closed, context is canceled.
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 type Config struct {
-	MaxOutstandingPerTenant int                       `yaml:"max_outstanding_requests_per_tenant"`
-	QuerierForgetDelay      time.Duration             `yaml:"querier_forget_delay" category:"experimental"`
-	GRPCClientConfig        grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
-	ServiceDiscovery        schedulerdiscovery.Config `yaml:",inline"`
+	MaxOutstandingPerTenant   int           `yaml:"max_outstanding_requests_per_tenant"`
+	PrioritizeQueryComponents bool          `yaml:"prioritize_query_components" category:"experimental"`
+	QuerierForgetDelay        time.Duration `yaml:"querier_forget_delay" category:"experimental"`
+
+	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
+	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
+	f.BoolVar(&cfg.PrioritizeQueryComponents, "query-scheduler.prioritize-query-components", false, "When enabled, the query scheduler primarily prioritizes dequeuing fairly from queue components and secondarily prioritizes dequeuing fairly across tenants. When disabled, the query scheduler primarily prioritizes tenant fairness.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
+
+	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
 	cfg.ServiceDiscovery.RegisterFlags(f, logger)
 }
@@ -115,9 +128,9 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		pendingRequests:    map[requestKey]*schedulerRequest{},
-		connectedFrontends: map[string]*connectedFrontend{},
-		subservicesWatcher: services.NewFailureWatcher(),
+		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
+		connectedFrontends:        map[string]*connectedFrontend{},
+		subservicesWatcher:        services.NewFailureWatcher(),
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -137,13 +150,36 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	s.requestQueue = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
+	querierInflightRequestsMetric := promauto.With(registerer).NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "cortex_query_scheduler_querier_inflight_requests",
+			Help:       "Number of inflight requests being processed on all querier-scheduler connections. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
+		},
+		[]string{"query_component"},
+	)
 
-	s.queueDuration = promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+	s.requestQueue, err = queue.NewRequestQueue(
+		s.log,
+		cfg.MaxOutstandingPerTenant,
+		cfg.PrioritizeQueryComponents,
+		cfg.QuerierForgetDelay,
+		s.queueLength,
+		s.discardedRequests,
+		enqueueDuration,
+		querierInflightRequestsMetric,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	s.queueDuration = promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_query_scheduler_queue_duration_seconds",
 		Help:    "Time spent by requests in queue before getting picked up by a querier.",
-		Buckets: prometheus.DefBuckets,
-	})
+		Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60, 120},
+	}, []string{"user", "additional_queue_dimensions"})
 	s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_scheduler_connected_querier_clients",
 		Help: "Number of querier worker clients currently connected to the query-scheduler.",
@@ -187,23 +223,6 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 type Limits interface {
 	// MaxQueriersPerUser returns max queriers to use per tenant, or 0 if shuffle sharding is disabled.
 	MaxQueriersPerUser(user string) int
-}
-
-type schedulerRequest struct {
-	frontendAddress string
-	userID          string
-	queryID         uint64
-	request         *httpgrpc.HTTPRequest
-	statsEnabled    bool
-
-	enqueueTime time.Time
-
-	ctx       context.Context
-	ctxCancel context.CancelFunc
-	queueSpan opentracing.Span
-
-	// This is only used for testing.
-	parentSpanContext opentracing.SpanContext
 }
 
 // FrontendLoop handles connection from frontend.
@@ -265,7 +284,11 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			enqueueSpan.Finish()
 		case schedulerpb.CANCEL:
-			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID)
+			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
+			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
+			// we may not have reached MarkRequestSent for this query before receiving the cancel,
+			// but RequestQueue will just no-op if the request was not yet tracked in the inflightRequests map.
+			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 
 		default:
@@ -301,7 +324,7 @@ func (s *Scheduler) frontendConnected(frontend schedulerpb.SchedulerForFrontend_
 		cf = &connectedFrontend{
 			connections: 0,
 		}
-		cf.ctx, cf.cancel = context.WithCancel(context.Background())
+		cf.ctx, cf.cancel = context.WithCancelCause(context.Background())
 		s.connectedFrontends[msg.FrontendAddress] = cf
 	}
 
@@ -317,36 +340,37 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 	cf.connections--
 	if cf.connections == 0 {
 		delete(s.connectedFrontends, frontendAddress)
-		cf.cancel()
+		cf.cancel(errFrontendDisconnected)
 	}
 }
 
 func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
 	// Create new context for this request, to support cancellation.
-	ctx, cancel := context.WithCancel(requestContext)
+	ctx, cancel := context.WithCancelCause(requestContext)
 	shouldCancel := true
 	defer func() {
 		if shouldCancel {
-			cancel()
+			cancel(errEnqueuingRequestFailed)
 		}
 	}()
 
 	userID := msg.GetUserID()
 
-	req := &schedulerRequest{
-		frontendAddress: frontendAddr,
-		userID:          msg.UserID,
-		queryID:         msg.QueryID,
-		request:         msg.HttpRequest,
-		statsEnabled:    msg.StatsEnabled,
+	req := &queue.SchedulerRequest{
+		FrontendAddr:              frontendAddr,
+		UserID:                    msg.UserID,
+		QueryID:                   msg.QueryID,
+		Request:                   msg.HttpRequest,
+		StatsEnabled:              msg.StatsEnabled,
+		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
 
 	now := time.Now()
 
-	req.parentSpanContext = opentracing.SpanFromContext(requestContext).Context()
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued")
-	req.enqueueTime = now
-	req.ctxCancel = cancel
+	req.ParentSpanContext = opentracing.SpanFromContext(requestContext).Context()
+	req.QueueSpan, req.Ctx = opentracing.StartSpanFromContext(ctx, "queued")
+	req.EnqueueTime = now
+	req.CancelFunc = cancel
 
 	// aggregate the max queriers limit in the case of a multi tenant query
 	tenantIDs, err := tenant.TenantIDsFromOrgID(userID)
@@ -356,27 +380,44 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limits.MaxQueriersPerUser)
 
 	s.activeUsers.UpdateUserTimestamp(userID, now)
-	return s.requestQueue.EnqueueRequestToDispatcher(userID, req, maxQueriers, func() {
+	return s.requestQueue.SubmitRequestToEnqueue(userID, req, maxQueriers, func() {
 		shouldCancel = false
-
-		s.pendingRequestsMu.Lock()
-		s.pendingRequests[requestKey{frontendAddr: frontendAddr, queryID: msg.QueryID}] = req
-		s.pendingRequestsMu.Unlock()
+		s.addRequestToPending(req)
 	})
 }
 
-// This method doesn't do removal from the queue.
-func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, queryID uint64) {
-	s.pendingRequestsMu.Lock()
-	defer s.pendingRequestsMu.Unlock()
+func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
+	s.inflightRequestsMu.Lock()
+	defer s.inflightRequestsMu.Unlock()
 
-	key := requestKey{frontendAddr: frontendAddr, queryID: queryID}
-	req := s.pendingRequests[key]
+	s.schedulerInflightRequests[req.Key()] = req
+}
+
+// This method doesn't do removal from the queue.
+func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reason string) *queue.SchedulerRequest {
+	s.inflightRequestsMu.Lock()
+	defer s.inflightRequestsMu.Unlock()
+
+	req := s.schedulerInflightRequests[key]
 	if req != nil {
-		req.ctxCancel()
+		req.CancelFunc(cancellation.NewError(errors.New(reason)))
 	}
 
-	delete(s.pendingRequests, key)
+	delete(s.schedulerInflightRequests, key)
+	return req
+}
+
+func (s *Scheduler) transformRequestQueueError(err error) error {
+	if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
+		// Return a more clear error if the queue is stopped because the query-scheduler is not running.
+		return schedulerpb.ErrSchedulerIsNotRunning
+	}
+
+	// the main other error we receive here is if the querier itself is ErrQuerierShuttingDown;
+	// this information was submitted via another endpoint and processed internally
+	// by the RequestQueue's tracking of querier connections. ErrQuerierShuttingDown bubbles up here
+	// as a way to exit this loop and allow the querier to shut down gracefully.
+	return err
 }
 
 // QuerierLoop is started by querier to receive queries from scheduler.
@@ -387,34 +428,35 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(querier.Context(), queue.QuerierID(querierID))
+	err = s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+	if err != nil {
+		return s.transformRequestQueueError(err)
+	}
+	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	s.requestQueue.RegisterQuerierConnection(querierID)
-	defer s.requestQueue.UnregisterQuerierConnection(querierID)
-
-	lastUserIndex := queue.FirstUser()
+	lastTenantIdx := queue.FirstTenant()
 
 	// In stopping state scheduler is not accepting new queries, but still dispatching queries in the queues.
 	for s.isRunningOrStopping() {
-		req, idx, err := s.requestQueue.GetNextRequestForQuerier(querier.Context(), lastUserIndex, querierID)
+		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		queryReq, idx, err := s.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
-			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
-			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
-				return schedulerpb.ErrSchedulerIsNotRunning
-			}
-
-			return err
+			return s.transformRequestQueueError(err)
 		}
-		lastUserIndex = idx
 
-		r := req.(*schedulerRequest)
+		lastTenantIdx = idx
 
-		queueTime := time.Since(r.enqueueTime)
-		s.queueDuration.Observe(queueTime.Seconds())
-		r.queueSpan.Finish()
+		schedulerReq := queryReq.(*queue.SchedulerRequest)
+
+		queueTime := time.Since(schedulerReq.EnqueueTime)
+		additionalQueueDimensionLabels := strings.Join(schedulerReq.AdditionalQueueDimensions, ":")
+		s.queueDuration.WithLabelValues(schedulerReq.UserID, additionalQueueDimensionLabels).Observe(queueTime.Seconds())
+		schedulerReq.QueueSpan.Finish()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
-		  The chance of choosing a particular tenant for dequeueing is (1/active_tenants).
+		  The chance of choosing a particular tenant for dequeuing is (1/active_tenants).
 		  This is problematic under load, especially with other middleware enabled such as
 		  querier.split-by-interval, where one request may fan out into many.
 		  If expired requests aren't exhausted before checking another tenant, it would take
@@ -424,15 +466,15 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 
-		if r.ctx.Err() != nil {
-			// Remove from pending requests.
-			s.cancelRequestAndRemoveFromPending(r.frontendAddress, r.queryID)
-
-			lastUserIndex = lastUserIndex.ReuseLastUser()
+		if schedulerReq.Ctx.Err() != nil {
+			// remove from pending requests
+			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
+			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
+			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 
-		if err := s.forwardRequestToQuerier(querier, r, queueTime); err != nil {
+		if err := s.forwardRequestToQuerier(querier, querierID, schedulerReq, queueTime); err != nil {
 			return err
 		}
 	}
@@ -440,70 +482,88 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	return schedulerpb.ErrSchedulerIsNotRunning
 }
 
-func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
+func (s *Scheduler) NotifyQuerierShutdown(ctx context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	level.Info(s.log).Log("msg", "received shutdown notification from querier", "querier", req.GetQuerierID())
-	s.requestQueue.NotifyQuerierShutdown(req.GetQuerierID())
+
+	s.requestQueue.SubmitNotifyQuerierShutdown(ctx, queue.QuerierID(req.GetQuerierID()))
 
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest, queueTime time.Duration) error {
-	// Make sure to cancel request at the end to clean up resources.
-	defer s.cancelRequestAndRemoveFromPending(req.frontendAddress, req.queryID)
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, querierID string, req *queue.SchedulerRequest, queueTime time.Duration) error {
+	s.requestQueue.QueryComponentUtilization.MarkRequestSent(req)
+	defer s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(req)
+	defer s.cancelRequestAndRemoveFromPending(req.Key(), "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
 	errCh := make(chan error, 1)
 	go func() {
+		span, _ := opentracing.StartSpanFromContext(req.Ctx, "forwardRequestToQuerier")
+		span.SetTag("querier_id", querierID)
+
 		err := querier.Send(&schedulerpb.SchedulerToQuerier{
-			UserID:          req.userID,
-			QueryID:         req.queryID,
-			FrontendAddress: req.frontendAddress,
-			HttpRequest:     req.request,
-			StatsEnabled:    req.statsEnabled,
+			UserID:          req.UserID,
+			QueryID:         req.QueryID,
+			FrontendAddress: req.FrontendAddr,
+			HttpRequest:     req.Request,
+			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
+
 		if err != nil {
-			errCh <- err
+			errCh <- fmt.Errorf("failed to send query to querier '%v': %w", querierID, err)
+			span.LogFields(otlog.Message("sending query to querier failed"), otlog.Error(err))
+			ext.Error.Set(span, true)
+			span.Finish()
 			return
 		}
 
+		span.Finish()
+
 		_, err = querier.Recv()
-		errCh <- err
+		if err != nil {
+			errCh <- fmt.Errorf("failed to receive response from querier '%v': %w", querierID, err)
+			return
+		}
+
+		errCh <- nil
 	}()
 
 	select {
-	case <-req.ctx.Done():
+	case <-req.Ctx.Done():
 		// If the upstream request is cancelled (eg. frontend issued CANCEL or closed connection),
-		// we need to cancel the downstream req. Only way we can do that is to close the stream (by returning error here).
+		// we need to cancel the downstream req. Only way we can do that is to return a gRPC error
+		// here with code Canceled and close the stream.
 		// Querier is expecting this semantics.
-		s.cancelledRequests.WithLabelValues(req.userID).Inc()
-		return req.ctx.Err()
+		s.cancelledRequests.WithLabelValues(req.UserID).Inc()
+		return status.Error(codes.Canceled, context.Cause(req.Ctx).Error())
 
 	case err := <-errCh:
 		// Is there was an error handling this request due to network IO,
 		// then error out this upstream request _and_ stream.
 
 		if err != nil {
-			s.forwardErrorToFrontend(req.ctx, req, err)
+			s.forwardErrorToFrontend(req.Ctx, req, err)
 		}
 		return err
 	}
 }
 
-func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRequest, requestErr error) {
+func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor},
 		nil)
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
+		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return
 	}
 
-	conn, err := grpc.DialContext(ctx, req.frontendAddress, opts...)
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
+	conn, err := grpc.DialContext(ctx, req.FrontendAddr, opts...)
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
+		level.Warn(s.log).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return
 	}
 
@@ -513,9 +573,9 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRe
 
 	client := frontendv2pb.NewFrontendForQuerierClient(conn)
 
-	userCtx := user.InjectOrgID(ctx, req.userID)
+	userCtx := user.InjectOrgID(ctx, req.UserID)
 	_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
-		QueryID: req.queryID,
+		QueryID: req.QueryID,
 		HttpResponse: &httpgrpc.HTTPResponse{
 			Code: http.StatusInternalServerError,
 			Body: []byte(requestErr.Error()),
@@ -523,7 +583,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRe
 	})
 
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
+		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return
 	}
 }
@@ -559,9 +619,9 @@ func (s *Scheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-inflightRequestsTicker.C:
-			s.pendingRequestsMu.Lock()
-			inflight := len(s.pendingRequests)
-			s.pendingRequestsMu.Unlock()
+			s.inflightRequestsMu.Lock()
+			inflight := len(s.schedulerInflightRequests)
+			s.inflightRequestsMu.Unlock()
 
 			s.inflightRequests.Observe(float64(inflight))
 		case <-ctx.Done():

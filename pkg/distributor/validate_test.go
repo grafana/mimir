@@ -66,27 +66,37 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelNamesPerSeries = 2
 
 	for _, c := range []struct {
-		metric                  model.Metric
-		skipLabelNameValidation bool
-		err                     error
+		metric                   model.Metric
+		skipLabelNameValidation  bool
+		skipLabelCountValidation bool
+		err                      error
 	}{
 		{
-			map[model.LabelName]model.LabelValue{},
-			false,
-			errors.New(noMetricNameMsgFormat),
+			metric:                   map[model.LabelName]model.LabelValue{},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      errors.New(noMetricNameMsgFormat),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
-			false,
-			fmt.Errorf(invalidMetricNameMsgFormat, " "),
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      fmt.Errorf(invalidMetricNameMsgFormat, " "),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				invalidLabelMsgFormat,
 				"foo ",
-				formatLabelSet(
+				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "valid"},
 						{Name: "foo ", Value: "bar"},
@@ -95,17 +105,19 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
-			false,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
-				formatLabelSet(
+				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "badLabelName"},
 						{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
@@ -114,12 +126,14 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				labelValueTooLongMsgFormat,
+				"much_shorter_name",
 				"test_value_please_ignore_no_really_nothing_to_see_here",
-				formatLabelSet(
+				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "badLabelValue"},
 						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
@@ -128,9 +142,10 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				tooManyLabelsMsgFormat,
 				tooManyLabelsArgs(
 					[]mimirpb.LabelAdapter{
@@ -143,12 +158,46 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
-			true,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: true,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
+			skipLabelNameValidation:  true,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "你好"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
+				invalidLabelValueMsgFormat,
+				"label1", "abc\xfe\xfddef",
+				mimirpb.FromLabelAdaptersToString(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "foo"},
+						{Name: "label1", Value: "abc\xfe\xfddef"},
+					},
+				),
+			),
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			skipLabelNameValidation:  true,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 	} {
-		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -160,11 +209,11 @@ func TestValidateLabels(t *testing.T) {
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_value_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 2
 			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
-
 			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
@@ -351,11 +400,11 @@ func TestValidateLabelDuplication(t *testing.T) {
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false)
+	}, false, false)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
-		formatLabelSet(
+		mimirpb.FromLabelAdaptersToString(
 			[]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: model.MetricNameLabel, Value: "b"},
@@ -368,11 +417,11 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false)
+	}, false, false)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
-		formatLabelSet(
+		mimirpb.FromLabelAdaptersToString(
 			[]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: "a", Value: "a"},
@@ -389,6 +438,14 @@ type sampleValidationCfg struct {
 }
 
 func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
+	return 0
+}
+
+func (c sampleValidationCfg) PastGracePeriod(_ string) time.Duration {
+	return 0
+}
+
+func (c sampleValidationCfg) OutOfOrderTimeWindow(_ string) time.Duration {
 	return 0
 }
 
@@ -517,13 +574,14 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
 				var cfg sampleValidationCfg
 				cfg.maxNativeHistogramBuckets = limit
+				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
-				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "a"},
-					{Name: "a", Value: "a"}}, &h)
+				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h)
 
 				if limit == 1 {
 					require.Error(t, err)
+					expectedErr := fmt.Errorf("received a native histogram sample with too many buckets, timestamp: %d series: a{a=\"a\"}, buckets: 2, limit: %d (err-mimir-max-native-histogram-buckets)", h.Timestamp, limit)
+					require.Equal(t, expectedErr, err)
 				} else {
 					require.NoError(t, err)
 				}
@@ -535,6 +593,45 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
+	`), "cortex_discarded_samples_total"))
+}
+
+func TestInvalidNativeHistogramSchema(t *testing.T) {
+	testCases := map[string]struct {
+		schema        int32
+		expectedError error
+	}{
+		"a valid schema causes no error": {
+			schema:        3,
+			expectedError: nil,
+		},
+		"a schema lower than the minimum causes an error": {
+			schema:        -5,
+			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: -5 (err-mimir-invalid-native-histogram-schema)"),
+		},
+		"a schema higher than the maximum causes an error": {
+			schema:        10,
+			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: 10 (err-mimir-invalid-native-histogram-schema)"),
+		},
+	}
+
+	registry := prometheus.NewRegistry()
+	metrics := newSampleValidationMetrics(registry)
+	cfg := sampleValidationCfg{}
+	hist := &mimirpb.Histogram{}
+	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			hist.Schema = testCase.schema
+			_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist)
+			require.Equal(t, testCase.expectedError, err)
+		})
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+			# TYPE cortex_discarded_samples_total counter
+			cortex_discarded_samples_total{group="group-1",reason="invalid_native_histogram_schema",user="user-1"} 2
 	`), "cortex_discarded_samples_total"))
 }
 

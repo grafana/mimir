@@ -7,17 +7,26 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/alerting/definition"
+	alertingmodels "github.com/grafana/alerting/models"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
-	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/silence"
+	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -47,9 +56,11 @@ type stubReplicator struct{}
 func (*stubReplicator) ReplicateStateForUser(context.Context, string, *clusterpb.Part) error {
 	return nil
 }
+
 func (*stubReplicator) GetPositionForUser(string) int {
 	return 0
 }
+
 func (*stubReplicator) ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error) {
 	return nil, nil
 }
@@ -62,6 +73,7 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 		UserID:            user,
 		Logger:            log.NewNopLogger(),
 		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: groupsLimit},
+		Features:          featurecontrol.NoopFlags{},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},
 		ShardingEnabled:   true,
@@ -83,9 +95,10 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := config.Load(cfgRaw)
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
 
 	now := time.Now()
 
@@ -146,6 +159,7 @@ func TestDispatcherLoggerInsightKey(t *testing.T) {
 		UserID:            user,
 		Logger:            logger,
 		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
+		Features:          featurecontrol.NoopFlags{},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},
 		ShardingEnabled:   true,
@@ -166,9 +180,10 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := config.Load(cfgRaw)
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -319,4 +334,375 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 		assert.Equal(t, op.expectedCount, count, "wrong count, op %d", ix)
 		assert.Equal(t, op.expectedTotalSize, totalSize, "wrong total size, op %d", ix)
 	}
+}
+
+// cloneSilence returns a shallow copy of a silence. It is used in tests.
+func cloneSilence(t *testing.T, sil *silencepb.Silence) *silencepb.Silence {
+	t.Helper()
+	s := *sil
+	return &s
+}
+
+func toMeshSilence(t *testing.T, sil *silencepb.Silence, retention time.Duration) *silencepb.MeshSilence {
+	t.Helper()
+	return &silencepb.MeshSilence{
+		Silence:   sil,
+		ExpiresAt: sil.EndsAt.Add(retention),
+	}
+}
+
+func TestSilenceLimits(t *testing.T) {
+	user := "test"
+
+	r := prometheus.NewPedanticRegistry()
+	limits := mockAlertManagerLimits{
+		maxSilencesCount:    1,
+		maxSilenceSizeBytes: 2 << 11, // 4KB,
+	}
+	am, err := New(&Config{
+		UserID:            user,
+		Logger:            log.NewNopLogger(),
+		Limits:            &limits,
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		// We have set this to 1 hour, but we don't use it in this
+		// test as we override the broadcast function with SetBroadcast.
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
+	}, r)
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	// Override SetBroadcast as we just want to test limits.
+	am.silences.SetBroadcast(func(_ []byte) {})
+
+	// Insert sil1 should succeed without error.
+	sil1 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "a", Pattern: "b"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	require.NoError(t, am.silences.Set(sil1))
+
+	// Insert sil2 should fail because maximum number of silences has been
+	// exceeded.
+	sil2 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "c", Pattern: "d"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	require.EqualError(t, am.silences.Set(sil2), "exceeded maximum number of silences: 1 (limit: 1)")
+
+	// Expire sil1 and run the GC. This should allow sil2 to be inserted.
+	require.NoError(t, am.silences.Expire(sil1.Id))
+	n, err := am.silences.GC()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.NoError(t, am.silences.Set(sil2))
+
+	// Expire sil2 and run the GC.
+	require.NoError(t, am.silences.Expire(sil2.Id))
+	n, err = am.silences.GC()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	// Insert sil3 should fail because it exceeds maximum size.
+	sil3 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{
+			{
+				Name:    strings.Repeat("e", 2<<9),
+				Pattern: strings.Repeat("f", 2<<9),
+			},
+			{
+				Name:    strings.Repeat("g", 2<<9),
+				Pattern: strings.Repeat("h", 2<<9),
+			},
+		},
+		CreatedBy: strings.Repeat("i", 2<<9),
+		Comment:   strings.Repeat("j", 2<<9),
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(5 * time.Minute),
+	}
+	require.EqualError(t, am.silences.Set(sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
+
+	// Should be able to insert sil4.
+	sil4 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "k", Pattern: "l"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	require.NoError(t, am.silences.Set(sil4))
+
+	// Should be able to update sil4 without modifications. It is expected to
+	// keep the same ID.
+	sil5 := cloneSilence(t, sil4)
+	require.NoError(t, am.silences.Set(sil5))
+	require.Equal(t, sil4.Id, sil5.Id)
+
+	// Should be able to update the comment. It is also expected to keep the
+	// same ID.
+	sil6 := cloneSilence(t, sil5)
+	sil6.Comment = "m"
+	require.NoError(t, am.silences.Set(sil6))
+	require.Equal(t, sil5.Id, sil6.Id)
+
+	// Should not be able to update the start and end time as this requires
+	// sil6 to be expired and a new silence to be created. However, this would
+	// exceed the maximum number of silences, which counts both active and
+	// expired silences.
+	sil7 := cloneSilence(t, sil6)
+	sil7.StartsAt = time.Now().Add(5 * time.Minute)
+	sil7.EndsAt = time.Now().Add(10 * time.Minute)
+	require.EqualError(t, am.silences.Set(sil7), "exceeded maximum number of silences: 1 (limit: 1)")
+
+	// sil6 should not be expired because the update failed.
+	sils, _, err := am.silences.Query(silence.QState(types.SilenceStateExpired))
+	require.NoError(t, err)
+	require.Len(t, sils, 0)
+
+	// Should not be able to update with a comment that exceeds maximum size.
+	// Need to increase the maximum number of silences to test this.
+	limits.maxSilencesCount = 2
+	sil8 := cloneSilence(t, sil6)
+	sil8.Comment = strings.Repeat("m", 2<<11)
+	require.EqualError(t, am.silences.Set(sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
+
+	// sil6 should not be expired because the update failed.
+	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	require.NoError(t, err)
+	require.Len(t, sils, 0)
+
+	// Should not be able to replace with a silence that exceeds maximum size.
+	// This is different from the previous assertion as unlike when adding or
+	// updating a comment, changing the matchers for a silence should expire
+	// the existing silence, unless the silence that is replacing it exceeds
+	// limits, in which case the operation should fail and the existing silence
+	// should still be active.
+	sil9 := cloneSilence(t, sil8)
+	sil9.Matchers = []*silencepb.Matcher{{Name: "n", Pattern: "o"}}
+	require.EqualError(t, am.silences.Set(sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
+
+	// sil6 should not be expired because the update failed.
+	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	require.NoError(t, err)
+	require.Len(t, sils, 0)
+}
+
+func TestExperimentalReceiversAPI(t *testing.T) {
+	var buf concurrency.SyncBuffer
+	logger := log.NewLogfmtLogger(&buf)
+
+	user := "test"
+	reg := prometheus.NewPedanticRegistry()
+	am, err := New(&Config{
+		UserID:            user,
+		Logger:            logger,
+		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+	}, reg)
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	cfgRaw := `receivers:
+- name: 'recv-1'
+  webhook_configs:
+  - url: http://example.com/
+    send_resolved: true
+
+- name: 'recv-2'
+  webhook_configs:
+  - url: http://example.com/
+    send_resolved: false
+
+route:
+  group_by: ['alertname']
+  group_wait: 10ms
+  group_interval: 10ms
+  receiver: 'recv-1'`
+
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+
+	doGetReceivers := func() []alertingmodels.Receiver {
+		rr := httptest.NewRecorder()
+		am.GetReceiversHandler(rr, nil)
+		require.Equal(t, http.StatusOK, rr.Code)
+		result := []alertingmodels.Receiver{}
+		err = json.Unmarshal(rr.Body.Bytes(), &result)
+		assert.NoError(t, err)
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].Name < result[j].Name
+		})
+		return result
+	}
+
+	// Check the API returns all receivers but without any notification status.
+
+	result := doGetReceivers()
+	assert.Equal(t, []alertingmodels.Receiver{
+		{
+			Name:   "recv-1",
+			Active: true,
+			Integrations: []alertingmodels.Integration{
+				{
+					Name:                      "webhook",
+					LastNotifyAttemptDuration: "0s",
+					SendResolved:              true,
+				},
+			},
+		},
+		{
+			Name: "recv-2",
+			// Receiver not used in a route.
+			Active: false,
+			Integrations: []alertingmodels.Integration{
+				{
+					Name:                      "webhook",
+					LastNotifyAttemptDuration: "0s",
+					// We configure send_resolved to false.
+					SendResolved: false,
+				},
+			},
+		},
+	}, result)
+
+	// Send an alert to cause a notification attempt.
+
+	now := time.Now()
+	inputAlerts := []*types.Alert{
+		{
+			Alert: model.Alert{
+				Labels: model.LabelSet{
+					"alertname": model.LabelValue("Alert-1"),
+					"a":         "b",
+				},
+				Annotations:  model.LabelSet{"templates": `{{ template "test" . }}`},
+				StartsAt:     now,
+				EndsAt:       now.Add(5 * time.Minute),
+				GeneratorURL: "http://example.com/prometheus",
+			},
+			UpdatedAt: now,
+			Timeout:   false,
+		},
+	}
+	require.NoError(t, am.alerts.Put(inputAlerts...))
+
+	// Wait for the API to tell us there was a notification attempt.
+
+	result = []alertingmodels.Receiver{}
+	require.Eventually(t, func() bool {
+		result = doGetReceivers()
+		return len(result) == 2 &&
+			len(result[0].Integrations) == 1 &&
+			len(result[1].Integrations) == 1 &&
+			!result[0].Integrations[0].LastNotifyAttempt.IsZero()
+	}, 5*time.Second, 100*time.Millisecond)
+
+	assert.Equal(t, "webhook", result[0].Integrations[0].Name)
+	assert.NotZero(t, result[0].Integrations[0].LastNotifyAttempt)
+	assert.Equal(t, errRateLimited.Error(), result[0].Integrations[0].LastNotifyAttemptError)
+
+	// Check the status of the other integration is not changed.
+
+	assert.Equal(t, "webhook", result[1].Integrations[0].Name)
+	assert.Zero(t, result[1].Integrations[0].LastNotifyAttempt)
+	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
+}
+
+func TestGrafanaAlertmanagerTemplates(t *testing.T) {
+	am, err := New(&Config{
+		UserID:            "test",
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		// We have to set this interval non-zero, though we don't need the persister to do anything.
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
+	}, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	// The webhook message should contain the executed Grafana template.
+	type notification struct {
+		Message string `json:"message"`
+	}
+	c := make(chan notification)
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		var got notification
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		defer func() {
+			require.NoError(t, r.Body.Close())
+		}()
+		c <- got
+	}))
+	defer s.Close()
+
+	cfgRaw := fmt.Sprintf(`{
+            "route": {
+                "receiver": "test_receiver",
+                "group_by": ["alertname"]
+            },
+            "receivers": [{
+                "name": "test_receiver",
+                "grafana_managed_receiver_configs": [{
+                    "uid": "",
+                    "name": "webhook test",
+                    "type": "webhook",
+                    "disableResolveMessage": true,
+                    "settings": {
+                        "url": %q,
+                        "message": %q
+                    },
+                }]
+            }],
+        }`, s.URL, `{{ template "test" . }}`)
+
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+	expMessage := "This is a test template"
+	testTemplate := alertingTemplates.TemplateDefinition{
+		Name:     "test",
+		Template: fmt.Sprintf(`{{ define "test" -}} %s {{- end }}`, expMessage),
+	}
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+
+	now := time.Now()
+	alert := types.Alert{
+		Alert: model.Alert{
+			Labels: model.LabelSet{
+				"alertname": model.LabelValue("test-alert"),
+			},
+			StartsAt: now.Add(-5 * time.Minute),
+			EndsAt:   now.Add(5 * time.Minute),
+		},
+		UpdatedAt: now,
+	}
+	require.NoError(t, am.alerts.Put(&alert))
+	require.Equal(t, am.templates[0], testTemplate)
+	require.Eventually(t, func() bool {
+		select {
+		case got := <-c:
+			return got.Message == expMessage
+		default:
+			return false
+		}
+	}, 5*time.Second, 100*time.Millisecond)
 }

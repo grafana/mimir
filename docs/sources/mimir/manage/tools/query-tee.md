@@ -43,7 +43,9 @@ You can configure the backend endpoints by setting the `-backend.endpoints` flag
 
 For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
-> **Note:** You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
+{{< admonition type="note" >}}
+You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
+{{< /admonition >}}
 
 ## How the query-tee works
 
@@ -87,6 +89,14 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 - If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and injects the password received in the incoming request.
 - If the backend endpoint URL is configured without a username and password, then query-tee forwards the authentication credentials found in the incoming request.
 
+### Backend selection
+
+You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
+You can configure this with the `-proxy.secondary-backends-request-proportion` CLI flag.
+
+For example, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `1.0`, then all requests are sent to all backends.
+Alternatively, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
+
 ### Backend response selection
 
 The query-tee enables you to configure a preferred backend that selects the response to send back to the client.
@@ -94,18 +104,16 @@ The query-tee returns the `Content-Type` header, HTTP status code, and body of t
 The preferred backend can be configured via `-backend.preferred=<hostname>`.
 The value of the preferred backend configuration option must be the hostname of one of the configured backends.
 
-When a preferred backend is configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
-
-1. If the preferred backend response status code is 2xx or 4xx, the query-tee selects the response from the preferred backend.
-1. If at least one backend response status code is 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
-1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
+When a preferred backend is configured, the query-tee always returns the response from the preferred backend.
 
 When a preferred backend is not configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
 
 1. If at least one backend response status code is 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
 1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
 
-> **Note:** The query-tee considers a 4xx response as a valid response to select because a 4xx status code generally means the error is caused by an invalid request and not due to a server side issue.
+{{< admonition type="note" >}}
+The query-tee considers a 4xx response as a valid response to select because a 4xx status code is generally an invalid request and not a server-side issue.
+{{< /admonition >}}
 
 ### Backend results comparison
 
@@ -117,13 +125,31 @@ The query results comparison can be enabled setting the flag `-proxy.compare-res
 
 When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
 
-> **Note**: Floating point sample values are compared with a tolerance that can be configured via `-proxy.value-comparison-tolerance`. The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
+By default, query-tee considers equivalent error messages as matching, even if they are not exactly the same.
+This ensures that comparison does not fail for known situations where error messages are non-deterministic.
+Set `-proxy.compare-exact-error-matching=true` to require that error messages match exactly.
 
-> **Note**: The default value of `-proxy.compare-skip-recent-samples` is 2 minutes. This means points within results with a timestamp within 2 minutes of the current time will not be compared.
-> This prevents false positives due to racing with ingestion, and, if the query selects the output of recording rules, rule evaluation.
->
-> If either Mimir cluster is running with a non-default value of `-ruler.evaluation-delay-duration`, we recommend setting `-proxy.compare-skip-recent-samples` to 1 minute more than the
-> value of `-ruler.evaluation-delay-duration`.
+{{< admonition type="note" >}}
+Query-tee compares floating point sample values with a tolerance that you can configure with the `-proxy.value-comparison-tolerance` option.
+
+The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+The default value of `-proxy.compare-skip-recent-samples` is two minutes.
+This means points within results with a timestamp within two minutes of the current time aren't compared.
+This prevents false positives due to racing with ingestion, and, if the query selects the output of recording rules, rule evaluation.
+
+If either Mimir cluster is running with a non-default value of `-ruler.evaluation-delay-duration`, you should set `-proxy.compare-skip-recent-samples` to one minute more than the value of `-ruler.evaluation-delay-duration`.
+{{< /admonition >}}
+
+### Slow query log
+
+You can configure query-tee to log requests that take longer than the fastest backend by setting the flag `-proxy.log-slow-query-response-threshold`.
+
+The default value is `10s` which logs requests that are ten seconds slower than the fastest backend.
+
+To disable slow query logging, set `-proxy.log-slow-query-response-threshold` to `0`.
 
 ### Exported metrics
 
@@ -144,6 +170,11 @@ cortex_querytee_responses_total{backend="<hostname>",method="<method>",route="<r
 # TYPE cortex_querytee_responses_compared_total counter
 cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"}
 ```
+
+Additionally, if backend results comparison is configured, two native histograms are available:
+
+- `cortex_querytee_backend_response_relative_duration_seconds`: Time (in seconds) of secondary backend less preferred backend.
+- `cortex_querytee_backend_response_relative_duration_proportional`: Response time of secondary backend less preferred backend, as a proportion of preferred backend response time.
 
 ### Ruler remote operational mode test
 

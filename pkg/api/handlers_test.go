@@ -175,7 +175,7 @@ func TestConfigDiffHandler(t *testing.T) {
 func TestConfigOverrideHandler(t *testing.T) {
 	cfg := &Config{
 		CustomConfigHandler: func(_ interface{}, _ interface{}) http.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) {
+			return func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte("config"))
 				assert.NoError(t, err)
 			}

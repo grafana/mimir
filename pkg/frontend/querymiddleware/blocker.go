@@ -12,13 +12,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
-
-	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type queryBlockerMiddleware struct {
-	next                  Handler
+	next                  MetricsQueryHandler
 	limits                Limits
 	logger                log.Logger
 	blockedQueriesCounter *prometheus.CounterVec
@@ -28,12 +25,12 @@ func newQueryBlockerMiddleware(
 	limits Limits,
 	logger log.Logger,
 	registerer prometheus.Registerer,
-) Middleware {
+) MetricsQueryMiddleware {
 	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_rejected_queries_total",
 		Help: "Number of queries that were rejected by the cluster administrator.",
 	}, []string{"user", "reason"})
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryBlockerMiddleware{
 			next:                  next,
 			limits:                limits,
@@ -43,7 +40,7 @@ func newQueryBlockerMiddleware(
 	})
 }
 
-func (qb *queryBlockerMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (qb *queryBlockerMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	tenants, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return qb.next.Do(ctx, req)
@@ -53,13 +50,13 @@ func (qb *queryBlockerMiddleware) Do(ctx context.Context, req Request) (Response
 		isBlocked := qb.isBlocked(tenant, req)
 		if isBlocked {
 			qb.blockedQueriesCounter.WithLabelValues(tenant, "blocked").Inc()
-			return nil, apierror.New(apierror.TypeBadData, validation.NewQueryBlockedError().Error())
+			return nil, newQueryBlockedError()
 		}
 	}
 	return qb.next.Do(ctx, req)
 }
 
-func (qb *queryBlockerMiddleware) isBlocked(tenant string, req Request) bool {
+func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryRequest) bool {
 	blocks := qb.limits.BlockedQueries(tenant)
 	if len(blocks) <= 0 {
 		return false

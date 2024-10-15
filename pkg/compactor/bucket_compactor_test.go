@@ -27,7 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
-func TestGroupKey(t *testing.T) {
+func TestDefaultGroupKey(t *testing.T) {
 	for _, tcase := range []struct {
 		input    block.ThanosMeta
 		expected string
@@ -59,7 +59,7 @@ func TestGroupKey(t *testing.T) {
 		},
 	} {
 		if ok := t.Run("", func(t *testing.T) {
-			assert.Equal(t, tcase.expected, DefaultGroupKey(tcase.input))
+			assert.Equal(t, tcase.expected, defaultGroupKey(tcase.input.Downsample.Resolution, labels.FromMap(tcase.input.Labels)))
 		}); !ok {
 			return
 		}
@@ -82,10 +82,10 @@ func TestGroupMaxMinTime(t *testing.T) {
 func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	jobsFn := func() []*Job {
 		return []*Job{
-			NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, ""),
-			NewJob("user", "key2", labels.EmptyLabels(), 0, false, 0, ""),
-			NewJob("user", "key3", labels.EmptyLabels(), 0, false, 0, ""),
-			NewJob("user", "key4", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key1", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key2", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key3", labels.EmptyLabels(), 0, false, 0, ""),
+			newJob("user", "key4", labels.EmptyLabels(), 0, false, 0, ""),
 		}
 	}
 
@@ -94,13 +94,13 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 		expectedJobs int
 	}{
 		"should return all planned jobs if the compactor instance owns all of them": {
-			ownJob: func(job *Job) (bool, error) {
+			ownJob: func(*Job) (bool, error) {
 				return true, nil
 			},
 			expectedJobs: 4,
 		},
 		"should return no jobs if the compactor instance owns none of them": {
-			ownJob: func(job *Job) (bool, error) {
+			ownJob: func(*Job) (bool, error) {
 				return false, nil
 			},
 			expectedJobs: 0,
@@ -108,7 +108,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 		"should return some jobs if the compactor instance owns some of them": {
 			ownJob: func() ownCompactionJobFunc {
 				count := 0
-				return func(job *Job) (bool, error) {
+				return func(*Job) (bool, error) {
 					count++
 					return count%2 == 0, nil
 				}
@@ -132,7 +132,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 }
 
 func TestBlockMaxTimeDeltas(t *testing.T) {
-	j1 := NewJob("user", "key1", labels.EmptyLabels(), 0, false, 0, "")
+	j1 := newJob("user", "key1", labels.EmptyLabels(), 0, false, 0, "")
 	require.NoError(t, j1.AppendMeta(&block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			MinTime: 1500002700159,
@@ -140,7 +140,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 		},
 	}))
 
-	j2 := NewJob("user", "key2", labels.EmptyLabels(), 0, false, 0, "")
+	j2 := newJob("user", "key2", labels.EmptyLabels(), 0, false, 0, "")
 	require.NoError(t, j2.AppendMeta(&block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			MinTime: 1500002600159,
@@ -175,27 +175,6 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	block5 := ulid.MustParse("01DTVP434PA9VFXSW2JK000005") // No mark file.
 
 	for name, testFn := range map[string]func(t *testing.T, synced block.GaugeVec){
-		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced block.GaugeVec) {
-			metas := map[ulid.ULID]*block.Meta{
-				block1: blockMeta(block1.String(), 100, 200, nil),
-				block2: blockMeta(block2.String(), 200, 300, nil), // Has no-compaction marker.
-				block4: blockMeta(block4.String(), 400, 500, nil), // Invalid marker is still a marker, and block will be in NoCompactMarkedBlocks.
-				block5: blockMeta(block5.String(), 500, 600, nil),
-			}
-
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
-			require.NoError(t, f.Filter(ctx, metas, synced))
-
-			require.Contains(t, metas, block1)
-			require.Contains(t, metas, block2)
-			require.Contains(t, metas, block4)
-			require.Contains(t, metas, block5)
-
-			require.Len(t, f.NoCompactMarkedBlocks(), 2)
-			require.Contains(t, f.NoCompactMarkedBlocks(), block2, block4)
-
-			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
-		},
 		"filter with deletion enabled": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*block.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
@@ -204,7 +183,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block5: blockMeta(block5.String(), 500, 600, nil),
 			}
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			require.NoError(t, f.Filter(ctx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -230,7 +209,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			canceledCtx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			require.Error(t, f.Filter(canceledCtx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -247,7 +226,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block3: blockMeta(block3.String(), 300, 300, nil), // Has compaction marker with invalid version, but Filter doesn't check for that.
 			}
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			err := f.Filter(ctx, metas, synced)
 			require.NoError(t, err)
 			require.Empty(t, metas)
@@ -320,7 +299,6 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData // Prevent loop variable being captured by func literal
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 

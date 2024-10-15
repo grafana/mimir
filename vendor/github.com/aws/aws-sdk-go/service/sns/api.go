@@ -359,17 +359,24 @@ func (c *SNS) CreatePlatformApplicationRequest(input *CreatePlatformApplicationI
 //   - For ADM, PlatformPrincipal is client id and PlatformCredential is client
 //     secret.
 //
-//   - For Baidu, PlatformPrincipal is API key and PlatformCredential is secret
-//     key.
-//
 //   - For APNS and APNS_SANDBOX using certificate credentials, PlatformPrincipal
 //     is SSL certificate and PlatformCredential is private key.
 //
 //   - For APNS and APNS_SANDBOX using token credentials, PlatformPrincipal
 //     is signing key ID and PlatformCredential is signing key.
 //
-//   - For GCM (Firebase Cloud Messaging), there is no PlatformPrincipal and
-//     the PlatformCredential is API key.
+//   - For Baidu, PlatformPrincipal is API key and PlatformCredential is secret
+//     key.
+//
+//   - For GCM (Firebase Cloud Messaging) using key credentials, there is no
+//     PlatformPrincipal. The PlatformCredential is API key.
+//
+//   - For GCM (Firebase Cloud Messaging) using token credentials, there is
+//     no PlatformPrincipal. The PlatformCredential is a JSON formatted private
+//     key file. When using the Amazon Web Services CLI, the file must be in
+//     string format and special characters must be ignored. To format the file
+//     correctly, Amazon SNS recommends using the following command: SERVICE_JSON=`jq
+//     @json <<< cat service.json`.
 //
 //   - For MPNS, PlatformPrincipal is TLS certificate and PlatformCredential
 //     is private key.
@@ -4905,8 +4912,12 @@ type CheckIfPhoneNumberIsOptedOutInput struct {
 
 	// The phone number for which you want to check the opt out status.
 	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by CheckIfPhoneNumberIsOptedOutInput's
+	// String and GoString methods.
+	//
 	// PhoneNumber is a required field
-	PhoneNumber *string `locationName:"phoneNumber" type:"string" required:"true"`
+	PhoneNumber *string `locationName:"phoneNumber" type:"string" required:"true" sensitive:"true"`
 }
 
 // String returns the string representation.
@@ -5328,8 +5339,12 @@ type CreateSMSSandboxPhoneNumberInput struct {
 	// this phone number to the list of verified phone numbers that you can send
 	// SMS messages to.
 	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by CreateSMSSandboxPhoneNumberInput's
+	// String and GoString methods.
+	//
 	// PhoneNumber is a required field
-	PhoneNumber *string `type:"string" required:"true"`
+	PhoneNumber *string `type:"string" required:"true" sensitive:"true"`
 }
 
 // String returns the string representation.
@@ -5403,7 +5418,7 @@ type CreateTopicInput struct {
 
 	// A map of attributes with their corresponding values.
 	//
-	// The following lists the names, descriptions, and values of the special request
+	// The following lists names, descriptions, and values of the special request
 	// parameters that the CreateTopic action uses:
 	//
 	//    * DeliveryPolicy – The policy that defines how Amazon SNS retries failed
@@ -5724,8 +5739,12 @@ type DeleteSMSSandboxPhoneNumberInput struct {
 
 	// The destination phone number to delete.
 	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by DeleteSMSSandboxPhoneNumberInput's
+	// String and GoString methods.
+	//
 	// PhoneNumber is a required field
-	PhoneNumber *string `type:"string" required:"true"`
+	PhoneNumber *string `type:"string" required:"true" sensitive:"true"`
 }
 
 // String returns the string representation.
@@ -6131,6 +6150,11 @@ type GetPlatformApplicationAttributesOutput struct {
 	//    * ApplePlatformBundleID – The app identifier used to configure token-based
 	//    authentication.
 	//
+	//    * AuthenticationMethod – Returns the credential type used when sending
+	//    push notifications from application to APNS/APNS_Sandbox, or application
+	//    to GCM. APNS – Returns the token or certificate. GCM – Returns the
+	//    token or key.
+	//
 	//    * EventEndpointCreated – Topic ARN to which EndpointCreated event notifications
 	//    should be sent.
 	//
@@ -6388,15 +6412,14 @@ type GetSubscriptionAttributesOutput struct {
 	//
 	//    * TopicArn – The topic ARN that the subscription is associated with.
 	//
-	// The following attribute applies only to Amazon Kinesis Data Firehose delivery
-	// stream subscriptions:
+	// The following attribute applies only to Amazon Data Firehose delivery stream
+	// subscriptions:
 	//
 	//    * SubscriptionRoleArn – The ARN of the IAM role that has the following:
-	//    Permission to write to the Kinesis Data Firehose delivery stream Amazon
-	//    SNS listed as a trusted entity Specifying a valid ARN for this attribute
-	//    is required for Kinesis Data Firehose delivery stream subscriptions. For
-	//    more information, see Fanout to Kinesis Data Firehose delivery streams
-	//    (https://docs.aws.amazon.com/sns/latest/dg/sns-firehose-as-subscriber.html)
+	//    Permission to write to the Firehose delivery stream Amazon SNS listed
+	//    as a trusted entity Specifying a valid ARN for this attribute is required
+	//    for Firehose delivery stream subscriptions. For more information, see
+	//    Fanout to Firehose delivery streams (https://docs.aws.amazon.com/sns/latest/dg/sns-firehose-as-subscriber.html)
 	//    in the Amazon SNS Developer Guide.
 	Attributes map[string]*string `type:"map"`
 }
@@ -6803,7 +6826,7 @@ type ListPhoneNumbersOptedOutOutput struct {
 
 	// A list of phone numbers that are opted out of receiving SMS messages. The
 	// list is paginated, and each page can contain up to 100 phone numbers.
-	PhoneNumbers []*string `locationName:"phoneNumbers" type:"list"`
+	PhoneNumbers []*string `locationName:"phoneNumbers" type:"list" sensitive:"true"`
 }
 
 // String returns the string representation.
@@ -7418,8 +7441,12 @@ type OptInPhoneNumberInput struct {
 
 	// The phone number to opt in. Use E.164 format.
 	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by OptInPhoneNumberInput's
+	// String and GoString methods.
+	//
 	// PhoneNumber is a required field
-	PhoneNumber *string `locationName:"phoneNumber" type:"string" required:"true"`
+	PhoneNumber *string `locationName:"phoneNumber" type:"string" required:"true" sensitive:"true"`
 }
 
 // String returns the string representation.
@@ -7496,7 +7523,11 @@ type PhoneNumberInformation struct {
 	NumberCapabilities []*string `type:"list" enum:"NumberCapability"`
 
 	// The phone number.
-	PhoneNumber *string `type:"string"`
+	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by PhoneNumberInformation's
+	// String and GoString methods.
+	PhoneNumber *string `type:"string" sensitive:"true"`
 
 	// The list of supported routes.
 	RouteType *string `type:"string" enum:"RouteType"`
@@ -8057,15 +8088,18 @@ type PublishInput struct {
 	//
 	// If you don't specify a value for the PhoneNumber parameter, you must specify
 	// a value for the TargetArn or TopicArn parameters.
-	PhoneNumber *string `type:"string"`
+	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by PublishInput's
+	// String and GoString methods.
+	PhoneNumber *string `type:"string" sensitive:"true"`
 
 	// Optional parameter to be used as the "Subject" line when the message is delivered
 	// to email endpoints. This field will also be included, if present, in the
 	// standard JSON messages delivered to other endpoints.
 	//
-	// Constraints: Subjects must be ASCII text that begins with a letter, number,
-	// or punctuation mark; must not include line breaks or control characters;
-	// and must be less than 100 characters long.
+	// Constraints: Subjects must be UTF-8 text with no line breaks or control characters,
+	// and less than 100 characters long.
 	Subject *string `type:"string"`
 
 	// If you don't specify a value for the TargetArn parameter, you must specify
@@ -8408,7 +8442,11 @@ type SMSSandboxPhoneNumber struct {
 	_ struct{} `type:"structure"`
 
 	// The destination phone number.
-	PhoneNumber *string `type:"string"`
+	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by SMSSandboxPhoneNumber's
+	// String and GoString methods.
+	PhoneNumber *string `type:"string" sensitive:"true"`
 
 	// The destination phone number's verification status.
 	Status *string `type:"string" enum:"SMSSandboxPhoneNumberVerificationStatus"`
@@ -8551,7 +8589,13 @@ type SetPlatformApplicationAttributesInput struct {
 	//    service. For ADM, PlatformCredentialis client secret. For Apple Services
 	//    using certificate credentials, PlatformCredential is private key. For
 	//    Apple Services using token credentials, PlatformCredential is signing
-	//    key. For GCM (Firebase Cloud Messaging), PlatformCredential is API key.
+	//    key. For GCM (Firebase Cloud Messaging) using key credentials, there is
+	//    no PlatformPrincipal. The PlatformCredential is API key. For GCM (Firebase
+	//    Cloud Messaging) using token credentials, there is no PlatformPrincipal.
+	//    The PlatformCredential is a JSON formatted private key file. When using
+	//    the Amazon Web Services CLI, the file must be in string format and special
+	//    characters must be ignored. To format the file correctly, Amazon SNS recommends
+	//    using the following command: SERVICE_JSON=`jq @json <<< cat service.json`.
 	//
 	//    * PlatformPrincipal – The principal received from the notification service.
 	//    For ADM, PlatformPrincipalis client id. For Apple Services using certificate
@@ -8843,15 +8887,14 @@ type SetSubscriptionAttributesInput struct {
 	//    endpoint becomes unavailable) are held in the dead-letter queue for further
 	//    analysis or reprocessing.
 	//
-	// The following attribute applies only to Amazon Kinesis Data Firehose delivery
-	// stream subscriptions:
+	// The following attribute applies only to Amazon Data Firehose delivery stream
+	// subscriptions:
 	//
 	//    * SubscriptionRoleArn – The ARN of the IAM role that has the following:
-	//    Permission to write to the Kinesis Data Firehose delivery stream Amazon
-	//    SNS listed as a trusted entity Specifying a valid ARN for this attribute
-	//    is required for Kinesis Data Firehose delivery stream subscriptions. For
-	//    more information, see Fanout to Kinesis Data Firehose delivery streams
-	//    (https://docs.aws.amazon.com/sns/latest/dg/sns-firehose-as-subscriber.html)
+	//    Permission to write to the Firehose delivery stream Amazon SNS listed
+	//    as a trusted entity Specifying a valid ARN for this attribute is required
+	//    for Firehose delivery stream subscriptions. For more information, see
+	//    Fanout to Firehose delivery streams (https://docs.aws.amazon.com/sns/latest/dg/sns-firehose-as-subscriber.html)
 	//    in the Amazon SNS Developer Guide.
 	//
 	// AttributeName is a required field
@@ -9165,15 +9208,14 @@ type SubscribeInput struct {
 	//    endpoint becomes unavailable) are held in the dead-letter queue for further
 	//    analysis or reprocessing.
 	//
-	// The following attribute applies only to Amazon Kinesis Data Firehose delivery
-	// stream subscriptions:
+	// The following attribute applies only to Amazon Data Firehose delivery stream
+	// subscriptions:
 	//
 	//    * SubscriptionRoleArn – The ARN of the IAM role that has the following:
-	//    Permission to write to the Kinesis Data Firehose delivery stream Amazon
-	//    SNS listed as a trusted entity Specifying a valid ARN for this attribute
-	//    is required for Kinesis Data Firehose delivery stream subscriptions. For
-	//    more information, see Fanout to Kinesis Data Firehose delivery streams
-	//    (https://docs.aws.amazon.com/sns/latest/dg/sns-firehose-as-subscriber.html)
+	//    Permission to write to the Firehose delivery stream Amazon SNS listed
+	//    as a trusted entity Specifying a valid ARN for this attribute is required
+	//    for Firehose delivery stream subscriptions. For more information, see
+	//    Fanout to Firehose delivery streams (https://docs.aws.amazon.com/sns/latest/dg/sns-firehose-as-subscriber.html)
 	//    in the Amazon SNS Developer Guide.
 	//
 	// The following attributes apply only to FIFO topics (https://docs.aws.amazon.com/sns/latest/dg/sns-fifo-topics.html):
@@ -9785,8 +9827,12 @@ type VerifySMSSandboxPhoneNumberInput struct {
 
 	// The destination phone number to verify.
 	//
+	// PhoneNumber is a sensitive parameter and its value will be
+	// replaced with "sensitive" in string returned by VerifySMSSandboxPhoneNumberInput's
+	// String and GoString methods.
+	//
 	// PhoneNumber is a required field
-	PhoneNumber *string `type:"string" required:"true"`
+	PhoneNumber *string `type:"string" required:"true" sensitive:"true"`
 }
 
 // String returns the string representation.

@@ -19,7 +19,12 @@ components. This topic describes the process used to set up TLS.
 To establish secure inter-component communication in Grafana Mimir with TLS, you must generate certificates using a certificate authority (CA).
 The CA should be private to the organization because certificates signed by the CA will have permissions to communicate with the cluster.
 
-> **Note**: The generated certificates are valid for 100,000 days. You can change the duration by adjusting the `-days` option in the command. We recommend that you replace the certificates every two years.
+{{< admonition type="note" >}}
+The generated certificates are valid for 100,000 days.
+You can change the duration by adjusting the `-days` option in the command.
+
+You should replace certificates more regularly.
+{{< /admonition >}}
 
 The following script generates self-signed certificates for the cluster.
 The script generates private keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
@@ -138,14 +143,18 @@ The following Grafana Mimir components support TLS for inter-communication, whic
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
 - etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
 - Memberlist client used by all Mimir components to gossip the hash ring, which is required only if you're running the hash ring on memberlist: `-memberlist.`
+- Memcached client used by all Mimir components: `-blocks-storage.bucket-store.chunks-cache.memcached.*`, `-blocks-storage.bucket-store.index-cache.memcached.*`, `-blocks-storage.bucket-store.metadata-cache.memcached.*`, `-query-frontend.results-cache.memcached.*`, `-ruler-storage.cache.memcached.*`
 
 Each of the components listed above support the following TLS configuration options, which are shown with their corresponding flag suffixes:
 
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
-- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../../references/configuration-parameters" >}}).
-- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../../references/configuration-parameters" >}}).
+- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../../configure/configuration-parameters" >}}).
+- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../../configure/configuration-parameters" >}}).
+- `*.tls-cert-path=<string>`: Path to the client certificate.
+- `*.tls-key-path=<string>`: Path to the key for the client certificate.
+- `*.tls-ca-path=<string>`: Path to the CA certificates to validate server certificate against.
 
 The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 

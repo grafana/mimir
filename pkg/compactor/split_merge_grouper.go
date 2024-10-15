@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -74,7 +75,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 		resolution := job.blocks[0].Thanos.Downsample.Resolution
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
-		compactionJob := NewJob(
+		compactionJob := newJob(
 			g.userID,
 			groupKey,
 			externalLabels,
@@ -106,7 +107,7 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 	}
 
 	// First of all we have to group blocks using the default grouping, but not
-	// considering the shard ID in the external labels (because will be checked later).
+	// considering the shard ID in the external labels (because it will be checked later).
 	mainGroups := map[string][]*block.Meta{}
 	for _, b := range blocks {
 		key := defaultGroupKeyWithoutShardID(b.Thanos)
@@ -135,9 +136,11 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 		}
 	}
 
-	// Ensure we don't compact the most recent blocks prematurely when another one of
-	// the same size still fits in the range. To do it, we consider a job valid only
-	// if its range is before the most recent block or if it fully covers the range.
+	// Ensure we don't compact the most recent blocks prematurely. We allow a job to remain if:
+	// - its range is before the most recent block
+	// - its range is at least 1 job length in the past
+	// - its max compaction level is 1
+	// - it fully covers the range
 	highestMaxTime := getMaxTime(blocks)
 
 	for idx := 0; idx < len(jobs); {
@@ -145,6 +148,18 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 
 		// If the job covers a range before the most recent block, it's fine.
 		if job.rangeEnd <= highestMaxTime {
+			idx++
+			continue
+		}
+
+		// If the job covers a range at least 1 job length in the past, it's fine.
+		if job.rangeEnd+job.rangeLength() <= time.Now().UnixMilli() {
+			idx++
+			continue
+		}
+
+		// If the job only contains level 1 blocks, it's fine.
+		if job.maxCompactionLevel() == 1 {
 			idx++
 			continue
 		}
@@ -174,7 +189,7 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 	return jobs
 }
 
-// planCompactionByRange analyze the input blocks and returns a list of compaction jobs to
+// planCompactionByRange analyzes the input blocks and returns a list of compaction jobs to
 // compact blocks for the given compaction time range. Input blocks MUST be sorted by MinTime.
 func planCompactionByRange(userID string, blocks []*block.Meta, tr int64, isSmallestRange bool, shardCount, splitGroups uint32) (jobs []*job) {
 	groups := groupBlocksByRange(blocks, tr)

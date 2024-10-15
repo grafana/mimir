@@ -28,7 +28,7 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": [
          {
             "collapse": false,
@@ -62,6 +62,146 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Required Replicas"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "__name__"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "cluster"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Cluster"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "deployment"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Service"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "namespace"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Namespace"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "reason"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Reason"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 2,
                   "legend": {
@@ -90,121 +230,11 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "Required Replicas",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 0,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "Cluster",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "__name__",
-                        "thresholds": [ ],
-                        "type": "hidden",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "Cluster",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "cluster",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "Service",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "deployment",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "Namespace",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "namespace",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "Reason",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "reason",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "sort_desc(\n  cluster_namespace_deployment_reason:required_replicas:count{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    > ignoring(reason) group_left\n  cluster_namespace_deployment:actual_replicas:count{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\n",
                         "format": "table",
                         "instant": true,
-                        "intervalFactor": 2,
                         "legendFormat": "",
                         "refId": "A"
                      }
@@ -268,7 +298,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",
@@ -309,7 +339,7 @@
                },
                "datasource": "$datasource",
                "hide": 0,
-               "includeAll": true,
+               "includeAll": false,
                "label": "namespace",
                "multi": true,
                "name": "namespace",
