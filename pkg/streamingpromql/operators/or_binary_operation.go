@@ -22,10 +22,12 @@ type OrBinaryOperation struct {
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
 
-	// If nextSeriesIsFromLeft is true, this operator will next return leftSeriesCount[0] series from the left side before switching to returning series from the right side, and vice versa.
+	// If nextSeriesIsFromLeft is true, this operator will next return leftSeriesCount[0] series from the left side before
+	// switching to returning series from the right side, and vice versa.
 	//
-	// For example, if nextSeriesIsFromLeft is true, and leftSeriesCount is [3, 5, 2], and rightSeriesCount is [1, 4], then this operator will first return three series from the left,
-	// then 1 from the right, then 5 from the left, then 4 from the right and finally 2 from the left.
+	// For example, if nextSeriesIsFromLeft is true, and leftSeriesCount is [3, 5, 2], and rightSeriesCount is [1, 4], then
+	// this operator will first return three series from the left, then 1 from the right, then 5 from the left, then 4 from
+	// the right and finally 2 from the left.
 	nextSeriesIsFromLeft bool
 	leftSeriesCount      []int
 	rightSeriesCount     []int
