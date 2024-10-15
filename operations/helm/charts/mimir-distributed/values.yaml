@@ -815,6 +815,8 @@ distributor:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
 
   resources:
     requests:
@@ -906,6 +908,8 @@ ingester:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""

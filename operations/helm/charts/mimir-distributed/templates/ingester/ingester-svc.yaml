@@ -21,6 +21,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP
+  internalTrafficPolicy: {{ .Values.ingester.service.internalTrafficPolicy }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP
