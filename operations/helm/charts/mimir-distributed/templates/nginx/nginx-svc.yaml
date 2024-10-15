@@ -14,6 +14,9 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: {{ .Values.nginx.service.type }}
+  {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
+  internalTrafficPolicy: {{ .Values.nginx.service.internalTrafficPolicy }}
+  {{- end }}
   {{- with .Values.nginx.service.clusterIP }}
   clusterIP: {{ . }}
   {{- end }}

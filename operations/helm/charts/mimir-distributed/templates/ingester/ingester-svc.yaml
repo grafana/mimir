@@ -20,7 +20,10 @@ metadata:
     {{- toYaml .Values.ingester.service.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.ingester.service.type }}
+  {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
+  internalTrafficPolicy: {{ .Values.ingester.service.internalTrafficPolicy }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP
