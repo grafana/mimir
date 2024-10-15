@@ -1683,8 +1683,8 @@ github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8
 github.com/subosito/gotenv v1.4.1/go.mod h1:ayKnFf/c6rvx/2iiLrJUk1e6plDbT3edrFNGqEflhK0=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.40 h1:W6vDGKCHe4wBACI1d2UgE6+50sJFhRWU4O8IB2ozzxM=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.40/go.mod h1:4dCEtLHGh8QPxHEkgq+nFaky7yZxQuYwgSJM87icDaw=
-github.com/thanos-io/objstore v0.0.0-20240913165201-fd105025a2e5 h1:sb2s6y+T5+iaNElATi4bpzw2lGMcd5YjAUvxQp9ePtw=
-github.com/thanos-io/objstore v0.0.0-20240913165201-fd105025a2e5/go.mod h1:A5Rlc/vdyENE5D0as6+6kp4kxWO72b4R0Q1ay/1d230=
+github.com/thanos-io/objstore v0.0.0-20241010161353-f90c89a0ef90 h1:+gDIM0kLg4mpwU4RjvG09KiZsPrCy9EBHf8J/uJ+Ve0=
+github.com/thanos-io/objstore v0.0.0-20241010161353-f90c89a0ef90/go.mod h1:/ZMUxFcp/nT6oYV5WslH9k07NU/+86+aibgZRmMMr/4=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
 github.com/tklauser/go-sysconf v0.3.12/go.mod h1:Ho14jnntGE1fpdOqQEEaiKRpvIavV0hSfmBq8nJbHYI=
 github.com/tklauser/numcpus v0.6.1 h1:ng9scYS7az0Bk4OZLvrNXNSAO2Pxr1XXRAPyjhIx+Fk=
