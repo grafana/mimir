@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Ingester/Distributor: Allow users to set internalTrafficPolicy setting on Kubernetes services
 * [CHANGE] Alertmanager: the following metrics are not exported for a given `user` when the metric value is zero: #9359
   * `cortex_alertmanager_alerts_received_total`
   * `cortex_alertmanager_alerts_invalid_total`
