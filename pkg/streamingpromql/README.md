@@ -112,7 +112,10 @@ reuse `FloatHistogram` instances already present in the `HPoint` slice that back
 a new `FloatHistogram` instance.
 
 The implication of this is that anywhere that returns a `promql.HPoint` slice `s` to `types.HPointSlicePool` must remove references in
-`s` to any `FloatHistogram`s retained after `s` is returned. The simplest way to do this is to set the `H` field on `promql.HPoint` to `nil`.
+`s` to any `FloatHistogram`s retained after `s` is returned. For example, binary operations that act as a filter retain the
+`FloatHistogram`s that satisfy the filter in a new, smaller slice, and return the original unfiltered slice `s` to the pool.
+
+The simplest way to do this is to set the `H` field on `promql.HPoint` to `nil`.
 If all points in `s` are being retained, then calling `clear(s)` is also sufficient.
 
 If this is not done, query results may become corrupted due to multiple queries simultaneously modifying the same `FloatHistogram` instance.
