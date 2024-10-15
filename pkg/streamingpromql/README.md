@@ -119,4 +119,4 @@ If this is not done, query results may become corrupted due to multiple queries 
 This can also manifest as panics while interacting with `FloatHistogram`s.
 
 The same problem does not apply to `*histogram.FloatHistogram` slices returned by `types.HistogramSlicePool`. Slices from this pool are used only by
-parts of MQE that do not benefit from reusing `FloatHistogram` instances, and so `types.HistogramSlicePool` clears all slices returned.
+parts of MQE that do not benefit from reusing `FloatHistogram` instances, and so `types.HistogramSlicePool` clears all slices returned for you.
