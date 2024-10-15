@@ -1926,6 +1926,13 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
 			}
 			expressions = append(expressions, binaryExpr)
+
+			// Same thing again, this time with grouping.
+			binaryExpr = fmt.Sprintf(`series{label="%s"}`, labels[0])
+			for _, label := range labels[1:] {
+				binaryExpr += fmt.Sprintf(` %s on (group) series{label="%s"}`, op, label)
+			}
+			expressions = append(expressions, binaryExpr)
 		}
 	}
 
