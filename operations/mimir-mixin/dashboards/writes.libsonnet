@@ -390,8 +390,8 @@ local filename = 'mimir-writes.json';
         ];
 
         local replicaTemplateLegends = [
-          'Tmpl spec replicas',
-          'Tmpl status replicas',
+          'Template spec replicas',
+          'Template status replicas',
         ];
 
         $.autoScalingActualReplicas('ingester', replicaTemplateQueries, replicaTemplateLegends) + { title: 'Replicas (HPA + ReplicaTemplate)' } +
