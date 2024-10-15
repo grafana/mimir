@@ -259,6 +259,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 		switch e.Op {
 		case parser.LAND, parser.LUNLESS:
 			return operators.NewAndUnlessBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, e.Op == parser.LUNLESS, q.timeRange, e.PositionRange()), nil
+		case parser.LOR:
+			return operators.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, q.timeRange, e.PositionRange()), nil
 		default:
 			return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 		}

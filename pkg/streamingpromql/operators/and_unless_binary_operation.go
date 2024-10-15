@@ -266,52 +266,7 @@ func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesD
 // FilterLeftSeries returns leftData filtered based on samples seen for the right-hand side.
 // The return value reuses the slices from leftData, and returns any unused slices to the pool.
 func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange, isUnless bool) (types.InstantVectorSeriesData, error) {
-	filteredData := types.InstantVectorSeriesData{}
-	nextOutputFloatIndex := 0
-
-	for _, p := range leftData.Floats {
-		if g.rightSamplePresence[timeRange.PointIndex(p.T)] == isUnless {
-			continue
-		}
-
-		leftData.Floats[nextOutputFloatIndex] = p
-		nextOutputFloatIndex++
-	}
-
-	if nextOutputFloatIndex > 0 {
-		// We have at least one output float point to return.
-		filteredData.Floats = leftData.Floats[:nextOutputFloatIndex]
-	} else {
-		// We don't have any float points to return, return the original slice to the pool.
-		types.FPointSlicePool.Put(leftData.Floats, memoryConsumptionTracker)
-	}
-
-	nextOutputHistogramIndex := 0
-
-	for idx, p := range leftData.Histograms {
-		if g.rightSamplePresence[timeRange.PointIndex(p.T)] == isUnless {
-			continue
-		}
-
-		leftData.Histograms[nextOutputHistogramIndex] = p
-
-		if idx > nextOutputHistogramIndex {
-			// Remove the histogram from the original point to ensure that it's not mutated unexpectedly when the HPoint slice is reused.
-			leftData.Histograms[idx].H = nil
-		}
-
-		nextOutputHistogramIndex++
-	}
-
-	if nextOutputHistogramIndex > 0 {
-		// We have at least one output histogram point to return.
-		filteredData.Histograms = leftData.Histograms[:nextOutputHistogramIndex]
-	} else {
-		// We don't have any histogram points to return, return the original slice to the pool.
-		types.HPointSlicePool.Put(leftData.Histograms, memoryConsumptionTracker)
-	}
-
-	return filteredData, nil
+	return filterSeries(leftData, g.rightSamplePresence, !isUnless, memoryConsumptionTracker, timeRange)
 }
 
 func (g *andGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {

@@ -89,9 +89,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			t, f = v.memoizedIterator.At()
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			if atT := v.memoizedIterator.AtT(); atT == lastHistogramT && lastHistogram != nil {
-				// We're still looking at the last histogram we used, don't bother creating another FloatHistogram.
-				// Consuming operators are expected to check for the same FloatHistogram instance used at multiple points and copy it
-				// if they are going to mutate it, so this is safe to do.
+				// We're still looking at the last histogram we used, don't bother creating another FloatHistogram yet as we might not need it.
+				// If we're going to return this histogram, we'll make a copy below.
 				t, h = atT, lastHistogram
 			} else {
 				t, h = v.memoizedIterator.AtFloatHistogram()
@@ -109,12 +108,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			}
 			if h != nil {
 				if t == lastHistogramT && lastHistogram != nil {
-					// Reuse exactly the same FloatHistogram as last time.
+					// Reuse exactly the same FloatHistogram as last time, don't bother creating another FloatHistogram yet.
 					// PeekPrev can return a new FloatHistogram instance with the same underlying bucket slices as a previous call
-					// to AtFloatHistogram.
-					// Consuming operators are expected to check for the same FloatHistogram instance used at multiple points and copy
-					// it if they are going to mutate it, but consuming operators don't check the underlying bucket slices, so without
-					// this, we can end up with incorrect query results.
+					// to AtFloatHistogram, so if we're going to return this histogram, we'll make a copy below.
 					h = lastHistogram
 				}
 			}
@@ -136,6 +132,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
+
+			if t == lastHistogramT {
+				// We're returning a histogram we've previously used, so make a copy of it now.
+				h = h.Copy()
+			}
+
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 			lastHistogramT = t
 			lastHistogram = h

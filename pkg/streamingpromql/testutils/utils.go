@@ -112,7 +112,11 @@ func requireInEpsilonIfNotZero(t testing.TB, expected, actual float64, msgAndArg
 func requireFloatBucketsMatch(t testing.TB, b1, b2 []float64) {
 	require.Equal(t, len(b1), len(b2), "bucket lengths match")
 	for i, b := range b1 {
-		require.InEpsilon(t, b, b2[i], 1e-10, "bucket values match")
+		if b == 0 {
+			require.Equal(t, b, b2[i], "bucket values match")
+		} else {
+			require.InEpsilon(t, b, b2[i], 1e-10, "bucket values match")
+		}
 	}
 }
 

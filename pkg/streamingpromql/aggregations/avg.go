@@ -165,8 +165,6 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		g.histograms = g.histograms[:timeRange.StepCount]
 	}
 
-	var lastUncopiedHistogram *histogram.FloatHistogram
-
 	for inputIdx, p := range data.Histograms {
 		outputIdx := timeRange.PointIndex(p.T)
 		g.groupSeriesCounts[outputIdx]++
@@ -176,41 +174,18 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			continue
 		}
 
-		if lastUncopiedHistogram == p.H {
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice is reused, as we're retaining a reference to it.
-			data.Histograms[inputIdx].H = nil
-		}
-
 		if g.histograms[outputIdx] == nil {
-			if lastUncopiedHistogram == p.H {
-				// We've already used this histogram for a previous point due to lookback.
-				// Make a copy of it so we don't modify the other point.
-				g.histograms[outputIdx] = p.H.Copy()
-				g.histogramPointCount++
-
-				continue
-			}
-
-			// We have not previously used this histogram as the start of an output point.
-			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
+			// First sample for this output point, retain the histogram as-is.
 			g.histograms[outputIdx] = p.H
 			g.histogramPointCount++
-			lastUncopiedHistogram = p.H
 
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused, including if it was used at previous points.
-			data.RemoveReferencesToRetainedHistogram(p.H, inputIdx)
+			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
+			data.Histograms[inputIdx].H = nil
 
 			continue
 		}
 
-		// Check if the next point in data.Histograms is the same as the current point (due to lookback)
-		// If it is, create a copy before modifying it.
-		toAdd := p.H
-		if inputIdx+1 < len(data.Histograms) && data.Histograms[inputIdx+1].H == p.H {
-			toAdd = p.H.Copy()
-		}
-
-		_, err = toAdd.Sub(g.histograms[outputIdx])
+		_, err = p.H.Sub(g.histograms[outputIdx])
 		if err != nil {
 			// Unable to subtract histograms (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
@@ -223,8 +198,8 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			continue
 		}
 
-		toAdd.Div(g.groupSeriesCounts[outputIdx])
-		_, err = g.histograms[outputIdx].Add(toAdd)
+		p.H.Div(g.groupSeriesCounts[outputIdx])
+		_, err = g.histograms[outputIdx].Add(p.H)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms

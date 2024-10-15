@@ -168,47 +168,43 @@ eval instant at 50m (http_requests{group="canary"} + 1) and ignoring(group, job)
 	{group="canary", instance="0", job="api-server"} 301
 	{group="canary", instance="0", job="app-server"} 701
 
-# Unsupported by streaming engine.
-# eval instant at 50m http_requests{group="canary"} or http_requests{group="production"}
-#	http_requests{group="canary", instance="0", job="api-server"} 300
-#	http_requests{group="canary", instance="0", job="app-server"} 700
-#	http_requests{group="canary", instance="1", job="api-server"} 400
-#	http_requests{group="canary", instance="1", job="app-server"} 800
-#	http_requests{group="production", instance="0", job="api-server"} 100
-#	http_requests{group="production", instance="0", job="app-server"} 500
-#	http_requests{group="production", instance="1", job="api-server"} 200
-#	http_requests{group="production", instance="1", job="app-server"} 600
+eval instant at 50m http_requests{group="canary"} or http_requests{group="production"}
+	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="api-server"} 400
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="0", job="app-server"} 500
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
 
 # On overlap the rhs samples must be dropped.
-# Unsupported by streaming engine.
-# eval instant at 50m (http_requests{group="canary"} + 1) or http_requests{instance="1"}
-#	{group="canary", instance="0", job="api-server"} 301
-#	{group="canary", instance="0", job="app-server"} 701
-#	{group="canary", instance="1", job="api-server"} 401
-#	{group="canary", instance="1", job="app-server"} 801
-#	http_requests{group="production", instance="1", job="api-server"} 200
-#	http_requests{group="production", instance="1", job="app-server"} 600
+eval instant at 50m (http_requests{group="canary"} + 1) or http_requests{instance="1"}
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="production", instance="1", job="app-server"} 600
 
 
 # Matching only on instance excludes everything that has instance=0/1 but includes
 # entries without the instance label.
-# Unsupported by streaming engine.
-# eval instant at 50m (http_requests{group="canary"} + 1) or on(instance) (http_requests or cpu_count or vector_matching_a)
-#	{group="canary", instance="0", job="api-server"} 301
-#	{group="canary", instance="0", job="app-server"} 701
-#	{group="canary", instance="1", job="api-server"} 401
-#	{group="canary", instance="1", job="app-server"} 801
-#	vector_matching_a{l="x"} 10
-#	vector_matching_a{l="y"} 20
+eval instant at 50m (http_requests{group="canary"} + 1) or on(instance) (http_requests or cpu_count or vector_matching_a)
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
 
-# Unsupported by streaming engine.
-# eval instant at 50m (http_requests{group="canary"} + 1) or ignoring(l, group, job) (http_requests or cpu_count or vector_matching_a)
-#	{group="canary", instance="0", job="api-server"} 301
-#	{group="canary", instance="0", job="app-server"} 701
-#	{group="canary", instance="1", job="api-server"} 401
-#	{group="canary", instance="1", job="app-server"} 801
-#	vector_matching_a{l="x"} 10
-#	vector_matching_a{l="y"} 20
+eval instant at 50m (http_requests{group="canary"} + 1) or ignoring(l, group, job) (http_requests or cpu_count or vector_matching_a)
+	{group="canary", instance="0", job="api-server"} 301
+	{group="canary", instance="0", job="app-server"} 701
+	{group="canary", instance="1", job="api-server"} 401
+	{group="canary", instance="1", job="app-server"} 801
+	vector_matching_a{l="x"} 10
+	vector_matching_a{l="y"} 20
 
 eval instant at 50m http_requests{group="canary"} unless http_requests{instance="0"}
 	http_requests{group="canary", instance="1", job="api-server"} 400
