@@ -368,26 +368,60 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.autoscaling.ingester.enabled,
-      $.row('Ingester – autoscaling (ingest storage)')
+      $.row('Ingester – autoscaling')
       .addPanel(
-        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (ReplicaTemplate)' } +
-        $.panelDescription(
-          'Replicas (ReplicaTemplate)',
+        local replicaTemplateQueries = [
           |||
-            The minimum, maximum, and current number of replicas for the ReplicaTemplate object.
-            Rollout-operator will keep ingester replicas updated based on this object.
+            max by (name) (
+              kube_customresource_replicatemplate_spec_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"}
+            )
+          ||| % {
+            namespace_matcher: $.namespaceMatcher(),
+            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
+          },
+          |||
+            max by (name) (
+              kube_customresource_replicatemplate_status_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"}
+            )
+          ||| % {
+            namespace_matcher: $.namespaceMatcher(),
+            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
+          },
+        ];
+
+        local replicaTemplateLegends = [
+          'Tmpl spec replicas',
+          'Tmpl status replicas',
+        ];
+
+        $.autoScalingActualReplicas('ingester', replicaTemplateQueries, replicaTemplateLegends) + { title: 'Replicas (HPA + ReplicaTemplate)' } +
+        $.panelDescription(
+          'Replicas (HPA + ReplicaTemplate)',
+          |||
+            The minimum, maximum, and current number of replicas reported by the HPA for the ReplicaTemplate object.
+            If available, also the spec and status replicas fields for the ReplicaTemplate object itself.
+            Rollout-operator will keep ingester replicas updated based on the ReplicaTemplate spec field, and then update the template's status field once the ingester count changes.
           |||
         )
       )
       .addPanel(
-        $.timeseriesPanel('Replicas') +
-        $.panelDescription('Replicas', 'Number of ingester replicas.') +
-        $.queryPanel(
+        $.timeseriesPanel('Replicas (Ingesters)') +
+        $.panelDescription(
+          'Replicas (Ingesters)',
+          |||
+            Number of up ingester replicas per zone.
+            Also show the number of read-only replicas per zone, or number of Inactive partitions for ingest storage.
+          |||
+        ) + $.queryPanel(
           [
             'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
+            'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester), $._config.per_job_label],  // TODO: need to not show this if using ingest storage
+            'max by (name) (cortex_partition_ring_partitions{%s,name="ingester-partitions",state="Inactive"})' % [$.namespaceMatcher()],
           ],
           [
-            '{{ %(per_job_label)s }}' % $._config.per_job_label,
+            'up ({{ %(per_job_label)s }})' % $._config.per_job_label,
+            'read-only ({{ %(per_job_label)s }})' % $._config.per_job_label,
+            'inactive partitions',
           ],
         ),
       )
