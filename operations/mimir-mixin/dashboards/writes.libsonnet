@@ -415,7 +415,7 @@ local filename = 'mimir-writes.json';
         ) + $.queryPanel(
           [
             'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
-            'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester), $._config.per_job_label],  // TODO: need to not show this if using ingest storage
+            'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester), $._config.per_job_label],
             'max by (name) (cortex_partition_ring_partitions{%s,name="ingester-partitions",state="Inactive"})' % [$.namespaceMatcher()],
           ],
           [
