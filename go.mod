@@ -320,3 +320,6 @@ replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-202410091
 // Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
 replace google.golang.org/grpc => google.golang.org/grpc v1.65.0
+
+// krajorama test client_golang 1.20.5
+replace github.com/prometheus/client_golang => github.com/prometheus/client_golang v0.0.0-20241014205644-504ad9bf5c64

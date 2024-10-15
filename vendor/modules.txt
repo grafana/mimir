@@ -964,7 +964,7 @@ github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
 github.com/prometheus/alertmanager/ui
-# github.com/prometheus/client_golang v1.20.4
+# github.com/prometheus/client_golang v1.20.4 => github.com/prometheus/client_golang v0.0.0-20241014205644-504ad9bf5c64
 ## explicit; go 1.20
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -1678,3 +1678,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240924175849-b8b7c2c74eb6
 # github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
 # google.golang.org/grpc => google.golang.org/grpc v1.65.0
+# github.com/prometheus/client_golang => github.com/prometheus/client_golang v0.0.0-20241014205644-504ad9bf5c64
