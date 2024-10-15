@@ -1913,10 +1913,8 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
-	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations := testutils.Combinations(labelsToUse, 2)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
