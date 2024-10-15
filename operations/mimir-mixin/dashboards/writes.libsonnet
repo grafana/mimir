@@ -371,19 +371,11 @@ local filename = 'mimir-writes.json';
       $.row('Ingester – autoscaling')
       .addPanel(
         local replicaTemplateQueries = [
-          |||
-            max by (name) (
-              kube_customresource_replicatemplate_spec_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"}
-            )
-          ||| % {
+          'max(kube_customresource_replicatemplate_spec_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
             namespace_matcher: $.namespaceMatcher(),
             replica_template_name: $._config.autoscaling.ingester.replica_template_name,
           },
-          |||
-            max by (name) (
-              kube_customresource_replicatemplate_status_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"}
-            )
-          ||| % {
+          'max(kube_customresource_replicatemplate_status_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
             namespace_matcher: $.namespaceMatcher(),
             replica_template_name: $._config.autoscaling.ingester.replica_template_name,
           },
@@ -416,7 +408,7 @@ local filename = 'mimir-writes.json';
           [
             'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
             'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester), $._config.per_job_label],
-            'max by (name) (cortex_partition_ring_partitions{%s,name="ingester-partitions",state="Inactive"})' % [$.namespaceMatcher()],
+            'max(cortex_partition_ring_partitions{%s,name="ingester-partitions",state="Inactive"})' % [$.namespaceMatcher()],
           ],
           [
             'up ({{ %(per_job_label)s }})' % $._config.per_job_label,
