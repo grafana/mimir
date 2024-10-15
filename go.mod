@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20241011202249-8e7752e59bab
+	github.com/grafana/dskit v0.0.0-20241013223235-619c42124e93
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
@@ -74,7 +74,7 @@ require (
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.8
-	github.com/thanos-io/objstore v0.0.0-20240913165201-fd105025a2e5
+	github.com/thanos-io/objstore v0.0.0-20241010161353-f90c89a0ef90
 	github.com/twmb/franz-go v1.17.1
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20241010233600-b66ceb79e585

@@ -119,10 +119,9 @@ load 1m
     metric1{a="a"} 0+1x100
     metric2{b="b"} 0+1x50
 
-# Unsupported by streaming engine.
-# eval instant at 90m metric1 offset 15m or metric2 offset 45m
-#     metric1{a="a"} 75
-#     metric2{b="b"} 45
+eval instant at 90m metric1 offset 15m or metric2 offset 45m
+    metric1{a="a"} 75
+    metric2{b="b"} 45
 
 clear
 

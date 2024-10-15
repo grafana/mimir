@@ -29,8 +29,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-## 5.5.0-rc.0
+## 5.5.0
 
+* [ENHANCEMENT] Upgrade Mimir and GEM to [2.14.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2140). #9591
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
@@ -40,7 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Ruler dashboard: `cortex_request_duration_seconds` metric. #8795
   * Queries dashboard: `cortex_request_duration_seconds` metric. #8800
   * Remote ruler reads dashboard: `cortex_request_duration_seconds` metric. #8801
-* [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
+* [ENHANCEMENT] Memcached: Update to Memcached 1.6.31 and memcached-exporter 0.14.4. #8557 #9305
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 * [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
 * [ENHANCEMENT] Add support for setting resource requests and limits in the Grafana Agent pods used for metamonitoring. #8715

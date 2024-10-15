@@ -42,7 +42,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} or other_metric{}":                   "binary expression with 'or'",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
@@ -1914,19 +1913,24 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
-	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations := testutils.Combinations(labelsToUse, 2)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
-		for _, op := range []string{"+", "-", "*", "/", "and", "unless"} {
+		for _, op := range []string{"+", "-", "*", "/", "and", "unless", "or"} {
 			binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for _, label := range labels[1:] {
 				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
+			}
+			expressions = append(expressions, binaryExpr)
+
+			// Same thing again, this time with grouping.
+			binaryExpr = fmt.Sprintf(`series{label="%s"}`, labels[0])
+			for _, label := range labels[1:] {
+				binaryExpr += fmt.Sprintf(` %s on (group) series{label="%s"}`, op, label)
 			}
 			expressions = append(expressions, binaryExpr)
 		}

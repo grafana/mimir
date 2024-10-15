@@ -157,6 +157,30 @@ func TestConcurrentQueries(t *testing.T) {
 			end:   startT.Add(10 * time.Minute),
 			step:  time.Minute,
 		},
+		{
+			expr:  `float{group="a"} or on (instance) float{group="b"}`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `native_histogram{group="a"} or on (instance) float{group="b"}`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `native_histogram{group="a"} or on (instance) native_histogram{group="b"}`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `{group="a"} or on (instance) float{group="b"}`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
 	}
 
 	storage := promqltest.LoadedStorage(t, data)

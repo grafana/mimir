@@ -3,6 +3,7 @@
 package azure
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -54,7 +55,7 @@ func TestNewBucketClient(t *testing.T) {
 }
 
 // fakeFactory is a test utility to act as an azure.Bucket factory, but in reality verify the input config.
-func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string) (*azure.Bucket, error) {
+func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string, http.RoundTripper) (*azure.Bucket, error) {
 	expCfg := azure.DefaultConfig
 	expCfg.StorageAccountName = cfg.StorageAccountName
 	expCfg.StorageAccountKey = cfg.StorageAccountKey.String()
@@ -66,7 +67,7 @@ func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string
 		expCfg.Endpoint = cfg.Endpoint
 	}
 
-	return func(_ log.Logger, azCfg azure.Config, _ string) (*azure.Bucket, error) {
+	return func(_ log.Logger, azCfg azure.Config, _ string, _ http.RoundTripper) (*azure.Bucket, error) {
 		t.Helper()
 
 		assert.Equal(t, expCfg, azCfg)
