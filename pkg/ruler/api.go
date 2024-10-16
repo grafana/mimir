@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -265,11 +264,6 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 
 		groups = append(groups, &grp)
 	}
-
-	// keep data.groups are in order
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].File < groups[j].File
-	})
 
 	b, err := json.Marshal(&response{
 		Status: "success",

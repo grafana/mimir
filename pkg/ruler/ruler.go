@@ -995,20 +995,21 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 		return nil
 	})
 
+	// Sort by namespace and group
+	slices.SortFunc(merged, func(a, b *GroupStateDesc) int {
+		nsCmp := strings.Compare(a.Group.Namespace, b.Group.Namespace)
+		if nsCmp != 0 {
+			return nsCmp
+		}
+
+		// If Namespaces are equal, check the group names
+		return strings.Compare(a.Group.Name, b.Group.Name)
+	})
+
 	// If the request asks for pagination, we fetch req.MaxGroups number
-	// of rule groups from each replica. We then merge and sort these and
-	// take the top k (k = MaxGroups)
+	// of rule groups from each replica. These are merged and sorted and
+	// we take the top k (k = MaxGroups)
 	if req.MaxGroups > 0 {
-		slices.SortFunc(merged, func(a, b *GroupStateDesc) int {
-			nsCmp := strings.Compare(a.Group.Namespace, b.Group.Namespace)
-			if nsCmp != 0 {
-				return nsCmp
-			}
-
-			// If Namespaces are equal, check the group names
-			return strings.Compare(a.Group.Name, b.Group.Name)
-		})
-
 		if len(merged) > int(req.MaxGroups) {
 			groupForToken := merged[req.MaxGroups]
 			return merged[:req.MaxGroups], getRuleGroupNextToken(groupForToken.Group.Namespace, groupForToken.Group.Name), err
@@ -1106,6 +1107,8 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 			return nil, errors.Wrap(err, "unable to decode rule filename")
 		}
 
+		// If a pagination token is provided, skip past groups until we reach the namespace+group that is
+		// greater than or equal to the namespace+group used to generate the token.
 		if req.NextToken != "" && !foundToken {
 			if !tokenGreaterThanOrEqual(getRuleGroupNextToken(decodedNamespace, group.Name()), req.NextToken) {
 				continue
