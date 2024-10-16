@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,26 +18,26 @@ import (
 type BlockBuilderScheduler struct {
 	services.Service
 
-	kafkaClient      *kgo.Client
-	cfg              Config
-	activePartitions ingest.GetPartitionIDsFunc
-	logger           log.Logger
-	register         prometheus.Registerer
-	metrics          schedulerMetrics
+	kafkaClient *kgo.Client
+	cfg         Config
+	ringReader  ring.PartitionRingReader
+	logger      log.Logger
+	register    prometheus.Registerer
+	metrics     schedulerMetrics
 }
 
 func New(
 	cfg Config,
-	activePartitions ingest.GetPartitionIDsFunc,
+	ringReader ring.PartitionRingReader,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		cfg:              cfg,
-		activePartitions: activePartitions,
-		logger:           logger,
-		register:         reg,
-		metrics:          newSchedulerMetrics(reg),
+		cfg:        cfg,
+		ringReader: ringReader,
+		logger:     logger,
+		register:   reg,
+		metrics:    newSchedulerMetrics(reg),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -75,13 +76,9 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 // monitorPartitions updates knowledge of all active partitions.
 func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
-	partitions, err := s.activePartitions(ctx)
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to get active partition IDs", "err", err)
-		return
-	}
-	isActive := make(map[int32]struct{}, len(partitions))
-	for _, p := range partitions {
+	ap := s.ringReader.PartitionRing().ActivePartitionIDs()
+	isActive := make(map[int32]struct{}, len(ap))
+	for _, p := range ap {
 		isActive[p] = struct{}{}
 	}
 
