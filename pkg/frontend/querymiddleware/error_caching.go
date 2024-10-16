@@ -5,7 +5,6 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,7 +25,7 @@ const (
 	reasonNotCacheableError = "not-cacheable-api-error"
 )
 
-func newErrorCachingMiddleware(cache cache.Cache, limits Limits, shouldCacheReq shouldCacheFn, logger log.Logger, reg prometheus.Registerer) MetricsQueryMiddleware {
+func newErrorCachingMiddleware(cache cache.Cache, limits Limits, shouldCacheReq shouldCacheFn, keyGen CacheKeyGenerator, logger log.Logger, reg prometheus.Registerer) MetricsQueryMiddleware {
 	cacheLoadAttempted := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_frontend_query_error_cache_requests_total",
 		Help: "Number of requests that check the results cache for an error.",
@@ -50,6 +49,7 @@ func newErrorCachingMiddleware(cache cache.Cache, limits Limits, shouldCacheReq 
 			cache:               cache,
 			limits:              limits,
 			shouldCacheReq:      shouldCacheReq,
+			keyGen:              keyGen,
 			logger:              logger,
 			cacheLoadAttempted:  cacheLoadAttempted,
 			cacheLoadHits:       cacheLoadHits,
@@ -64,6 +64,7 @@ type errorCachingHandler struct {
 	cache          cache.Cache
 	limits         Limits
 	shouldCacheReq shouldCacheFn
+	keyGen         CacheKeyGenerator
 	logger         log.Logger
 
 	cacheLoadAttempted  prometheus.Counter
@@ -85,7 +86,7 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 	}
 
 	e.cacheLoadAttempted.Inc()
-	key := errorCachingKey(tenant.JoinTenantIDs(tenantIDs), request)
+	key := e.keyGen.QueryRequestError(ctx, tenant.JoinTenantIDs(tenantIDs), request)
 	hashedKey := cacheHashKey(key)
 
 	if cachedErr := e.loadErrorFromCache(ctx, key, hashedKey, spanLog); cachedErr != nil {
@@ -175,10 +176,4 @@ func (e *errorCachingHandler) isCacheable(apiErr *apierror.APIError) (bool, stri
 	}
 
 	return true, ""
-}
-
-// errorCachingKey returns the key for caching and error query response. Standalone function
-// to allow for easier testing.
-func errorCachingKey(tenantID string, r MetricsQueryRequest) string {
-	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep())
 }
