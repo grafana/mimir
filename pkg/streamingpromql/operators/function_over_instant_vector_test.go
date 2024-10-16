@@ -38,7 +38,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}

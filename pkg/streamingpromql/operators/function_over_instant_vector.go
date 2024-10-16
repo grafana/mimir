@@ -21,9 +21,16 @@ type FunctionOverInstantVector struct {
 	// At the moment no instant-vector promql function takes more than one instant-vector
 	// as an argument. We can assume this will always be the Inner operator and therefore
 	// what we use for the SeriesMetadata.
-	Inner                    types.InstantVectorOperator
+	Inner types.InstantVectorOperator
+	// Any scalar arguments will be read once and passed to SeriesMetadata.
+	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	Func                     functions.FunctionOverInstantVector
+
+	// scalarArgsData stores the processed ScalarArgs during SeriesMetadata.
+	// The order of scalarArgsData matches the order of ScalarArgs.
+	// These are returned the pool at Close().
+	scalarArgsData []types.ScalarData
 
 	expressionPosition posrange.PositionRange
 }
@@ -32,12 +39,14 @@ var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 
 func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
+	scalarArgs []types.ScalarOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	f functions.FunctionOverInstantVector,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{
 		Inner:                    inner,
+		ScalarArgs:               scalarArgs,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Func:                     f,
 
@@ -49,7 +58,24 @@ func (m *FunctionOverInstantVector) ExpressionPosition() posrange.PositionRange 
 	return m.expressionPosition
 }
 
+func (m *FunctionOverInstantVector) processScalarArgs(ctx context.Context) error {
+	for _, so := range m.ScalarArgs {
+		sd, err := so.GetValues(ctx)
+		if err != nil {
+			return err
+		}
+		m.scalarArgsData = append(m.scalarArgsData, sd)
+	}
+	return nil
+}
+
 func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	// Pre-process any Scalar agruments
+	err := m.processScalarArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -68,9 +94,12 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return m.Func.SeriesDataFunc(series, m.MemoryConsumptionTracker)
+	return m.Func.SeriesDataFunc(series, m.scalarArgsData, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
+	for _, sd := range m.scalarArgsData {
+		types.FPointSlicePool.Put(sd.Samples, m.MemoryConsumptionTracker)
+	}
 }

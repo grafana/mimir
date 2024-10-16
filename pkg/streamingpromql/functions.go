@@ -49,7 +49,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
 
 		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
@@ -183,7 +183,7 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 			},
 		}
 
-		o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+		o := operators.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
 
 		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 	}
@@ -286,6 +286,6 @@ func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 		SeriesMetadataFunction: functions.DropSeriesName,
 	}
 
-	o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+	o := operators.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }

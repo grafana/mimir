@@ -52,7 +52,7 @@ var Sgn = FloatTransformationDropHistogramsFunc(func(f float64) float64 {
 	return f
 })
 
-var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	for i := range seriesData.Floats {
 		seriesData.Floats[i].F = -seriesData.Floats[i].F
 	}

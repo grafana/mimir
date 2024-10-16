@@ -26,11 +26,11 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
-type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
+type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
 func floatTransformationFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
-	return func(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = transform(seriesData.Floats[i].F)
 		}
@@ -40,16 +40,16 @@ func floatTransformationFunc(transform func(f float64) float64) InstantVectorSer
 
 func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
 	ft := floatTransformationFunc(transform)
-	return func(seriesData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		// Functions that do not explicitly mention native histograms in their documentation will ignore histogram samples.
 		// https://prometheus.io/docs/prometheus/latest/querying/functions
 		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
 		seriesData.Histograms = nil
-		return ft(seriesData, memoryConsumptionTracker)
+		return ft(seriesData, nil, memoryConsumptionTracker)
 	}
 }
 
-func PassthroughData(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	return seriesData, nil
 }
 
