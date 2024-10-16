@@ -42,7 +42,7 @@
   * `-memberlist.max-concurrent-writes`
   * `-memberlist.acquire-writer-timeout`
 * [ENHANCEMENT] memberlist: Notifications can now be processed once per interval specified by `-memberlist.notify-interval` to reduce notify storm CPU activity in large clusters. #9594
-* [ENHANCEMENT] Return server-side total bytes processed statistics as a header through query frontend. #9645 
+* [ENHANCEMENT] Return server-side total bytes processed statistics as a header through query frontend. #9645
 * [BUGFIX] Fix issue where functions such as `rate()` over native histograms could return incorrect values if a float stale marker was present in the selected range. #9508
 * [BUGFIX] Fix issue where negation of native histograms (eg. `-some_native_histogram_series`) did nothing. #9508
 * [BUGFIX] Fix issue where `metric might not be a counter, name does not end in _total/_sum/_count/_bucket` annotation would be emitted even if `rate` or `increase` did not have enough samples to compute a result. #9508
