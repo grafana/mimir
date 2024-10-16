@@ -39,11 +39,10 @@ import (
 
 const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
-	StatusClientClosedRequest  = 499
-	ServiceTimingHeaderName    = "Server-Timing"
-	cacheControlHeader         = "Cache-Control"
-	cacheControlLogField       = "header_cache_control"
-	ServiceTotalBytesProcessed = "X-Total-Bytes-Processed"
+	StatusClientClosedRequest = 499
+	ServiceTimingHeaderName   = "Server-Timing"
+	cacheControlHeader        = "Cache-Control"
+	cacheControlLogField      = "header_cache_control"
 )
 
 var (
@@ -247,7 +246,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if f.cfg.QueryStatsEnabled {
 		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
-		writeTotalBytesProcessedHeader(hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -486,20 +484,18 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 		parts := make([]string, 0)
 		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 		parts = append(parts, statsValue("response_time", queryResponseTime))
+		parts = append(parts, statsBytesProcessedValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
 		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
-	}
-}
-
-func writeTotalBytesProcessedHeader(headers http.Header, stats *querier_stats.Stats) {
-	if stats != nil {
-		totalBytes := stats.LoadFetchedChunkBytes() + stats.LoadFetchedIndexBytes()
-		headers.Set(ServiceTotalBytesProcessed, strconv.FormatUint(totalBytes, 10))
 	}
 }
 
 func statsValue(name string, d time.Duration) string {
 	durationInMs := strconv.FormatFloat(float64(d)/float64(time.Millisecond), 'f', -1, 64)
 	return name + ";dur=" + durationInMs
+}
+
+func statsBytesProcessedValue(name string, value uint64) string {
+	return name + "=" + strconv.FormatUint(value, 10)
 }
 
 func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {

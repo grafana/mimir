@@ -286,7 +286,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedReadConsistency: "",
 		},
 		{
-			name: "handler with stats enabled, check ServiceTotalBytesProcessed header",
+			name: "handler with stats enabled, check ServiceTimingHeader",
 			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
 			request: func() *http.Request {
 				req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader("query=some_metric&time=42"))
@@ -303,7 +303,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
-				assert.Equal(t, "0", headers.Get(ServiceTotalBytesProcessed))
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed=0")
 			},
 		},
 	} {
