@@ -2166,6 +2166,11 @@ local:
   [directory: <string> | default = ""]
 
 cache:
+  # (experimental) Enabling caching of rule group contents if a cache backend is
+  # configured.
+  # CLI flag: -ruler-storage.cache.rule-group-enabled
+  [rule_group_enabled: <boolean> | default = false]
+
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend

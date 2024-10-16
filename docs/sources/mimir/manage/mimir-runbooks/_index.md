@@ -936,7 +936,7 @@ How to **investigate**:
 
 - Check the number of endpoints matching the `gossip-ring` service:
   ```
-  kubectl --namespace <namespace> get endpoints gossip-ring
+  kubectl --namespace <namespace> get endpoints gossip-ring -ojson | jq '.subsets[].addresses | length'
   ```
 - If the number of endpoints is 1000 then it means you reached the Kubernetes limit, the endpoints get truncated and
   you could be hit by [this bug](https://github.com/kubernetes/kubernetes/issues/127370). Having more than 1000 pods

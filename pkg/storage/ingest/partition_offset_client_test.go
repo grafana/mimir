@@ -20,7 +20,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -410,9 +409,9 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 		require.NoError(t, err)
 		assert.Empty(t, offsets)
 
-		test.AssertGatherAndCompare(t, reg, "",
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(""),
 			"cortex_ingest_storage_reader_last_produced_offset_requests_total",
-			"cortex_ingest_storage_reader_last_produced_offset_failures_total")
+			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})
 
 	t.Run("should honor context deadline and not fail other in-flight requests issued while the canceled one was still running", func(t *testing.T) {

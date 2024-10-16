@@ -15,7 +15,7 @@
       - "-server.http.address=127.0.0.1:9091"
     "image": "grafana/agent:v0.37.3"
     "ports":
-      - "9091:9091"
+      - "9791:9091"
     "volumes":
       - "./config:/etc/agent-config"
   "memcached":
@@ -35,7 +35,7 @@
     "hostname": "mimir-backend-1"
     "image": "mimir"
     "ports":
-      - "8006:8080"
+      - "8706:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -54,7 +54,7 @@
     "hostname": "mimir-backend-2"
     "image": "mimir"
     "ports":
-      - "8007:8080"
+      - "8707:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -73,7 +73,7 @@
     "hostname": "mimir-read-1"
     "image": "mimir"
     "ports":
-      - "8004:8080"
+      - "8704:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -92,7 +92,7 @@
     "hostname": "mimir-read-2"
     "image": "mimir"
     "ports":
-      - "8005:8080"
+      - "8705:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -111,7 +111,7 @@
     "hostname": "mimir-write-1"
     "image": "mimir"
     "ports":
-      - "8001:8080"
+      - "8701:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -131,7 +131,7 @@
     "hostname": "mimir-write-2"
     "image": "mimir"
     "ports":
-      - "8002:8080"
+      - "8702:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -151,7 +151,7 @@
     "hostname": "mimir-write-3"
     "image": "mimir"
     "ports":
-      - "8003:8080"
+      - "8703:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -160,15 +160,15 @@
     "command":
       - "server"
       - "--console-address"
-      - ":9001"
+      - ":9701"
       - "/data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
       - "MINIO_ROOT_PASSWORD=supersecret"
     "image": "minio/minio"
     "ports":
-      - "9000:9000"
-      - "9001:9001"
+      - "9700:9700"
+      - "9701:9701"
     "volumes":
       - ".data-minio:/data:delegated"
   "nginx":
@@ -182,7 +182,7 @@
     "hostname": "nginx"
     "image": "nginxinc/nginx-unprivileged:1.22-alpine"
     "ports":
-      - "8080:8080"
+      - "8780:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
   "prometheus":
@@ -192,6 +192,6 @@
       - "--enable-feature=native-histograms"
     "image": "prom/prometheus:v2.53.0"
     "ports":
-      - "9090:9090"
+      - "9790:9090"
     "volumes":
       - "./config:/etc/prometheus"
