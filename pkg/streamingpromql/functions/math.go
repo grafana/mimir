@@ -63,3 +63,23 @@ var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVec
 
 	return seriesData, nil
 }
+
+var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	outputIdx := 0
+	for step, data := range seriesData.Floats {
+		minVal := scalarArgsData[0].Samples[step].F
+		maxVal := scalarArgsData[1].Samples[step].F
+		if maxVal < minVal {
+			// Drop this point as there is no valid answer
+			continue
+		}
+		// We reuse the existing FPoint slice in place
+		seriesData.Floats[outputIdx].F = math.Max(minVal, math.Min(maxVal, data.F))
+		outputIdx++
+	}
+	seriesData.Floats = seriesData.Floats[:outputIdx]
+	// Histograms are dropped from clamp
+	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+	seriesData.Histograms = nil
+	return seriesData, nil
+}

@@ -148,7 +148,7 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 		inner, ok := args[0].(types.InstantVectorOperator)
 		if !ok {
 			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected a range vector for 1st argument for label_replace, got %T", args[0])
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for label_replace, got %T", args[0])
 		}
 
 		dstLabel, ok := args[1].(types.StringOperator)
@@ -189,6 +189,40 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 	}
 }
 
+func ClampFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+		if len(args) != 3 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 3 argument for clamp, got %v", len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for clamp, got %T", args[0])
+		}
+
+		min, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for clamp, got %T", args[1])
+		}
+
+		max, ok := args[2].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 3rd argument for clamp, got %T", args[2])
+		}
+
+		f := functions.FunctionOverInstantVector{
+			SeriesDataFunc:         functions.Clamp,
+			SeriesMetadataFunction: functions.DropSeriesName,
+		}
+
+		return operators.NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, memoryConsumptionTracker, f, expressionPosition), nil
+	}
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
@@ -202,6 +236,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
 	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
 	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"clamp":             ClampFunctionOperatorFactory(),
 	"cos":               InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":   FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
