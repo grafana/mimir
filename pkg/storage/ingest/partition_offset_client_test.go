@@ -381,7 +381,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
 			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed"} 0
-		
+
 			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
 			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed"} 4
