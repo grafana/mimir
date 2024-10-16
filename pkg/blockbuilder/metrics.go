@@ -44,12 +44,18 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 }
 
 type tsdbBuilderMetrics struct {
+	processSamplesDiscarded  *prometheus.CounterVec
 	compactAndUploadDuration *prometheus.HistogramVec
 	compactAndUploadFailed   *prometheus.CounterVec
 }
 
 func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 	var m tsdbBuilderMetrics
+
+	m.processSamplesDiscarded = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_tsdb_process_samples_discarded_total",
+		Help: "The total number of samples that were discarded while processing records in one partition.",
+	}, []string{"partition"})
 
 	m.compactAndUploadDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                        "cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds",
