@@ -106,7 +106,7 @@ type Distributor struct {
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
-	costAttributionMng     *costattribution.Manager
+	costAttributionMgr     *costattribution.Manager
 	// For handling HA replicas.
 	HATracker *haTracker
 
@@ -307,7 +307,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMng *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -342,7 +342,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
 		HATracker:             haTracker,
-		costAttributionMng:    costAttributionMng,
+		costAttributionMgr:    costAttributionMgr,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -856,6 +856,10 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 			if errors.As(err, &tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+				// here if it is a technical error, we don't want to increment the discarded samples counter
+				if d.costAttributionMgr != nil {
+					d.costAttributionMgr.IncrementDiscardedSamples(userID, mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), time.Now())
+				}
 			}
 
 			return err
@@ -1059,6 +1063,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
+				// if the validation failed, we need to increment the discarded samples metric
+				if d.costAttributionMgr != nil {
+					d.costAttributionMgr.IncrementDiscardedSamples(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), now)
+				}
+
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
@@ -1109,6 +1118,15 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
+			if d.costAttributionMgr != nil {
+				skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
+				for tsIdx, ts := range req.Timeseries {
+					if validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS, maxExemplarTS); validationErr != nil {
+						continue
+					}
+					d.costAttributionMgr.IncrementDiscardedSamples(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), now)
+				}
+			}
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
@@ -1668,34 +1686,16 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	now := mtime.Now()
 	var receivedSamples, receivedExemplars, receivedMetadata int
-	costattributionLimit := 0
-	caEnabled := d.costAttributionMng != nil && d.costAttributionMng.EnabledForUser(userID)
-	caLabel := ""
-	if caEnabled {
-		costattributionLimit = d.costAttributionMng.GetUserAttributionLimit(userID)
-		caLabel = d.costAttributionMng.GetUserAttributionLabel(userID)
-	}
-	costAttribution := make(map[string]int, costattributionLimit)
 
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
-		if caEnabled {
-			isKeyOutdated, attribution := d.costAttributionMng.UpdateAttributionTimestamp(userID, caLabel, mimirpb.FromLabelAdaptersToLabels(ts.Labels), now)
-			if isKeyOutdated {
-				// If the key is outdated, we need to reset cost attribution cache and update cost attribution label
-				costAttribution = make(map[string]int, costattributionLimit)
-				caLabel = d.costAttributionMng.GetUserAttributionLabel(userID)
-			}
-			costAttribution[attribution]++
+		if d.costAttributionMgr != nil {
+			d.costAttributionMgr.IncrementReceivedSamples(userID, mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(receivedSamples), now)
 		}
 	}
 	receivedMetadata = len(req.Metadata)
-	if caEnabled {
-		for value, count := range costAttribution {
-			d.costAttributionMng.IncrementReceivedSamples(userID, caLabel, value, float64(count))
-		}
-	}
+
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))

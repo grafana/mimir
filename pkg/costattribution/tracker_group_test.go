@@ -64,7 +64,7 @@ func TestUpdateAttributionTimestampForUser(t *testing.T) {
 	})
 }
 
-func TestGetUserAttributionLabel(t *testing.T) {
+func TestUserAttributionLabel(t *testing.T) {
 	cooldownTimeout := 10 * time.Second
 	t.Run("Should return the cost attribution label for the user", func(t *testing.T) {
 		// Create mock limits

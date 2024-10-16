@@ -50,7 +50,7 @@ type ActiveSeries struct {
 	matchers           *asmodel.Matchers
 	lastMatchersUpdate time.Time
 
-	costAttributionMng *costattribution.Manager
+	costAttributionMgr *costattribution.Manager
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
@@ -68,7 +68,7 @@ type seriesStripe struct {
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs                        atomic.Int64
-	costAttributionMng                   *costattribution.Manager
+	costAttributionMgr                   *costattribution.Manager
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
@@ -98,16 +98,16 @@ func NewActiveSeries(
 	asm *asmodel.Matchers,
 	timeout time.Duration,
 	userID string,
-	costAttributionMng *costattribution.Manager,
+	costAttributionMgr *costattribution.Manager,
 ) *ActiveSeries {
 	c := &ActiveSeries{
 		matchers: asm, timeout: timeout, userID: userID,
-		costAttributionMng: costAttributionMng,
+		costAttributionMgr: costAttributionMgr,
 	}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, userID, costAttributionMng)
+		c.stripes[i].reinitialize(asm, &c.deleted, userID, costAttributionMgr)
 	}
 
 	return c
@@ -124,7 +124,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	defer c.matchersMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, c.userID, c.costAttributionMng)
+		c.stripes[i].reinitialize(asm, &c.deleted, c.userID, c.costAttributionMgr)
 	}
 	c.matchers = asm
 	c.lastMatchersUpdate = now
@@ -232,7 +232,7 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 }
 
 func (c *ActiveSeries) ActiveByAttributionValue(calb string) map[string]uint32 {
-	total := make(map[string]uint32, c.costAttributionMng.GetUserAttributionLimit(c.userID))
+	total := make(map[string]uint32, c.costAttributionMgr.UserAttributionLimit(c.userID))
 	for s := 0; s < numStripes; s++ {
 		c.stripes[s].mu.RLock()
 		if c.stripes[s].caLabel == calb {
@@ -430,12 +430,12 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 
 	// here if we have a cost attribution label, we can split the serie count based on the value of the label
 	// we also set the reference to the value of the label in the entry, so when remove, we can decrease the counter accordingly
-	if s.costAttributionMng != nil && s.costAttributionMng.EnabledForUser(s.userID) {
-		isOutDated, attributionValue := s.costAttributionMng.UpdateAttributionTimestamp(s.userID, s.caLabel, series, time.Unix(0, nowNanos))
+	if s.costAttributionMgr != nil && s.costAttributionMgr.EnabledForUser(s.userID) {
+		isOutDated, attributionValue := s.costAttributionMgr.UpdateAttributionTimestamp(s.userID, s.caLabel, series, time.Unix(0, nowNanos))
 		if isOutDated {
 			// if the label is outdated, we need to remove the reference to the old value
 			s.costAttributionValues = map[string]uint32{}
-			s.caLabel = s.costAttributionMng.GetUserAttributionLabel(s.userID)
+			s.caLabel = s.costAttributionMgr.UserAttributionLabel(s.userID)
 		}
 		s.costAttributionValues[attributionValue]++
 		e.calabel = s.caLabel
@@ -469,7 +469,7 @@ func (s *seriesStripe) reinitialize(
 	asm *asmodel.Matchers,
 	deleted *deletedSeries,
 	userID string,
-	costAttributionMng *costattribution.Manager,
+	costAttributionMgr *costattribution.Manager,
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -485,7 +485,7 @@ func (s *seriesStripe) reinitialize(
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
-	s.costAttributionMng = costAttributionMng
+	s.costAttributionMgr = costAttributionMgr
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time) {
@@ -514,7 +514,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 				s.deleted.purge(ref)
 			}
 			delete(s.refs, ref)
-			// here need to find what is deleted and decrement counters
+			// TODO: here need to find what is deleted and decrement counters
 
 			continue
 		}

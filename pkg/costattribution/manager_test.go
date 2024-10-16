@@ -51,21 +51,21 @@ func Test_EnabledForUser(t *testing.T) {
 	assert.False(t, manager.EnabledForUser("user4"), "Expected cost attribution to be disabled for user4")
 }
 
-func Test_GetUserAttributionLabel(t *testing.T) {
+func Test_UserAttributionLabel(t *testing.T) {
 	manager := newTestManager()
-	assert.Equal(t, "team", manager.GetUserAttributionLabel("user1"))
-	assert.Equal(t, "", manager.GetUserAttributionLabel("user2"))
-	assert.Equal(t, "department", manager.GetUserAttributionLabel("user3"))
+	assert.Equal(t, "team", manager.UserAttributionLabel("user1"))
+	assert.Equal(t, "", manager.UserAttributionLabel("user2"))
+	assert.Equal(t, "department", manager.UserAttributionLabel("user3"))
 	assert.Equal(t, 2, len(manager.attributionTracker.trackersByUserID))
 	assert.Equal(t, "team", manager.attributionTracker.trackersByUserID["user1"].trackedLabel)
 	assert.Equal(t, "department", manager.attributionTracker.trackersByUserID["user3"].trackedLabel)
 }
 
-func Test_GetUserAttributionLimit(t *testing.T) {
+func Test_UserAttributionLimit(t *testing.T) {
 	manager := newTestManager()
-	assert.Equal(t, 5, manager.GetUserAttributionLimit("user1"))
-	assert.Equal(t, 0, manager.GetUserAttributionLimit("user2"))
-	assert.Equal(t, 0, manager.GetUserAttributionLimit("user4"))
+	assert.Equal(t, 5, manager.UserAttributionLimit("user1"))
+	assert.Equal(t, 0, manager.UserAttributionLimit("user2"))
+	assert.Equal(t, 0, manager.UserAttributionLimit("user4"))
 }
 
 func Test_UpdateAttributionTimestamp(t *testing.T) {

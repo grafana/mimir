@@ -46,10 +46,10 @@ func (m *Manager) EnabledForUser(userID string) bool {
 	return m.attributionTracker.limits.CostAttributionLabel(userID) != ""
 }
 
-// GetUserAttributionLabel returns the cost attribution label for the user, first it will try to get the label from the cache,
+// UserAttributionLabel returns the cost attribution label for the user, first it will try to get the label from the cache,
 // If not found, it will get the label from the config
 // If the user is not enabled for cost attribution, it would clean the cache and return empty string
-func (m *Manager) GetUserAttributionLabel(userID string) string {
+func (m *Manager) UserAttributionLabel(userID string) string {
 	if m.EnabledForUser(userID) {
 		return m.attributionTracker.getUserAttributionLabelFromCache(userID)
 	}
@@ -57,10 +57,10 @@ func (m *Manager) GetUserAttributionLabel(userID string) string {
 	return ""
 }
 
-// GetUserAttributionLimit returns the cost attribution limit for the user, first it will try to get the limit from the cache,
+// UserAttributionLimit returns the cost attribution limit for the user, first it will try to get the limit from the cache,
 // If not found, it will get the limit from the config
 // If the user is not enabled for cost attribution, it would clean the cache and return 0
-func (m *Manager) GetUserAttributionLimit(userID string) int {
+func (m *Manager) UserAttributionLimit(userID string) int {
 	if m.EnabledForUser(userID) {
 		return m.attributionTracker.getUserAttributionLimitFromCache(userID)
 	}
@@ -96,7 +96,7 @@ func (m *Manager) UpdateAttributionTimestamp(user string, calb string, lbs label
 // SetActiveSeries adjust the input attribution and sets the active series gauge for the given user and attribution
 func (m *Manager) SetActiveSeries(userID, calb, attribution string, value float64) {
 	// if the input label is outdated, we skip the update
-	if calb != m.GetUserAttributionLabel(userID) {
+	if calb != m.UserAttributionLabel(userID) {
 		return
 	}
 	attribution = m.adjustUserAttribution(userID, attribution)
@@ -109,13 +109,13 @@ func (m *Manager) SetActiveSeries(userID, calb, attribution string, value float6
 }
 
 // IncrementDiscardedSamples increments the discarded samples counter for a given user and attribution
-func (m *Manager) IncrementDiscardedSamples(userID, calb, attribution string, value float64) {
-	// if the input label is outdated, we skip the update
-	if calb != m.GetUserAttributionLabel(userID) {
+func (m *Manager) IncrementDiscardedSamples(userID string, lbs labels.Labels, value float64, now time.Time) {
+	if !m.EnabledForUser(userID) {
 		return
 	}
+	calb := m.UserAttributionLabel(userID)
+	_, attribution := m.UpdateAttributionTimestamp(userID, calb, lbs, now)
 
-	attribution = m.adjustUserAttribution(userID, attribution)
 	m.attributionTracker.mu.RLock()
 	defer m.attributionTracker.mu.RUnlock()
 	if tracker, exists := m.attributionTracker.trackersByUserID[userID]; exists {
@@ -124,12 +124,12 @@ func (m *Manager) IncrementDiscardedSamples(userID, calb, attribution string, va
 }
 
 // IncrementReceivedSamples increments the received samples counter for a given user and attribution
-func (m *Manager) IncrementReceivedSamples(userID, calb, attribution string, value float64) {
-	// if the input label is outdated, we skip the update
-	if calb != m.GetUserAttributionLabel(userID) {
+func (m *Manager) IncrementReceivedSamples(userID string, lbs labels.Labels, value float64, now time.Time) {
+	if !m.EnabledForUser(userID) {
 		return
 	}
-	attribution = m.adjustUserAttribution(userID, attribution)
+	calb := m.UserAttributionLabel(userID)
+	_, attribution := m.UpdateAttributionTimestamp(userID, calb, lbs, now)
 	m.attributionTracker.mu.RLock()
 	defer m.attributionTracker.mu.RUnlock()
 	if tracker, exists := m.attributionTracker.trackersByUserID[userID]; exists {

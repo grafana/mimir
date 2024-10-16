@@ -311,7 +311,7 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
-	costAttributionMng *costattribution.Manager
+	costAttributionMgr *costattribution.Manager
 
 	tsdbMetrics *tsdbMetrics
 
@@ -381,7 +381,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMng *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -389,7 +389,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-	i.costAttributionMng = costAttributionMng
+	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
@@ -790,10 +790,10 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				if i.isCostAttributionEnabledForUser(userID) {
-					calb := i.costAttributionMng.GetUserAttributionLabel(userID)
+					calb := i.costAttributionMgr.UserAttributionLabel(userID)
 					labelAttributions := userDB.activeSeries.ActiveByAttributionValue(calb)
 					for value, count := range labelAttributions {
-						i.costAttributionMng.SetActiveSeries(userID, calb, value, float64(count))
+						i.costAttributionMgr.SetActiveSeries(userID, calb, value, float64(count))
 					}
 				}
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
@@ -1286,13 +1286,13 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 	if i.isCostAttributionEnabledForUser(userID) {
 		for value, count := range stats.failedSamplesAttribution {
-			i.costAttributionMng.IncrementDiscardedSamples(userID, stats.attributionLabel, value, float64(count))
+			i.costAttributionMgr.IncrementDiscardedSamples(userID, stats.attributionLabel, value, float64(count))
 		}
 	}
 }
 
 func (i *Ingester) isCostAttributionEnabledForUser(userID string) bool {
-	return i.costAttributionMng != nil && i.costAttributionMng.EnabledForUser(userID)
+	return i.costAttributionMgr != nil && i.costAttributionMgr.EnabledForUser(userID)
 }
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
@@ -1417,10 +1417,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		var caValue string
 		// when cost attribution label is set
 		if caEnabled {
-			isOutDated, caValue = i.costAttributionMng.UpdateAttributionTimestamp(userID, stats.attributionLabel, mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend)
+			isOutDated, caValue = i.costAttributionMgr.UpdateAttributionTimestamp(userID, stats.attributionLabel, mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend)
 			// if the cost attribution label is outdated, we need to reset the attribution counter
 			if isOutDated {
-				stats.attributionLabel = i.costAttributionMng.GetUserAttributionLabel(userID)
+				stats.attributionLabel = i.costAttributionMgr.UserAttributionLabel(userID)
 				stats.failedSamplesAttribution = make(map[string]int, i.limits.MaxCostAttributionPerUser(userID))
 			}
 		}
@@ -2679,7 +2679,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			asmodel.NewMatchers(matchersConfig),
 			i.cfg.ActiveSeriesMetrics.IdleTimeout,
 			userID,
-			i.costAttributionMng,
+			i.costAttributionMgr,
 		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
