@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #9639
+
 ### Grafana Mimir
 
 * [CHANGE] Alertmanager: the following metrics are not exported for a given `user` when the metric value is zero: #9359
