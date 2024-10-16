@@ -39,10 +39,11 @@ import (
 
 const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
-	StatusClientClosedRequest = 499
-	ServiceTimingHeaderName   = "Server-Timing"
-	cacheControlHeader        = "Cache-Control"
-	cacheControlLogField      = "header_cache_control"
+	StatusClientClosedRequest  = 499
+	ServiceTimingHeaderName    = "Server-Timing"
+	cacheControlHeader         = "Cache-Control"
+	cacheControlLogField       = "header_cache_control"
+	ServiceTotalBytesProcessed = "X-Total-Bytes-Processed"
 )
 
 var (
@@ -246,6 +247,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if f.cfg.QueryStatsEnabled {
 		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
+		writeTotalBytesProcessedHeader(hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -485,6 +487,13 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 		parts = append(parts, statsValue("response_time", queryResponseTime))
 		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+	}
+}
+
+func writeTotalBytesProcessedHeader(headers http.Header, stats *querier_stats.Stats) {
+	if stats != nil {
+		totalBytes := stats.LoadFetchedChunkBytes() + stats.LoadFetchedIndexBytes()
+		headers.Set(ServiceTotalBytesProcessed, strconv.FormatUint(totalBytes, 10))
 	}
 }
 
