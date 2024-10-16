@@ -184,6 +184,9 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "abs(a_X)",
 		},
 		{
+			Expr: "clamp(a_X, 100, 1000)",
+		},
+		{
 			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
 		},
 		//{

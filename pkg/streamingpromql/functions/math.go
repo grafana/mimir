@@ -66,15 +66,18 @@ var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVec
 
 var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	outputIdx := 0
+	minArg := scalarArgsData[0]
+	maxArg := scalarArgsData[1]
 	for step, data := range seriesData.Floats {
-		minVal := scalarArgsData[0].Samples[step].F
-		maxVal := scalarArgsData[1].Samples[step].F
+		minVal := minArg.Samples[step].F
+		maxVal := maxArg.Samples[step].F
 		if maxVal < minVal {
 			// Drop this point as there is no valid answer
 			continue
 		}
 		// We reuse the existing FPoint slice in place
-		seriesData.Floats[outputIdx].F = math.Max(minVal, math.Min(maxVal, data.F))
+		seriesData.Floats[outputIdx].T = data.T
+		seriesData.Floats[outputIdx].F = max(minVal, min(maxVal, data.F))
 		outputIdx++
 	}
 	seriesData.Floats = seriesData.Floats[:outputIdx]

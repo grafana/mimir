@@ -89,8 +89,8 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 		seriesDataFuncCalledTimes++
 		// Verify that the scalar arguments are correctly passed and in the order we expect
 		require.Equal(t, 2, len(scalarArgs))
-		require.Equal(t, 3.0, scalarArgs[0].Samples[0].F)
-		require.Equal(t, 4.0, scalarArgs[1].Samples[0].F)
+		require.Equal(t, types.ScalarData{Samples: []promql.FPoint{{T: 0, F: 3}}}, scalarArgs[0])
+		require.Equal(t, types.ScalarData{Samples: []promql.FPoint{{T: 60, F: 4}}}, scalarArgs[1])
 		return types.InstantVectorSeriesData{}, nil
 	}
 

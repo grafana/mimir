@@ -22,7 +22,7 @@ type FunctionOverInstantVector struct {
 	// as an argument. We can assume this will always be the Inner operator and therefore
 	// what we use for the SeriesMetadata.
 	Inner types.InstantVectorOperator
-	// Any scalar arguments will be read once and passed to SeriesMetadata.
+	// Any scalar arguments will be read once and passed to Func.SeriesDataFunc.
 	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	Func                     functions.FunctionOverInstantVector
@@ -59,6 +59,11 @@ func (m *FunctionOverInstantVector) ExpressionPosition() posrange.PositionRange 
 }
 
 func (m *FunctionOverInstantVector) processScalarArgs(ctx context.Context) error {
+	if len(m.ScalarArgs) == 0 {
+		return nil
+	}
+
+	m.scalarArgsData = make([]types.ScalarData, 0, len(m.ScalarArgs))
 	for _, so := range m.ScalarArgs {
 		sd, err := so.GetValues(ctx)
 		if err != nil {
@@ -66,6 +71,7 @@ func (m *FunctionOverInstantVector) processScalarArgs(ctx context.Context) error
 		}
 		m.scalarArgsData = append(m.scalarArgsData, sd)
 	}
+
 	return nil
 }
 
