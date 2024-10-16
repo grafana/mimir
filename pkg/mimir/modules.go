@@ -1096,12 +1096,12 @@ func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 }
 
 func (t *Mimir) initBlockBuilderScheduler() (_ services.Service, err error) {
-	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
+	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.BlockBuilderScheduler, err = blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
-	return t.BlockBuilder, nil
+	return t.BlockBuilderScheduler, nil
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
