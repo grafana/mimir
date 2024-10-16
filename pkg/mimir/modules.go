@@ -1099,12 +1099,12 @@ func (t *Mimir) initBlockBuilderScheduler() (_ services.Service, err error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
 
 	// The scheduler will need to periodically learn which partitions are active.
-	getPartitionIDs := func(_ context.Context) ([]int32, error) {
-		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+	activePartitions := func(_ context.Context) ([]int32, error) {
+		return t.IngesterPartitionRingWatcher.PartitionRing().ActivePartitionIDs(), nil
 	}
 
 	t.BlockBuilderScheduler, err = blockbuilderscheduler.New(
-		t.Cfg.BlockBuilderScheduler, getPartitionIDs, util_log.Logger, t.Registerer)
+		t.Cfg.BlockBuilderScheduler, activePartitions, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
