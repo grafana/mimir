@@ -13,7 +13,7 @@
   * `cortex_alertmanager_state_replication_failed_total`
   * `cortex_alertmanager_alerts`
   * `cortex_alertmanager_silences`
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #9367 #9368 #9398 #9399 #9403 #9417 #9418 #9419 #9420 #9482 #9504 #9505 #9507 #9518 #9531 #9532 #9533 #9553 #9558 #9588 #9589
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #9367 #9368 #9398 #9399 #9403 #9417 #9418 #9419 #9420 #9482 #9504 #9505 #9507 #9518 #9531 #9532 #9533 #9553 #9558 #9588 #9589 #9639
 * [FEATURE] Query-frontend: added experimental configuration options `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` to allow non-transient responses to be cached. When set to `true` error responses from hitting limits or bad data are cached for a short TTL. #9028
 * [FEATURE] gRPC: Support S2 compression. #9322
   * `-alertmanager.alertmanager-client.grpc-compression=s2`
@@ -49,6 +49,7 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Unify ingester autoscaling panels on 'Mimir / Writes' dashboard to work for both ingest-storage and non-ingest-storage autoscaling. #9617
 * [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412 #9450 #9432
 * [BUGFIX] Alerts: Fix autoscaling metrics joins in `MimirAutoscalerNotActive` when series churn. #9412
 
@@ -67,6 +68,7 @@
 
 ### Query-tee
 
+* [CHANGE] Don't compare responses for cancelled requests. #9640
 * [FEATURE] Added `-proxy.compare-skip-samples-before` to skip samples before the given time when comparing responses. The time can be in RFC3339 format (or) RFC3339 without the timezone and seconds (or) date only. #9515
 
 ### Documentation

@@ -653,6 +653,7 @@
       ingester: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+        replica_template_name: 'ingester-zone-a',
       },
       compactor: {
         enabled: false,

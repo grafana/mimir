@@ -460,11 +460,10 @@ load 5m
 # 	{src="clamp-b"}	0
 # 	{src="clamp-c"}	100
 
-# Unsupported by streaming engine.
-# eval instant at 0m clamp(test_clamp, -25, 75)
-# 	{src="clamp-a"}	-25
-# 	{src="clamp-b"}	0
-# 	{src="clamp-c"}	75
+eval instant at 0m clamp(test_clamp, -25, 75)
+	{src="clamp-a"}	-25
+	{src="clamp-b"}	0
+	{src="clamp-c"}	75
 
 # Unsupported by streaming engine.
 # eval instant at 0m clamp_max(clamp_min(test_clamp, -20), 70)
@@ -478,20 +477,17 @@ load 5m
 # 	{src="clamp-b"}	0
 # 	{src="clamp-c"}	70
 
-# Unsupported by streaming engine.
-# eval instant at 0m clamp(test_clamp, 0, NaN)
-# 	{src="clamp-a"}	NaN
-# 	{src="clamp-b"}	NaN
-# 	{src="clamp-c"}	NaN
+eval instant at 0m clamp(test_clamp, 0, NaN)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
 
-# Unsupported by streaming engine.
-# eval instant at 0m clamp(test_clamp, NaN, 0)
-# 	{src="clamp-a"}	NaN
-# 	{src="clamp-b"}	NaN
-# 	{src="clamp-c"}	NaN
+eval instant at 0m clamp(test_clamp, NaN, 0)
+	{src="clamp-a"}	NaN
+	{src="clamp-b"}	NaN
+	{src="clamp-c"}	NaN
 
-# Unsupported by streaming engine.
-# eval instant at 0m clamp(test_clamp, 5, -5)
+eval instant at 0m clamp(test_clamp, 5, -5)
 
 # Test cases for sgn.
 clear

@@ -4,17 +4,17 @@ services:
     image: consul:1.15  # latest tag not supported
     command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
     ports:
-      - 8500:8500
+      - 8510:8500
 
   minio:
     image: minio/minio
-    command: [ "server", "--console-address", ":9001", "/data" ]
+    command: [ "server", "--console-address", ":9101", "/data" ]
     environment:
       - MINIO_ROOT_USER=mimir
       - MINIO_ROOT_PASSWORD=supersecret
     ports:
-      - 9000:9000
-      - 9001:9001
+      - 9100:9100
+      - 9101:9101
     volumes:
       - .data-minio:/data:delegated
 
@@ -26,7 +26,7 @@ services:
     volumes:
       - ./config:/etc/prometheus
     ports:
-      - 9090:9090
+      - 9190:9090
 
   grafana:
     environment:
@@ -48,7 +48,7 @@ services:
     volumes:
       - ./config:/etc/agent-config
     ports:
-      - 9091:9091
+      - 9191:9091
 
   grafana-alloy:
     profiles:
@@ -63,7 +63,7 @@ services:
   jaeger:
     image: jaegertracing/all-in-one
     ports:
-      - 16686:16686
+      - 16681:16686
       - "14268"
 
   mimir-1:
@@ -71,7 +71,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9101"]
     depends_on:
       - consul
       - minio
@@ -83,7 +83,7 @@ services:
       - JAEGER_SAMPLER_PARAM=1
       - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
-      - 8001:8001
+      - 8101:8001
     volumes:
       - ./config:/mimir/config
       - .data-mimir-1:/data:delegated
@@ -105,7 +105,7 @@ services:
       - JAEGER_SAMPLER_PARAM=1
       - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
-      - 8002:8002
+      - 8102:8002
     volumes:
       - ./config:/mimir/config
       - .data-mimir-2:/data:delegated
