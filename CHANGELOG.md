@@ -68,6 +68,7 @@
 
 ### Query-tee
 
+* [CHANGE] Don't compare responses for cancelled requests. #9640
 * [FEATURE] Added `-proxy.compare-skip-samples-before` to skip samples before the given time when comparing responses. The time can be in RFC3339 format (or) RFC3339 without the timezone and seconds (or) date only. #9515
 
 ### Documentation
