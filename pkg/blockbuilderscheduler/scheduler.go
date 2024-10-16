@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -19,6 +21,7 @@ type BlockBuilderScheduler struct {
 	cfg         Config
 	logger      log.Logger
 	register    prometheus.Registerer
+	metrics     schedulerMetrics
 }
 
 func NewScheduler(
@@ -30,6 +33,7 @@ func NewScheduler(
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
+		metrics:  newSchedulerMetrics(reg),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -40,6 +44,7 @@ func (s *BlockBuilderScheduler) starting(context.Context) (err error) {
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
+		kgo.DisableAutoCommit(),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
@@ -67,8 +72,26 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 // monitorPartitions updates knowledge of all active partitions.
 func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
-	// We're interested in:
-	// * the lag of the block builder consumer group for each partition.
-	// * each partition's start and end offsets.
-	//admin := kadm.NewClient(s.kafkaClient)
+	startTime := time.Now()
+	// Eventually this will also include job computation. But for now, collect partition data.
+
+	admin := kadm.NewClient(s.kafkaClient)
+
+	startOffsets, err := admin.ListStartOffsets(ctx, s.cfg.Kafka.Topic)
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to list start offsets", "err", err)
+	}
+	endOffsets, err := admin.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
+	}
+
+	s.metrics.monitorPartitionsDuration.Observe(time.Since(startTime).Seconds())
+
+	startOffsets.Each(func(o kadm.ListedOffset) {
+		s.metrics.partitionStartOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+	})
+	endOffsets.Each(func(o kadm.ListedOffset) {
+		s.metrics.partitionEndOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+	})
 }
