@@ -37,10 +37,10 @@ eval instant at 4m histogram_sum(mixed_metric)
 	{} 8
 
 eval range from 0 to 5m step 1m histogram_count(mixed_metric)
-{} _ _ _ 4 6 6
+	{} _ _ _ 4 6 6
 
 eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
-{} _ _ _ 5 8 8
+	{} _ _ _ 5 8 8
 
 # histogram_count ignores any float values
 eval instant at 2m histogram_count(mixed_metric)
