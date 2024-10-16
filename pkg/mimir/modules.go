@@ -1097,7 +1097,14 @@ func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 
 func (t *Mimir) initBlockBuilderScheduler() (_ services.Service, err error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
-	t.BlockBuilderScheduler, err = blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
+
+	// The scheduler will need to periodically learn which partitions are active.
+	getPartitionIDs := func(_ context.Context) ([]int32, error) {
+		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+	}
+
+	t.BlockBuilderScheduler, err = blockbuilderscheduler.New(
+		t.Cfg.BlockBuilderScheduler, getPartitionIDs, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
@@ -1192,7 +1199,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:                {Queryable},
 		BlockBuilder:                    {API, Overrides},
-		BlockBuilderScheduler:           {API},
+		BlockBuilderScheduler:           {API, IngesterPartitionRing},
 		ContinuousTest:                  {API},
 		Write:                           {Distributor, Ingester},
 		Read:                            {QueryFrontend, Querier},

@@ -17,23 +17,26 @@ import (
 type BlockBuilderScheduler struct {
 	services.Service
 
-	kafkaClient *kgo.Client
-	cfg         Config
-	logger      log.Logger
-	register    prometheus.Registerer
-	metrics     schedulerMetrics
+	kafkaClient     *kgo.Client
+	cfg             Config
+	getPartitionIDs ingest.GetPartitionIDsFunc
+	logger          log.Logger
+	register        prometheus.Registerer
+	metrics         schedulerMetrics
 }
 
 func New(
 	cfg Config,
+	getPartitionIDs ingest.GetPartitionIDsFunc,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		cfg:      cfg,
-		logger:   logger,
-		register: reg,
-		metrics:  newSchedulerMetrics(reg),
+		cfg:             cfg,
+		getPartitionIDs: getPartitionIDs,
+		logger:          logger,
+		register:        reg,
+		metrics:         newSchedulerMetrics(reg),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
