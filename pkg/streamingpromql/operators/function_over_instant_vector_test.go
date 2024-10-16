@@ -85,7 +85,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(series types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		// Verify that the scalar arguments are correctly passed and in the order we expect
 		require.Equal(t, 2, len(scalarArgs))
@@ -119,7 +119,7 @@ type testScalarOperator struct {
 	value types.ScalarData
 }
 
-func (t *testScalarOperator) GetValues(ctx context.Context) (types.ScalarData, error) {
+func (t *testScalarOperator) GetValues(_ context.Context) (types.ScalarData, error) {
 	return t.value, nil
 }
 
