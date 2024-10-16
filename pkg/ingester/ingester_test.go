@@ -1875,7 +1875,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
-		"should soft fail if histogram has different number of buckets then encoded in spans": {
+		"should soft fail if histogram has different number of buckets than encoded in spans": {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
