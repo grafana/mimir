@@ -617,7 +617,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
-  autoScalingActualReplicas(componentName)::
+  autoScalingActualReplicas(componentName, addlQueries=[], addlLegends=[])::
     local title = 'Replicas';
     local componentTitle = std.strReplace(componentName, '_', '-');
 
@@ -660,12 +660,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           hpa_name: $._config.autoscaling[componentName].hpa_name,
           cluster_labels: std.join(', ', $._config.cluster_labels),
         },
-      ],
+      ] + addlQueries,
       [
         'Max {{ scaletargetref_name }}',
         'Current {{ scaletargetref_name }}',
         'Min {{ scaletargetref_name }}',
-      ],
+      ] + addlLegends,
     ) +
     $.panelDescription(
       title,

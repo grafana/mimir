@@ -104,14 +104,15 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
+    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
   - _This is addressed by Grafana Labs_
 - [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
-- [ ] Promote experimental features to experimental and remove deprecated features for the **next** release:
-  - [ ] Open a PR for every experimental feature we want to promote to stable
-  - [ ] Open a PR to remove any deprecated feature or configuration option that should be removed in the next release
+- [ ] Promote experimental features to stable and remove deprecated features for the **next** release:
+  - [ ] Open a PR into `main` branch for every experimental feature we want to promote to stable
+  - [ ] Open a PR into `main` branch with any deprecated feature or configuration option removed in the next release
 
 ### Publish the stable release
 
@@ -138,6 +139,7 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
+    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] If during the release process settings in the `renovate.json5` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
         modify it again to ensure that only the latest two minor versions get updated.
         For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
@@ -148,6 +150,7 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
     - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
+    - _This is addressed by Grafana Labs_
   - [ ] After publishing a GEM release publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
 ````
 

@@ -96,6 +96,8 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
      For example, `2.6.0`.
 
+   - Add a changelog entry in `mimir-distributed/CHANGELOG.md` about upgading the chart's versions of Mimir and GEM.
+
    - Create or update the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory.
 
      The release notes should refer to the correct Mimir and GEM versions and their specific documentation version.
@@ -151,9 +153,13 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    For example `user/update-mimir-distributed-release-x.y-final`.
 
-1. Optionally finalise release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
+1. Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
 
    - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
+
+   - Finalize the chart's changelog. Update the title of the release section by setting it to the final release version number.
+
+     For example, `## 4.5.0`.
 
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired final release version.
 
@@ -162,6 +168,8 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
      > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action.
 
    - There shouldn't be anymore update needed in documentation because that has been done in the release candidate step above.
+
+     > **Note:** Check that the final versions of Mimir and GEM defined in the chart match those mentioned in the changelog and the release notes.
 
    - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 

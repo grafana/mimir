@@ -87,6 +87,17 @@
         },
         {
           "kind": "field",
+          "name": "skip_label_count_validation_header_enabled",
+          "required": false,
+          "desc": "Allows to disable enforcement of the label count limit \"max_label_names_per_series\" via X-Mimir-SkipLabelCountValidation header on the http write path. Allowing this for external clients allows any client to send invalid label counts. After enabling it, requests with a specific HTTP header set to true will not have label counts validated.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.skip-label-count-validation-header-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "get_request_for_ingester_shutdown_enabled",
           "required": false,
           "desc": "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.",
@@ -6541,6 +6552,26 @@
               "fieldDefaultValue": 1,
               "fieldFlag": "ingest-storage.kafka.write-clients",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_username",
+              "required": false,
+              "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "sasl_password",
+              "required": false,
+              "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.sasl-password",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -13640,6 +13671,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "rule_group_enabled",
+              "required": false,
+              "desc": "Enabling caching of rule group contents if a cache backend is configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.cache.rule-group-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "backend",
               "required": false,
               "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
@@ -16012,6 +16054,17 @@
         },
         {
           "kind": "field",
+          "name": "notify_interval",
+          "required": false,
+          "desc": "How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "memberlist.notify-interval",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "advertise_addr",
           "required": false,
           "desc": "Gossip address to advertise to other members in the cluster. Used for NAT traversal.",
@@ -16199,6 +16252,28 @@
           "fieldValue": null,
           "fieldDefaultValue": 5000000000,
           "fieldFlag": "memberlist.packet-write-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_concurrent_writes",
+          "required": false,
+          "desc": "Maximum number of concurrent writes to other nodes.",
+          "fieldValue": null,
+          "fieldDefaultValue": 3,
+          "fieldFlag": "memberlist.max-concurrent-writes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "acquire_writer_timeout",
+          "required": false,
+          "desc": "Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped.",
+          "fieldValue": null,
+          "fieldDefaultValue": 250000000,
+          "fieldFlag": "memberlist.acquire-writer-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },

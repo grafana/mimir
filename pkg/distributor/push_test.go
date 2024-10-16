@@ -49,7 +49,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -114,19 +114,19 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 }
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
-	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
+	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
 
 func TestHandler_contextCanceledRequest(t *testing.T) {
-	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
+	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, validation.MockDefaultOverrides(), RetryConfig{}, func(_ context.Context, req *Request) error {
+	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
 	}, nil, log.NewNopLogger())
@@ -235,9 +235,111 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, validation.MockDefaultOverrides(), RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, false, validation.MockDefaultOverrides(), RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
+			}
+			handler.ServeHTTP(resp, tc.req)
+			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+		})
+	}
+}
+
+func TestHandler_EnsureSkipLabelCountValidationBehaviour(t *testing.T) {
+	tests := []struct {
+		name                                       string
+		allowSkipLabelCountValidation              bool
+		includeAllowSkipLabelCountValidationHeader bool
+		req                                        *http.Request
+		verifyReqHandler                           PushFunc
+		expectedStatusCode                         int
+	}{
+		{
+			name:                          "config flag set to false means SkipLabelCountValidation is false",
+			allowSkipLabelCountValidation: false,
+			includeAllowSkipLabelCountValidationHeader: true,
+			req: createRequest(t, createMimirWriteRequestProtobuf(t, false, false)),
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
+				request, err := pushReq.WriteRequest()
+				assert.NoError(t, err)
+				assert.Len(t, request.Timeseries, 1)
+				assert.Equal(t, mimirpb.RULE, request.Source)
+				assert.False(t, request.SkipLabelCountValidation)
+				pushReq.CleanUp()
+				return nil
+			},
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:                          "config flag set to false means SkipLabelCountValidation is always false even if write requests sets it to true",
+			allowSkipLabelCountValidation: false,
+			includeAllowSkipLabelCountValidationHeader: true,
+			req: createRequest(t, createMimirWriteRequestProtobuf(t, false, true)),
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
+				request, err := pushReq.WriteRequest()
+				require.NoError(t, err)
+				t.Cleanup(pushReq.CleanUp)
+				assert.Len(t, request.Timeseries, 1)
+				assert.Equal(t, mimirpb.RULE, request.Source)
+				assert.False(t, request.SkipLabelCountValidation)
+				return nil
+			},
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:                          "config flag set to true but write request set to false means SkipLabelCountValidation is false",
+			allowSkipLabelCountValidation: true,
+			req:                           createRequest(t, createMimirWriteRequestProtobuf(t, false, false)),
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
+				request, err := pushReq.WriteRequest()
+				assert.NoError(t, err)
+				assert.Len(t, request.Timeseries, 1)
+				assert.Equal(t, mimirpb.RULE, request.Source)
+				assert.False(t, request.SkipLabelCountValidation)
+				pushReq.CleanUp()
+				return nil
+			},
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:                          "config flag set to true and write request set to true means SkipLabelCountValidation is true",
+			allowSkipLabelCountValidation: true,
+			req:                           createRequest(t, createMimirWriteRequestProtobuf(t, false, true)),
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
+				request, err := pushReq.WriteRequest()
+				assert.NoError(t, err)
+				assert.Len(t, request.Timeseries, 1)
+				assert.Equal(t, mimirpb.RULE, request.Source)
+				assert.True(t, request.SkipLabelCountValidation)
+				pushReq.CleanUp()
+				return nil
+			},
+			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:                          "config flag set to true and write request set to true but header not sent means SkipLabelCountValidation is false",
+			allowSkipLabelCountValidation: true,
+			includeAllowSkipLabelCountValidationHeader: true,
+			req: createRequest(t, createMimirWriteRequestProtobuf(t, false, true)),
+			verifyReqHandler: func(_ context.Context, pushReq *Request) error {
+				request, err := pushReq.WriteRequest()
+				assert.NoError(t, err)
+				assert.Len(t, request.Timeseries, 1)
+				assert.Equal(t, mimirpb.RULE, request.Source)
+				assert.False(t, request.SkipLabelCountValidation)
+				pushReq.CleanUp()
+				return nil
+			},
+			expectedStatusCode: http.StatusOK,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			limits := validation.MockDefaultOverrides()
+			handler := Handler(100000, nil, nil, false, tc.allowSkipLabelCountValidation, limits, RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			if !tc.includeAllowSkipLabelCountValidationHeader {
+				tc.req.Header.Set(SkipLabelCountValidationHeader, "true")
 			}
 			handler.ServeHTTP(resp, tc.req)
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
@@ -355,7 +457,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			require.NoError(t, err)
 
 			var gotReqEncoded *Request
-			handler := Handler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+			handler := Handler(100000, nil, nil, true, false, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 				gotReqEncoded = pushReq
 				return nil
 			}, nil, log.NewNopLogger())
@@ -441,7 +543,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 	return inputBytes
 }
 
-func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
+func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skipLabelCountValidation bool) []byte {
 	t.Helper()
 	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
 	ts := mimirpb.PreallocTimeseries{
@@ -456,9 +558,10 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool)
 		},
 	}
 	input := mimirpb.WriteRequest{
-		Timeseries:          []mimirpb.PreallocTimeseries{ts},
-		Source:              mimirpb.RULE,
-		SkipLabelValidation: skipLabelNameValidation,
+		Timeseries:               []mimirpb.PreallocTimeseries{ts},
+		Source:                   mimirpb.RULE,
+		SkipLabelValidation:      skipLabelNameValidation,
+		SkipLabelCountValidation: skipLabelCountValidation,
 	}
 	inoutBytes, err := input.Marshal()
 	require.NoError(t, err)
@@ -498,7 +601,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, nil, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -558,7 +661,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
@@ -648,7 +751,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))

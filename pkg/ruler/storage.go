@@ -60,7 +60,7 @@ func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL tim
 
 	cacheCfg := bucketcache.NewCachingBucketConfig()
 
-	cacheClient, err := cache.CreateClient("ruler-storage-cache", cfg.Cache, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	cacheClient, err := cache.CreateClient("ruler-storage-cache", cfg.RulerCache.Cache, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "ruler-storage-cache")
 	}
@@ -77,6 +77,12 @@ func wrapBucketWithCache(bkt objstore.Bucket, cfg rulestore.Config, cacheTTL tim
 	codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
 	cacheCfg.CacheIter("iter", cacheClient, isNotTenantsDir, cacheTTL, codec)
 
+	// Only cache the contents of rule groups if enabled. This is an experimental feature and we need to be able
+	// to disable it. Once this feature is validated, it will be enabled unconditionally.
+	if cfg.RulerCache.RuleGroupEnabled {
+		cacheCfg.CacheGet("rule-group", cacheClient, isRuleGroup, maxItemSize(cfg.RulerCache.Cache), cacheTTL, cacheTTL, cacheTTL)
+	}
+
 	return bucketcache.NewCachingBucket("ruler", bkt, cacheCfg, logger, reg)
 }
 
@@ -86,4 +92,15 @@ func isNotTenantsDir(name string) bool {
 
 func isRuleGroup(name string) bool {
 	return strings.HasPrefix(name, "rules/")
+}
+
+func maxItemSize(cfg cache.BackendConfig) int {
+	switch cfg.Backend {
+	case cache.BackendMemcached:
+		return cfg.Memcached.MaxItemSize
+	case cache.BackendRedis:
+		return cfg.Redis.MaxItemSize
+	default:
+		return 0
+	}
 }

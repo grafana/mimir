@@ -4,6 +4,7 @@ package operators
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,14 +19,14 @@ import (
 )
 
 func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
-	requireNotSame := func(t *testing.T, h1, h2 *histogram.FloatHistogram) {
-		require.NotSame(t, h1, h2, "must not point to the same *FloatHistogram")
+	requireNotSame := func(t *testing.T, h1, h2 *histogram.FloatHistogram, context string) {
+		require.NotSamef(t, h1, h2, "%v: must not point to the same *FloatHistogram", context)
 
-		requireNotSameSlices(t, h1.PositiveSpans, h2.PositiveSpans, "positive spans")
-		requireNotSameSlices(t, h1.NegativeSpans, h2.NegativeSpans, "negative spans")
-		requireNotSameSlices(t, h1.PositiveBuckets, h2.PositiveBuckets, "positive buckets")
-		requireNotSameSlices(t, h1.NegativeBuckets, h2.NegativeBuckets, "negative buckets")
-		requireNotSameSlices(t, h1.CustomValues, h2.CustomValues, "custom values")
+		requireNotSameSlices(t, h1.PositiveSpans, h2.PositiveSpans, "positive spans", context)
+		requireNotSameSlices(t, h1.NegativeSpans, h2.NegativeSpans, "negative spans", context)
+		requireNotSameSlices(t, h1.PositiveBuckets, h2.PositiveBuckets, "positive buckets", context)
+		requireNotSameSlices(t, h1.NegativeBuckets, h2.NegativeBuckets, "negative buckets", context)
+		requireNotSameSlices(t, h1.CustomValues, h2.CustomValues, "custom values", context)
 	}
 
 	testCases := map[string]struct {
@@ -45,9 +46,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Equal(t, 5.0, points[0].H.Sum)
 				require.Equal(t, 20.0, points[1].H.Sum)
 				require.Equal(t, 21.0, points[2].H.Sum)
-
-				requireNotSame(t, points[0].H, points[1].H)
-				requireNotSame(t, points[1].H, points[2].H)
 			},
 		},
 		"different histograms at each point, some due to lookback": {
@@ -63,10 +61,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Equal(t, 5.0, points[1].H.Sum)
 				require.Equal(t, 20.0, points[2].H.Sum)
 				require.Equal(t, 21.0, points[3].H.Sum)
-
-				requireNotSame(t, points[0].H, points[1].H)
-				requireNotSame(t, points[1].H, points[2].H)
-				requireNotSame(t, points[2].H, points[3].H)
 			},
 		},
 		"same histogram at each point due to lookback": {
@@ -80,9 +74,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Equal(t, 5.0, points[0].H.Sum)
 				require.Equal(t, 5.0, points[1].H.Sum)
 				require.Equal(t, 5.0, points[2].H.Sum)
-
-				require.Same(t, points[0].H, points[1].H)
-				require.Same(t, points[1].H, points[2].H)
 			},
 		},
 		"same histogram at each point not due to lookback": {
@@ -95,8 +86,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Len(t, points, 2)
 				require.Equal(t, 5.0, points[0].H.Sum)
 				require.Equal(t, 5.0, points[1].H.Sum)
-
-				requireNotSame(t, points[0].H, points[1].H)
 			},
 		},
 		"last point is from lookback and is the same as the previous point": {
@@ -111,9 +100,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Equal(t, 3.0, points[0].H.Sum)
 				require.Equal(t, 5.0, points[1].H.Sum)
 				require.Equal(t, 5.0, points[2].H.Sum)
-
-				requireNotSame(t, points[0].H, points[1].H)
-				require.Same(t, points[1].H, points[2].H)
 			},
 		},
 		"last point is from lookback but is not the same as the previous point": {
@@ -128,9 +114,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Equal(t, 3.0, points[0].H.Sum)
 				require.Equal(t, 5.0, points[1].H.Sum)
 				require.Equal(t, 20.0, points[2].H.Sum)
-
-				requireNotSame(t, points[0].H, points[1].H)
-				requireNotSame(t, points[1].H, points[2].H)
 			},
 		},
 
@@ -145,11 +128,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				require.Equal(t, 3.0, points[0].H.Sum)
 				require.Equal(t, 5.0, points[1].H.Sum)
 				require.Equal(t, 3.0, points[2].H.Sum)
-
-				requireNotSame(t, points[0].H, points[1].H)
-				requireNotSame(t, points[1].H, points[2].H)
-
-				requireNotSame(t, points[0].H, points[2].H)
 			},
 		},
 		"different histograms should have different spans": {
@@ -160,7 +138,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 2,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 2)
-				requireNotSame(t, points[0].H, points[1].H)
 			},
 		},
 		"successive histograms returned due to lookback should create different histograms at each point": {
@@ -172,7 +149,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 2)
-				requireNotSame(t, points[0].H, points[1].H)
 			},
 		},
 		"lookback points in middle of series reuse existing histogram": {
@@ -183,9 +159,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 5,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 4)
-				requireNotSame(t, points[0].H, points[2].H)
-				require.Same(t, points[0].H, points[1].H)
-				require.Same(t, points[2].H, points[3].H)
 			},
 		},
 		// FIXME: this test currently fails due to https://github.com/prometheus/prometheus/issues/14172
@@ -200,8 +173,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		//		require.Len(t, hPoints, 2)
 		//		require.Equal(t, 3.0, hPoints[0].H.Sum)
 		//		require.Equal(t, 3.0, hPoints[1].H.Sum)
-		//
-		//		require.Same(t, hPoints[0].H, hPoints[1].H)
 		//
 		//		require.Equal(t, []promql.FPoint{{T: 60000, F: 2}}, fPoints)
 		//	},
@@ -234,16 +205,23 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			series, err := selector.NextSeries(ctx)
 			require.NoError(t, err)
 			testCase.check(t, series.Histograms, series.Floats)
+
+			for i := 1; i < len(series.Histograms); i++ {
+				first := series.Histograms[i-1].H
+				second := series.Histograms[i].H
+
+				requireNotSame(t, first, second, fmt.Sprintf("histograms for points at index %v and %v in %v", i-1, i, series.Histograms))
+			}
 		})
 	}
 }
 
-func requireNotSameSlices[T any](t *testing.T, s1, s2 []T, description string) {
-	require.NotSamef(t, s1, s2, "must not point to the same %v slice", description)
+func requireNotSameSlices[T any](t *testing.T, s1, s2 []T, description string, context string) {
+	require.NotSamef(t, s1, s2, "%v: must not point to the same %v slice", context, description)
 
 	// require.NotSame only checks the slice headers are different. It does not check that the slices do not point the same underlying arrays.
 	// So specifically check if the first elements are different.
 	if len(s1) > 0 && len(s2) > 0 {
-		require.NotSamef(t, &s1[0], &s2[0], "must not point to the same underlying %v array", description)
+		require.NotSamef(t, &s1[0], &s2[0], "%v: must not point to the same underlying %v array", context, description)
 	}
 }

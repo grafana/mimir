@@ -17,9 +17,8 @@ import (
 )
 
 var CountOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc:       DropSeriesName,
-	NeedsSeriesDeduplication: true,
-	StepFunc:                 countOverTime,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               countOverTime,
 }
 
 func countOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
@@ -34,8 +33,8 @@ func countOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPo
 }
 
 var LastOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc: nil, // We want to use the input series as-is.
-	StepFunc:           lastOverTime,
+	// We want to use the input series as-is, so no need to set SeriesMetadataFunction.
+	StepFunc: lastOverTime,
 }
 
 func lastOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
@@ -55,9 +54,8 @@ func lastOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPoi
 }
 
 var PresentOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc:       DropSeriesName,
-	NeedsSeriesDeduplication: true,
-	StepFunc:                 presentOverTime,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               presentOverTime,
 }
 
 func presentOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
@@ -69,9 +67,8 @@ func presentOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.F
 }
 
 var MaxOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc:       DropSeriesName,
-	NeedsSeriesDeduplication: true,
-	StepFunc:                 maxOverTime,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               maxOverTime,
 }
 
 func maxOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
@@ -107,9 +104,8 @@ func maxOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPoin
 }
 
 var MinOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc:       DropSeriesName,
-	NeedsSeriesDeduplication: true,
-	StepFunc:                 minOverTime,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               minOverTime,
 }
 
 func minOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
@@ -145,8 +141,7 @@ func minOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPoin
 }
 
 var SumOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc:             DropSeriesName,
-	NeedsSeriesDeduplication:       true,
+	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       sumOverTime,
 	NeedsSeriesNamesForAnnotations: true,
 }
@@ -221,8 +216,7 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation EmitAnnotationFunc
 }
 
 var AvgOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc:             DropSeriesName,
-	NeedsSeriesDeduplication:       true,
+	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       avgOverTime,
 	NeedsSeriesNamesForAnnotations: true,
 }

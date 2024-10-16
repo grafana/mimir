@@ -1351,7 +1351,7 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "sum(cluster_job:cortex_alertmanager_alerts_received_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n-\nsum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n",
+                            "expr": "sum(cluster_job:cortex_alertmanager_alerts_received_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n-\n(sum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"}) or vector(0))\n",
                             "format": "time_series",
                             "legendFormat": "successful",
                             "legendLink": null
@@ -2896,7 +2896,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(cluster_job:cortex_alertmanager_state_replication_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n-\nsum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n",
+                            "expr": "sum(cluster_job:cortex_alertmanager_state_replication_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n-\n(sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"}) or vector(0))\n",
                             "format": "time_series",
                             "legendFormat": "successful",
                             "legendLink": null
@@ -2981,7 +2981,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n-\nsum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n",
+                            "expr": "sum(cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n-\n(sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"}) or vector(0))\n",
                             "format": "time_series",
                             "legendFormat": "successful",
                             "legendLink": null
