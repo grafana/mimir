@@ -13,34 +13,26 @@ import (
 )
 
 type Config struct {
-	ConsumerGroup         string        `yaml:"consumer_group"`
-	ConsumeInterval       time.Duration `yaml:"consume_interval"`
-	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
-	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
+	BuilderConsumerGroup   string        `yaml:"builder_consumer_group"`
+	SchedulerConsumerGroup string        `yaml:"scheduler_consumer_group"`
+	KafkaMonitorInterval   time.Duration `yaml:"kafka_monitor_interval"`
 
-	// Config parameters defined outside the block-builder config and are injected dynamically.
+	// Config parameters defined outside the block-builder-scheduler config and are injected dynamically.
 	Kafka ingest.KafkaConfig `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.ConsumerGroup, "block-builder.consumer-group", "block-builder", "The Kafka consumer group used to keep track of the consumed offsets for assigned partitions.")
-	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
-	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
-	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
+	f.StringVar(&cfg.BuilderConsumerGroup, "block-builder-scheduler.builder-consumer-group", "block-builder", "The Kafka consumer group used by block-builders.")
+	f.StringVar(&cfg.SchedulerConsumerGroup, "block-builder-scheduler.scheduler-consumer-group", "block-builder-scheduler", "The Kafka consumer group used by block-builder-scheduler.")
+	f.DurationVar(&cfg.KafkaMonitorInterval, "block-builder-scheduler.kafka-monitor-interval", 20*time.Second, "How frequently to monitor the Kafka partitions.")
 }
 
 func (cfg *Config) Validate() error {
 	if err := cfg.Kafka.Validate(); err != nil {
 		return err
 	}
-
-	// TODO(codesome): validate the consumption interval. Must be <=2h and can divide 2h into an integer.
-	if cfg.ConsumeInterval < 0 {
-		return fmt.Errorf("consume-interval cannot be negative")
+	if cfg.KafkaMonitorInterval <= 0 {
+		return fmt.Errorf("kafka_monitor_interval (%d) must be positive", cfg.KafkaMonitorInterval)
 	}
-	if cfg.LookbackOnNoCommit < 0 {
-		return fmt.Errorf("lookback-on-no-commit cannot be negative")
-	}
-
 	return nil
 }
