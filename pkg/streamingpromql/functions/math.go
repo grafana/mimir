@@ -68,9 +68,25 @@ var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSerie
 	outputIdx := 0
 	minArg := scalarArgsData[0]
 	maxArg := scalarArgsData[1]
-	for step, data := range seriesData.Floats {
-		minVal := minArg.Samples[step].F
-		maxVal := maxArg.Samples[step].F
+
+	// There will always be a scalar at every step of the query.
+	// However, there may not be a sample at a step. So we need to
+	// keep track of where we are up to step-wise with the scalars,
+	// incrementing through the scalars until their timestamp matches
+	// the samples.
+	minSampleIdx := 0
+	maxSampleIdx := 0
+
+	for _, data := range seriesData.Floats {
+		for data.T > minArg.Samples[minSampleIdx].T {
+			minSampleIdx++
+		}
+		for data.T > maxArg.Samples[maxSampleIdx].T {
+			maxSampleIdx++
+		}
+		minVal := minArg.Samples[minSampleIdx].F
+		maxVal := maxArg.Samples[maxSampleIdx].F
+
 		if maxVal < minVal {
 			// Drop this point as there is no valid answer
 			continue
