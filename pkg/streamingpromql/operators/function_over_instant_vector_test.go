@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
@@ -62,3 +63,68 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	require.True(t, metadataFuncCalled, "Supplied MetadataFunc must be called matching the signature")
 	require.Equal(t, len(inner.data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
 }
+
+func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
+	inner := &testOperator{
+		series: []labels.Labels{
+			labels.FromStrings("series", "0"),
+			labels.FromStrings("series", "1"),
+		},
+		data: []types.InstantVectorSeriesData{
+			{Floats: []promql.FPoint{{T: 0, F: 1}}},
+			{Floats: []promql.FPoint{{T: 0, F: 2}}},
+		},
+	}
+
+	scalarOperator1 := &testScalarOperator{
+		value: types.ScalarData{Samples: []promql.FPoint{{T: 0, F: 3}}},
+	}
+
+	scalarOperator2 := &testScalarOperator{
+		value: types.ScalarData{Samples: []promql.FPoint{{T: 60, F: 4}}},
+	}
+
+	seriesDataFuncCalledTimes := 0
+	mustBeCalledSeriesData := func(series types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+		seriesDataFuncCalledTimes++
+		// Verify that the scalar arguments are correctly passed and in the order we expect
+		require.Equal(t, 2, len(scalarArgs))
+		require.Equal(t, 3.0, scalarArgs[0].Samples[0].F)
+		require.Equal(t, 4.0, scalarArgs[1].Samples[0].F)
+		return types.InstantVectorSeriesData{}, nil
+	}
+
+	operator := &FunctionOverInstantVector{
+		Inner:                    inner,
+		ScalarArgs:               []types.ScalarOperator{scalarOperator1, scalarOperator2},
+		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+		Func: functions.FunctionOverInstantVector{
+			SeriesDataFunc:         mustBeCalledSeriesData,
+			SeriesMetadataFunction: functions.DropSeriesName,
+		},
+	}
+
+	ctx := context.TODO()
+	// SeriesMetadata should process scalar args
+	_, err := operator.SeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	// NextSeries should pass scalarArgsData to SeriesDataFunc, which validates the arguments
+	_, err = operator.NextSeries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, len(inner.data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+}
+
+type testScalarOperator struct {
+	value types.ScalarData
+}
+
+func (t *testScalarOperator) GetValues(ctx context.Context) (types.ScalarData, error) {
+	return t.value, nil
+}
+
+func (t *testScalarOperator) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *testScalarOperator) Close() {}
