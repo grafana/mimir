@@ -24,7 +24,7 @@ type BlockBuilderScheduler struct {
 	metrics     schedulerMetrics
 }
 
-func NewScheduler(
+func New(
 	cfg Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
@@ -74,7 +74,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	startTime := time.Now()
 	// Eventually this will also include job computation. But for now, collect partition data.
-
 	admin := kadm.NewClient(s.kafkaClient)
 
 	startOffsets, err := admin.ListStartOffsets(ctx, s.cfg.Kafka.Topic)
