@@ -169,7 +169,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    - There shouldn't be anymore update needed in documentation because that has been done in the release candidate step above.
 
-     > **Note:** It is worth checking that the final versions of Mimir and GEM defined in the chart match with those mentioned in the changelog and the release notes.
+     > **Note:** Check that the final versions of Mimir and GEM defined in the chart match those mentioned in the changelog and the release notes.
 
    - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
