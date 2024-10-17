@@ -1095,15 +1095,15 @@ func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 	return t.BlockBuilder, nil
 }
 
-func (t *Mimir) initBlockBuilderScheduler() (_ services.Service, err error) {
+func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
 
-	t.BlockBuilderScheduler, err = blockbuilderscheduler.New(
-		t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
+	s, err := blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
-	return t.BlockBuilderScheduler, nil
+	t.BlockBuilderScheduler = s
+	return s, nil
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {

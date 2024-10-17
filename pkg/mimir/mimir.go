@@ -282,16 +282,6 @@ func (c *Config) Validate(log log.Logger) error {
 		}
 		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
-	if c.isModuleEnabled(BlockBuilder) {
-		if err := c.BlockBuilder.Validate(); err != nil {
-			return errors.Wrap(err, "invalid block builder config")
-		}
-	}
-	if c.isModuleEnabled(BlockBuilderScheduler) {
-		if err := c.BlockBuilderScheduler.Validate(); err != nil {
-			return errors.Wrap(err, "invalid block builder scheduler config")
-		}
-	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
