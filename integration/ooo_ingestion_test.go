@@ -166,8 +166,15 @@ func TestOOOHistogramIngestionDisabled(t *testing.T) {
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
 		map[string]string{
-			"-ingester.out-of-order-time-window":            "10m",
-			"-ingester.native-histograms-ingestion-enabled": "true",
+			"-ingester.out-of-order-time-window":                "10m",
+			"-ingester.native-histograms-ingestion-enabled":     "true",
+			"-ingester.ooo-native-histograms-ingestion-enabled": "false",
+			// Default block-ranges-period for integration tests is 1m
+			// When OOO NH is disabled, all NH samples must be greater than or equal to minValidTime, otherwise an out
+			// of bounds error is returned. minValidTime which max sample time - (block-ranges-period[0]/2). Increase
+			// tsdb.block-ranges-period to 2h so when we ingest 1m OOO data, the out of bounds check passes and we hit
+			// the specific OOO NH disabled error instead.
+			"-blocks-storage.tsdb.block-ranges-period": "2h",
 		},
 	)
 
