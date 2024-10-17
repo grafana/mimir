@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-kit/log"
-
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -21,7 +19,7 @@ type Config struct {
 	Kafka ingest.KafkaConfig `yaml:"-"`
 }
 
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.BuilderConsumerGroup, "block-builder-scheduler.builder-consumer-group", "block-builder", "The Kafka consumer group used by block-builders.")
 	f.StringVar(&cfg.SchedulerConsumerGroup, "block-builder-scheduler.scheduler-consumer-group", "block-builder-scheduler", "The Kafka consumer group used by block-builder-scheduler.")
 	f.DurationVar(&cfg.KafkaMonitorInterval, "block-builder-scheduler.kafka-monitor-interval", 20*time.Second, "How frequently to monitor the Kafka partitions.")

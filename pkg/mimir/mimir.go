@@ -186,7 +186,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
 	c.BlockBuilder.RegisterFlags(f, logger)
-	c.BlockBuilderScheduler.RegisterFlags(f, logger)
+	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
