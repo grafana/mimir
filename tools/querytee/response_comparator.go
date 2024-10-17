@@ -209,7 +209,7 @@ func formatAnnotationsForErrorMessage(warnings []string) string {
 	return "[" + strings.Join(formatted, ", ") + "]"
 }
 
-func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) (retErr error) {
 	var expected, actual model.Matrix
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -226,6 +226,7 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 	}
 
 	if opts.SkipSamplesBefore > 0 {
+		expLen, actLen := len(expected), len(actual)
 		tempExp, tempAct := expected[:0], actual[:0]
 		for _, series := range expected {
 			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
@@ -242,6 +243,22 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 			}
 		}
 		expected, actual = tempExp, tempAct
+		eChanged, aChanged := len(expected) != expLen, len(actual) != actLen
+		defer func() {
+			if retErr != nil {
+				warning := ""
+				if eChanged && aChanged {
+					warning = " (also, some series were completely filtered out from the expected and actual response due to the 'skip samples before')"
+				} else if aChanged {
+					warning = " (also, some series were completely filtered out from the actual response due to the 'skip samples before')"
+				} else if eChanged {
+					warning = " (also, some series were completely filtered out from the expected response due to the 'skip samples before')"
+				}
+				if warning != "" {
+					retErr = fmt.Errorf("%w%s", retErr, warning)
+				}
+			}
+		}()
 	}
 
 	if len(expected) != len(actual) {
