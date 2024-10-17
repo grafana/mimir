@@ -414,3 +414,13 @@ load 5m
 
 eval range from 0 to 60m step 5m clamp(series, scalar(mins), scalar(maxes))
   {}     0   10 5  _  _   -5   40 NaN NaN NaN NaN NaN NaN
+
+clear
+
+load 6m
+  mins   1 2 3 4 0  0  _  0 5  5
+  maxes  9 8 7 6 5  4  3  _ 10 10
+  series 0 _ 0 0 10 _ 10 10 2  NaN
+
+eval range from 0 to 54m step 6m clamp(series, scalar(mins), scalar(maxes))
+  {}     1 _ 3 4 5 _ NaN NaN 5 NaN
