@@ -246,16 +246,12 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		eChanged, aChanged := len(expected) != expLen, len(actual) != actLen
 		defer func() {
 			if retErr != nil {
-				warning := ""
 				if eChanged && aChanged {
-					warning = " (also, some series were completely filtered out from the expected and actual response due to the 'skip samples before')"
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the expected and actual response due to the 'skip samples before')", retErr)
 				} else if aChanged {
-					warning = " (also, some series were completely filtered out from the actual response due to the 'skip samples before')"
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the actual response due to the 'skip samples before')", retErr)
 				} else if eChanged {
-					warning = " (also, some series were completely filtered out from the expected response due to the 'skip samples before')"
-				}
-				if warning != "" {
-					retErr = fmt.Errorf("%w%s", retErr, warning)
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the expected response due to the 'skip samples before')", retErr)
 				}
 			}
 		}()
@@ -467,16 +463,12 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		eChanged, aChanged := len(expected) != eOrgLen, len(actual) != aOrgLen
 		defer func() {
 			if retErr != nil {
-				warning := ""
 				if eChanged && aChanged {
-					warning = " (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
 				} else if aChanged {
-					warning = " (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
 				} else if eChanged {
-					warning = " (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
-				}
-				if warning != "" {
-					retErr = fmt.Errorf("%w%s", retErr, warning)
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
 				}
 			}
 		}()
