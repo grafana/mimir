@@ -703,7 +703,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			pusher.AssertExpectations(t)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-				# HELP cortex_ingest_storage_reader_requests_total Number of attempted write requests.
+				# HELP cortex_ingest_storage_reader_requests_total Number of attempted write requests after batching records from Kafka.
 				# TYPE cortex_ingest_storage_reader_requests_total counter
 				cortex_ingest_storage_reader_requests_total %d
 				# HELP cortex_ingest_storage_reader_requests_failed_total Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
