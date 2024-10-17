@@ -1095,7 +1095,11 @@ groups:
             message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to consume write requests read from Kafka due to internal errors.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
           expr: |
-            sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])) > 0
+            sum by (cluster, namespace, pod) (
+              rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+              or
+              rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+            ) > 0
           for: 5m
           labels:
             severity: critical
@@ -1105,7 +1109,11 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterstuckprocessingrecordsfromkafka
           expr: |
             # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
-            (sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
+            (sum by (cluster, namespace, pod) (
+              rate(cortex_ingest_storage_reader_records_total[5m])
+              or
+              rate(cortex_ingest_storage_reader_requests_total[5m])
+            ) == 0)
             and
             # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
             (sum by (cluster, namespace, pod) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)

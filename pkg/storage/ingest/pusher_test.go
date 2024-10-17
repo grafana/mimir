@@ -322,11 +322,11 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		assert.Contains(t, logs.String(), pusherErr.Error())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
-			# TYPE cortex_ingest_storage_reader_records_failed_total counter
-			cortex_ingest_storage_reader_records_failed_total{cause="client"} 1
-			cortex_ingest_storage_reader_records_failed_total{cause="server"} 0
-		`), "cortex_ingest_storage_reader_records_failed_total"))
+			# HELP cortex_ingest_storage_reader_requests_failed_total Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+			# TYPE cortex_ingest_storage_reader_requests_failed_total counter
+			cortex_ingest_storage_reader_requests_failed_total{cause="client"} 1
+			cortex_ingest_storage_reader_requests_failed_total{cause="server"} 0
+		`), "cortex_ingest_storage_reader_requests_failed_total"))
 	})
 
 	t.Run("should log a client error if does implement optional logging interface and ShouldLog() returns true", func(t *testing.T) {
@@ -344,11 +344,11 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		assert.Contains(t, logs.String(), fmt.Sprintf("%s (sampled 1/100)", pusherErr.Error()))
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
-			# TYPE cortex_ingest_storage_reader_records_failed_total counter
-			cortex_ingest_storage_reader_records_failed_total{cause="client"} 1
-			cortex_ingest_storage_reader_records_failed_total{cause="server"} 0
-		`), "cortex_ingest_storage_reader_records_failed_total"))
+			# HELP cortex_ingest_storage_reader_requests_failed_total Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+			# TYPE cortex_ingest_storage_reader_requests_failed_total counter
+			cortex_ingest_storage_reader_requests_failed_total{cause="client"} 1
+			cortex_ingest_storage_reader_requests_failed_total{cause="server"} 0
+		`), "cortex_ingest_storage_reader_requests_failed_total"))
 	})
 
 	t.Run("should not log a client error if does implement optional logging interface and ShouldLog() returns false", func(t *testing.T) {
@@ -365,11 +365,11 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		assert.Empty(t, logs.String())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_records_failed_total Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
-			# TYPE cortex_ingest_storage_reader_records_failed_total counter
-			cortex_ingest_storage_reader_records_failed_total{cause="client"} 1
-			cortex_ingest_storage_reader_records_failed_total{cause="server"} 0
-		`), "cortex_ingest_storage_reader_records_failed_total"))
+			# HELP cortex_ingest_storage_reader_requests_failed_total Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+			# TYPE cortex_ingest_storage_reader_requests_failed_total counter
+			cortex_ingest_storage_reader_requests_failed_total{cause="client"} 1
+			cortex_ingest_storage_reader_requests_failed_total{cause="server"} 0
+		`), "cortex_ingest_storage_reader_requests_failed_total"))
 	})
 
 }
@@ -666,12 +666,18 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			pusher := &mockPusher{}
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
-			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
+			reg := prometheus.NewPedanticRegistry()
+			metrics := newStoragePusherMetrics(reg)
 			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
 			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
+			upstreamPushErrsCount := 0
 			for i, req := range tc.expectedUpstreamPushes {
-				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
+				err := tc.upstreamPushErrs[i]
+				pusher.On("PushToStorage", mock.Anything, req).Return(err)
+				if err != nil {
+					upstreamPushErrsCount++
+				}
 			}
 			var actualPushErrs []error
 			for _, req := range tc.requests {
@@ -695,6 +701,20 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			require.ErrorIs(t, closeErr, tc.expectedCloseErr)
 			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
 			pusher.AssertExpectations(t)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ingest_storage_reader_requests_total Number of attempted write requests.
+				# TYPE cortex_ingest_storage_reader_requests_total counter
+				cortex_ingest_storage_reader_requests_total %d
+				# HELP cortex_ingest_storage_reader_requests_failed_total Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.
+				# TYPE cortex_ingest_storage_reader_requests_failed_total counter
+				cortex_ingest_storage_reader_requests_failed_total{cause="server"} %d
+				cortex_ingest_storage_reader_requests_failed_total{cause="client"} 0
+			`, len(tc.expectedUpstreamPushes), upstreamPushErrsCount)),
+				"cortex_ingest_storage_reader_requests_total",
+				"cortex_ingest_storage_reader_requests_failed_total",
+			),
+			)
 		})
 	}
 }

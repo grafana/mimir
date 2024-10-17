@@ -250,12 +250,28 @@ local filename = 'mimir-writes.json';
         $.queryPanel(
           [
             |||
-              sum(rate(cortex_ingest_storage_reader_records_total{%s}[$__rate_interval]))
+              sum(
+                rate(cortex_ingest_storage_reader_records_total{%s}[$__rate_interval])
+                or
+                rate(cortex_ingest_storage_reader_requests_total{%s}[$__rate_interval])
+              )
               -
-              sum(rate(cortex_ingest_storage_reader_records_failed_total{%s}[$__rate_interval]))
+              sum(
+                rate(cortex_ingest_storage_reader_records_failed_total{%s}[$__rate_interval])
+                or
+                rate(cortex_ingest_storage_reader_requests_failed_total{%s}[$__rate_interval])
+              )
             ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-            'sum (rate (cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-            'sum (rate (cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (
+              rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval])
+              or
+              rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="client"}[$__rate_interval])
+            )' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (
+              rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval])
+              or
+              rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="server"}[$__rate_interval])
+            )' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
             'successful',

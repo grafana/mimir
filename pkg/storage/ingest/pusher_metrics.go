@@ -46,8 +46,8 @@ type storagePusherMetrics struct {
 // newStoragePusherMetrics creates a new storagePusherMetrics instance.
 func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_ingest_storage_reader_records_failed_total",
-		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
+		Name: "cortex_ingest_storage_reader_requests_failed_total",
+		Help: "Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
 
 	return &storagePusherMetrics{
@@ -70,8 +70,8 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_records_total",
-			Help: "Number of attempted records (write requests).",
+			Name: "cortex_ingest_storage_reader_requests_total",
+			Help: "Number of attempted write requests.",
 		}),
 	}
 }
