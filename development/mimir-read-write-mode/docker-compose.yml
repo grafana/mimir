@@ -176,13 +176,3 @@
       - "8780:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "prometheus":
-    "command":
-      - "--config.file=/etc/prometheus/prometheus.yaml"
-      - "--enable-feature=exemplar-storage"
-      - "--enable-feature=native-histograms"
-    "image": "prom/prometheus:v2.53.0"
-    "ports":
-      - "9790:9090"
-    "volumes":
-      - "./config:/etc/prometheus"
