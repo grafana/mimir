@@ -9,3 +9,13 @@ datasources:
   isDefault: true
   jsonData:
     prometheusType: Mimir
+- name: federation-frontend
+  type: prometheus
+  access: proxy
+  uid: federation-frontend
+  orgID: 1
+  url: http://host.docker.internal:8089/prometheus
+  jsonData:
+    httpHeaderName1: X-Scope-OrgID
+  secureJsonData:
+    httpHeaderValue1: anonymous

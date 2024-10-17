@@ -34,3 +34,14 @@ datasources:
   uid: jaeger
   orgID: 1
   url: http://jaeger:16686/
+
+- name: federation-frontend
+  type: prometheus
+  access: proxy
+  uid: federation-frontend
+  orgID: 1
+  url: http://host.docker.internal:8089/prometheus
+  jsonData:
+    httpHeaderName1: X-Scope-OrgID
+  secureJsonData:
+    httpHeaderValue1: anonymous
