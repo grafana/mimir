@@ -73,8 +73,6 @@ func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarD
 type RangeVectorStepFunction func(
 	step types.RangeVectorStepData,
 	rangeSeconds float64,
-	floatBuffer *types.FPointRingBuffer,
-	histogramBuffer *types.HPointRingBuffer,
 	emitAnnotation EmitAnnotationFunc,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 

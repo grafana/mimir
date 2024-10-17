@@ -315,19 +315,18 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		vectorSelector := e.VectorSelector.(*parser.VectorSelector)
+		selector := &operators.Selector{
+			Queryable: q.queryable,
+			TimeRange: timeRange,
+			Timestamp: vectorSelector.Timestamp,
+			Offset:    vectorSelector.OriginalOffset.Milliseconds(),
+			Range:     e.Range,
+			Matchers:  vectorSelector.LabelMatchers,
 
-		return &operators.RangeVectorSelector{
-			Selector: &operators.Selector{
-				Queryable: q.queryable,
-				TimeRange: timeRange,
-				Timestamp: vectorSelector.Timestamp,
-				Offset:    vectorSelector.OriginalOffset.Milliseconds(),
-				Range:     e.Range,
-				Matchers:  vectorSelector.LabelMatchers,
+			ExpressionPosition: e.PositionRange(),
+		}
 
-				ExpressionPosition: e.PositionRange(),
-			},
-		}, nil
+		return operators.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
 		return nil, compat.NewNotSupportedError("subquery")
@@ -645,10 +644,6 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 
 func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
 	m := types.GetMatrix(len(series))
-	floatBuffer := types.NewFPointRingBuffer(q.memoryConsumptionTracker)
-	histogramBuffer := types.NewHPointRingBuffer(q.memoryConsumptionTracker)
-	defer floatBuffer.Close()
-	defer histogramBuffer.Close()
 
 	for i, s := range series {
 		err := o.NextSeries(ctx)
@@ -660,19 +655,17 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 			return nil, err
 		}
 
-		floatBuffer.Reset()
-		histogramBuffer.Reset()
-		step, err := o.NextStepSamples(floatBuffer, histogramBuffer)
+		step, err := o.NextStepSamples()
 		if err != nil {
 			return nil, err
 		}
 
-		floats, err := floatBuffer.CopyPoints(step.RangeEnd)
+		floats, err := step.Floats.CopyPoints(step.RangeEnd)
 		if err != nil {
 			return nil, err
 		}
 
-		histograms, err := histogramBuffer.CopyPoints(step.RangeEnd)
+		histograms, err := step.Histograms.CopyPoints(step.RangeEnd)
 		if err != nil {
 			return nil, err
 		}

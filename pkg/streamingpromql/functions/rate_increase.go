@@ -31,11 +31,11 @@ var Increase = FunctionOverRangeVector{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-		fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
+	return func(step types.RangeVectorStepData, rangeSeconds float64, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
 		fCount := len(fHead) + len(fTail)
 
-		hHead, hTail := histogramBuffer.UnsafePoints(step.RangeEnd)
+		hHead, hTail := step.Histograms.UnsafePoints(step.RangeEnd)
 		hCount := len(hHead) + len(hTail)
 
 		if fCount > 0 && hCount > 0 {
@@ -46,7 +46,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 		}
 
 		if fCount >= 2 {
-			val := floatRate(isRate, fCount, floatBuffer, step, fHead, fTail, rangeSeconds)
+			val := floatRate(isRate, fCount, step.Floats, step, fHead, fTail, rangeSeconds)
 			return val, true, nil, nil
 		}
 
