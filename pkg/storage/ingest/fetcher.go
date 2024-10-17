@@ -355,7 +355,7 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
 }
 
-// fetchSingle attempts to find out the leader leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
+// fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
 // fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
