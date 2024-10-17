@@ -47,6 +47,7 @@ func (s *BlockBuilderScheduler) starting(context.Context) (err error) {
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
+		kgo.ConsumerGroup(s.cfg.SchedulerConsumerGroup),
 		kgo.DisableAutoCommit(),
 	)
 	if err != nil {
