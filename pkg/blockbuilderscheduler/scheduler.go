@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -23,7 +22,6 @@ type BlockBuilderScheduler struct {
 
 	kafkaClient *kgo.Client
 	cfg         Config
-	ringReader  ring.PartitionRingReader
 	logger      log.Logger
 	register    prometheus.Registerer
 	metrics     schedulerMetrics
@@ -31,16 +29,14 @@ type BlockBuilderScheduler struct {
 
 func New(
 	cfg Config,
-	ringReader ring.PartitionRingReader,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		cfg:        cfg,
-		ringReader: ringReader,
-		logger:     logger,
-		register:   reg,
-		metrics:    newSchedulerMetrics(reg),
+		cfg:      cfg,
+		logger:   logger,
+		register: reg,
+		metrics:  newSchedulerMetrics(reg),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -79,12 +75,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 // monitorPartitions updates knowledge of all active partitions.
 func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
-	ap := s.ringReader.PartitionRing().ActivePartitionIDs()
-	isActive := make(map[int32]struct{}, len(ap))
-	for _, p := range ap {
-		isActive[p] = struct{}{}
-	}
-
 	startTime := time.Now()
 	// Eventually this will also include job computation. But for now, collect partition data.
 	admin := kadm.NewClient(s.kafkaClient)
@@ -101,13 +91,9 @@ func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	s.metrics.monitorPartitionsDuration.Observe(time.Since(startTime).Seconds())
 
 	startOffsets.Each(func(o kadm.ListedOffset) {
-		if _, ok := isActive[o.Partition]; ok {
-			s.metrics.partitionStartOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
-		}
+		s.metrics.partitionStartOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 	endOffsets.Each(func(o kadm.ListedOffset) {
-		if _, ok := isActive[o.Partition]; ok {
-			s.metrics.partitionEndOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
-		}
+		s.metrics.partitionEndOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 }

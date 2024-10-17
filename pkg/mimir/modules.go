@@ -1099,7 +1099,7 @@ func (t *Mimir) initBlockBuilderScheduler() (_ services.Service, err error) {
 	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
 
 	t.BlockBuilderScheduler, err = blockbuilderscheduler.New(
-		t.Cfg.BlockBuilderScheduler, t.IngesterPartitionInstanceRing, util_log.Logger, t.Registerer)
+		t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
@@ -1194,7 +1194,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:                {Queryable},
 		BlockBuilder:                    {API, Overrides},
-		BlockBuilderScheduler:           {API, IngesterPartitionRing},
+		BlockBuilderScheduler:           {API},
 		ContinuousTest:                  {API},
 		Write:                           {Distributor, Ingester},
 		Read:                            {QueryFrontend, Querier},
