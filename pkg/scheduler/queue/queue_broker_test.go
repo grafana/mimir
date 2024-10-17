@@ -447,7 +447,7 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Verify it has maxQueriersPerTenant queriers assigned now.
-				qs := qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantQuerierIDs[tree.TenantID(uid)]
+				qs := qb.tenantQuerierAssignments.queuingAlgorithm.TenantQuerierIDs[tree.TenantID(uid)]
 				assert.Equal(t, maxQueriersPerTenant, len(qs))
 			}
 
@@ -455,7 +455,7 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 			// and compute mean and stdDev.
 			queriersMap := make(map[tree.QuerierID]int)
 
-			for _, querierSet := range qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantQuerierIDs {
+			for _, querierSet := range qb.tenantQuerierAssignments.queuingAlgorithm.TenantQuerierIDs {
 				for querierID := range querierSet {
 					queriersMap[querierID]++
 				}
@@ -764,8 +764,8 @@ func generateQuerier(r *rand.Rand) string {
 
 func getTenantsByQuerier(broker *queueBroker, querierID string) []string {
 	var tenantIDs []string
-	for _, tenantID := range broker.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantIDOrder {
-		querierSet := broker.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantQuerierIDs[tree.TenantID(tenantID)]
+	for _, tenantID := range broker.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder {
+		querierSet := broker.tenantQuerierAssignments.queuingAlgorithm.TenantQuerierIDs[tree.TenantID(tenantID)]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this tenant.
 			tenantIDs = append(tenantIDs, tenantID)
@@ -813,7 +813,7 @@ func isConsistent(qb *queueBroker) error {
 	tenantCount := 0
 	existingTenants := make(map[string]bool)
 
-	for ix, tenantID := range qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantIDOrder {
+	for ix, tenantID := range qb.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder {
 		path := qb.makeQueuePathForTests(tenantID)
 
 		node := qb.tree.GetNode(path)
@@ -835,7 +835,7 @@ func isConsistent(qb *queueBroker) error {
 		}
 
 		tenant := qb.tenantQuerierAssignments.tenantsByID[tenantID]
-		querierSet := qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantQuerierIDs[tree.TenantID(tenantID)]
+		querierSet := qb.tenantQuerierAssignments.queuingAlgorithm.TenantQuerierIDs[tree.TenantID(tenantID)]
 
 		if tenant.orderIndex != ix {
 			return fmt.Errorf("invalid tenant's index, expected=%d, got=%d", ix, tenant.orderIndex)
@@ -874,17 +874,17 @@ func getNextTenantForQuerier(qb *queueBroker, lastTenantIndex int, querierID str
 		return lastTenantIndex
 	}
 	tenantOrderIndex := lastTenantIndex
-	for iters := 0; iters < len(qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantIDOrder); iters++ {
+	for iters := 0; iters < len(qb.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder); iters++ {
 		tenantOrderIndex++
-		if tenantOrderIndex >= len(qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantIDOrder) {
+		if tenantOrderIndex >= len(qb.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder) {
 			tenantOrderIndex = 0
 		}
-		tenantID := qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantIDOrder[tenantOrderIndex]
+		tenantID := qb.tenantQuerierAssignments.queuingAlgorithm.TenantIDOrder[tenantOrderIndex]
 		if tenantID == "" {
 			continue
 		}
 
-		tenantQuerierSet := qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantQuerierIDs[tree.TenantID(tenantID)]
+		tenantQuerierSet := qb.tenantQuerierAssignments.queuingAlgorithm.TenantQuerierIDs[tree.TenantID(tenantID)]
 		if tenantQuerierSet == nil {
 			// tenant can use all queriers
 			return tenantOrderIndex

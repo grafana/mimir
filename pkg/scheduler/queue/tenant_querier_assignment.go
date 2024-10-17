@@ -13,8 +13,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// Newly-connected queriers should start from this index in tenantQuerierAssignments.tenantIDOrder.
-
 type queueTenant struct {
 	tenantID    string
 	maxQueriers int
@@ -44,16 +42,14 @@ func (s querierIDSlice) Search(x tree.QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
 
-// tenantQuerierAssignments implements QueuingAlgorithm. In the context of a MultiQueuingAlgorithmTreeQueue,
-// it maintains a mapping of tenants to queriers in order to support dequeuing from an appropriate tenant
-// if shuffle-sharding is enabled. A tenant has many queriers which can process its requests.
-// A tenant has *all* queriers if:
-//   - sharding is disabled (query-frontend.max-queriers-per-tenant=0)
-//   - OR if max-queriers-per-tenant >= the number of queriers
+// tenantQuerierAssignments maintains information about tenants and connected queriers, and uses
+// this information to update a mapping of queriers to tenants in tree.TenantQuerierQueuingAlgorithm.
+// This supports dequeuing from an appropriate tenant for a given querier when shuffle-sharding is enabled.
 //
-// Queriers are assigned to a tenant via a shuffle-shard seed, which is consistently hashed from the tenant ID.
-// tenantQuerierAssignments keeps track of these assignments, and determines which tenant requests a given querier can
-// process when it is attempting to dequeue a request.
+// A tenant has many queriers which can process its requests. Queriers are assigned to a tenant via a shuffle-shard seed,
+// which is consistently hashed from the tenant ID. A tenant has *all* queriers if:
+//   - sharding is disabled (query-frontend.max-queriers-per-tenant=0)
+//   - OR if max-queriers-per-tenant >= the number of queriers.
 //
 // The tenant-querier mapping is reshuffled when:
 //   - a querier connection is added or removed
@@ -63,23 +59,25 @@ type tenantQuerierAssignments struct {
 	// Sorted list of querier ids, used when shuffle-sharding queriers for tenant
 	querierIDsSorted querierIDSlice
 
+	// Tenant information used in shuffle-sharding
 	tenantsByID map[string]*queueTenant
 
-	tenantQueuingAlgorithm *tree.TenantQuerierQueuingAlgorithm
+	// State used by the tree queue to dequeue queries, including a tenant-querier mapping
+	queuingAlgorithm *tree.TenantQuerierQueuingAlgorithm
 }
 
 func newTenantQuerierAssignments() *tenantQuerierAssignments {
 	tqqa := tree.NewTenantQuerierQueuingAlgorithm()
 	return &tenantQuerierAssignments{
-		querierIDsSorted:       nil,
-		tenantsByID:            map[string]*queueTenant{},
-		tenantQueuingAlgorithm: tqqa,
+		querierIDsSorted: nil,
+		tenantsByID:      map[string]*queueTenant{},
+		queuingAlgorithm: tqqa,
 	}
 }
 
 // createOrUpdateTenant creates or updates a tenant into the tenant-querier assignment state.
 //
-// New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.
+// New tenants are added to tenantsByID and the queuing algorithm state, and tenant-querier shards are shuffled if needed.
 // Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
 func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID string, maxQueriers int) error {
 	if tenantID == "" {
@@ -103,22 +101,9 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID string, maxQu
 			// orderIndex set to sentinel value to indicate it is not inserted yet
 			orderIndex: -1,
 		}
-		for i, id := range tqa.tenantQueuingAlgorithm.TenantIDOrder {
-			if id == "" {
-				// previously removed tenant not yet cleaned up; take its place
-				tenant.orderIndex = i
-				tqa.tenantQueuingAlgorithm.TenantIDOrder[i] = tenantID
-				tqa.tenantsByID[tenantID] = tenant
-				break
-			}
-		}
-
-		if tenant.orderIndex < 0 {
-			// there were no empty spaces in tenant order; append
-			tenant.orderIndex = len(tqa.tenantQueuingAlgorithm.TenantIDOrder)
-			tqa.tenantQueuingAlgorithm.TenantIDOrder = append(tqa.tenantQueuingAlgorithm.TenantIDOrder, tenantID)
-			tqa.tenantsByID[tenantID] = tenant
-		}
+		tenantPosition := tqa.queuingAlgorithm.AddTenant(tenantID)
+		tenant.orderIndex = tenantPosition
+		tqa.tenantsByID[tenantID] = tenant
 	}
 
 	// tenant now either retrieved or created
@@ -132,10 +117,8 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID string, maxQu
 	return nil
 }
 
-// removeTenant only manages deletion of a *queueTenant from tenantsByID. All other
-// tenant deletion (e.g., from tenantIDOrder, or tenantNodes) is done during the dequeue operation,
-// as we cannot remove from those things arbitrarily; we must check whether other tenant
-// queues exist for the same tenant before removing.
+// removeTenant deletes a *queueTenant from tenantsByID. Any updates to remove a tenant from queuingAlgorithm
+// are managed by a tree.Tree during dequeue.
 func (tqa *tenantQuerierAssignments) removeTenant(tenantID string) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
@@ -191,9 +174,9 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scra
 
 	if tenant.maxQueriers == 0 || len(tqa.querierIDsSorted) <= tenant.maxQueriers {
 		// shuffle shard is either disabled or calculation is unnecessary;
-		prevQuerierIDSet := tqa.tenantQueuingAlgorithm.TenantQuerierIDs[treeTenantID]
+		prevQuerierIDSet := tqa.queuingAlgorithm.TenantQuerierIDs[treeTenantID]
 		// assigning querier set to nil for the tenant indicates tenant can use all queriers
-		tqa.tenantQueuingAlgorithm.TenantQuerierIDs[treeTenantID] = nil
+		tqa.queuingAlgorithm.TenantQuerierIDs[treeTenantID] = nil
 		// tenant may have already been assigned all queriers; only indicate reshard if this changed
 		return prevQuerierIDSet != nil
 	}
@@ -211,6 +194,6 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scra
 		scratchpad[r], scratchpad[last] = scratchpad[last], scratchpad[r]
 		last--
 	}
-	tqa.tenantQueuingAlgorithm.TenantQuerierIDs[treeTenantID] = querierIDSet
+	tqa.queuingAlgorithm.TenantQuerierIDs[treeTenantID] = querierIDSet
 	return true
 }

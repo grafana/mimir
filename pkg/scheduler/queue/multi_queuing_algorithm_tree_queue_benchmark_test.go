@@ -442,9 +442,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierAssignments
 				// so we have to override here to use the same structures as the test case
 				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierAssignments{
-					querierIDsSorted:       make([]tree.QuerierID, 0),
-					tenantsByID:            make(map[string]*queueTenant),
-					tenantQueuingAlgorithm: scenario.tqa,
+					querierIDsSorted: make([]tree.QuerierID, 0),
+					tenantsByID:      make(map[string]*queueTenant),
+					queuingAlgorithm: scenario.tqa,
 				}
 				queue.queueBroker.prioritizeQueryComponents = prioritizeQueryComponents
 				queue.queueBroker.tree = scenario.tree
@@ -490,8 +490,11 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				require.NoError(t, queue.stop(nil))
-				// ensure everything was dequeued
-				path, val := scenario.tree.Dequeue(&tree.DequeueArgs{QuerierID: tree.CurrentQuerier(scenario.tqa)})
+				assert.NotEqual(t, "", tree.CurrentQuerier(scenario.tqa))
+				// ensure everything was dequeued; we can pass a nil DequeueArgs because we don't
+				// want to update any state before doing this (i.e., we're dequeuing for _any_ querier,
+				// just to make sure the tree is empty).
+				path, val := scenario.tree.Dequeue(nil)
 				assert.Nil(t, val)
 				assert.Equal(t, path, tree.QueuePath{})
 			})

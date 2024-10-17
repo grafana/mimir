@@ -6,6 +6,8 @@ type (
 )
 
 const emptyTenantID = TenantID("")
+
+// Newly-connected queriers should start from this index in TenantQuerierQueuingAlgorithm.TenantIDOrder.
 const newQuerierTenantIndex = -1
 
 // TenantQuerierQueuingAlgorithm implements QueuingAlgorithm.
@@ -22,14 +24,14 @@ type TenantQuerierQueuingAlgorithm struct {
 	// The querier currently making a dequeue request; updated before dequeues by setup.
 	currentQuerier QuerierID
 
-	// tenantNodes tracks all tree nodes of the same name; it is used to track whether a tenant should be
-	// removed from the tenantIDOrder when a node in Tree is exhausted.
+	// tenantNodes tracks nodes of the same name (i.e., multiple nodes that exist for the same tenant);
+	// it is used to track whether a tenant should be removed from the tenantIDOrder when a node in Tree is exhausted.
 	tenantNodes map[string][]*Node
 
-	// tenantOrderIndex is the index of the _last_ tenant dequeued from; it is passed by
-	// the querier, and then updated to the index of the last tenant dequeued from, so it
-	// can be returned to the querier. Newly connected queriers should pass -1 to start at the
-	// beginning of tenantIDOrder.
+	// tenantOrderIndex is the index of the _last_ tenant which a querier-worker dequeued from; it is passed in,
+	// and then when a request is dequeued, it is updated to the index of the tenant for the dequeued request,
+	// so it can be returned to the querier.
+	// Newly connected queriers should pass -1 as DequeueArgs.LastTenantIndex to start at the beginning of tenantIDOrder.
 	tenantOrderIndex int
 }
 
@@ -42,10 +44,27 @@ func NewTenantQuerierQueuingAlgorithm() *TenantQuerierQueuingAlgorithm {
 	}
 }
 
+// AddTenant inserts a tenantID into TenantIDOrder, replacing the first empty string it finds,
+// or appending to the end if no empty strings are found. It returns the index at which the tenantID was inserted.
+func (qa *TenantQuerierQueuingAlgorithm) AddTenant(tenantID string) int {
+	for i, id := range qa.TenantIDOrder {
+		if id == "" {
+			// previously removed tenant not yet cleaned up; take its place
+			qa.TenantIDOrder[i] = tenantID
+			return i
+		}
+	}
+	qa.TenantIDOrder = append(qa.TenantIDOrder, tenantID)
+	// the index of the appended tenantID is len-1
+	return len(qa.TenantIDOrder) - 1
+}
+
 func (qa *TenantQuerierQueuingAlgorithm) TenantOrderIndex() int {
 	return qa.tenantOrderIndex
 }
 
+// TotalQueueSizeForTenant counts up items for all the nodes in tenantNodes[tenantID] and returns the total.
+// This is the total number of requests queued for that tenant.
 func (qa *TenantQuerierQueuingAlgorithm) TotalQueueSizeForTenant(tenantID string) int {
 	itemCount := 0
 	for _, tenantNode := range qa.tenantNodes[tenantID] {
@@ -54,7 +73,7 @@ func (qa *TenantQuerierQueuingAlgorithm) TotalQueueSizeForTenant(tenantID string
 	return itemCount
 }
 
-// CurrentQuerier is a test utility
+// CurrentQuerier is a test utility for reading the currently-set querier.
 func CurrentQuerier(qa *TenantQuerierQueuingAlgorithm) string {
 	return string(qa.currentQuerier)
 }
@@ -102,7 +121,7 @@ func (tqa *TenantQuerierQueuingAlgorithm) addChildNode(parent, child *Node) {
 	tqa.TenantIDOrder = append(tqa.TenantIDOrder, childName)
 }
 
-// dequeueSelectNode chooses the next node to dequeue from based on tenantIDOrder and tenantOrderIndex, which are
+// dequeueSelectNode chooses the next node to dequeue from based on TenantIDOrder and tenantOrderIndex, which are
 // shared across all nodes to maintain an O(n) (where n = # tenants) time-to-dequeue for each tenant.
 // If tenant order were maintained by individual nodes, we would end up with O(mn) (where m = # query components)
 // time-to-dequeue for a given tenant.
@@ -111,7 +130,7 @@ func (tqa *TenantQuerierQueuingAlgorithm) addChildNode(parent, child *Node) {
 // e.g., in the case that a tenant has queries queued for one query component but not others), and if so, returns
 // the tenant node if currentQuerier can handle queries for that tenant.
 //
-// Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
+// Note that because we use the shared TenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
 func (qa *TenantQuerierQueuingAlgorithm) dequeueSelectNode(node *Node) *Node {
 	if node.isLeaf() || len(node.queueMap) == 0 {
@@ -169,8 +188,8 @@ func (qa *TenantQuerierQueuingAlgorithm) dequeueSelectNode(node *Node) *Node {
 // dequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:
 //   - parent's queueMap,
 //   - tenantNodes
-//   - tenantIDOrder iff there are no other nodes by the same name in tenantNodes. If the child is at the end of
-//     tenantIDOrder, it is removed outright; otherwise, it is replaced with an empty ("") element
+//   - TenantIDOrder iff there are no other nodes by the same name in tenantNodes. If the child is at the end of
+//     TenantIDOrder, it is removed outright; otherwise, it is replaced with an empty ("") element
 //
 // dequeueUpdateState would normally also handle incrementing the queue position after performing a dequeue, but
 // tenantQuerierAssignments currently expects the caller to handle this by having the querier set tenantOrderIndex.
@@ -192,7 +211,7 @@ func (qa *TenantQuerierQueuingAlgorithm) dequeueUpdateState(node *Node, dequeued
 		}
 	}
 
-	// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
+	// check tenantNodes; we only remove from TenantIDOrder if all nodes with this name are gone.
 	// If the removed child is at the _end_ of tenantIDOrder, we remove it outright; otherwise,
 	// we replace it with an empty string. Removal of elements from anywhere other than the end of the slice
 	// would re-index all tenant IDs, resulting in skipped tenants when starting iteration from the

@@ -49,13 +49,13 @@ func newQueueBroker(
 	if prioritizeQueryComponents {
 		algos = []tree.QueuingAlgorithm{
 			tree.NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
-			tqas.tenantQueuingAlgorithm,              // query components; algorithm selects tenants
+			tqas.queuingAlgorithm,                    // query components; algorithm selects tenants
 
 		}
 	} else {
 		algos = []tree.QueuingAlgorithm{
-			tqas.tenantQueuingAlgorithm, // root; algorithm selects tenants
-			tree.NewRoundRobinState(),   // tenant queues; algorithm selects query component
+			tqas.queuingAlgorithm,     // root; algorithm selects tenants
+			tree.NewRoundRobinState(), // tenant queues; algorithm selects query component
 		}
 	}
 	treeQueue, err = tree.NewTree(algos...)
@@ -93,7 +93,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	tenantQueueSize := qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TotalQueueSizeForTenant(request.tenantID)
+	tenantQueueSize := qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(request.tenantID)
 	if tenantQueueSize+1 > qb.maxTenantQueueSize {
 		return ErrTooManyRequests
 	}
@@ -143,7 +143,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 ) {
 	// check if querier is registered and is not shutting down
 	if !qb.querierConnections.querierIsAvailable(dequeueReq.QuerierID) {
-		return nil, nil, qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantOrderIndex(), ErrQuerierShuttingDown
+		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), ErrQuerierShuttingDown
 	}
 
 	var queuePath tree.QueuePath
@@ -156,7 +156,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		})
 
 	if queueElement == nil {
-		return nil, nil, qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantOrderIndex(), nil
+		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
 	}
 
 	// re-casting to same type it was enqueued as; panic would indicate a bug
@@ -169,12 +169,12 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	}
 
 	queueNodeAfterDequeue := qb.tree.GetNode(queuePath)
-	if queueNodeAfterDequeue == nil && qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TotalQueueSizeForTenant(tenantID) == 0 {
+	if queueNodeAfterDequeue == nil && qb.tenantQuerierAssignments.queuingAlgorithm.TotalQueueSizeForTenant(tenantID) == 0 {
 		// queue node was deleted due to being empty after dequeue, and there are no remaining queue items for this tenant
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
 
-	return request, tenant, qb.tenantQuerierAssignments.tenantQueuingAlgorithm.TenantOrderIndex(), nil
+	return request, tenant, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
 }
 
 // below methods simply pass through to the queueBroker's tenantQuerierAssignments; this layering could be skipped
