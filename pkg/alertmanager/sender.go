@@ -9,12 +9,9 @@ package alertmanager
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -24,9 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
-var (
-	ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
-)
+var ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 
 type Sender struct {
 	log log.Logger
@@ -70,7 +65,7 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 		request.Header.Set(k, v)
 	}
 
-	resp, err := tlsClient(cmd.TLSConfig).Do(request)
+	resp, err := alertingReceivers.NewTLSClient(cmd.TLSConfig).Do(request)
 	if err != nil {
 		return err
 	}
@@ -100,26 +95,4 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 
 	level.Debug(s.log).Log("msg", "Webhook failed", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
 	return fmt.Errorf("webhook response status %v", resp.Status)
-}
-
-func tlsClient(tlsConfig *tls.Config) *http.Client {
-	nc := func(tlsConfig *tls.Config) *http.Client {
-		return &http.Client{
-			Timeout: time.Second * 30,
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-				Proxy:           http.ProxyFromEnvironment,
-				Dial: (&net.Dialer{
-					Timeout: 30 * time.Second,
-				}).Dial,
-				TLSHandshakeTimeout: 5 * time.Second,
-			},
-		}
-	}
-
-	if tlsConfig == nil {
-		return nc(&tls.Config{Renegotiation: tls.RenegotiateFreelyAsClient})
-	}
-
-	return nc(tlsConfig)
 }
