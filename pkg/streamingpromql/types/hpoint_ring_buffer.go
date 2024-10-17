@@ -207,6 +207,19 @@ func (b *HPointRingBuffer) Reset() {
 	b.size = 0
 }
 
+// Use replaces the contents of this buffer with s.
+// The points in s must be in time order, not contain duplicate timestamps and start at index 0.
+// s will be modified in place when the buffer is modified, and callers should not modify s after calling Use.
+// s will be returned to the pool when Close is called, Use is called again, or the buffer needs to expand, so callers
+// should not return s to the pool themselves.
+func (b *HPointRingBuffer) Use(s []promql.HPoint) {
+	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+
+	b.points = s
+	b.firstIndex = 0
+	b.size = len(s)
+}
+
 // Close releases any resources associated with this buffer.
 func (b *HPointRingBuffer) Close() {
 	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)

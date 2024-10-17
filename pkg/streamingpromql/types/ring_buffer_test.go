@@ -26,6 +26,7 @@ type ringBuffer[T any] interface {
 	AnyAtOrBefore(maxT int64) bool
 	First() T
 	Reset()
+	Use(s []T)
 	GetPoints() []T
 	GetFirstIndex() int
 	GetTimestamp(point T) int64
@@ -110,6 +111,12 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 
 	require.NoError(t, buf.Append(points[8]))
 	shouldHavePoints(t, buf, points[8])
+
+	buf.Use(points)
+	shouldHavePoints(t, buf, points...)
+
+	buf.DiscardPointsBefore(5)
+	shouldHavePoints(t, buf, points[4:]...)
 }
 
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
