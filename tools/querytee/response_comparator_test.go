@@ -2180,6 +2180,31 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipSamplesBefore: 95 * 1000,
 		},
 		{
+			name: "should not fail when some series is entirely skipped and rest matches - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [100,"10"]]}, {"metric":{"foo":"bar2"},"values":[[90,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+		},
+		{
+			name: "fail when all series from expected are filtered out - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [93,"10"]]}, {"metric":{"foo":"bar2"},"values":[[90,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"10"], [93,"10"], [100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+			err:               errors.New(`expected 0 metrics but got 1 (also, some series were completely filtered out from the expected response due to the 'skip samples before')`),
+		},
+		{
 			name: "should not fail when we skip all samples starting from the beginning - float",
 			expected: json.RawMessage(`{
 							"status": "success",
