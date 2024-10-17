@@ -98,3 +98,39 @@ var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSerie
 	seriesData.Histograms = nil
 	return seriesData, nil
 }
+
+func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
+	clampFunc := func(val, f float64) float64 {
+		return min(val, f)
+	}
+	if isMin {
+		clampFunc = func(val, f float64) float64 {
+			return max(val, f)
+		}
+	}
+
+	return func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+		clampTo := scalarArgsData[0]
+
+		// There will always be a scalar at every step of the query.
+		// However, there may not be a sample at a step. So we need to
+		// keep track of where we are up to step-wise with the scalars,
+		// incrementing through the scalars until their timestamp matches
+		// the samples.
+		argIdx := 0
+
+		for step, data := range seriesData.Floats {
+			for data.T > clampTo.Samples[argIdx].T {
+				argIdx++
+			}
+
+			val := clampTo.Samples[argIdx].F
+			// We reuse the existing FPoint slice in place
+			seriesData.Floats[step].F = clampFunc(val, data.F)
+		}
+		// Histograms are dropped from clamp
+		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+		seriesData.Histograms = nil
+		return seriesData, nil
+	}
+}
