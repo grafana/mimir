@@ -225,6 +225,25 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		return nil
 	}
 
+	if opts.SkipSamplesBefore > 0 {
+		tempExp, tempAct := expected[:0], actual[:0]
+		for _, series := range expected {
+			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			series.Histograms = trimBeginning(series.Histograms, func(p model.SampleHistogramPair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			if len(series.Values) > 0 || len(series.Histograms) > 0 {
+				tempExp = append(tempExp, series)
+			}
+		}
+		for _, series := range actual {
+			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			series.Histograms = trimBeginning(series.Histograms, func(p model.SampleHistogramPair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			if len(series.Values) > 0 || len(series.Histograms) > 0 {
+				tempAct = append(tempAct, series)
+			}
+		}
+		expected, actual = tempExp, tempAct
+	}
+
 	if len(expected) != len(actual) {
 		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
 	}
@@ -251,19 +270,6 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 }
 
 func compareMatrixSamples(expected, actual *model.SampleStream, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
-	expected.Values = trimBeginning(expected.Values, func(p model.SamplePair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	actual.Values = trimBeginning(actual.Values, func(p model.SamplePair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	expected.Histograms = trimBeginning(expected.Histograms, func(p model.SampleHistogramPair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	actual.Histograms = trimBeginning(actual.Histograms, func(p model.SampleHistogramPair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-
 	expectedSamplesTail, actualSamplesTail, err := comparePairs(expected.Values, actual.Values, func(p1 model.SamplePair, p2 model.SamplePair) error {
 		err := compareSamplePair(p1, p2, queryEvaluationTime, opts)
 		if err != nil {
