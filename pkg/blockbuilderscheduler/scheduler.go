@@ -9,10 +9,11 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 type BlockBuilderScheduler struct {
