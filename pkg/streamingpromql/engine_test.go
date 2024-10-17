@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/engine_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package streamingpromql
 
@@ -865,6 +868,250 @@ func TestRangeVectorSelectors(t *testing.T) {
 				runTest(t, prometheusEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 		})
+	}
+}
+
+func TestSubqueries(t *testing.T) {
+	// This test is based on Prometheus' TestSubquerySelector.
+	type testCase struct {
+		Query  string
+		Result promql.Result
+		Start  time.Time
+	}
+
+	tests := []struct {
+		load  string
+		cases []testCase
+	}{
+		{
+			load: `load 10s
+			         metric 1 2`,
+			cases: []testCase{
+				{
+					Query: "metric[20s:10s]",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(10, 0),
+				},
+				{
+					Query: "metric[20s:5s]",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(10, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 2s",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(12, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 6s",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(20, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 4s",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(35, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 5s",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(35, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 6s",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(35, 0),
+				},
+				{
+					Query: "metric[20s:5s] offset 7s",
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
+								Metric: labels.FromStrings("__name__", "metric"),
+							},
+						},
+					},
+					Start: time.Unix(35, 0),
+				},
+			},
+		},
+		{
+			load: `load 10s
+			         http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+			         http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+			         http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+			         http_requests{job="api-server", instance="1", group="canary"}		0+40x2000`,
+			cases: []testCase{
+				{ // Normal selector.
+					Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
+								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+							},
+						},
+					},
+					Start: time.Unix(10020, 0),
+				},
+				{ // Default step.
+					Query: `http_requests{group=~"pro.*",instance="0"}[5m:]`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 9840, T: 9840000}, {F: 9900, T: 9900000}, {F: 9960, T: 9960000}, {F: 130, T: 10020000}, {F: 310, T: 10080000}},
+								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+							},
+						},
+					},
+					Start: time.Unix(10100, 0),
+				},
+				{ // Checking if high offset (>LookbackDelta) is being taken care of.
+					Query: `http_requests{group=~"pro.*",instance="0"}[5m:] offset 20m`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 8640, T: 8640000}, {F: 8700, T: 8700000}, {F: 8760, T: 8760000}, {F: 8820, T: 8820000}, {F: 8880, T: 8880000}},
+								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+							},
+						},
+					},
+					Start: time.Unix(10100, 0),
+				},
+				{
+					Query: `rate(http_requests[1m])[15s:5s]`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+								DropName: true,
+							},
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+								DropName: true,
+							},
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+								DropName: true,
+							},
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+								DropName: true,
+							},
+						},
+					},
+					Start: time.Unix(8000, 0),
+				},
+				{
+					Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `sum(http_requests)[40s:10s]`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 800, T: 80000}, {F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
+					Result: promql.Result{
+						Value: promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1000, T: 100000}, {F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+					},
+					Start: time.Unix(120, 0),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		opts := NewTestEngineOpts()
+		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+		require.NoError(t, err)
+		storage := promqltest.LoadedStorage(t, test.load)
+		t.Cleanup(func() { storage.Close() })
+
+		for _, testCase := range test.cases {
+			t.Run(testCase.Query, func(t *testing.T) {
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.Query, testCase.Start)
+				require.NoError(t, err)
+
+				res := qry.Exec(context.Background())
+				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+			})
+		}
 	}
 }
 
