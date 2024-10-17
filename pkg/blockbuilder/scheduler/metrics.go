@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package blockbuilderscheduler
+package scheduler
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
