@@ -106,6 +106,9 @@ std.manifestYamlDoc({
         './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
       ],
       ports: ['3000:3000'],
+      extra_hosts: [
+        "host.docker.internal:host-gateway",
+      ],
     },
   },
 
