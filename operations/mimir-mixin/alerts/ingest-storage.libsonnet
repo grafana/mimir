@@ -124,6 +124,7 @@
           'for': '5m',
           expr: |||
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                # This is the old metric name. We're keeping support for backward compatibility.
               rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
               or
               rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
@@ -144,6 +145,7 @@
           expr: |||
             # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
             (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                # This is the old metric name. We're keeping support for backward compatibility.
               rate(cortex_ingest_storage_reader_records_total[5m])
               or
               rate(cortex_ingest_storage_reader_requests_total[5m])

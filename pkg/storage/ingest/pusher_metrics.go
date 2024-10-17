@@ -71,7 +71,7 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_requests_total",
-			Help: "Number of attempted write requests.",
+			Help: "Number of attempted write requests ingested from Kafka.",
 		}),
 	}
 }
