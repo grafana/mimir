@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,6 +204,138 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimirRestarted.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 }
 
+func TestRulerAPIRulesPagination(t *testing.T) {
+	const (
+		numNamespaces = 3
+		numRuleGroups = 9
+	)
+
+	type NGPair struct {
+		Namespace string
+		Group     string
+	}
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
+		map[string]string{
+			// Disable rule group limit
+			"-ruler.max-rule-groups-per-tenant": "0",
+		},
+	)
+
+	// Start rulers.
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
+	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
+	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
+
+	// Generate and upload rule groups to one of the rulers.
+	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+
+	// Generate multiple rule groups, with 1 rule each. Write them in
+	// reverse order and check that they are sorted when returned.
+	expectedGroups := make([]NGPair, 0, numRuleGroups)
+	for i := numRuleGroups - 1; i >= 0; i-- {
+		var recordNode yaml.Node
+		var exprNode yaml.Node
+
+		recordNode.SetString(fmt.Sprintf("rule_%d", i))
+		exprNode.SetString(strconv.Itoa(i))
+		ruleGroupName := fmt.Sprintf("test_%d", i)
+
+		expectedGroups = append(expectedGroups,
+			NGPair{
+				Namespace: fmt.Sprintf("namespace_%d", i/numNamespaces),
+				Group:     ruleGroupName,
+			},
+		)
+
+		require.NoError(t, c.SetRuleGroup(rulefmt.RuleGroup{
+			Name:     ruleGroupName,
+			Interval: 60,
+			Rules: []rulefmt.RuleNode{{
+				Record: recordNode,
+				Expr:   exprNode,
+			}},
+		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
+	}
+
+	// Sort expectedGroups as it is currently in reverse order
+	slices.SortFunc(expectedGroups, func(a, b NGPair) int {
+		fileCompare := strings.Compare(a.Namespace, b.Namespace)
+
+		// If its 0, then the file names are the same,
+		// so compare the groups
+		if fileCompare != 0 {
+			return fileCompare
+		}
+		return strings.Compare(a.Group, b.Group)
+	})
+
+	// Wait until rulers have loaded all rules.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
+
+	// Since rulers have loaded all rules, we expect that rules have been sharded
+	// between the two rulers.
+	require.NoError(t, ruler1.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+
+	// No page size limit
+	actualGroups, token, err := c.GetPrometheusRules(0, "")
+	require.NoError(t, err)
+	require.Empty(t, token)
+	require.Len(t, actualGroups, len(expectedGroups))
+	for i := 0; i < len(expectedGroups); i++ {
+		require.Equal(t, expectedGroups[i].Namespace, actualGroups[i].File)
+		require.Equal(t, expectedGroups[i].Group, actualGroups[i].Name)
+	}
+
+	// We have 9 groups, keep fetching rules with a group page size of 2. The final
+	// page should have size 1 and an empty nextToken. Also check the groups are returned
+	// in order
+	var nextToken string
+	returnedGroups := make([]NGPair, 0, len(expectedGroups))
+	for i := 0; i < 4; i++ {
+		gps, token, err := c.GetPrometheusRules(2, nextToken)
+		require.NoError(t, err)
+		require.Len(t, gps, 2)
+		require.NotEmpty(t, token)
+
+		returnedGroups = append(returnedGroups, NGPair{gps[0].File, gps[0].Name}, NGPair{gps[1].File, gps[1].Name})
+		nextToken = token
+	}
+	gps, token, err := c.GetPrometheusRules(2, nextToken)
+	require.NoError(t, err)
+	require.Len(t, gps, 1)
+	require.Empty(t, token)
+	returnedGroups = append(returnedGroups, NGPair{gps[0].File, gps[0].Name})
+
+	// Check the returned rules match the rules written
+	require.Len(t, returnedGroups, len(expectedGroups))
+	for i := 0; i < len(expectedGroups); i++ {
+		require.Equal(t, expectedGroups[i].Namespace, returnedGroups[i].Namespace)
+		require.Equal(t, expectedGroups[i].Group, returnedGroups[i].Group)
+	}
+
+	// Invalid max groups value
+	_, _, err = c.GetPrometheusRules(-1, "")
+	require.Error(t, err)
+}
+
 func TestRulerSharding(t *testing.T) {
 	const numRulesGroups = 100
 
@@ -272,7 +405,7 @@ func TestRulerSharding(t *testing.T) {
 	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(numRulesGroups), "cortex_prometheus_rule_group_rules"))
 
 	// Fetch the rules and ensure they match the configured ones.
-	actualGroups, err := c.GetPrometheusRules()
+	actualGroups, _, err := c.GetPrometheusRules(0, "")
 	require.NoError(t, err)
 
 	var actualNames []string
@@ -1189,7 +1322,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert that the alert is firing
-	rules, err := c.GetPrometheusRules()
+	rules, _, err := c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 
@@ -1206,7 +1339,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert the alert is already firing
-	rules, err = c.GetPrometheusRules()
+	rules, _, err = c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 }
