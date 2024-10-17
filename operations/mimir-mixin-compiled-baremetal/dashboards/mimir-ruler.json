@@ -1,0 +1,2646 @@
+{
+      "__requires": [
+         {
+            "id": "grafana",
+            "name": "Grafana",
+            "type": "grafana",
+            "version": "8.0.0"
+         }
+      ],
+      "annotations": {
+         "list": [ ]
+      },
+      "editable": true,
+      "gnetId": null,
+      "graphTooltip": 1,
+      "hideControls": false,
+      "links": [
+         {
+            "asDropdown": true,
+            "icon": "external link",
+            "includeVars": true,
+            "keepTime": true,
+            "tags": [
+               "mimir"
+            ],
+            "targetBlank": false,
+            "title": "Mimir dashboards",
+            "type": "dashboards"
+         }
+      ],
+      "refresh": "5m",
+      "rows": [
+         {
+            "collapse": false,
+            "height": "100px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "format": "short",
+                  "id": 1,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_ruler_managers_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": "70,80",
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Active configurations",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "singlestat",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "format": "short",
+                  "id": 2,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": "70,80",
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Total rules",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "singlestat",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Reads from ingesters - RPS\nNote: Even while operating in Remote ruler mode you will still see values for this panel.\n\nThis is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.\n\nFor a more detailed view of the read path when using remote ruler mode, see the Remote ruler reads dashboard.\n\n",
+                  "fill": 1,
+                  "format": "reqps",
+                  "id": 3,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": "70,80",
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Reads from ingesters - RPS",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "singlestat",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "format": "reqps",
+                  "id": 4,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": "70,80",
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Writes to ingesters - RPS",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "singlestat",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": false,
+            "title": "Headlines",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "failed"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 5,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "legendFormat": "success",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "failed",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "missed",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Evaluations per second",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 6,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "legendFormat": "average",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Latency",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Rule evaluations global",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "1xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EAB839",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "2xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "3xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#6ED0E0",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "4xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EF843C",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "5xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "OK"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "cancel"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "error"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 7,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "format": "time_series",
+                        "legendFormat": "{{status}}",
+                        "refId": "A"
+                     }
+                  ],
+                  "title": "Requests / sec",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 8,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Writes (ingesters)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "1xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EAB839",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "2xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "3xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#6ED0E0",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "4xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EF843C",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "5xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "OK"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "cancel"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "error"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 9,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "format": "time_series",
+                        "legendFormat": "{{status}}",
+                        "refId": "A"
+                     }
+                  ],
+                  "title": "QPS",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 10,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Reads (ingesters)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "1xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EAB839",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "2xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "3xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#6ED0E0",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "4xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EF843C",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "5xx"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "OK"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "cancel"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "error"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 11,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "format": "time_series",
+                        "legendFormat": "{{status}}",
+                        "refId": "A"
+                     }
+                  ],
+                  "title": "Requests / sec",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(cortex_kv_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Ruler - key-value store for rulers ring",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 13,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(cortex_querier_storegateway_instances_hit_per_query_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) * 1 / sum(rate(cortex_querier_storegateway_instances_hit_per_query_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Number of store-gateways hit per query",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 14,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(cortex_querier_storegateway_refetches_per_query_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) * 1 / sum(rate(cortex_querier_storegateway_refetches_per_query_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Refetches of missing blocks per query",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Consistency checks failed\nRate of queries that had to run with consistency checks and those checks failed. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "max": 1,
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "percentunit"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Failures / sec"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 15,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Failures / sec",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Consistency checks failed",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Ruler - blocks storage",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "noValue": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 16,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]) > 0)\n> 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Delivery errors",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "max": 1,
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "percentunit"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 17,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum by(user) (cortex_prometheus_notifications_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})\n  /\nsum by(user) (cortex_prometheus_notifications_queue_capacity{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}) > 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Queue length",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "noValue": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 18,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum by (user) (increase(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Dropped",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Notifications",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 19,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0",
+                        "format": "time_series",
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Missed iterations",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 20,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "rate(cortex_prometheus_rule_group_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n  /\nrate(cortex_prometheus_rule_group_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Latency",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 21,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0",
+                        "format": "time_series",
+                        "legendFormat": "{{ rule_group }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Failures",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Group evaluations",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 22,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "legendFormat": "{{ user }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Latency",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Rule evaluation per user",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 23,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "{{operation}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Operations / sec",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "max": 1,
+                        "min": 0,
+                        "noValue": "0",
+                        "unit": "percentunit"
+                     }
+                  },
+                  "id": 24,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\"}[$__rate_interval])) >= 0",
+                        "format": "time_series",
+                        "legendFormat": "{{operation}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Error rate",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 25,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"attributes\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency of op: Attributes",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 26,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"exists\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency of op: Exists",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Ruler configuration object store (ruler accesses)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 27,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency of op: Get",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 28,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"get_range\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency of op: GetRange",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 29,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"upload\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency of op: Upload",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 30,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"ruler-storage\",operation=\"delete\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C"
+                     }
+                  ],
+                  "title": "Latency of op: Delete",
+                  "type": "timeseries",
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "",
+            "titleSize": "h6"
+         }
+      ],
+      "schemaVersion": 14,
+      "style": "dark",
+      "tags": [
+         "mimir"
+      ],
+      "templating": {
+         "list": [
+            {
+               "current": {
+                  "text": "default",
+                  "value": "default"
+               },
+               "hide": 0,
+               "label": "Data source",
+               "name": "datasource",
+               "options": [ ],
+               "query": "prometheus",
+               "refresh": 1,
+               "regex": "",
+               "type": "datasource"
+            },
+            {
+               "allValue": ".+",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "cluster",
+               "multi": true,
+               "name": "cluster",
+               "options": [ ],
+               "query": "label_values(cortex_build_info, cluster)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "allValue": ".+",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": false,
+               "label": "namespace",
+               "multi": true,
+               "name": "namespace",
+               "options": [ ],
+               "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "classic",
+                  "value": "1"
+               },
+               "description": "Choose between showing latencies based on low precision classic or high precision native histogram metrics.",
+               "hide": 0,
+               "includeAll": false,
+               "label": "Latency metrics",
+               "multi": false,
+               "name": "latency_metrics",
+               "options": [
+                  {
+                     "selected": false,
+                     "text": "native",
+                     "value": "-1"
+                  },
+                  {
+                     "selected": true,
+                     "text": "classic",
+                     "value": "1"
+                  }
+               ],
+               "query": "native : -1,classic : 1",
+               "skipUrlSync": false,
+               "type": "custom",
+               "useTags": false
+            }
+         ]
+      },
+      "time": {
+         "from": "now-1h",
+         "to": "now"
+      },
+      "timepicker": {
+         "refresh_intervals": [
+            "5s",
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+         ],
+         "time_options": [
+            "5m",
+            "15m",
+            "1h",
+            "6h",
+            "12h",
+            "24h",
+            "2d",
+            "7d",
+            "30d"
+         ]
+      },
+      "timezone": "utc",
+      "title": "Mimir / Ruler",
+      "uid": "631e15d5d85afb2ca8e35d62984eeaa0",
+      "version": 0
+   }

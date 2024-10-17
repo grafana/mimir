@@ -1,0 +1,1525 @@
+{
+      "__requires": [
+         {
+            "id": "grafana",
+            "name": "Grafana",
+            "type": "grafana",
+            "version": "8.0.0"
+         }
+      ],
+      "annotations": {
+         "list": [ ]
+      },
+      "editable": true,
+      "gnetId": null,
+      "graphTooltip": 1,
+      "hideControls": false,
+      "links": [
+         {
+            "asDropdown": true,
+            "icon": "external link",
+            "includeVars": true,
+            "keepTime": true,
+            "tags": [
+               "mimir"
+            ],
+            "targetBlank": false,
+            "title": "Mimir dashboards",
+            "type": "dashboards"
+         }
+      ],
+      "panels": [
+         {
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "custom": {
+                     "axisCenteredZero": false,
+                     "axisColorMode": "text",
+                     "axisLabel": "",
+                     "axisPlacement": "auto",
+                     "fillOpacity": 80,
+                     "gradientMode": "none",
+                     "hideFrom": {
+                        "legend": false,
+                        "tooltip": false,
+                        "viz": false
+                     },
+                     "lineWidth": 1,
+                     "scaleDistribution": {
+                        "type": "linear"
+                     },
+                     "thresholdsStyle": {
+                        "mode": "off"
+                     }
+                  },
+                  "mappings": [ ],
+                  "max": 1,
+                  "min": 0,
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [ ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [
+                  {
+                     "matcher": {
+                        "id": "byName",
+                        "options": "Ready"
+                     },
+                     "properties": [
+                        {
+                           "id": "color",
+                           "value": {
+                              "fixedColor": "green",
+                              "mode": "fixed"
+                           }
+                        }
+                     ]
+                  },
+                  {
+                     "matcher": {
+                        "id": "byName",
+                        "options": "Updated"
+                     },
+                     "properties": [
+                        {
+                           "id": "color",
+                           "value": {
+                              "fixedColor": "blue",
+                              "mode": "fixed"
+                           }
+                        }
+                     ]
+                  }
+               ]
+            },
+            "gridPos": {
+               "h": 13,
+               "w": 10,
+               "x": 0,
+               "y": 0
+            },
+            "id": 1,
+            "links": [ ],
+            "options": {
+               "barRadius": 0,
+               "barWidth": 0.96999999999999997,
+               "fullHighlight": false,
+               "groupWidth": 0.69999999999999996,
+               "legend": {
+                  "calcs": [ ],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+               },
+               "orientation": "horizontal",
+               "showValue": "auto",
+               "stacking": "none",
+               "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+               },
+               "xField": "Workload",
+               "xTickLabelRotation": 0,
+               "xTickLabelSpacing": 0
+            },
+            "targets": [
+               {
+                  "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
+                  "format": "table",
+                  "instant": true,
+                  "intervalFactor": null,
+                  "legendFormat": "__auto",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
+                  "format": "table",
+                  "instant": true,
+                  "intervalFactor": null,
+                  "legendFormat": "__auto",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "title": "Rollout progress",
+            "transformations": [
+               {
+                  "id": "joinByField",
+                  "options": {
+                     "byField": "workload",
+                     "mode": "outer"
+                  }
+               },
+               {
+                  "id": "organize",
+                  "options": {
+                     "excludeByName": {
+                        "Time 1": true,
+                        "Time 2": true
+                     },
+                     "renameByName": {
+                        "Value #A": "Updated",
+                        "Value #B": "Ready",
+                        "workload": "Workload"
+                     }
+                  }
+               },
+               {
+                  "id": "sortBy",
+                  "options": {
+                     "sort": [
+                        {
+                           "field": "Workload"
+                        }
+                     ]
+                  }
+               }
+            ],
+            "type": "barchart"
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        }
+                     ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 2,
+               "x": 10,
+               "y": 0
+            },
+            "id": 2,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\", status_code=~\"2.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\", status_code=~\"2.+\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Writes - 2xx",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "orange",
+                           "value": 0.20000000000000001
+                        },
+                        {
+                           "color": "red",
+                           "value": 0.5
+                        }
+                     ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 2,
+               "x": 12,
+               "y": 0
+            },
+            "id": 3,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\", status_code=~\"4.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\", status_code=~\"4.+\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Writes - 4xx",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "red",
+                           "value": 0.01
+                        }
+                     ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 2,
+               "x": 14,
+               "y": 0
+            },
+            "id": 4,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\", status_code=~\"5.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\", status_code=~\"5.+\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Writes - 5xx",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "orange",
+                           "value": 0.20000000000000001
+                        },
+                        {
+                           "color": "red",
+                           "value": 0.5
+                        }
+                     ]
+                  },
+                  "unit": "s"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 8,
+               "x": 16,
+               "y": 0
+            },
+            "id": 5,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"})) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Writes 99th latency",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        }
+                     ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 2,
+               "x": 10,
+               "y": 4
+            },
+            "id": 6,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\", status_code=~\"2.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\", status_code=~\"2.+\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Reads - 2xx",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "orange",
+                           "value": 0.01
+                        },
+                        {
+                           "color": "red",
+                           "value": 0.050000000000000003
+                        }
+                     ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 2,
+               "x": 12,
+               "y": 4
+            },
+            "id": 7,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\", status_code=~\"4.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\", status_code=~\"4.+\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Reads - 4xx",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "red",
+                           "value": 0.01
+                        }
+                     ]
+                  },
+                  "unit": "percentunit"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 2,
+               "x": 14,
+               "y": 4
+            },
+            "id": 8,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\", status_code=~\"5.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "sum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\", status_code=~\"5.+\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Reads - 5xx",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 1,
+                  "noValue": "",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "orange",
+                           "value": 1
+                        },
+                        {
+                           "color": "red",
+                           "value": 2.5
+                        }
+                     ]
+                  },
+                  "unit": "s"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 4,
+               "w": 8,
+               "x": 16,
+               "y": 4
+            },
+            "id": 9,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) < ($latency_metrics * +Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) < ($latency_metrics * -Inf)",
+                  "format": null,
+                  "instant": false,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Reads 99th latency",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "aliasColors": { },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "color": {
+                     "mode": "thresholds"
+                  },
+                  "decimals": 0,
+                  "noValue": "All healthy",
+                  "thresholds": {
+                     "mode": "absolute",
+                     "steps": [
+                        {
+                           "color": "green",
+                           "value": null
+                        },
+                        {
+                           "color": "orange",
+                           "value": 1
+                        },
+                        {
+                           "color": "red",
+                           "value": 2
+                        }
+                     ]
+                  },
+                  "unit": "short"
+               },
+               "overrides": [ ]
+            },
+            "fill": 1,
+            "gridPos": {
+               "h": 3,
+               "w": 10,
+               "x": 0,
+               "y": 13
+            },
+            "id": 10,
+            "legend": {
+               "avg": false,
+               "current": false,
+               "max": false,
+               "min": false,
+               "show": true,
+               "total": false,
+               "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [ ],
+            "nullPointMode": "null as zero",
+            "options": {
+               "text": {
+                  "titleSize": 14,
+                  "valueSize": 14
+               },
+               "textMode": "value_and_name"
+            },
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [ ],
+            "spaceLength": 10,
+            "span": 6,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+               {
+                  "expr": "kube_deployment_status_replicas_unavailable{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n> 0\n",
+                  "format": null,
+                  "instant": true,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "{{deployment}}",
+                  "legendLink": null,
+                  "step": null
+               },
+               {
+                  "expr": "kube_statefulset_status_replicas_current{cluster=~\"$cluster\", namespace=~\"$namespace\"} -\nkube_statefulset_status_replicas_ready {cluster=~\"$cluster\", namespace=~\"$namespace\"}\n> 0\n",
+                  "format": null,
+                  "instant": true,
+                  "interval": "",
+                  "intervalFactor": null,
+                  "legendFormat": "{{statefulset}}",
+                  "legendLink": null,
+                  "step": null
+               }
+            ],
+            "thresholds": [ ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Unhealthy pods",
+            "tooltip": {
+               "shared": false,
+               "sort": 0,
+               "value_type": "individual"
+            },
+            "type": "stat",
+            "xaxis": {
+               "buckets": null,
+               "mode": "time",
+               "name": null,
+               "show": true,
+               "values": [ ]
+            },
+            "yaxes": [
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": 0,
+                  "show": true
+               },
+               {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": false
+               }
+            ]
+         },
+         {
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "overrides": [
+                  {
+                     "matcher": {
+                        "id": "byRegexp",
+                        "options": "r.*"
+                     },
+                     "properties": [
+                        {
+                           "id": "custom.align",
+                           "value": "center"
+                        }
+                     ]
+                  }
+               ]
+            },
+            "gridPos": {
+               "h": 8,
+               "w": 6,
+               "x": 10,
+               "y": 8
+            },
+            "id": 11,
+            "targets": [
+               {
+                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n    \"version\", \"$1\", \"image\", \".*:(.*)\"\n  )\n)\n",
+                  "instant": true,
+                  "legendFormat": "",
+                  "refId": "A"
+               }
+            ],
+            "title": "Pods count per version",
+            "transformations": [
+               {
+                  "id": "labelsToFields",
+                  "options": {
+                     "valueLabel": "version"
+                  }
+               },
+               {
+                  "id": "organize",
+                  "options": {
+                     "excludeByName": {
+                        "Time": true
+                     },
+                     "indexByName": {
+                        "Time": 0,
+                        "container": 1
+                     }
+                  }
+               },
+               {
+                  "id": "sortBy",
+                  "options": {
+                     "fields": { },
+                     "sort": [
+                        {
+                           "field": "container"
+                        }
+                     ]
+                  }
+               }
+            ],
+            "type": "table"
+         },
+         {
+            "datasource": "$datasource",
+            "fieldConfig": {
+               "defaults": {
+                  "custom": {
+                     "fillOpacity": 10
+                  },
+                  "unit": "percentunit"
+               }
+            },
+            "gridPos": {
+               "h": 8,
+               "w": 8,
+               "x": 16,
+               "y": 8
+            },
+            "id": 12,
+            "links": [ ],
+            "options": {
+               "legend": {
+                  "showLegend": true
+               },
+               "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+               }
+            },
+            "targets": [
+               {
+                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}))[1h:])\n)\n < ($latency_metrics * +Inf)",
+                  "format": "time_series",
+                  "legendFormat": "writes",
+                  "legendLink": null
+               },
+               {
+                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}))[1h:])\n)\n < ($latency_metrics * -Inf)",
+                  "format": "time_series",
+                  "legendFormat": "writes",
+                  "legendLink": null
+               },
+               {
+                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))[1h:])\n)\n < ($latency_metrics * +Inf)",
+                  "format": "time_series",
+                  "legendFormat": "reads",
+                  "legendLink": null
+               },
+               {
+                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))[1h:])\n)\n < ($latency_metrics * -Inf)",
+                  "format": "time_series",
+                  "legendFormat": "reads",
+                  "legendLink": null
+               }
+            ],
+            "title": "Latency vs 24h ago",
+            "type": "timeseries"
+         }
+      ],
+      "refresh": "5m",
+      "rows": null,
+      "schemaVersion": 27,
+      "style": "dark",
+      "tags": [
+         "mimir"
+      ],
+      "templating": {
+         "list": [
+            {
+               "current": {
+                  "text": "default",
+                  "value": "default"
+               },
+               "hide": 0,
+               "label": "Data source",
+               "name": "datasource",
+               "options": [ ],
+               "query": "prometheus",
+               "refresh": 1,
+               "regex": "",
+               "type": "datasource"
+            },
+            {
+               "allValue": ".*",
+               "current": {
+                  "text": "prod",
+                  "value": "prod"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "cluster",
+               "multi": false,
+               "name": "cluster",
+               "options": [ ],
+               "query": "label_values(cortex_build_info, cluster)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "allValue": null,
+               "current": {
+                  "text": "prod",
+                  "value": "prod"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": false,
+               "label": "namespace",
+               "multi": false,
+               "name": "namespace",
+               "options": [ ],
+               "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "classic",
+                  "value": "1"
+               },
+               "description": "Choose between showing latencies based on low precision classic or high precision native histogram metrics.",
+               "hide": 0,
+               "includeAll": false,
+               "label": "Latency metrics",
+               "multi": false,
+               "name": "latency_metrics",
+               "options": [
+                  {
+                     "selected": false,
+                     "text": "native",
+                     "value": "-1"
+                  },
+                  {
+                     "selected": true,
+                     "text": "classic",
+                     "value": "1"
+                  }
+               ],
+               "query": "native : -1,classic : 1",
+               "skipUrlSync": false,
+               "type": "custom",
+               "useTags": false
+            }
+         ]
+      },
+      "time": {
+         "from": "now-1h",
+         "to": "now"
+      },
+      "timepicker": {
+         "refresh_intervals": [
+            "5s",
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+         ],
+         "time_options": [
+            "5m",
+            "15m",
+            "1h",
+            "6h",
+            "12h",
+            "24h",
+            "2d",
+            "7d",
+            "30d"
+         ]
+      },
+      "timezone": "utc",
+      "title": "Mimir / Rollout progress",
+      "uid": "7f0b5567d543a1698e695b530eb7f5de",
+      "version": 0
+   }

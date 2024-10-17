@@ -1,0 +1,1487 @@
+{
+      "__requires": [
+         {
+            "id": "grafana",
+            "name": "Grafana",
+            "type": "grafana",
+            "version": "8.0.0"
+         }
+      ],
+      "annotations": {
+         "list": [ ]
+      },
+      "editable": true,
+      "gnetId": null,
+      "graphTooltip": 1,
+      "hideControls": false,
+      "links": [
+         {
+            "asDropdown": true,
+            "icon": "external link",
+            "includeVars": true,
+            "keepTime": true,
+            "tags": [
+               "mimir"
+            ],
+            "targetBlank": false,
+            "title": "Mimir dashboards",
+            "type": "dashboards"
+         }
+      ],
+      "refresh": "",
+      "rows": [
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 1,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Response time",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 2,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Fetched series",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 3,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Fetched chunks",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 4,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Response size",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 5,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Time span",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 6,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p99",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()",
+                        "format": "time_series",
+                        "legendFormat": "p50",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Query wall time",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Across tenants",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 7,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 response time",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 8,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 fetched series",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 9,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 fetched chunks",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 10,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 response size",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 11,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 time span",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user))",
+                        "format": "time_series",
+                        "legendFormat": "{{user}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 query wall time",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Top 10 tenants",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 13,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 response time",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 14,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 fetched series",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 15,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 fetched chunks",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "bytes"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 16,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 response size",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 17,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 time span",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "${loki_datasource}",
+                  "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 18,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user_agent))",
+                        "format": "time_series",
+                        "legendFormat": "{{user_agent}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "P99 query wall time",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Top 10 User-Agents",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "${loki_datasource}",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_chunk_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_index_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "response_size_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "results_cache_hit_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "results_cache_miss_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "estimated_series_count"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_chunks_count"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_series_count"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time span"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Duration"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Step"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "queue_time_seconds"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "query_wall_time_seconds"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "height": "500px",
+                  "id": 19,
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"$component.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{ if .response_time }} {{ duration .response_time }} {{ end }}\",param_step_seconds=\"{{ if .param_step }} {{ div .param_step 1000 }} {{ end }}\",length_seconds=\"{{ if .length }} {{ duration .length }} {{ end }}\"",
+                        "instant": false,
+                        "legendFormat": "",
+                        "range": true,
+                        "refId": "A"
+                     }
+                  ],
+                  "title": "Slow queries",
+                  "transformations": [
+                     {
+                        "id": "extractFields",
+                        "options": {
+                           "source": "labels"
+                        }
+                     },
+                     {
+                        "id": "organize",
+                        "options": {
+                           "excludeByName": {
+                              "Line": true,
+                              "Time": true,
+                              "caller": true,
+                              "cluster": true,
+                              "component": true,
+                              "container": true,
+                              "gossip_ring_member": true,
+                              "host": true,
+                              "id": true,
+                              "job": true,
+                              "labels": true,
+                              "length": true,
+                              "level": true,
+                              "line": true,
+                              "method": true,
+                              "msg": true,
+                              "name": true,
+                              "namespace": true,
+                              "param_step": true,
+                              "path": true,
+                              "pod": true,
+                              "pod_template_hash": true,
+                              "response_time": true,
+                              "stream": true,
+                              "traceID": true,
+                              "tsNs": true
+                           },
+                           "indexByName": {
+                              "err": 10,
+                              "length_seconds": 3,
+                              "param_end": 5,
+                              "param_query": 8,
+                              "param_start": 4,
+                              "param_step_seconds": 7,
+                              "param_time": 6,
+                              "response_time_seconds": 9,
+                              "status": 1,
+                              "ts": 0,
+                              "user": 2
+                           },
+                           "renameByName": {
+                              "err": "Error",
+                              "length_seconds": "Time span",
+                              "param_end": "End",
+                              "param_query": "Query",
+                              "param_start": "Start",
+                              "param_step_seconds": "Step",
+                              "param_time": "Time (instant query)",
+                              "response_time_seconds": "Duration",
+                              "ts": "Completion date",
+                              "user": "Tenant ID"
+                           }
+                        }
+                     },
+                     {
+                        "id": "convertFieldType",
+                        "options": {
+                           "conversions": [
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "sharded_queries"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "split_queries"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "fetched_chunk_bytes"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "fetched_index_bytes"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "response_size_bytes"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "results_cache_hit_bytes"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "results_cache_miss_bytes"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "estimated_series_count"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "fetched_chunks_count"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "fetched_series_count"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "Time span"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "Duration"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "Step"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "queue_time_seconds"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "query_wall_time_seconds"
+                              }
+                           ]
+                        }
+                     }
+                  ],
+                  "type": "table"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "",
+            "titleSize": "h6"
+         }
+      ],
+      "schemaVersion": 14,
+      "style": "dark",
+      "tags": [
+         "mimir"
+      ],
+      "templating": {
+         "list": [
+            {
+               "current": {
+                  "text": "default",
+                  "value": "default"
+               },
+               "hide": 0,
+               "label": "Data source",
+               "name": "datasource",
+               "options": [ ],
+               "query": "prometheus",
+               "refresh": 1,
+               "regex": "",
+               "type": "datasource"
+            },
+            {
+               "allValue": ".*",
+               "current": {
+                  "text": "prod",
+                  "value": "prod"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "cluster",
+               "multi": false,
+               "name": "cluster",
+               "options": [ ],
+               "query": "label_values(cortex_build_info, cluster)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "allValue": null,
+               "current": {
+                  "text": "prod",
+                  "value": "prod"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": false,
+               "label": "namespace",
+               "multi": false,
+               "name": "namespace",
+               "options": [ ],
+               "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 1,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "hide": 0,
+               "includeAll": false,
+               "label": "Loki data source",
+               "multi": false,
+               "name": "loki_datasource",
+               "query": "loki",
+               "type": "datasource"
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "5s",
+                  "value": "5s"
+               },
+               "hide": 0,
+               "label": "Min duration",
+               "name": "min_duration",
+               "options": [
+                  {
+                     "selected": true,
+                     "text": "5s",
+                     "value": "5s"
+                  }
+               ],
+               "query": "5s",
+               "type": "textbox"
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": ".*",
+                  "value": ".*"
+               },
+               "hide": 0,
+               "label": "Tenant ID",
+               "name": "tenant_id",
+               "options": [
+                  {
+                     "selected": true,
+                     "text": ".*",
+                     "value": ".*"
+                  }
+               ],
+               "query": ".*",
+               "type": "textbox"
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": ".*",
+                  "value": ".*"
+               },
+               "hide": 0,
+               "label": "User-Agent HTTP Header",
+               "name": "user_agent",
+               "options": [
+                  {
+                     "selected": true,
+                     "text": ".*",
+                     "value": ".*"
+                  }
+               ],
+               "query": ".*",
+               "type": "textbox"
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "query-frontend",
+                  "value": "query-frontend"
+               },
+               "label": "Component",
+               "multi": false,
+               "name": "component",
+               "options": [
+                  {
+                     "selected": true,
+                     "text": "query-frontend",
+                     "value": "query-frontend"
+                  },
+                  {
+                     "selected": false,
+                     "text": "ruler-query-frontend",
+                     "value": "ruler-query-frontend"
+                  }
+               ],
+               "query": "query-frontend, ruler-query-frontend",
+               "type": "custom"
+            }
+         ]
+      },
+      "time": {
+         "from": "now-1h",
+         "to": "now"
+      },
+      "timepicker": {
+         "refresh_intervals": [
+            "5s",
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+         ],
+         "time_options": [
+            "5m",
+            "15m",
+            "1h",
+            "6h",
+            "12h",
+            "24h",
+            "2d",
+            "7d",
+            "30d"
+         ]
+      },
+      "timezone": "utc",
+      "title": "Mimir / Slow queries",
+      "uid": "6089e1ce1e678788f46312a0a1e647e6",
+      "version": 0
+   }
