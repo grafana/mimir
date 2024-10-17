@@ -13,3 +13,9 @@ eval range from 0 to 5m step 1m clamp_min(mixed_metric, 2)
 
 eval range from 0 to 5m step 1m clamp_max(mixed_metric, 2)
 	{} _ 1 2 2
+
+# round ignores any histograms
+# Prometheus currently returns 0 instead of no value as per the documentation
+# https://github.com/prometheus/prometheus/pull/15176
+eval range from 0 to 5m step 1m round(mixed_metric)
+	mixed_metric _ 1 2 3
