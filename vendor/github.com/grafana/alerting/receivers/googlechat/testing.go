@@ -8,3 +8,8 @@ const FullValidConfigForTesting = `{
 	"avatar_url" : "http://avatar", 
 	"use_discord_username": true
 }`
+
+// FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets.
+const FullValidSecretsForTesting = `{
+	"url": "http://localhost/url-secret"
+}`
