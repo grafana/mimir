@@ -218,7 +218,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.ConsumerGroup, b.fallbackOffsetMillis)
+		groupLag, err := GetGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.ConsumerGroup, b.fallbackOffsetMillis)
 		if err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
 		} else {
