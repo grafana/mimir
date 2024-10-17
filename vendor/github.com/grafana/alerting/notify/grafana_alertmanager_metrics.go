@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/api/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -20,10 +21,10 @@ type GrafanaAlertmanagerMetrics struct {
 }
 
 // NewGrafanaAlertmanagerMetrics creates a set of metrics for the Alertmanager.
-func NewGrafanaAlertmanagerMetrics(r prometheus.Registerer) *GrafanaAlertmanagerMetrics {
+func NewGrafanaAlertmanagerMetrics(r prometheus.Registerer, l log.Logger) *GrafanaAlertmanagerMetrics {
 	return &GrafanaAlertmanagerMetrics{
 		Registerer: r,
-		Alerts:     metrics.NewAlerts(r),
+		Alerts:     metrics.NewAlerts(r, l),
 		configuredReceivers: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
