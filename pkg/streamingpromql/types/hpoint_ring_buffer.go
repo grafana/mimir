@@ -201,10 +201,18 @@ func (b *HPointRingBuffer) RemoveLastPoint() {
 	}
 }
 
-// Reset clears the contents of this buffer.
+// Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *HPointRingBuffer) Reset() {
 	b.firstIndex = 0
 	b.size = 0
+}
+
+// Release clears the contents of this buffer and releases the underlying point slice.
+// The buffer can be used again and will acquire a new slice when required.
+func (b *HPointRingBuffer) Release() {
+	b.Reset()
+	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	b.points = nil
 }
 
 // Use replaces the contents of this buffer with s.

@@ -150,10 +150,18 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 	return nil
 }
 
-// Reset clears the contents of this buffer.
+// Reset clears the contents of this buffer, but retains the underlying point slice for future reuse.
 func (b *FPointRingBuffer) Reset() {
 	b.firstIndex = 0
 	b.size = 0
+}
+
+// Release clears the contents of this buffer and releases the underlying point slice.
+// The buffer can be used again and will acquire a new slice when required.
+func (b *FPointRingBuffer) Release() {
+	b.Reset()
+	putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	b.points = nil
 }
 
 // Use replaces the contents of this buffer with s.
