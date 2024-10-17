@@ -106,9 +106,11 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 	}()
 
 	var (
-		labelsBuilder       labels.ScratchBuilder
-		nonCopiedLabels     labels.Labels
+		labelsBuilder   labels.ScratchBuilder
+		nonCopiedLabels labels.Labels
+
 		allSamplesProcessed = true
+		discardedSamples    = 0
 	)
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
@@ -141,10 +143,12 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 				}
 			}
 
-			// Only abort the processing on a terminal error.
-			// TODO(v): add metrics for non-terminal errors
-			if err := checkTSDBAppendError(err); err != nil {
-				return false, err
+			if err != nil {
+				// Only abort the processing on a terminal error.
+				if err := checkTSDBAppendError(err); err != nil {
+					return false, err
+				}
+				discardedSamples++
 			}
 		}
 
@@ -183,14 +187,21 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 				}
 			}
 
-			// Only abort the processing on a terminal error.
-			// TODO(v): add metrics for non-terminal errors
-			if err := checkTSDBAppendError(err); err != nil {
-				return false, err
+			if err != nil {
+				// Only abort the processing on a terminal error.
+				if err := checkTSDBAppendError(err); err != nil {
+					return false, err
+				}
+				discardedSamples++
 			}
 		}
 
 		// Exemplars and metadata are not persisted in the block. So we skip them.
+	}
+
+	if discardedSamples > 0 {
+		partitionStr := fmt.Sprintf("%d", tenant.partitionID)
+		b.metrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
 	}
 
 	return allSamplesProcessed, app.Commit()
@@ -230,6 +241,8 @@ func checkTSDBAppendError(err error) error {
 	case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
 		return nil
 	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
+		return nil
+	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
 		return nil
 	}
 	return err

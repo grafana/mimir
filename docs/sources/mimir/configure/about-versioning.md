@@ -71,6 +71,8 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
+  - Cache rule group contents.
+    - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
@@ -82,8 +84,6 @@ The following features are currently experimental:
     - `-distributor.max-otlp-request-size`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
-  - Enable direct translation from OTLP write requests to Mimir equivalents
-    - `-distributor.direct-otlp-translation-enabled`
   - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
 - Hash ring

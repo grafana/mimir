@@ -963,11 +963,6 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
-
-# (experimental) When enabled, OTLP write requests are directly translated to
-# Mimir equivalents, for optimum performance.
-# CLI flag: -distributor.direct-otlp-translation-enabled
-[direct_otlp_translation_enabled: <boolean> | default = true]
 ```
 
 ### ingester
@@ -2166,6 +2161,11 @@ local:
   [directory: <string> | default = ""]
 
 cache:
+  # (experimental) Enabling caching of rule group contents if a cache backend is
+  # configured.
+  # CLI flag: -ruler-storage.cache.rule-group-enabled
+  [rule_group_enabled: <boolean> | default = false]
+
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
