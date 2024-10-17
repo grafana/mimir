@@ -326,6 +326,10 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
+
+	case *parser.SubqueryExpr:
+		return nil, compat.NewNotSupportedError("subquery")
+
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToRangeVectorOperator(e.Expr)
