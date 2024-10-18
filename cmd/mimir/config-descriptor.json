@@ -1701,17 +1701,6 @@
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "direct_otlp_translation_enabled",
-          "required": false,
-          "desc": "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.direct-otlp-translation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

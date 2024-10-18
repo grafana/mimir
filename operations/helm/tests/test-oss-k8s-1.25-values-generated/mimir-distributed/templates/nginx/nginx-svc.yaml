@@ -14,6 +14,7 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Cluster
   ports:
     - name: http-metric
       port: 80

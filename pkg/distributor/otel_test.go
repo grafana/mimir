@@ -78,7 +78,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 	require.NoError(b, err)
-	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger(), true)
+	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, false)
@@ -369,7 +369,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()))
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -449,7 +449,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		assert.False(t, request.SkipLabelValidation)
 		pushReq.CleanUp()
 		return nil
-	}, nil, nil, log.NewNopLogger(), true)
+	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -495,7 +495,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		assert.Len(t, request.Timeseries, 1)
 		assert.False(t, request.SkipLabelValidation)
 		return nil
-	}, nil, nil, log.NewNopLogger(), true)
+	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 
@@ -521,7 +521,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
 		assert.False(t, request.SkipLabelValidation)
 		return nil
-	}, nil, nil, log.NewNopLogger(), true)
+	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -542,7 +542,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger(), true)
+	handler := OTLPHandler(140, nil, nil, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)

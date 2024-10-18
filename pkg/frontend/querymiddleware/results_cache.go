@@ -192,6 +192,9 @@ type CacheKeyGenerator interface {
 	// QueryRequest should generate a cache key based on the tenant ID and MetricsQueryRequest.
 	QueryRequest(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
+	// QueryRequestError should generate a cache key based on errors for the tenant ID and MetricsQueryRequest.
+	QueryRequestError(ctx context.Context, tenantID string, r MetricsQueryRequest) string
+
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
 	// LabelValues should return a nil *GenericQueryCacheKey when it returns an error and
@@ -219,16 +222,20 @@ func NewDefaultCacheKeyGenerator(codec Codec, interval time.Duration) DefaultCac
 }
 
 // QueryRequest generates a cache key based on the userID, MetricsQueryRequest and interval.
-func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r MetricsQueryRequest) string {
+func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, tenantID string, r MetricsQueryRequest) string {
 	startInterval := r.GetStart() / g.interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
 	if stepOffset == 0 {
-		return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval)
+		return fmt.Sprintf("%s:%s:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval)
 	}
 
-	return fmt.Sprintf("%s:%s:%d:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
+	return fmt.Sprintf("%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
+}
+
+func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID string, r MetricsQueryRequest) string {
+	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep())
 }
 
 // shouldCacheFn checks whether the current request should go to cache

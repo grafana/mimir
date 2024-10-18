@@ -1145,8 +1145,6 @@ Usage of ./cmd/mimir/mimir:
     	Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.
   -distributor.client-cleanup-period duration
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
-  -distributor.direct-otlp-translation-enabled
-    	[experimental] When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance. (default true)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.ha-tracker.cluster string

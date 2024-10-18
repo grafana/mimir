@@ -12,7 +12,10 @@ metadata:
   annotations:
     {{- toYaml .Values.query_scheduler.service.annotations | nindent 4 }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.query_scheduler.service.type }}
+  {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
+  internalTrafficPolicy: {{ .Values.query_scheduler.service.internalTrafficPolicy }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP

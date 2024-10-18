@@ -963,11 +963,6 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
-
-# (experimental) When enabled, OTLP write requests are directly translated to
-# Mimir equivalents, for optimum performance.
-# CLI flag: -distributor.direct-otlp-translation-enabled
-[direct_otlp_translation_enabled: <boolean> | default = true]
 ```
 
 ### ingester
