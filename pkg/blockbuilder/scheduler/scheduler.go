@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
@@ -52,6 +53,10 @@ func (s *BlockBuilderScheduler) starting(context.Context) (err error) {
 		kgo.ConsumerGroup(s.cfg.SchedulerConsumerGroup),
 		// Scheduler is just an observer; we don't want to it committing any offsets.
 		kgo.DisableAutoCommit(),
+
+		// Dial these back as we're only fetching single records.
+		kgo.FetchMaxBytes(100*int32(units.KiB)),
+		kgo.FetchMaxPartitionBytes(16*int32(units.KiB)),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
@@ -89,6 +94,7 @@ func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to list start offsets", "err", err)
 	}
+
 	endOffsets, err := s.adminClient.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
@@ -97,11 +103,22 @@ func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	startOffsets.Each(func(o kadm.ListedOffset) {
 		s.metrics.partitionStartOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
+
 	endOffsets.Each(func(o kadm.ListedOffset) {
 		s.metrics.partitionEndOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 
 	// Any errors from here on are ones that cause us to bail from this monitoring iteration.
+
+	committedOffsets, err := s.adminClient.ListCommittedOffsets(ctx, s.cfg.Kafka.Topic)
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to list committed offsets", "err", err)
+		return
+	}
+
+	committedOffsets.Each(func(o kadm.ListedOffset) {
+		s.metrics.partitionCommittedOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+	})
 
 	consumedOffsets, err := s.adminClient.FetchOffsets(ctx, s.cfg.BuilderConsumerGroup)
 	if err != nil {
@@ -109,7 +126,7 @@ func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 		return
 	}
 
-	backlogTime, err := s.computeBacklogTime(ctx, consumedOffsets.KOffsets(), endOffsets.KOffsets())
+	backlogTime, err := s.computeBacklogTime(ctx, consumedOffsets.KOffsets(), committedOffsets.KOffsets())
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to compute backlog time", "err", err)
 		return
@@ -120,14 +137,17 @@ func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	}
 }
 
-func (s *BlockBuilderScheduler) computeBacklogTime(ctx context.Context, consumedOffsets, endOffsets map[string]map[int32]kgo.Offset) (map[int32]time.Duration, error) {
-	// fetch the (consumed, end) records for each partition, and store the difference in the returned map.
+func (s *BlockBuilderScheduler) computeBacklogTime(ctx context.Context,
+	consumedOffsets, committedOffsets map[string]map[int32]kgo.Offset,
+) (map[int32]time.Duration, error) {
+	// fetch the (consumed, committed) records for each partition and store the
+	// difference in the returned map.
 
 	loRecords, err := s.fetchSingleRecords(ctx, consumedOffsets)
 	if err != nil {
 		return nil, fmt.Errorf("fetch consumed: %w", err)
 	}
-	hiRecords, err := s.fetchSingleRecords(ctx, endOffsets)
+	hiRecords, err := s.fetchSingleRecords(ctx, committedOffsets)
 	if err != nil {
 		return nil, fmt.Errorf("fetch end records: %w", err)
 	}
