@@ -50,6 +50,7 @@ func (s *BlockBuilderScheduler) starting(context.Context) (err error) {
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
 		kgo.ConsumerGroup(s.cfg.SchedulerConsumerGroup),
+		// Scheduler is just an observer; we don't want to it committing any offsets.
 		kgo.DisableAutoCommit(),
 	)
 	if err != nil {
@@ -80,7 +81,9 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 // monitorPartitions updates knowledge of all active partitions.
 func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	startTime := time.Now()
-	defer s.metrics.monitorPartitionsDuration.Observe(time.Since(startTime).Seconds())
+	defer func() {
+		s.metrics.monitorPartitionsDuration.Observe(time.Since(startTime).Seconds())
+	}()
 
 	startOffsets, err := s.adminClient.ListStartOffsets(ctx, s.cfg.Kafka.Topic)
 	if err != nil {
