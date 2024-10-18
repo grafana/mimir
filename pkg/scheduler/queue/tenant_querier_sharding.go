@@ -42,7 +42,7 @@ func (s querierIDSlice) Search(x tree.QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
 
-// tenantQuerierAssignments maintains information about tenants and connected queriers, and uses
+// tenantQuerierSharding maintains information about tenants and connected queriers, and uses
 // this information to update a mapping of queriers to tenants in tree.TenantQuerierQueuingAlgorithm.
 // This supports dequeuing from an appropriate tenant for a given querier when shuffle-sharding is enabled.
 //
@@ -55,20 +55,21 @@ func (s querierIDSlice) Search(x tree.QuerierID) int {
 //   - a querier connection is added or removed
 //   - it is detected during request enqueueing that a tenant's queriers were calculated from
 //     an outdated max-queriers-per-tenant value
-type tenantQuerierAssignments struct {
+type tenantQuerierSharding struct {
 	// Sorted list of querier ids, used when shuffle-sharding queriers for tenant
 	querierIDsSorted querierIDSlice
 
 	// Tenant information used in shuffle-sharding
 	tenantsByID map[string]*queueTenant
 
-	// State used by the tree queue to dequeue queries, including a tenant-querier mapping
+	// State used by the tree queue to dequeue queries, including a tenant-querier mapping which
+	// will be updated by tenantQuerierSharding when the mapping is changed.
 	queuingAlgorithm *tree.TenantQuerierQueuingAlgorithm
 }
 
-func newTenantQuerierAssignments() *tenantQuerierAssignments {
+func newTenantQuerierAssignments() *tenantQuerierSharding {
 	tqqa := tree.NewTenantQuerierQueuingAlgorithm()
-	return &tenantQuerierAssignments{
+	return &tenantQuerierSharding{
 		querierIDsSorted: nil,
 		tenantsByID:      map[string]*queueTenant{},
 		queuingAlgorithm: tqqa,
@@ -79,7 +80,7 @@ func newTenantQuerierAssignments() *tenantQuerierAssignments {
 //
 // New tenants are added to tenantsByID and the queuing algorithm state, and tenant-querier shards are shuffled if needed.
 // Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
-func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID string, maxQueriers int) error {
+func (tqa *tenantQuerierSharding) createOrUpdateTenant(tenantID string, maxQueriers int) error {
 	if tenantID == "" {
 		// empty tenantID is not allowed; "" is used for free spot
 		return ErrInvalidTenantID
@@ -119,7 +120,7 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID string, maxQu
 
 // removeTenant deletes a *queueTenant from tenantsByID. Any updates to remove a tenant from queuingAlgorithm
 // are managed by a tree.Tree during dequeue.
-func (tqa *tenantQuerierAssignments) removeTenant(tenantID string) {
+func (tqa *tenantQuerierSharding) removeTenant(tenantID string) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
 		return
@@ -127,17 +128,17 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID string) {
 	delete(tqa.tenantsByID, tenantID)
 }
 
-// addQuerier adds the given querierID to tenantQuerierAssignments' querierIDsSorted. It does not do any checks to
+// addQuerier adds the given querierID to tenantQuerierSharding' querierIDsSorted. It does not do any checks to
 // validate that a querier connection matching this ID exists. That logic is handled by querierConnections,
 // and coordinated by the queueBroker.
-func (tqa *tenantQuerierAssignments) addQuerier(querierID string) {
+func (tqa *tenantQuerierSharding) addQuerier(querierID string) {
 	tqa.querierIDsSorted = append(tqa.querierIDsSorted, tree.QuerierID(querierID))
 	sort.Sort(tqa.querierIDsSorted)
 }
 
 // removeQueriers deletes an arbitrary number of queriers from the querier connection manager, and returns true if
 // the tenant-querier sharding was recomputed.
-func (tqa *tenantQuerierAssignments) removeQueriers(querierIDs ...string) (resharded bool) {
+func (tqa *tenantQuerierSharding) removeQueriers(querierIDs ...string) (resharded bool) {
 	for _, querierID := range querierIDs {
 		ix := tqa.querierIDsSorted.Search(tree.QuerierID(querierID))
 		if ix >= len(tqa.querierIDsSorted) || tqa.querierIDsSorted[ix] != tree.QuerierID(querierID) {
@@ -149,7 +150,7 @@ func (tqa *tenantQuerierAssignments) removeQueriers(querierIDs ...string) (resha
 	return tqa.recomputeTenantQueriers()
 }
 
-func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() (resharded bool) {
+func (tqa *tenantQuerierSharding) recomputeTenantQueriers() (resharded bool) {
 	var scratchpad []tree.QuerierID
 	for tenantID, tenant := range tqa.tenantsByID {
 		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
@@ -164,7 +165,7 @@ func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() (resharded bool) 
 	return resharded
 }
 
-func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scratchpad []tree.QuerierID) (resharded bool) {
+func (tqa *tenantQuerierSharding) shuffleTenantQueriers(tenantID string, scratchpad []tree.QuerierID) (resharded bool) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
 		return false
@@ -196,6 +197,6 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scra
 	return true
 }
 
-func (tqa *tenantQuerierAssignments) queriersForTenant(tenantID string) map[tree.QuerierID]struct{} {
+func (tqa *tenantQuerierSharding) queriersForTenant(tenantID string) map[tree.QuerierID]struct{} {
 	return tqa.queuingAlgorithm.QueriersForTenant(tenantID)
 }
