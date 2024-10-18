@@ -567,16 +567,20 @@ func compareSamplePair(expected, actual model.SamplePair, queryEvaluationTime ti
 	}
 
 	if expected.Timestamp != actual.Timestamp {
-		return fmt.Errorf("expected timestamp %v but got %v", expected.Timestamp, actual.Timestamp)
+		return fmt.Errorf("expected timestamp %v (%v) but got %v (%v)", expected.Timestamp, formatTimestamp(expected.Timestamp), actual.Timestamp, formatTimestamp(actual.Timestamp))
 	}
 	if opts.SkipRecentSamples > 0 && queryEvaluationTime.Sub(expected.Timestamp.Time()) < opts.SkipRecentSamples {
 		return nil
 	}
 	if !compareSampleValue(float64(expected.Value), float64(actual.Value), opts) {
-		return fmt.Errorf("expected value %s for timestamp %v but got %s", expected.Value, expected.Timestamp, actual.Value)
+		return fmt.Errorf("expected value %s for timestamp %v (%v) but got %s", expected.Value, expected.Timestamp, formatTimestamp(expected.Timestamp), actual.Value)
 	}
 
 	return nil
+}
+
+func formatTimestamp(t model.Time) string {
+	return t.Time().UTC().Format(time.RFC3339Nano)
 }
 
 func compareSampleValue(first, second float64, opts SampleComparisonOptions) bool {
