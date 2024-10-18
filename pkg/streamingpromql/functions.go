@@ -223,6 +223,34 @@ func ClampFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 	}
 }
 
+func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+		if len(args) != 2 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 2 argument for %s, got %v", functionName, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		clampTo, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for %s, got %T", functionName, args[1])
+		}
+
+		f := functions.FunctionOverInstantVector{
+			SeriesDataFunc:         functions.ClampMinMaxFactory(isMin),
+			SeriesMetadataFunction: functions.DropSeriesName,
+		}
+
+		return operators.NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, memoryConsumptionTracker, f, expressionPosition), nil
+	}
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
@@ -237,6 +265,8 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
 	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
 	"clamp":             ClampFunctionOperatorFactory(),
+	"clamp_min":         ClampMinMaxFunctionOperatorFactory("clamp_min", true),
+	"clamp_max":         ClampMinMaxFunctionOperatorFactory("clamp_max", false),
 	"cos":               InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":   FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),

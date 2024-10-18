@@ -20,6 +20,8 @@ import (
 )
 
 func TestErrorCachingHandler_Do(t *testing.T) {
+	keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
+
 	newDefaultRequest := func() *PrometheusRangeQueryRequest {
 		return &PrometheusRangeQueryRequest{
 			queryExpr: parseQuery(t, "up"),
@@ -31,7 +33,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 
 	runHandler := func(ctx context.Context, inner MetricsQueryHandler, c cache.Cache, req MetricsQueryRequest) (Response, error) {
 		limits := &mockLimits{resultsCacheTTLForErrors: time.Minute}
-		middleware := newErrorCachingMiddleware(c, limits, resultsCacheEnabledByOption, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+		middleware := newErrorCachingMiddleware(c, limits, resultsCacheEnabledByOption, keyGen, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
 		handler := middleware.Wrap(inner)
 		return handler.Do(ctx, req)
 	}
@@ -80,7 +82,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 
 		ctx := user.InjectOrgID(context.Background(), "1234")
 		req := newDefaultRequest()
-		key := errorCachingKey("1234", req)
+		key := keyGen.QueryRequestError(ctx, "1234", req)
 		bytes, err := proto.Marshal(&CachedError{
 			Key:          key,
 			ErrorType:    string(apierror.TypeExec),
@@ -108,7 +110,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "1234")
 		req := newDefaultRequest()
 
-		key := errorCachingKey("1234", req)
+		key := keyGen.QueryRequestError(ctx, "1234", req)
 		bytes, err := proto.Marshal(&CachedError{
 			Key:          "different key that is stored under the same hashed key",
 			ErrorType:    string(apierror.TypeExec),
@@ -136,7 +138,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "1234")
 		req := newDefaultRequest()
 
-		key := errorCachingKey("1234", req)
+		key := keyGen.QueryRequestError(ctx, "1234", req)
 		bytes := []byte{0x0, 0x0, 0x0, 0x0}
 
 		// NOTE: We rely on this mock cache being synchronous

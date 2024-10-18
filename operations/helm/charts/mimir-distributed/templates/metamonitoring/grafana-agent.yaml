@@ -64,7 +64,7 @@ spec:
   tolerations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" $ "component" "meta-monitoring") | nindent 6 }}
+  {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" $ "component" "meta-monitoring") | nindent 2 }}
   logs:
     instanceSelector:
       matchLabels:
