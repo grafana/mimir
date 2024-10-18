@@ -134,3 +134,32 @@ func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
 		return seriesData, nil
 	}
 }
+
+// round returns a number rounded to toNearest.
+// Ties are solved by rounding up.
+var Round InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	toNearest := scalarArgsData[0]
+
+	// There will always be a scalar at every step of the query.
+	// However, there may not be a sample at a step. So we need to
+	// keep track of where we are up to step-wise with the scalars,
+	// incrementing through the scalars until their timestamp matches
+	// the samples.
+	argIdx := 0
+
+	for step, data := range seriesData.Floats {
+		for data.T > toNearest.Samples[argIdx].T {
+			argIdx++
+		}
+
+		// Invert as it seems to cause fewer floating point accuracy issues.
+		toNearestInverse := 1.0 / toNearest.Samples[argIdx].F
+
+		// We reuse the existing FPoint slice in place
+		seriesData.Floats[step].F = math.Floor(data.F*toNearestInverse+0.5) / toNearestInverse
+	}
+	// Histograms are dropped from Round
+	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+	seriesData.Histograms = nil
+	return seriesData, nil
+}

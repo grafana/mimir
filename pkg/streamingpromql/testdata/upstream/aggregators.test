@@ -132,70 +132,58 @@ eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-serve
 	{group="production", instance="0", job="api-server"} 1
 	{group="production", instance="1", job="api-server"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 0
-# 	{group="production", instance="1", job="api-server"} 1
+eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 1
 
 # Round should correctly handle negative numbers.
-# Unsupported by streaming engine.
-# eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="api-server"}))
-# 	{group="production", instance="0", job="api-server"} 0
-# 	{group="production", instance="1", job="api-server"} -1
+eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} -1
 
 # Round should round half up.
-# Unsupported by streaming engine.
-# eval instant at 50m round(0.005 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 1
-# 	{group="production", instance="1", job="api-server"} 1
+eval instant at 50m round(0.005 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(-1 * (0.005 * http_requests{group="production",job="api-server"}))
-# 	{group="production", instance="0", job="api-server"} 0
-# 	{group="production", instance="1", job="api-server"} -1
+eval instant at 50m round(-1 * (0.005 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} -1
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(1 + 0.005 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 2
-# 	{group="production", instance="1", job="api-server"} 2
+eval instant at 50m round(1 + 0.005 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 2
+	{group="production", instance="1", job="api-server"} 2
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))
-# 	{group="production", instance="0", job="api-server"} -1
-# 	{group="production", instance="1", job="api-server"} -2
+eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} -1
+	{group="production", instance="1", job="api-server"} -2
 
 # Round should accept the number to round nearest to.
-# Unsupported by streaming engine.
-# eval instant at 50m round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)
-# 	{group="production", instance="0", job="api-server"} 0.1
-# 	{group="production", instance="1", job="api-server"} 0.1
+eval instant at 50m round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 0.1
+	{group="production", instance="1", job="api-server"} 0.1
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
-# 	{group="production", instance="0", job="api-server"} 2.2
-# 	{group="production", instance="1", job="api-server"} 2.2
+eval instant at 50m round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 2.2
+	{group="production", instance="1", job="api-server"} 2.2
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
-# 	{group="production", instance="0", job="api-server"} 5.3
-# 	{group="production", instance="1", job="api-server"} 5.3
+eval instant at 50m round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 5.3
+	{group="production", instance="1", job="api-server"} 5.3
 
 # Round should work correctly with negative numbers and multiple decimal places.
-# Unsupported by streaming engine.
-# eval instant at 50m round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)
-# 	{group="production", instance="0", job="api-server"} -5.2
-# 	{group="production", instance="1", job="api-server"} -5.3
+eval instant at 50m round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)
+	{group="production", instance="0", job="api-server"} -5.2
+	{group="production", instance="1", job="api-server"} -5.3
 
 # Round should work correctly with big toNearests.
-# Unsupported by streaming engine.
-# eval instant at 50m round(0.025 * http_requests{group="production",job="api-server"}, 5)
-# 	{group="production", instance="0", job="api-server"} 5
-# 	{group="production", instance="1", job="api-server"} 5
+eval instant at 50m round(0.025 * http_requests{group="production",job="api-server"}, 5)
+	{group="production", instance="0", job="api-server"} 5
+	{group="production", instance="1", job="api-server"} 5
 
-# Unsupported by streaming engine.
-# eval instant at 50m round(0.045 * http_requests{group="production",job="api-server"}, 5)
-# 	{group="production", instance="0", job="api-server"} 5
-# 	{group="production", instance="1", job="api-server"} 10
+eval instant at 50m round(0.045 * http_requests{group="production",job="api-server"}, 5)
+	{group="production", instance="0", job="api-server"} 5
+	{group="production", instance="1", job="api-server"} 10
 
 # Standard deviation and variance.
 eval instant at 50m stddev(http_requests)
