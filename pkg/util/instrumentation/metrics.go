@@ -44,7 +44,7 @@ func (s *MetricsServer) Start() error {
 	router := mux.NewRouter()
 	router.Handle("/metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{}))
 
-	s.srv = &http.Server{
+	s.srv = &http.Server{ //TODO discuss a reasonable timeout with the team, it can be very generous.
 		Handler: router,
 	}
 

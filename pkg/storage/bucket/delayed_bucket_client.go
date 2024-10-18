@@ -97,5 +97,6 @@ func (m *DelayedBucketClient) Close() error {
 }
 
 func (m *DelayedBucketClient) delay() {
-	time.Sleep(m.minDelay + time.Duration(rand.Int63n(m.maxDelay.Nanoseconds()-m.minDelay.Nanoseconds())))
+	time.Sleep(m.minDelay + time.Duration(rand.Int63n(m.maxDelay.Nanoseconds()-m.minDelay.Nanoseconds()))) // #nosec G404 -- simulating client delay for testing does not require a CSPRNG.
+
 }

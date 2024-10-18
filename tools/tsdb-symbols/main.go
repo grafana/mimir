@@ -182,7 +182,8 @@ func analyseSymbols(ctx context.Context, blockDir string, uniqueSymbols map[stri
 }
 
 func readMetadata(dir string) (*block.Meta, error) {
-	f, err := os.Open(filepath.Join(dir, "meta.json"))
+	f, err := os.Open(filepath.Join(dir, "meta.json")) //#nosec G109 -- this is intentionally taking operator input, not an injection.
+
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +196,8 @@ func readMetadata(dir string) (*block.Meta, error) {
 // Symbols table is at the beginning of index, right after magic header and version.
 // It starts with length (4bytes) and number of symbols (4bytes), which is what we return.
 func readSymbolsTableSizeAndSymbolsCount(indexFile string) (symbolTableSize, symbolsCount uint32, _ error) {
-	file, err := os.Open(indexFile)
+	file, err := os.Open(indexFile) // #nosec G109 -- this is intentionally taking operator input, not an injection.
+
 	if err != nil {
 		return 0, 0, err
 	}

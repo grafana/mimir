@@ -71,6 +71,9 @@ func main() {
 		}
 	}
 
-	tw.Flush()
+	err = tw.Flush()
+	if err != nil {
+		log.Printf("Failed to flush to stdout, output may be truncated: %v", err)
+	}
 	os.Exit(exit)
 }

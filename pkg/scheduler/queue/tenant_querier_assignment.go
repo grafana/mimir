@@ -218,7 +218,8 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 	}
 
 	querierIDSet := make(map[QuerierID]struct{}, tenant.maxQueriers)
-	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed))
+	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed)) // #nosec G404 -- this is an explicitly seeded PRNG, we want repeatability. 
+
 
 	scratchpad = append(scratchpad[:0], tqa.querierIDsSorted...)
 

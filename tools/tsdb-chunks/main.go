@@ -43,7 +43,8 @@ func main() {
 func printChunksFile(filename string, printSamples bool) error {
 	fmt.Println(filename)
 
-	file, err := os.Open(filename)
+	file, err := os.Open(filename)  //#nosec G109 -- this is intentionally taking operator input, not an injection.
+
 	if err != nil {
 		return err
 	}

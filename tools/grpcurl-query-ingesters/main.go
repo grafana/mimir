@@ -42,7 +42,7 @@ func main() {
 func parseFile(file string) ([]QueryStreamResponse, error) {
 	resps := []QueryStreamResponse{}
 
-	fileData, err := os.ReadFile(file)
+	fileData, err := os.ReadFile(file) //#nosec G109 -- this is intentionally taking operator input, not an injection.
 	if err != nil {
 		return nil, err
 	}

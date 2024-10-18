@@ -196,7 +196,7 @@ func (a *app) createTempDir() error {
 func (a *app) buildBinary() error {
 	a.binaryPath = filepath.Join(a.tempDir, "benchmark-binary")
 
-	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels", ".")
+	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels", ".") //#nosec G206 -- this is intentionally taking operator input, not an injection.
 	cmd.Dir = a.benchmarkPackageDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -215,7 +215,7 @@ func (a *app) validateBinary() error {
 	slog.Info("validating binary...")
 
 	buf := &bytes.Buffer{}
-	cmd := exec.Command(a.binaryPath, "-test.list", ".")
+	cmd := exec.Command(a.binaryPath, "-test.list", ".") //#nosec G206 -- this is intentionally taking operator input, not an injection.
 	cmd.Dir = a.benchmarkPackageDir
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
@@ -313,7 +313,7 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 		args = append(args, "-test.memprofile="+a.memProfilePath)
 	}
 
-	cmd := exec.Command(a.binaryPath, args...)
+	cmd := exec.Command(a.binaryPath, args...) //#nosec G206 -- this is intentionally taking operator input, not an injection.
 	buf := &bytes.Buffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr

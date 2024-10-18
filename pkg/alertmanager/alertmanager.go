@@ -7,7 +7,7 @@ package alertmanager
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //TODO discuss drop-in-replacement with team, CPU difference should be minimal.
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -762,7 +762,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
-	sum := md5.Sum(data)
+	sum := md5.Sum(data) //TODO see note on md5 import
 	// We only want 48 bits as a float64 only has a 53 bit mantissa.
 	smallSum := sum[0:6]
 	var bytes = make([]byte, 8)

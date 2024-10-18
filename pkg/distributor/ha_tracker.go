@@ -145,7 +145,7 @@ type haClusterInfo struct {
 func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*haTracker, error) {
 	var jitter time.Duration
 	if cfg.UpdateTimeoutJitterMax > 0 {
-		jitter = time.Duration(rand.Int63n(int64(2*cfg.UpdateTimeoutJitterMax))) - cfg.UpdateTimeoutJitterMax
+		jitter = time.Duration(rand.Int63n(int64(2*cfg.UpdateTimeoutJitterMax))) - cfg.UpdateTimeoutJitterMax  // #nosec G404 request jitter does not require a CSPRNG
 	}
 
 	t := &haTracker{

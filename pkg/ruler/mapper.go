@@ -6,7 +6,7 @@
 package ruler
 
 import (
-	"crypto/md5"
+	"crypto/md5" //TODO discuss drop in replacement with team
 	"net/url"
 	"os"
 	"path/filepath"
@@ -156,7 +156,7 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 		if err != nil {
 			return false, err
 		}
-		newHash := md5.New()
+		newHash := md5.New() //TODO discuss drop in replacement with team.  Also not clear that hashing is even faster than a byte for byte comparison here? Either way the full files are read.
 		currentHash := md5.New()
 
 		// bailout if there is no update

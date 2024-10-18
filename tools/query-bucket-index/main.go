@@ -131,7 +131,7 @@ func parseFlags() (string, bool, time.Time, time.Time, error) {
 }
 
 func readBucketIndex(bucketIndexFile string, isCompressed bool) (*bucketindex.Index, error) {
-	f, err := os.Open(bucketIndexFile)
+	f, err := os.Open(bucketIndexFile) //#nosec G109 -- this is intentionally taking operator input, not an injection.
 	if err != nil {
 		return nil, err
 	}

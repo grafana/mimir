@@ -94,7 +94,7 @@ type disabledTest struct {
 }
 
 func getDisabledTests(testFile string) ([]disabledTest, error) {
-	fileBytes, err := os.ReadFile(testFile)
+	fileBytes, err := os.ReadFile(testFile)// #nosec G109 -- this is intentionally walking the filesystem, not accepting foreign input.
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func getDisabledTests(testFile string) ([]disabledTest, error) {
 }
 
 func getAllTests(testFile string) ([]disabledTest, error) {
-	fileBytes, err := os.ReadFile(testFile)
+	fileBytes, err := os.ReadFile(testFile)//#nosec G109 -- this is intentionally taking operator input, not an injection.
 	if err != nil {
 		return nil, err
 	}

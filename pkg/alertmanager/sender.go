@@ -35,9 +35,9 @@ type Sender struct {
 
 func NewSender(log log.Logger) *Sender {
 	netTransport := &http.Transport{
-		TLSClientConfig: &tls.Config{
+		TLSClientConfig: &tls.Config{ //TODO check with team, is there a reason not to enforce a minimum TLS version?
 			Renegotiation: tls.RenegotiateFreelyAsClient,
-		},
+		}, 
 		Proxy: http.ProxyFromEnvironment,
 		Dial: (&net.Dialer{
 			Timeout: 30 * time.Second,

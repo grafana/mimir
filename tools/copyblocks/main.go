@@ -12,7 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof" // anonymous import to get the pprof handler registered
+	_ "net/http/pprof" // anonymous import to get the pprof handler registered //TODO review if this should be on by default.
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -135,7 +135,7 @@ func main() {
 	m := newMetrics(prometheus.DefaultRegisterer)
 
 	go func() {
-		level.Info(logger).Log("msg", "HTTP server listening on "+cfg.httpListen)
+		level.Info(logger).Log("msg", "HTTP server listening on "+cfg.httpListen) //TODO discuss hardening server to avoid timeouts, see https://app.deepsource.com/directory/analyzers/go/issues/GO-S2114
 		http.Handle("/metrics", promhttp.Handler())
 		err := http.ListenAndServe(cfg.httpListen, nil)
 		if err != nil {

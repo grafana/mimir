@@ -347,7 +347,7 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	))
 
 	go func() {
-		log.Fatal(http.ListenAndServe(":9090", nil))
+		log.Fatal(http.ListenAndServe(":9090", nil)) //TODO discuss with team, DOS isn't a huge risk here but a timeout would be harmless.
 	}()
 
 	ctx := context.Background()

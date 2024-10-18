@@ -93,7 +93,7 @@ func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
 		return []ProxyBackendInterface{p.preferredBackend}
 	}
 
-	if rand.Float64() > p.secondaryBackendRequestProportion {
+	if rand.Float64() > p.secondaryBackendRequestProportion { //nosec G404 -- random load spreading does not require a CSPRNG.
 		return []ProxyBackendInterface{p.preferredBackend}
 	}
 

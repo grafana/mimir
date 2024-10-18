@@ -248,7 +248,7 @@ func CreateBlock(
 					var err error
 					switch (batchValueTypeOffset + j) % 3 {
 					case 0:
-						_, err = app.Append(0, lset, t, rand.Float64())
+						_, err = app.Append(0, lset, t, rand.Float64()) //TODO check with dev team what this value is for and if it needs a CSPRNG
 					case 1:
 						_, err = app.AppendHistogram(0, lset, t, testHistograms[i], nil)
 					case 2:

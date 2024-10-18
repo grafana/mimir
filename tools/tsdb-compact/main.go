@@ -69,7 +69,8 @@ func main() {
 	}
 
 	if cpuProf != "" {
-		f, err := os.Create(cpuProf)
+		f, err := os.Create(cpuProf) //#nosec G109 -- this is intentionally taking operator input, not an injection.
+
 		if err != nil {
 			log.Fatalln(err)
 		}

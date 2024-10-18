@@ -121,7 +121,7 @@ func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
-		err := http.ListenAndServe(c.metricsListenAddress, nil)
+		err := http.ListenAndServe(c.metricsListenAddress, nil) //TODO discuss hardening server to avoid timeouts, see https://app.deepsource.com/directory/analyzers/go/issues/GO-S2114. Low priority, DOS on this tool is not a serious concern.
 		if err != nil {
 			logrus.WithError(err).Errorln("metrics listener failed")
 		}
@@ -216,7 +216,7 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 			},
 			Samples: []prompb.Sample{{
 				Timestamp: now,
-				Value:     rand.Float64(),
+				Value:     rand.Float64(), // #nosec GO404 -- random data for testing does not require a CSPRNG 
 			}},
 		}
 		req.Timeseries = append(req.Timeseries, timeseries)

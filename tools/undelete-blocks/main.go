@@ -137,7 +137,7 @@ func getInputFile(filePath string) (*os.File, error) {
 	if filePath == "-" {
 		return os.Stdin, nil
 	}
-	return os.Open(filePath)
+	return os.Open(filePath) // #nosec G109 -- this is intentionally taking operator input, not an injection.
 }
 
 // getBlocksFromJSON reads a JSON tenant to blockIDs map

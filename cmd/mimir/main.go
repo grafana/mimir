@@ -272,7 +272,7 @@ func parseConfigFileParameter(args []string) (configFile string, expandEnv bool)
 
 // LoadConfig read YAML-formatted config from filename into cfg.
 func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
-	buf, err := os.ReadFile(filename)
+	buf, err := os.ReadFile(filename) //#nosec G109 -- this is intentionally taking operator input, not an injection.
 	if err != nil {
 		return errors.Wrap(err, "Error reading config file")
 	}

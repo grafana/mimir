@@ -6,7 +6,7 @@
 package util
 
 import (
-	"crypto/md5"
+	"crypto/md5" // TODO this use of md5 is harmless but it would also be a drop in replacement to use a modern algorithm.
 	"encoding/binary"
 	"math"
 )
@@ -24,7 +24,8 @@ var (
 // ShuffleShardSeed returns seed for random number generator, computed from provided identifier.
 func ShuffleShardSeed(identifier, zone string) int64 {
 	// Use the identifier to compute an hash we'll use to seed the random.
-	hasher := md5.New()
+	hasher := md5.New() // TODO this use of md5 is harmless but it would also be a drop in replacement to use a modern algorithm.
+
 	hasher.Write(YoloBuf(identifier)) // nolint:errcheck
 	if zone != "" {
 		hasher.Write(seedSeparator) // nolint:errcheck
