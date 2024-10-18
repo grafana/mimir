@@ -10,11 +10,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -159,4 +161,27 @@ func (s *BlockBuilderScheduler) fetchSingleRecords(ctx context.Context, offsets 
 		}
 	})
 	return out, nil
+}
+
+// builderLag computes the lag for block-builder's consumer group, for all partitions.
+func (s *BlockBuilderScheduler) builderLag(ctx context.Context) (kadm.GroupLag, error) {
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 10,
+	})
+	var lastErr error
+	for boff.Ongoing() {
+		groupLag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, (-1 * time.Hour).Milliseconds())
+		if err != nil {
+			lastErr = fmt.Errorf("get consumer group lag: %w", err)
+		} else {
+			return groupLag, nil
+		}
+
+		level.Warn(s.logger).Log("msg", "failed to get consumer group lag; will retry", "err", lastErr)
+		boff.Wait()
+	}
+
+	return nil, lastErr
 }
