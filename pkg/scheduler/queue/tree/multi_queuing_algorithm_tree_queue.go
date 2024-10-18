@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package queue
+package tree
 
 import (
 	"container/list"
@@ -20,9 +20,9 @@ type Tree interface {
 }
 
 type DequeueArgs struct {
-	querierID       QuerierID
-	workerID        int
-	lastTenantIndex int
+	QuerierID       string
+	WorkerID        int
+	LastTenantIndex int
 }
 
 // MultiQueuingAlgorithmTreeQueue holds metadata and a pointer to the root node of a hierarchical queue implementation.
@@ -331,4 +331,57 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmT
 
 	}
 	return childNode.getOrAddNode(pathFromNode[1:], tree)
+}
+
+// TenantQueueCount is a test utility
+func TenantQueueCount(tree *MultiQueuingAlgorithmTreeQueue) int {
+	var count int
+	for _, qa := range tree.algosByDepth {
+		if tqqa, ok := qa.(*TenantQuerierQueuingAlgorithm); ok {
+			for _, t := range tqqa.TenantIDOrder {
+				if t != "" {
+					count++
+				}
+			}
+		}
+	}
+	return count
+}
+
+func GetOrAddNode(path QueuePath, tree Tree) error {
+	if mqa, ok := tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+		_, err := mqa.rootNode.getOrAddNode(path, mqa)
+		return err
+	}
+	return fmt.Errorf("not a valid tree type")
+}
+
+// RootNode is a test utility
+func RootNode(tree *MultiQueuingAlgorithmTreeQueue) *Node {
+	return tree.rootNode
+}
+
+// DeleteNode is a test utility
+func DeleteNode(startingNode *Node, pathFromNode QueuePath) bool {
+	if len(pathFromNode) == 0 {
+		// node cannot delete itself
+		return false
+	}
+
+	// parentPath is everything except the last node, childNode is the last in path
+	parentPath, deleteNodeName := pathFromNode[:len(pathFromNode)-1], pathFromNode[len(pathFromNode)-1]
+
+	parentNode := startingNode.getNode(parentPath)
+	if parentNode == nil {
+		// not found
+		return false
+	}
+	if deleteNode := parentNode.getNode(QueuePath{deleteNodeName}); deleteNode != nil {
+		// empty the node so that update state properly deletes it
+		deleteNode.queueMap = map[string]*Node{}
+		deleteNode.localQueue = list.New()
+		parentNode.queuingAlgorithm.dequeueUpdateState(parentNode, deleteNode)
+		return true
+	}
+	return false
 }
