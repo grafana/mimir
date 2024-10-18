@@ -605,7 +605,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		dispatchNextWant := chan fetchWant(nil)
 		if nextResult == nil || nextFetch.startOffset <= highWatermark.Load() {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
-			// So we dispatch a fetch for only if it's fetching an existing offset.
+			// So we dispatch a fetch only if it's fetching an existing offset.
 			// This shouldn't noticeably affect performance with Apache Kafka, after all franz-go only has a concurrency of 1 per partition.
 			//
 			// At the same time we don't want to reach a deadlock where the HWM is not updated and there are no fetches in flight.
