@@ -51,6 +51,7 @@
 * [BUGFIX] Fix issue where sharded queries could return annotations with incorrect or confusing position information. #9536
 * [BUGFIX] Fix issue where downstream consumers may not generate correct cache keys for experimental error caching. #9644
 * [BUGFIX] Fix issue where active series requests error when encountering a stale posting. #9580
+* [BUGFIX] Fix pooling buffer reuse logic when `-distributor.max-request-pool-buffer-size` is set. #9666
 
 ### Mixin
 

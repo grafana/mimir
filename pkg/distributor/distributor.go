@@ -324,12 +324,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices := []services.Service(nil)
 	subservices = append(subservices, haTracker)
 
-	var requestBufferPool util.Pool
-	if cfg.MaxRequestPoolBufferSize > 0 {
-		requestBufferPool = util.NewBucketedBufferPool(1<<10, cfg.MaxRequestPoolBufferSize, 4)
-	} else {
-		requestBufferPool = util.NewBufferPool()
-	}
+	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
 		cfg:                   cfg,
