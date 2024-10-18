@@ -130,6 +130,16 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
+		// Subqueries.
+		{
+			Expr: "sum_over_time(a_X[10m:3m])",
+		},
+		{
+			Expr: "sum_over_time(nh_X[10m:3m])",
+		},
+		{
+			Expr: "sum(sum_over_time(a_X[10m:3m]))",
+		},
 		//// Unary operators.
 		//{
 		//	Expr: "-a_X",

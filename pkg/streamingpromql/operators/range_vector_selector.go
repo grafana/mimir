@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -24,9 +25,19 @@ type RangeVectorSelector struct {
 	rangeMilliseconds int64
 	chunkIterator     chunkenc.Iterator
 	nextT             int64
+	floats            *types.FPointRingBuffer
+	histograms        *types.HPointRingBuffer
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
+
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *RangeVectorSelector {
+	return &RangeVectorSelector{
+		Selector:   selector,
+		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
+		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
+	}
+}
 
 func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return m.Selector.ExpressionPosition
@@ -55,10 +66,12 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	}
 
 	m.nextT = m.Selector.TimeRange.StartT
+	m.floats.Reset()
+	m.histograms.Reset()
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples() (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.TimeRange.EndT {
 		return types.RangeVectorStepData{}, types.EOS
 	}
@@ -74,16 +87,18 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, hi
 	// Apply offset after adjusting for timestamp from @ modifier.
 	rangeEnd = rangeEnd - m.Selector.Offset
 	rangeStart := rangeEnd - m.rangeMilliseconds
-	floats.DiscardPointsBefore(rangeStart)
-	histograms.DiscardPointsBefore(rangeStart)
+	m.floats.DiscardPointsBefore(rangeStart)
+	m.histograms.DiscardPointsBefore(rangeStart)
 
-	if err := m.fillBuffer(floats, histograms, rangeStart, rangeEnd); err != nil {
+	if err := m.fillBuffer(m.floats, m.histograms, rangeStart, rangeEnd); err != nil {
 		return types.RangeVectorStepData{}, err
 	}
 
 	m.nextT += m.Selector.TimeRange.IntervalMilliseconds
 
 	return types.RangeVectorStepData{
+		Floats:     m.floats,
+		Histograms: m.histograms,
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
@@ -143,4 +158,6 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 func (m *RangeVectorSelector) Close() {
 	m.Selector.Close()
+	m.floats.Close()
+	m.histograms.Close()
 }
