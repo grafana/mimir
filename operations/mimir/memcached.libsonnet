@@ -54,6 +54,9 @@ memcached {
         overprovision_factor: 1.05,
         connection_limit: std.toString($._config.cache_frontend_connection_limit),
         extended_options: ['track_sizes'],
+
+        statefulSet+:
+          statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas),
       } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
     else {},
 
@@ -66,6 +69,9 @@ memcached {
         overprovision_factor: 1.05,
         connection_limit: std.toString($._config.cache_index_queries_connection_limit),
         extended_options: ['track_sizes'],
+
+        statefulSet+:
+          statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas),
       } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
     else {},
 
@@ -81,6 +87,9 @@ memcached {
         overprovision_factor: 1.05,
         connection_limit: std.toString($._config.cache_chunks_connection_limit),
         extended_options: ['track_sizes'],
+
+        statefulSet+:
+          statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas),
       } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
     else {},
 
@@ -98,7 +107,7 @@ memcached {
         overprovision_factor: 1.05,
 
         statefulSet+:
-          statefulSet.mixin.spec.withReplicas(1),
+          statefulSet.mixin.spec.withReplicas($._config.memcached_metadata_replicas),
       } + if $._config.memcached_metadata_mtls_enabled then $.memcached_mtls else {}
     else {},
 }
