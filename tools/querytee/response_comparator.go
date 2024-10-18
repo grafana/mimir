@@ -209,7 +209,7 @@ func formatAnnotationsForErrorMessage(warnings []string) string {
 	return "[" + strings.Join(formatted, ", ") + "]"
 }
 
-func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) (retErr error) {
 	var expected, actual model.Matrix
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -223,6 +223,38 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 
 	if allMatrixSamplesOutsideComparableWindow(expected, queryEvaluationTime, opts) && allMatrixSamplesOutsideComparableWindow(actual, queryEvaluationTime, opts) {
 		return nil
+	}
+
+	if opts.SkipSamplesBefore > 0 {
+		expLen, actLen := len(expected), len(actual)
+		tempExp, tempAct := expected[:0], actual[:0]
+		for _, series := range expected {
+			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			series.Histograms = trimBeginning(series.Histograms, func(p model.SampleHistogramPair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			if len(series.Values) > 0 || len(series.Histograms) > 0 {
+				tempExp = append(tempExp, series)
+			}
+		}
+		for _, series := range actual {
+			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			series.Histograms = trimBeginning(series.Histograms, func(p model.SampleHistogramPair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			if len(series.Values) > 0 || len(series.Histograms) > 0 {
+				tempAct = append(tempAct, series)
+			}
+		}
+		expected, actual = tempExp, tempAct
+		eChanged, aChanged := len(expected) != expLen, len(actual) != actLen
+		defer func() {
+			if retErr != nil {
+				if eChanged && aChanged {
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the expected and actual response due to the 'skip samples before')", retErr)
+				} else if aChanged {
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the actual response due to the 'skip samples before')", retErr)
+				} else if eChanged {
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the expected response due to the 'skip samples before')", retErr)
+				}
+			}
+		}()
 	}
 
 	if len(expected) != len(actual) {
@@ -251,19 +283,6 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 }
 
 func compareMatrixSamples(expected, actual *model.SampleStream, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
-	expected.Values = trimBeginning(expected.Values, func(p model.SamplePair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	actual.Values = trimBeginning(actual.Values, func(p model.SamplePair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	expected.Histograms = trimBeginning(expected.Histograms, func(p model.SampleHistogramPair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-	actual.Histograms = trimBeginning(actual.Histograms, func(p model.SampleHistogramPair) bool {
-		return p.Timestamp < opts.SkipSamplesBefore
-	})
-
 	expectedSamplesTail, actualSamplesTail, err := comparePairs(expected.Values, actual.Values, func(p1 model.SamplePair, p2 model.SamplePair) error {
 		err := compareSamplePair(p1, p2, queryEvaluationTime, opts)
 		if err != nil {
@@ -444,16 +463,12 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		eChanged, aChanged := len(expected) != eOrgLen, len(actual) != aOrgLen
 		defer func() {
 			if retErr != nil {
-				warning := ""
 				if eChanged && aChanged {
-					warning = " (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
 				} else if aChanged {
-					warning = " (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
 				} else if eChanged {
-					warning = " (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)"
-				}
-				if warning != "" {
-					retErr = fmt.Errorf("%w%s", retErr, warning)
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
 				}
 			}
 		}()
