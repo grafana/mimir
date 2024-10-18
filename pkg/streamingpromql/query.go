@@ -347,21 +347,29 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 		// won't be used.
 		// This is relatively uncommon, and Prometheus' engine does the same thing. In the future, we
 		// could be smarter about this if it turns out to be a big problem.
-
-		end := timeRange.EndT - e.OriginalOffset.Milliseconds()
 		step := e.Step.Milliseconds()
 
 		if step == 0 {
 			step = q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())
 		}
 
-		// Find the first timestamp inside the subquery range that is aligned to the step.
-		start := step * ((timeRange.StartT - e.OriginalOffset.Milliseconds() - e.Range.Milliseconds()) / step)
-		if start < timeRange.StartT-e.OriginalOffset.Milliseconds()-e.Range.Milliseconds() {
-			start += step
+		start := timeRange.StartT
+		end := timeRange.EndT
+
+		if e.Timestamp != nil {
+			start = *e.Timestamp
+			end = *e.Timestamp
 		}
 
-		subqueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(start), timestamp.Time(end), time.Duration(step)*time.Millisecond)
+		// Find the first timestamp inside the subquery range that is aligned to the step.
+		alignedStart := step * ((start - e.OriginalOffset.Milliseconds() - e.Range.Milliseconds()) / step)
+		if alignedStart < start-e.OriginalOffset.Milliseconds()-e.Range.Milliseconds() {
+			alignedStart += step
+		}
+
+		end = end - e.OriginalOffset.Milliseconds()
+
+		subqueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), time.Duration(step)*time.Millisecond)
 		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange)
 		if err != nil {
 			return nil, err
