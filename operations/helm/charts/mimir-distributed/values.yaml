@@ -294,7 +294,11 @@ mimir:
         ingester:
           url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
+        {{ if .Values.federation_frontend.enabled }}
+          url: http://{{ template "mimir.fullname" . }}-federation-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{ else }}
           url: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{ end }}
         ruler:
           url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         store_gateway:
@@ -4414,6 +4418,85 @@ gr-metricname-cache:
   service:
     annotations: {}
     labels: {}
+
+federation_frontend:
+  # -- Specifies whether the federation-frontend should be enabled
+  enabled: false
+  # -- Number of replicas for the federation-frontend
+  replicas: 2
+  # -- Deployment strategy for the federation-frontend pods
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
+
+  # -- Resource requests and limits for the federation-frontend
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  initContainers: []
+
+  # -- Additional CLI arguments for the federation-frontend container
+  extraArgs: {}
+
+  # -- Additional environment variables for the federation-frontend container
+  env: []
+  # -- Additional volume mounts for the federation-frontend container
+  extraVolumeMounts: []
+  # -- Additional volumes for the federation-frontend pods
+  extraVolumes: []
+
+  # -- Additional containers to be added to the graphite-metric-name-cache pod.
+  extraContainers: []
+
+  # -- The name of the PriorityClass for federation-frontend pods
+  priorityClassName: null
+  # -- SecurityContext override for federation-frontend pods
+  securityContext: {}
+
+  # -- The SecurityContext for federation-frontend containers
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  # -- Grace period to allow the federation-frontend to shutdown before it is killed
+  terminationGracePeriodSeconds: 180
+  # -- Affinity configuration for federation-frontend pods
+  affinity: {}
+  # -- Node selector configuration for federation-frontend pods
+  nodeSelector: {}
+  # -- Tolerations for federation-frontend pods
+  tolerations: []
+  # -- Additional pod labels
+  podLabels: {}
+  # -- Additional pod annotations
+  podAnnotations: {}
+  # -- Additional annotations for the Deployment
+  annotations: {}
+  # -- Readiness probe configuration
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+  # -- Service configuration
+  service:
+    # -- Additional annotations for the federation-frontend service
+    annotations: {}
+    # -- Additional labels for the federation-frontend service
+    labels: {}
+  # -- Pod Disruption Budget configuration
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
 
 # -- Settings for the smoke-test job. This is meant to run as a Helm test hook
 # (`helm test RELEASE`) after installing the chart. It quickly verifies
