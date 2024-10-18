@@ -29,6 +29,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.5.1
+
+* [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
+
 ## 5.5.0
 
 * [ENHANCEMENT] Upgrade Mimir and GEM to [2.14.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2140). #9591
