@@ -47,7 +47,7 @@ memcached {
 
   // Dedicated memcached instance used to cache query results.
   memcached_frontend:
-    if $._config.cache_frontend_enabled && $._config.cache_frontend_backend == 'memcached' then
+    if $._config.cache_frontend_enabled then
       $.memcached {
         name: 'memcached-frontend',
         max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
@@ -59,7 +59,7 @@ memcached {
 
   // Dedicated memcached instance used to temporarily cache index lookups.
   memcached_index_queries:
-    if $._config.cache_index_queries_enabled && $._config.cache_index_queries_backend == 'memcached' then
+    if $._config.cache_index_queries_enabled then
       $.memcached {
         name: 'memcached-index-queries',
         max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
@@ -71,7 +71,7 @@ memcached {
 
   // Memcached instance used to cache chunks.
   memcached_chunks:
-    if $._config.cache_chunks_enabled && $._config.cache_chunks_backend == 'memcached' then
+    if $._config.cache_chunks_enabled then
       $.memcached {
         name: 'memcached',
         max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
@@ -86,7 +86,7 @@ memcached {
 
   // Memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
   memcached_metadata:
-    if $._config.cache_metadata_enabled && $._config.cache_metadata_backend == 'memcached' then
+    if $._config.cache_metadata_enabled then
       $.memcached {
         name: 'memcached-metadata',
         max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
