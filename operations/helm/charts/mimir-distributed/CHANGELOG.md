@@ -29,6 +29,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.5.1
+
+* [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
+
 ## 5.5.0
 
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
