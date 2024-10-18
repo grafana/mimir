@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Add support for setting type and internal traffic policy for Kubernetes service. Set `internalTrafficPolicy=Cluster` by default in all services with type `ClusterIP`. #9619
+
 ## 5.5.0
 
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
