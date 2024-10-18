@@ -7,12 +7,14 @@ package ruler
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"hash/fnv"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -951,10 +953,10 @@ func filterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
-func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDesc, error) {
+func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDesc, string, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("no user id found in context")
+		return nil, "", fmt.Errorf("no user id found in context")
 	}
 
 	rr := ring.ReadRing(r.ring)
@@ -965,7 +967,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("unable to inject user ID into grpc request, %v", err)
+		return nil, "", fmt.Errorf("unable to inject user ID into grpc request, %v", err)
 	}
 
 	var (
@@ -993,7 +995,32 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 		return nil
 	})
 
-	return merged, err
+	// Sort by namespace and group
+	slices.SortFunc(merged, func(a, b *GroupStateDesc) int {
+		nsCmp := strings.Compare(a.Group.Namespace, b.Group.Namespace)
+		if nsCmp != 0 {
+			return nsCmp
+		}
+
+		// If Namespaces are equal, check the group names
+		return strings.Compare(a.Group.Name, b.Group.Name)
+	})
+
+	// If the request asks for pagination, we fetch req.MaxGroups number
+	// of rule groups from each replica. These are merged and sorted and
+	// we take the top k (k = MaxGroups)
+	if req.MaxGroups > 0 {
+		if len(merged) > int(req.MaxGroups) {
+			groupForToken := merged[req.MaxGroups]
+			return merged[:req.MaxGroups], getRuleGroupNextToken(groupForToken.Group.Namespace, groupForToken.Group.Name), err
+		}
+
+		// If len(merged) <= req.MaxGroups we are
+		// on the last page so there is no token to return
+		return merged, "", err
+	}
+
+	return merged, "", err
 }
 
 // SyncRules implements the gRPC Ruler service.
@@ -1068,18 +1095,29 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 	groupSet := makeStringFilterSet(req.RuleGroup)
 	ruleSet := makeStringFilterSet(req.RuleName)
 
+	foundToken := false
 	for _, group := range groups {
 		if groupSet.IsFiltered(group.Name()) {
 			continue
 		}
-
-		interval := group.Interval()
 
 		// The mapped filename is url path escaped encoded to make handling `/` characters easier
 		decodedNamespace, err := url.PathUnescape(strings.TrimPrefix(group.File(), prefix))
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to decode rule filename")
 		}
+
+		// If a pagination token is provided, skip past groups until we reach the namespace+group that is
+		// greater than or equal to the namespace+group used to generate the token.
+		if req.NextToken != "" && !foundToken {
+			if !tokenGreaterThanOrEqual(getRuleGroupNextToken(decodedNamespace, group.Name()), req.NextToken) {
+				continue
+			}
+			foundToken = true
+		}
+
+		interval := group.Interval()
+
 		if fileSet.IsFiltered(decodedNamespace) {
 			continue
 		}
@@ -1171,10 +1209,25 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 
 		// Prometheus does not return a rule group if it has no rules after filtering.
 		if len(groupDesc.ActiveRules) > 0 {
+			if req.MaxGroups > 0 && len(groupDescs) == int(req.MaxGroups)+1 {
+				break
+			}
 			groupDescs = append(groupDescs, groupDesc)
 		}
 	}
 	return groupDescs, nil
+}
+
+func getRuleGroupNextToken(file, group string) string {
+	return base64.URLEncoding.EncodeToString([]byte(file + "/" + group))
+}
+
+// Returns true if tokenA >= tokenB
+func tokenGreaterThanOrEqual(tokenA string, tokenB string) bool {
+	decodedTokenA, _ := base64.URLEncoding.DecodeString(tokenA)
+	decodedTokenB, _ := base64.URLEncoding.DecodeString(tokenB)
+
+	return string(decodedTokenA) >= string(decodedTokenB)
 }
 
 // IsMaxRuleGroupsLimited returns true if there is a limit set for the max
