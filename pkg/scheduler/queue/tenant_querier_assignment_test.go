@@ -31,27 +31,27 @@ func TestShuffleQueriers(t *testing.T) {
 
 	// maxQueriers is 0, so sharding is off
 	tqs.shuffleTenantQueriers("team-a", nil)
-	require.Nil(t, tqs.queuingAlgorithm.TenantQuerierIDs["team-a"])
+	require.Nil(t, tqs.queriersForTenant("team-a"))
 
 	// maxQueriers is equal to the total queriers, so the sharding calculation is unnecessary
 	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers)
 	tqs.shuffleTenantQueriers("team-a", nil)
-	require.Nil(t, tqs.queuingAlgorithm.TenantQuerierIDs["team-a"])
+	require.Nil(t, tqs.queriersForTenant("team-a"))
 
 	// maxQueriers is greater than the total queriers, so the sharding calculation is unnecessary
 	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers) + 1
 	tqs.shuffleTenantQueriers("team-a", nil)
-	require.Nil(t, tqs.queuingAlgorithm.TenantQuerierIDs["team-a"])
+	require.Nil(t, tqs.queriersForTenant("team-a"))
 
 	// now maxQueriers is nonzero and less than the total queriers, so we shuffle shard and assign
 	tqs.tenantsByID["team-a"].maxQueriers = 3
 	tqs.shuffleTenantQueriers("team-a", nil)
-	r1 := tqs.queuingAlgorithm.TenantQuerierIDs["team-a"]
+	r1 := tqs.queriersForTenant("team-a")
 	require.Equal(t, 3, len(r1))
 
 	// Same input produces same output.
 	tqs.shuffleTenantQueriers("team-a", nil)
-	r2 := tqs.queuingAlgorithm.TenantQuerierIDs["team-a"]
+	r2 := tqs.queriersForTenant("team-a")
 
 	require.Equal(t, 3, len(r2))
 	require.Equal(t, r1, r2)
@@ -88,7 +88,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 		tqs.tenantsByID["team-a"].shuffleShardSeed = r.Int63()
 
 		tqs.shuffleTenantQueriers("team-a", nil)
-		selectedQueriers := tqs.queuingAlgorithm.TenantQuerierIDs["team-a"]
+		selectedQueriers := tqs.queriersForTenant("team-a")
 		require.Equal(t, toSelect, len(selectedQueriers))
 
 		slices.Sort(allSortedQueriers)

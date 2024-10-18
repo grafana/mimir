@@ -170,13 +170,11 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scra
 		return false
 	}
 
-	treeTenantID := tree.TenantID(tenantID)
-
 	if tenant.maxQueriers == 0 || len(tqa.querierIDsSorted) <= tenant.maxQueriers {
 		// shuffle shard is either disabled or calculation is unnecessary;
-		prevQuerierIDSet := tqa.queuingAlgorithm.TenantQuerierIDs[treeTenantID]
+		prevQuerierIDSet := tqa.queriersForTenant(tenantID)
 		// assigning querier set to nil for the tenant indicates tenant can use all queriers
-		tqa.queuingAlgorithm.TenantQuerierIDs[treeTenantID] = nil
+		tqa.queuingAlgorithm.SetQueriersForTenant(tenantID, nil)
 		// tenant may have already been assigned all queriers; only indicate reshard if this changed
 		return prevQuerierIDSet != nil
 	}
@@ -194,6 +192,10 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scra
 		scratchpad[r], scratchpad[last] = scratchpad[last], scratchpad[r]
 		last--
 	}
-	tqa.queuingAlgorithm.TenantQuerierIDs[treeTenantID] = querierIDSet
+	tqa.queuingAlgorithm.SetQueriersForTenant(tenantID, querierIDSet)
 	return true
+}
+
+func (tqa *tenantQuerierAssignments) queriersForTenant(tenantID string) map[tree.QuerierID]struct{} {
+	return tqa.queuingAlgorithm.QueriersForTenant(tenantID)
 }

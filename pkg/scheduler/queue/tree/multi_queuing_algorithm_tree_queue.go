@@ -333,12 +333,12 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmT
 	return childNode.getOrAddNode(pathFromNode[1:], tree)
 }
 
-// TenantQueueCount is a test utility
+// TenantQueueCount is a test utility which returns the number of distinct tenants with populated queues.
 func TenantQueueCount(tree *MultiQueuingAlgorithmTreeQueue) int {
 	var count int
 	for _, qa := range tree.algosByDepth {
 		if tqqa, ok := qa.(*TenantQuerierQueuingAlgorithm); ok {
-			for _, t := range tqqa.TenantIDOrder {
+			for _, t := range tqqa.TenantIDOrder() {
 				if t != "" {
 					count++
 				}
