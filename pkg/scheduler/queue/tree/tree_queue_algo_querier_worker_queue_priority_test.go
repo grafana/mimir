@@ -175,7 +175,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 	)
 	querierWorkerPrioritizationQueueAlgo := NewQuerierWorkerQueuePriorityAlgo()
 
-	tree, err := NewTree(&roundRobinState{}, querierWorkerPrioritizationQueueAlgo)
+	tree, err := NewTree(&RoundRobinState{}, querierWorkerPrioritizationQueueAlgo)
 	require.NoError(t, err)
 
 	// enqueue 2 objects each to 2 different children, each with 3 different grandchildren;

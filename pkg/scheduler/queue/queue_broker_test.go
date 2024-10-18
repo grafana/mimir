@@ -8,7 +8,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math"
 	"math/rand"
 	"testing"
@@ -17,6 +16,8 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 )
 
 func (qb *queueBroker) enqueueObjectsForTests(tenantID string, numObjects int) error {

@@ -6,10 +6,10 @@
 package queue
 
 import (
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math/rand"
 	"sort"
 
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"github.com/grafana/mimir/pkg/util"
 )
 

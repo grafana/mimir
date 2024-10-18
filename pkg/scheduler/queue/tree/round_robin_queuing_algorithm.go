@@ -39,26 +39,26 @@ type QueuingAlgorithm interface {
 	dequeueUpdateState(node *Node, dequeuedFrom *Node)
 }
 
-// roundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
+// RoundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
 // the same depth in a MultiQueuingAlgorithmTreeQueue do not share any state. When children are added to these nodes,
 // they are placed at the "end" of the order from the perspective of the node's current queuePosition (e.g., if
 // queuePosition is 3, a new child will be placed at index 2). Children are dequeued from using a simple round-robin
 // ordering; queuePosition is incremented on every dequeue.
-type roundRobinState struct {
+type RoundRobinState struct {
 }
 
-func NewRoundRobinState() *roundRobinState {
-	return &roundRobinState{}
+func NewRoundRobinState() *RoundRobinState {
+	return &RoundRobinState{}
 }
 
-// setup for roundRobinState doesn't need to do any state updates, because roundRobinState doesn't maintain any state.
-func (rrs *roundRobinState) setup(_ *DequeueArgs) {
+// setup for RoundRobinState doesn't need to do any state updates, because RoundRobinState doesn't maintain any state.
+func (rrs *RoundRobinState) setup(_ *DequeueArgs) {
 }
 
 // addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective of the parent's
 // queuePosition. The new child is added at queuePosition - 1, and queuePosition is incremented to keep it pointed
 // to the same child.
-func (rrs *roundRobinState) addChildNode(parent, child *Node) {
+func (rrs *RoundRobinState) addChildNode(parent, child *Node) {
 	// add child to parent.queueMap
 	parent.queueMap[child.Name()] = child
 
@@ -74,7 +74,7 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 
 // dequeueSelectNode returns the node at the node's queuePosition. queuePosition represents the position of
 // the next node to dequeue from, and is incremented in dequeueUpdateState.
-func (rrs *roundRobinState) dequeueSelectNode(node *Node) *Node {
+func (rrs *RoundRobinState) dequeueSelectNode(node *Node) *Node {
 	if node.isLeaf() || len(node.queueOrder) == 0 {
 		return node
 	}
@@ -88,7 +88,7 @@ func (rrs *roundRobinState) dequeueSelectNode(node *Node) *Node {
 // dequeueUpdateState does the following:
 //   - deletes the dequeued-from child node if it is empty after the dequeue operation
 //   - increments queuePosition if no child was deleted
-func (rrs *roundRobinState) dequeueUpdateState(nodeToUpdate *Node, dequeuedFrom *Node) {
+func (rrs *RoundRobinState) dequeueUpdateState(nodeToUpdate *Node, dequeuedFrom *Node) {
 	// if the child node is nil, we haven't done anything to the tree; if the nodeToUpdate is
 	// a leaf node, there's nothing to update; in both cases, return early
 	if dequeuedFrom == nil || nodeToUpdate.isLeaf() {

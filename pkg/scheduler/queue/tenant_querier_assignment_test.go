@@ -7,13 +7,14 @@ package queue
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math/rand"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 )
 
 func TestShuffleQueriers(t *testing.T) {

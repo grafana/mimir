@@ -7,7 +7,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 

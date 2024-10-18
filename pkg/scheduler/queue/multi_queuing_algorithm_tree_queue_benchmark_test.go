@@ -5,7 +5,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"math"
 	"math/rand"
 	"slices"
@@ -18,6 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 )
 
 const querierForgetDelay = 0

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package tree
 
 type (
@@ -89,14 +91,14 @@ func (qa *TenantQuerierQueuingAlgorithm) setup(dequeueArgs *DequeueArgs) {
 //     to ensure that we only remove a tenant from tenantIDOrder if _all_ nodes with the same name have been removed.
 //   - tenantIDOrder iff the node did not already exist in tenantNodes or tenantIDOrder. addChildNode will place
 //     a new tenant in the first empty ("") element it finds in tenantIDOrder, or at the end if no empty elements exist.
-func (tqa *TenantQuerierQueuingAlgorithm) addChildNode(parent, child *Node) {
+func (qa *TenantQuerierQueuingAlgorithm) addChildNode(parent, child *Node) {
 	childName := child.Name()
-	_, tenantHasAnyQueue := tqa.tenantNodes[childName]
+	_, tenantHasAnyQueue := qa.tenantNodes[childName]
 
 	// add childNode to node's queueMap,
 	// and to the shared tenantNodes map
 	parent.queueMap[childName] = child
-	tqa.tenantNodes[childName] = append(tqa.tenantNodes[childName], child)
+	qa.tenantNodes[childName] = append(qa.tenantNodes[childName], child)
 
 	// if child has any queue, it should already be in tenantIDOrder, return without altering order
 	if tenantHasAnyQueue {
@@ -104,7 +106,7 @@ func (tqa *TenantQuerierQueuingAlgorithm) addChildNode(parent, child *Node) {
 	}
 
 	// otherwise, replace the first empty element in n.tenantIDOrder with childName, or append to the end
-	for i, elt := range tqa.TenantIDOrder {
+	for i, elt := range qa.TenantIDOrder {
 		// if we encounter a tenant with this name in tenantIDOrder already, return without altering order.
 		// This is a weak check (childName could exist farther down tenantIDOrder, but be inserted here as well),
 		// but should be fine, since the only time we hit this case is when createOrUpdateTenant is called, which
@@ -113,12 +115,12 @@ func (tqa *TenantQuerierQueuingAlgorithm) addChildNode(parent, child *Node) {
 			return
 		}
 		if elt == "" {
-			tqa.TenantIDOrder[i] = childName
+			qa.TenantIDOrder[i] = childName
 			return
 		}
 	}
 	// if we get here, we didn't find any empty elements in tenantIDOrder; append
-	tqa.TenantIDOrder = append(tqa.TenantIDOrder, childName)
+	qa.TenantIDOrder = append(qa.TenantIDOrder, childName)
 }
 
 // dequeueSelectNode chooses the next node to dequeue from based on TenantIDOrder and tenantOrderIndex, which are

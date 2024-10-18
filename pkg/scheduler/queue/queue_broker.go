@@ -7,8 +7,9 @@ package queue
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 	"time"
+
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 )
 
 // cannot import constants from frontend/v2 due to import cycle
