@@ -1,0 +1,171 @@
+---
+# Source: mimir-distributed/templates/mimir-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-enterprise-federation-frontend-values-mimir-config
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-federation-frontend-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  mimir.yaml: |
+    
+    activity_tracker:
+      filepath: /active-query-tracker/activity.log
+    admin_api:
+      leader_election:
+        enabled: true
+        ring:
+          kvstore:
+            store: memberlist
+    admin_client:
+      storage:
+        s3:
+          access_key_id: grafana-mimir
+          bucket_name: enterprise-metrics-admin
+          endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
+          insecure: true
+          secret_access_key: supersecret
+        type: s3
+    alertmanager:
+      data_dir: /data
+      enable_api: true
+      external_url: /alertmanager
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
+    alertmanager_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    auth:
+      admin:
+        pass_access_policy_name: true
+        pass_token_name: true
+      type: trust
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-tsdb
+        endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+      tsdb:
+        dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
+    cluster_name: test-enterprise-federation-frontend-values
+    compactor:
+      compaction_interval: 30m
+      data_dir: /data
+      deletion_delay: 2h
+      first_level_compaction_wait_period: 25m
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+        wait_stability_min_duration: 1m
+      symbols_flushers_concurrency: 4
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+    federation:
+      proxy_targets:
+      - name: mimir-distributed-1
+        url: http://mimir-query-frontend.real-deployment.svc.cluster.local:8080/prometheus
+      - name: mimir-distributed-2
+        url: http://mimir-query-frontend.real-deployment.svc.cluster.local:8080/prometheus
+    frontend:
+      log_query_request_headers: X-Access-Policy-Name,X-Token-Name
+      parallelize_shardable_queries: true
+    frontend_worker:
+      frontend_address: test-enterprise-federation-frontend-values-mimir-query-frontend-headless.citestns.svc:9095
+      grpc_client_config:
+        max_send_msg_size: 419430400
+    gateway:
+      proxy:
+        admin_api:
+          url: http://test-enterprise-federation-frontend-values-mimir-admin-api.citestns.svc:8080
+        alertmanager:
+          url: http://test-enterprise-federation-frontend-values-mimir-alertmanager-headless.citestns.svc:8080
+        compactor:
+          url: http://test-enterprise-federation-frontend-values-mimir-compactor.citestns.svc:8080
+        default:
+          url: http://test-enterprise-federation-frontend-values-mimir-admin-api.citestns.svc:8080
+        distributor:
+          url: dns:///test-enterprise-federation-frontend-values-mimir-distributor-headless.citestns.svc.cluster.local.:9095
+        ingester:
+          url: http://test-enterprise-federation-frontend-values-mimir-ingester-headless.citestns.svc:8080
+        query_frontend:
+          url: http://test-enterprise-federation-frontend-values-mimir-federation-frontend.citestns.svc:8080
+        ruler:
+          url: http://test-enterprise-federation-frontend-values-mimir-ruler.citestns.svc:8080
+        store_gateway:
+          url: http://test-enterprise-federation-frontend-values-mimir-store-gateway-headless.citestns.svc:8080
+    ingester:
+      ring:
+        final_sleep: 0s
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        zone_awareness_enabled: true
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+    instrumentation:
+      distributor_client:
+        address: dns:///test-enterprise-federation-frontend-values-mimir-distributor-headless.citestns.svc.cluster.local.:9095
+      enabled: false
+    license:
+      path: /license/license.jwt
+    limits:
+      max_cache_freshness: 10m
+      max_query_parallelism: 240
+      max_total_query_length: 12000h
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - dns+test-enterprise-federation-frontend-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 800
+    ruler:
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-federation-frontend-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
+      enable_api: true
+      rule_path: /data
+    ruler_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    runtime_config:
+      file: /var/mimir/runtime.yaml
+    store_gateway:
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+        kvstore:
+          prefix: multi-zone/
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        wait_stability_min_duration: 1m
+        zone_awareness_enabled: true
+    usage_stats:
+      installation_mode: helm

@@ -1,0 +1,82 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-enterprise-federation-frontend-values-minio
+  labels:
+    app: minio
+    chart: minio-5.2.0
+    release: test-enterprise-federation-frontend-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-enterprise-federation-frontend-values
+  template:
+    metadata:
+      name: test-enterprise-federation-frontend-values-minio
+      labels:
+        app: minio
+        release: test-enterprise-federation-frontend-values
+      annotations:
+        checksum/secrets: 4b0b5e63fe21bba2e134f73b3a8b3d31cd16ab8c7eec5a06cd5d4abb8c3767c0
+        checksum/config: dc5b429b327163a820772a9547c2ef984c281f823505bcdc2af898a2f4b8ab3d
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-enterprise-federation-frontend-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-enterprise-federation-frontend-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-enterprise-federation-frontend-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-enterprise-federation-frontend-values-minio
