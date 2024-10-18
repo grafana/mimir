@@ -215,7 +215,7 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 func (pn *Notifier) writeImageParts(ctx context.Context, w *multipart.Writer, as ...*types.Alert) {
 	// Pushover supports at most one image attachment with a maximum size of pushoverMaxFileSize.
 	// If the image is larger than pushoverMaxFileSize then return an error.
-	err := images.WithStoredImages(ctx, pn.log, pn.images, func(index int, image images.Image) error {
+	err := images.WithStoredImages(ctx, pn.log, pn.images, func(_ int, image images.Image) error {
 		f, err := os.Open(image.Path)
 		if err != nil {
 			return fmt.Errorf("failed to open the image: %w", err)
