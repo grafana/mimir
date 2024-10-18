@@ -50,7 +50,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
 		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
-		"rate(metric{}[5m:1m])":                        "subquery",
 		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
 		"quantile(0.95, metric{})":                     "'quantile' aggregation with parameter",
 	}
@@ -58,17 +57,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
 			requireQueryIsUnsupported(t, featureToggles, expression, expectedError)
-		})
-	}
-
-	// These expressions are also unsupported, but are only valid as instant queries.
-	unsupportedInstantQueryExpressions := map[string]string{
-		"metric{}[5m:1m]": "subquery",
-	}
-
-	for expression, expectedError := range unsupportedInstantQueryExpressions {
-		t.Run(expression, func(t *testing.T) {
-			requireInstantQueryIsUnsupported(t, featureToggles, expression, expectedError)
 		})
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -329,7 +330,54 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 		return operators.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
-		return nil, compat.NewNotSupportedError("subquery")
+		if !q.engine.featureToggles.EnableSubqueries {
+			return nil, compat.NewNotSupportedError("subquery")
+		}
+
+		// Subqueries are evaluated as a single range query with steps aligned to Unix epoch time 0.
+		// They are not evaluated as queries aligned to the individual step timestamps.
+		// See https://www.robustperception.io/promql-subqueries-and-alignment/ for an explanation.
+		// Subquery evaluation aligned to step timestamps is not supported by Prometheus, but may be
+		// introduced in the future in https://github.com/prometheus/prometheus/pull/9114.
+		//
+		// While this makes subqueries simpler to implement and more efficient in most cases, it does
+		// mean we could waste time evaluating steps that won't be used if the subquery range is less
+		// than the parent query step. For example, if the parent query is running with a step of 1h,
+		// and the subquery is for a 10m range with 1m steps, then we'll evaluate ~50m of steps that
+		// won't be used.
+		// This is relatively uncommon, and Prometheus' engine does the same thing. In the future, we
+		// could be smarter about this if it turns out to be a big problem.
+
+		end := timeRange.EndT - e.OriginalOffset.Milliseconds()
+		step := e.Step.Milliseconds()
+
+		if step == 0 {
+			step = q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())
+		}
+
+		// Find the first timestamp inside the subquery range that is aligned to the step.
+		start := step * ((timeRange.StartT - e.OriginalOffset.Milliseconds() - e.Range.Milliseconds()) / step)
+		if start < timeRange.StartT-e.OriginalOffset.Milliseconds()-e.Range.Milliseconds() {
+			start += step
+		}
+
+		subqueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(start), timestamp.Time(end), time.Duration(step)*time.Millisecond)
+		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		subquery := operators.NewSubquery(
+			inner,
+			timeRange,
+			e.Timestamp,
+			e.OriginalOffset,
+			e.Range,
+			e.PositionRange(),
+			q.memoryConsumptionTracker,
+		)
+
+		return subquery, nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.

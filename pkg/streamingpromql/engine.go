@@ -45,11 +45,12 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	}
 
 	return &Engine{
-		lookbackDelta:      lookbackDelta,
-		timeout:            opts.CommonOpts.Timeout,
-		limitsProvider:     limitsProvider,
-		activeQueryTracker: opts.CommonOpts.ActiveQueryTracker,
-		featureToggles:     opts.FeatureToggles,
+		lookbackDelta:            lookbackDelta,
+		timeout:                  opts.CommonOpts.Timeout,
+		limitsProvider:           limitsProvider,
+		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
+		featureToggles:           opts.FeatureToggles,
+		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -64,11 +65,12 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 }
 
 type Engine struct {
-	lookbackDelta      time.Duration
-	timeout            time.Duration
-	limitsProvider     QueryLimitsProvider
-	activeQueryTracker promql.QueryTracker
-	featureToggles     FeatureToggles
+	lookbackDelta            time.Duration
+	timeout                  time.Duration
+	limitsProvider           QueryLimitsProvider
+	activeQueryTracker       promql.QueryTracker
+	featureToggles           FeatureToggles
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
 	logger                                    log.Logger
 	estimatedPeakMemoryConsumption            prometheus.Histogram
