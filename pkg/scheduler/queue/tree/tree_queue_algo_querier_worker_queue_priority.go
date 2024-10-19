@@ -21,7 +21,7 @@ import (
 // This algorithm requires a minimum of 4 querier-workers per querier to prevent queue starvation.
 // The minimum is enforced in the queriers by overriding -querier.max-concurrent if necessary.
 //
-// MultiQueuingAlgorithmTreeQueue always deletes empty leaf nodes and nodes with no children after a dequeue operation,
+// MultiAlgorithmTreeQueue always deletes empty leaf nodes and nodes with no children after a dequeue operation,
 // and only recreates the queue nodes when a new query request is enqueued which requires that path through the tree.
 // QuerierWorkerQueuePriorityAlgo responds by removing or re-adding the query component nodes to the nodeOrder.
 // This has two implications for the distribution of workers across queue nodes:

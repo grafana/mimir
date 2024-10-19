@@ -7,10 +7,10 @@ import (
 )
 
 // QueuingAlgorithm represents the set of operations specific to different approaches to queuing/dequeuing. It is
-// applied at the layer-level -- every Node at the same depth in a MultiQueuingAlgorithmTreeQueue shares the same QueuingAlgorithm,
+// applied at the layer-level -- every Node at the same depth in a MultiAlgorithmTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
 type QueuingAlgorithm interface {
-	// setup is called by MultiQueuingAlgorithmTreeQueue once before beginning to dequeue. The tree calls setup on
+	// setup is called by MultiAlgorithmTreeQueue once before beginning to dequeue. The tree calls setup on
 	// each QueuingAlgorithm in the tree, to update any algorithm state that requires outside information.
 	setup(dequeueReq *DequeueArgs)
 
@@ -40,7 +40,7 @@ type QueuingAlgorithm interface {
 }
 
 // RoundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
-// the same depth in a MultiQueuingAlgorithmTreeQueue do not share any state. When children are added to these nodes,
+// the same depth in a MultiAlgorithmTreeQueue do not share any state. When children are added to these nodes,
 // they are placed at the "end" of the order from the perspective of the node's current queuePosition (e.g., if
 // queuePosition is 3, a new child will be placed at index 2). Children are dequeued from using a simple round-robin
 // ordering; queuePosition is incremented on every dequeue.

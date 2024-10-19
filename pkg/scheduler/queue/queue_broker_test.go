@@ -28,7 +28,7 @@ func (qb *queueBroker) enqueueObjectsForTests(tenantID string, numObjects int) e
 		}
 		var path tree.QueuePath
 		var err error
-		if _, ok := qb.tree.(*tree.MultiQueuingAlgorithmTreeQueue); ok {
+		if _, ok := qb.tree.(*tree.MultiAlgorithmTreeQueue); ok {
 			if qb.prioritizeQueryComponents {
 				path = tree.QueuePath{unknownQueueDimension, tenantID}
 			} else {
@@ -795,7 +795,7 @@ func (qb *queueBroker) removeTenantQueue(tenantID string) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 	queuePath := qb.makeQueuePathForTests(tenantID)
 
-	tree.DeleteNode(tree.RootNode(qb.tree.(*tree.MultiQueuingAlgorithmTreeQueue)), queuePath)
+	tree.DeleteNode(tree.RootNode(qb.tree.(*tree.MultiAlgorithmTreeQueue)), queuePath)
 
 	return false
 }
@@ -857,7 +857,7 @@ func isConsistent(qb *queueBroker) error {
 	}
 
 	var tenantQueueCount int
-	if itq, ok := qb.tree.(*tree.MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := qb.tree.(*tree.MultiAlgorithmTreeQueue); ok {
 		tenantQueueCount = tree.TenantQueueCount(itq)
 	}
 	if tenantQueueCount != tenantCount {

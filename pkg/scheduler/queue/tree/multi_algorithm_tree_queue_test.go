@@ -666,7 +666,7 @@ func Test_DequeueBalancedRoundRobinTree(t *testing.T) {
 
 	count := 0
 
-	// MultiQueuingAlgorithmTreeQueue will fairly dequeue from each child node; subtract one to avoid counting
+	// MultiAlgorithmTreeQueue will fairly dequeue from each child node; subtract one to avoid counting
 	// the local queue of first-dimension node.
 	rotationsBeforeRepeat := len(firstDimensions)*len(secondDimensions) - 1
 	// track dequeued paths to ensure round-robin dequeuing does not repeat before expected
@@ -825,7 +825,7 @@ func Test_NodeCannotDeleteItself(t *testing.T) {
 	}
 }
 
-func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimension int) *MultiQueuingAlgorithmTreeQueue {
+func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimension int) *MultiAlgorithmTreeQueue {
 	tree, err := NewTree(&RoundRobinState{}, &RoundRobinState{})
 	require.NoError(t, err)
 	require.Equal(t, 1, nodeCount(tree.rootNode))
@@ -845,7 +845,7 @@ func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions 
 	return tree
 }
 
-func makeUnbalancedRoundRobinTree(t *testing.T) *MultiQueuingAlgorithmTreeQueue {
+func makeUnbalancedRoundRobinTree(t *testing.T) *MultiAlgorithmTreeQueue {
 	/*
 	   root
 	   ├── 0
