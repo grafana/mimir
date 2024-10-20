@@ -214,6 +214,7 @@ eval instant at 54m scalar(multiple_series)
 
 clear
 
+# Unary negation (-) and unary addition (+)
 load 6m
   metric{series="float"} 1 2 3 4 -5 0 NaN -NaN
   metric{series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
@@ -225,6 +226,11 @@ eval range from 0 to 42m step 6m -metric
 # Ensure unary negation of histograms behaves correctly when lookback is involved.
 eval range from 0 to 1m step 1m -metric{series="histogram"}
   {series="histogram"} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}}
+
+# Unary addition should do nothing.
+eval range from 0 to 42m step 6m +metric
+  metric{series="float"} 1 2 3 4 -5 0 NaN -NaN
+  metric{series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
 
 clear
 
