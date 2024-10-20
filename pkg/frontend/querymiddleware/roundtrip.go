@@ -357,7 +357,7 @@ func newQueryMiddlewares(
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			newInstrumentMiddleware("error_caching", metrics),
-			newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, log, registerer),
+			newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, cacheKeyGenerator, log, registerer),
 		)
 	}
 

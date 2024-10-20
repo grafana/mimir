@@ -1198,13 +1198,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         |||
           sum by(operation) (
-            # Backwards compatibility
-            rate(thanos_memcached_operations_total{
-              %(jobMatcher)s,
-              component="%(component)s",
-              name="%(cacheName)s"
-            }[$__rate_interval])
-            or ignoring(backend)
             rate(thanos_cache_operations_total{
               %(jobMatcher)s,
               component="%(component)s",
@@ -1219,8 +1212,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency (getmulti)') +
-      $.backwardsCompatibleLatencyPanel(
-        'thanos_memcached_operation_duration_seconds',
+      $.latencyPanel(
         'thanos_cache_operation_duration_seconds',
         |||
           {
@@ -1237,13 +1229,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         |||
           sum(
-            # Backwards compatibility
-            rate(thanos_cache_memcached_hits_total{
-              %(jobMatcher)s,
-              component="%(component)s",
-              name="%(cacheName)s"
-            }[$__rate_interval])
-            or
             rate(thanos_cache_hits_total{
               %(jobMatcher)s,
               component="%(component)s",
@@ -1252,13 +1237,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           )
           /
           sum(
-            # Backwards compatibility
-            rate(thanos_cache_memcached_requests_total{
-              %(jobMatcher)s,
-              component="%(component)s",
-              name="%(cacheName)s"
-            }[$__rate_interval])
-            or
             rate(thanos_cache_requests_total{
               %(jobMatcher)s,
               component="%(component)s",
@@ -1317,76 +1295,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         defaults+: { unit: 'ms', noValue: 0 },
       },
     },
-
-  // Copy/paste of latencyPanel from grafana-builder so that we can migrate between two different
-  // names for the same metric. When enough time has passed and we no longer care about the old
-  // metric name, this method can be removed and replaced with $.latencyPanel
-  backwardsCompatibleLatencyPanel(oldMetricName, newMetricName, selector, multiplier='1e3'):: {
-    targets: [
-      {
-        expr: |||
-          histogram_quantile(0.99, sum(
-            # Backwards compatibility
-            rate(%s_bucket%s[$__rate_interval])
-            or
-            rate(%s_bucket%s[$__rate_interval])
-          ) by (le)) * %s
-        ||| % [oldMetricName, selector, newMetricName, selector, multiplier],
-        format: 'time_series',
-        intervalFactor: 2,
-        legendFormat: '99th Percentile',
-        refId: 'A',
-      },
-      {
-        expr: |||
-          histogram_quantile(0.50, sum(
-            # Backwards compatibility
-            rate(%s_bucket%s[$__rate_interval])
-            or
-            rate(%s_bucket%s[$__rate_interval])
-          ) by (le)) * %s
-        ||| % [oldMetricName, selector, newMetricName, selector, multiplier],
-        format: 'time_series',
-        intervalFactor: 2,
-        legendFormat: '50th Percentile',
-        refId: 'B',
-      },
-      {
-        expr: |||
-          sum(
-            # Backwards compatibility
-            rate(%s_sum%s[$__rate_interval])
-            or
-            rate(%s_sum%s[$__rate_interval])
-          ) * %s
-          /
-          sum(
-            # Backwards compatibility
-            rate(%s_count%s[$__rate_interval])
-            or
-            rate(%s_count%s[$__rate_interval])
-          )
-        ||| % [
-          oldMetricName,
-          selector,
-          newMetricName,
-          selector,
-          multiplier,
-          oldMetricName,
-          selector,
-          newMetricName,
-          selector,
-        ],
-        format: 'time_series',
-        intervalFactor: 2,
-        legendFormat: 'Average',
-        refId: 'C',
-      },
-    ],
-    fieldConfig+: {
-      defaults+: { unit: 'ms', noValue: 0 },
-    },
-  },
 
   latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
     utils.latencyRecordingRulePanel(metric, selectors, extra_selectors, multiplier, sum_by) + {
@@ -1735,8 +1643,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           $.queryPanel(
             |||
               sum (
-                rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-                or ignoring(backend)
                 rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
               )
             ||| % {
@@ -1748,8 +1654,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
         .addPanel(
           $.timeseriesPanel('Latency') +
-          $.backwardsCompatibleLatencyPanel(
-            'thanos_memcached_operation_duration_seconds',
+          $.latencyPanel(
             'thanos_cache_operation_duration_seconds',
             '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
           )

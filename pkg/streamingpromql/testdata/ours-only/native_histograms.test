@@ -7,3 +7,9 @@ load 1m
 # https://github.com/prometheus/prometheus/pull/15169
 eval range from 0 to 5m step 1m clamp(mixed_metric, 2, 5)
 	{} _ 2 2 3
+
+eval range from 0 to 5m step 1m clamp_min(mixed_metric, 2)
+	{} _ 2 2 3
+
+eval range from 0 to 5m step 1m clamp_max(mixed_metric, 2)
+	{} _ 1 2 2
