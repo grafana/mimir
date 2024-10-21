@@ -25,3 +25,20 @@ eval range from 0m to 2m step 1m -(-Inf)
 
 eval range from 0m to 2m step 1m -(NaN)
   {} NaN NaN NaN
+
+# Same thing as above, with with unary addition.
+# Unary addition is a no-op.
+eval range from 0m to 2m step 1m +(2)
+  {} 2 2 2
+
+eval range from 0m to 2m step 1m +(-2)
+  {} -2 -2 -2
+
+eval range from 0m to 2m step 1m +(Inf)
+  {} Inf Inf Inf
+
+eval range from 0m to 2m step 1m +(-Inf)
+  {} -Inf -Inf -Inf
+
+eval range from 0m to 2m step 1m +(NaN)
+  {} NaN NaN NaN
