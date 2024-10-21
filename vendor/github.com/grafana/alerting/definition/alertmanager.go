@@ -1,6 +1,7 @@
 package definition
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -605,4 +606,23 @@ func (r *PostableApiReceiver) GetName() string {
 
 type PostableGrafanaReceivers struct {
 	GrafanaManagedReceivers []*PostableGrafanaReceiver `yaml:"grafana_managed_receiver_configs,omitempty" json:"grafana_managed_receiver_configs,omitempty"`
+}
+
+// DecryptSecureSettings returns a map containing the decoded and decrypted secure settings.
+func (pgr *PostableGrafanaReceiver) DecryptSecureSettings(decryptFn func(payload []byte) ([]byte, error)) (map[string]string, error) {
+	decrypted := make(map[string]string, len(pgr.SecureSettings))
+	for k, v := range pgr.SecureSettings {
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode value for key '%s': %w", k, err)
+		}
+
+		b, err := decryptFn(decoded)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt value for key '%s': %w", k, err)
+		}
+
+		decrypted[k] = string(b)
+	}
+	return decrypted, nil
 }
