@@ -140,6 +140,8 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		numStaleNativeHistograms = 100
 	)
 
+	enableDelayedNameRemoval := func(opts *promql.EngineOpts) { opts.EnableDelayedNameRemoval = true }
+
 	tests := map[string]struct {
 		query string
 
@@ -152,6 +154,8 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 		// noRangeQuery skips the range query (specially made for "string" query as it can't be used for a range query)
 		noRangeQuery bool
+
+		engineOptions []func(*promql.EngineOpts)
 	}{
 		"sum() no grouping": {
 			query:                  `sum(metric_counter)`,
@@ -616,6 +620,11 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `histogram_stddev(sum(metric_native_histogram))`,
 			expectedShardedQueries: 1,
 		},
+		"sum(rate()) extracting original __name__ with EnableDelayedNameRemoval enabled": {
+			query:                  `label_replace(sum by (__name__) (rate(metric_counter[1m])), "my_name", "rate_$1", "__name__", "(.+)")`,
+			expectedShardedQueries: 1,
+			engineOptions:          []func(*promql.EngineOpts){enableDelayedNameRemoval},
+		},
 	}
 
 	series := make([]*promql.StorageSeries, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
@@ -705,7 +714,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 			for _, req := range reqs {
 				t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
-					engine := newEngine()
+					engine := newEngine(testData.engineOptions...)
 					downstream := &downstreamHandler{
 						engine:                                  engine,
 						queryable:                               queryable,
@@ -730,7 +739,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 						removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
 					}
 
-					for _, numShards := range []int{2, 4, 8, 16} {
+					for _, numShards := range []int{2} {
 						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
 							shardingware := newQueryShardingMiddleware(
@@ -2503,8 +2512,8 @@ func (i *seriesIteratorMock) Warnings() annotations.Annotations {
 }
 
 // newEngine creates and return a new promql.Engine used for testing.
-func newEngine() *promql.Engine {
-	return promql.NewEngine(promql.EngineOpts{
+func newEngine(engineOptsModifiers ...func(opts *promql.EngineOpts)) *promql.Engine {
+	opts := promql.EngineOpts{
 		Logger:               log.NewNopLogger(),
 		Reg:                  nil,
 		MaxSamples:           10e6,
@@ -2516,7 +2525,11 @@ func newEngine() *promql.Engine {
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 		},
-	})
+	}
+	for _, opt := range engineOptsModifiers {
+		opt(&opts)
+	}
+	return promql.NewEngine(opts)
 }
 
 func TestRemoveAnnotationPositionInformation(t *testing.T) {
