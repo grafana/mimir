@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 )
 
 const querierForgetDelay = 0
@@ -375,23 +377,23 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		tqaNonFlipped := newTenantQuerierAssignments()
-		tqaFlipped := newTenantQuerierAssignments()
-		tqaQuerierWorkerPrioritization := newTenantQuerierAssignments()
+		tqaNonFlipped := tree.NewTenantQuerierQueuingAlgorithm()
+		tqaFlipped := tree.NewTenantQuerierQueuingAlgorithm()
+		tqaQuerierWorkerPrioritization := tree.NewTenantQuerierQueuingAlgorithm()
 
-		nonFlippedRoundRobinTree, err := NewTree(tqaNonFlipped, &roundRobinState{})
+		nonFlippedRoundRobinTree, err := tree.NewTree(tqaNonFlipped, tree.NewRoundRobinState())
 		require.NoError(t, err)
 
-		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqaFlipped)
+		flippedRoundRobinTree, err := tree.NewTree(tree.NewRoundRobinState(), tqaFlipped)
 		require.NoError(t, err)
 
-		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
+		querierWorkerPrioritizationTree, err := tree.NewTree(tree.NewQuerierWorkerQueuePriorityAlgo(), tqaQuerierWorkerPrioritization)
 		require.NoError(t, err)
 
 		treeScenarios := []struct {
 			name string
-			tree Tree
-			tqa  *tenantQuerierAssignments
+			tree tree.Tree
+			tqa  *tree.TenantQuerierQueuingAlgorithm
 		}{
 			// keeping these names the same length keeps logged results aligned
 			{
@@ -438,9 +440,13 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				)
 				require.NoError(t, err)
 
-				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierAssignments
+				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierShards
 				// so we have to override here to use the same structures as the test case
-				queue.queueBroker.tenantQuerierAssignments = scenario.tqa
+				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierShards{
+					querierIDsSorted: make([]tree.QuerierID, 0),
+					tenantsByID:      make(map[string]*queueTenant),
+					queuingAlgorithm: scenario.tqa,
+				}
 				queue.queueBroker.prioritizeQueryComponents = prioritizeQueryComponents
 				queue.queueBroker.tree = scenario.tree
 
@@ -485,10 +491,13 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				require.NoError(t, queue.stop(nil))
-				// ensure everything was dequeued
-				path, val := scenario.tree.Dequeue(&DequeueArgs{querierID: scenario.tqa.currentQuerier})
+				assert.NotEqual(t, "", tree.CurrentQuerier(scenario.tqa))
+				// ensure everything was dequeued; we can pass a nil DequeueArgs because we don't
+				// want to update any state before doing this (i.e., we're dequeuing for _any_ querier,
+				// just to make sure the tree is empty).
+				path, val := scenario.tree.Dequeue(nil)
 				assert.Nil(t, val)
-				assert.Equal(t, path, QueuePath{})
+				assert.Equal(t, path, tree.QueuePath{})
 			})
 		}
 	}

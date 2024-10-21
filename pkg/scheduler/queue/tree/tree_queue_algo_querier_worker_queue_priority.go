@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package queue
+package tree
 
-import "slices"
+import (
+	"slices"
+)
 
 // QuerierWorkerQueuePriorityAlgo implements QueuingAlgorithm by mapping worker IDs to a queue node to prioritize.
-// Querier-workers' prioritized queue nodes are calculated by the integer workerID % len(nodeOrder).
+// Querier-workers' prioritized queue nodes are calculated by the integer WorkerID % len(nodeOrder).
 // This distribution of workers across query component subtrees ensures that when one query component is experiencing
 // high latency about 25% of querier-workers continue prioritizing queries for unaffected components.
 //
@@ -19,7 +21,7 @@ import "slices"
 // This algorithm requires a minimum of 4 querier-workers per querier to prevent queue starvation.
 // The minimum is enforced in the queriers by overriding -querier.max-concurrent if necessary.
 //
-// MultiQueuingAlgorithmTreeQueue always deletes empty leaf nodes and nodes with no children after a dequeue operation,
+// MultiAlgorithmTreeQueue always deletes empty leaf nodes and nodes with no children after a dequeue operation,
 // and only recreates the queue nodes when a new query request is enqueued which requires that path through the tree.
 // QuerierWorkerQueuePriorityAlgo responds by removing or re-adding the query component nodes to the nodeOrder.
 // This has two implications for the distribution of workers across queue nodes:
@@ -44,7 +46,7 @@ import "slices"
 //
 //  1. This algorithm has nodeOrder: ["ingester", "store-gateway", "ingester-and-store-gateway", "unknown"].
 //
-//  2. A querier-worker with workerID 0 requests to dequeue; it prioritizes the "ingester" queue node.
+//  2. A querier-worker with WorkerID 0 requests to dequeue; it prioritizes the "ingester" queue node.
 //
 //  3. The dequeue operation attempts to dequeue first from the child nodes of the "ingester" node,
 //     where each child node is a tenant-specific queue of ingester-only queries. The tenantQuerierAssignments
@@ -68,7 +70,7 @@ func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) setup(dequeueArgs *DequeueArgs) {
-	qa.currentQuerierWorker = dequeueArgs.workerID
+	qa.currentQuerierWorker = dequeueArgs.WorkerID
 	if len(qa.nodeOrder) == 0 {
 		qa.currentNodeOrderIndex = 0
 	} else {

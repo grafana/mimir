@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package queue
+package tree
 
 import (
 	"container/list"
@@ -20,14 +20,14 @@ type Tree interface {
 }
 
 type DequeueArgs struct {
-	querierID       QuerierID
-	workerID        int
-	lastTenantIndex int
+	QuerierID       string
+	WorkerID        int
+	LastTenantIndex int
 }
 
-// MultiQueuingAlgorithmTreeQueue holds metadata and a pointer to the root node of a hierarchical queue implementation.
+// MultiAlgorithmTreeQueue holds metadata and a pointer to the root node of a hierarchical queue implementation.
 // The root Node maintains a localQueue and an arbitrary number of child nodes (which themselves
-// may have local queues and children). Each Node in MultiQueuingAlgorithmTreeQueue uses a QueuingAlgorithm (determined by
+// may have local queues and children). Each Node in MultiAlgorithmTreeQueue uses a QueuingAlgorithm (determined by
 // node depth) to determine dequeue order of that Node's subtree.
 //
 // Each queuing dimension is modeled as a node in the tree, internally reachable through a QueuePath.
@@ -37,14 +37,14 @@ type DequeueArgs struct {
 //
 // When dequeuing from a given node, a Node will use its QueuingAlgorithm to choose either itself
 // or a child node to dequeue from recursively (i.e., a child Node will use its own QueuingAlgorithm
-// to determine how to proceed). MultiQueuingAlgorithmTreeQueue will not dequeue from two different Nodes at the same depth
+// to determine how to proceed). MultiAlgorithmTreeQueue will not dequeue from two different Nodes at the same depth
 // consecutively, unless the previously-checked Node was empty down to the leaf node.
-type MultiQueuingAlgorithmTreeQueue struct {
+type MultiAlgorithmTreeQueue struct {
 	rootNode     *Node
 	algosByDepth []QueuingAlgorithm
 }
 
-func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*MultiQueuingAlgorithmTreeQueue, error) {
+func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*MultiAlgorithmTreeQueue, error) {
 	// a nil QueuingAlgorithm would force a leaf node, but we handle adding the leaf node layer to the tree internally.
 	for _, qa := range queuingAlgorithms {
 		if qa == nil {
@@ -58,21 +58,21 @@ func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*MultiQueuingAlgorithmTreeQ
 	if err != nil {
 		return nil, err
 	}
-	return &MultiQueuingAlgorithmTreeQueue{
+	return &MultiAlgorithmTreeQueue{
 		rootNode:     root,
 		algosByDepth: queuingAlgorithms,
 	}, nil
 }
 
-func (t *MultiQueuingAlgorithmTreeQueue) ItemCount() int {
+func (t *MultiAlgorithmTreeQueue) ItemCount() int {
 	return t.rootNode.ItemCount()
 }
 
-func (t *MultiQueuingAlgorithmTreeQueue) IsEmpty() bool {
+func (t *MultiAlgorithmTreeQueue) IsEmpty() bool {
 	return t.rootNode.IsEmpty()
 }
 
-// Dequeue removes and returns an item from the front of the next appropriate Node in the MultiQueuingAlgorithmTreeQueue,
+// Dequeue removes and returns an item from the front of the next appropriate Node in the MultiAlgorithmTreeQueue,
 // as well as the path to the Node which that item was dequeued from. If DequeueArgs are passed,
 // each QueuingAlgorithm's setup function is called with DequeueArgs to update its state. If DequeueArgs is nil,
 // the dequeue operation will proceed without setting up QueuingAlgorithm state.
@@ -83,7 +83,7 @@ func (t *MultiQueuingAlgorithmTreeQueue) IsEmpty() bool {
 //
 // Nodes that satisfy IsEmpty after a dequeue operation are deleted as the recursion returns up the stack.
 // This maintains structural guarantees relied upon to make IsEmpty() non-recursive.
-func (t *MultiQueuingAlgorithmTreeQueue) Dequeue(dequeueArgs *DequeueArgs) (QueuePath, any) {
+func (t *MultiAlgorithmTreeQueue) Dequeue(dequeueArgs *DequeueArgs) (QueuePath, any) {
 	if dequeueArgs != nil {
 		for _, qa := range t.algosByDepth {
 			if qa != nil {
@@ -102,7 +102,7 @@ func (t *MultiQueuingAlgorithmTreeQueue) Dequeue(dequeueArgs *DequeueArgs) (Queu
 //
 // path is relative to the root node; providing a QueuePath beginning with "root"
 // will create a child node of the root node which is also named "root."
-func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
+func (t *MultiAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
 	if len(path) != len(t.algosByDepth)-1 {
 		return fmt.Errorf("can't enqueue object to non-leaf node")
 	}
@@ -110,7 +110,7 @@ func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any
 }
 
 // EnqueueFrontByPath enqueues an item in the front of the local queue of the Node
-// located at a given path through the MultiQueuingAlgorithmTreeQueue; nodes for the path are created as needed.
+// located at a given path through the MultiAlgorithmTreeQueue; nodes for the path are created as needed.
 //
 // Enqueueing to the front is intended only for items which were first enqueued to the back
 // and then dequeued after reaching the front.
@@ -123,11 +123,11 @@ func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any
 //
 // path must be relative to the root node; providing a QueuePath beginning with "root"
 // will create a child node of root which is also named "root."
-func (t *MultiQueuingAlgorithmTreeQueue) EnqueueFrontByPath(path QueuePath, v any) error {
+func (t *MultiAlgorithmTreeQueue) EnqueueFrontByPath(path QueuePath, v any) error {
 	return t.rootNode.enqueueFrontByPath(t, path, v)
 }
 
-func (t *MultiQueuingAlgorithmTreeQueue) GetNode(path QueuePath) *Node {
+func (t *MultiAlgorithmTreeQueue) GetNode(path QueuePath) *Node {
 	return t.rootNode.getNode(path)
 }
 
@@ -212,7 +212,7 @@ func (n *Node) getLocalQueue() *list.List {
 	return n.localQueue
 }
 
-func (n *Node) enqueueFrontByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFromNode QueuePath, v any) error {
+func (n *Node) enqueueFrontByPath(tree *MultiAlgorithmTreeQueue, pathFromNode QueuePath, v any) error {
 	childNode, err := n.getOrAddNode(pathFromNode, tree)
 	if err != nil {
 		return err
@@ -221,7 +221,7 @@ func (n *Node) enqueueFrontByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFrom
 	return nil
 }
 
-func (n *Node) enqueueBackByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFromNode QueuePath, v any) error {
+func (n *Node) enqueueBackByPath(tree *MultiAlgorithmTreeQueue, pathFromNode QueuePath, v any) error {
 	childNode, err := n.getOrAddNode(pathFromNode, tree)
 	if err != nil {
 		return err
@@ -309,7 +309,7 @@ func (n *Node) getNode(pathFromNode QueuePath) *Node {
 //
 // pathFromNode must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
-func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmTreeQueue) (*Node, error) {
+func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiAlgorithmTreeQueue) (*Node, error) {
 	if len(pathFromNode) == 0 {
 		return n, nil
 	}
@@ -331,4 +331,57 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmT
 
 	}
 	return childNode.getOrAddNode(pathFromNode[1:], tree)
+}
+
+// TenantQueueCount is a test utility which returns the number of distinct tenants with populated queues.
+func TenantQueueCount(tree *MultiAlgorithmTreeQueue) int {
+	var count int
+	for _, qa := range tree.algosByDepth {
+		if tqqa, ok := qa.(*TenantQuerierQueuingAlgorithm); ok {
+			for _, t := range tqqa.TenantIDOrder() {
+				if t != "" {
+					count++
+				}
+			}
+		}
+	}
+	return count
+}
+
+func GetOrAddNode(path QueuePath, tree Tree) error {
+	if mqa, ok := tree.(*MultiAlgorithmTreeQueue); ok {
+		_, err := mqa.rootNode.getOrAddNode(path, mqa)
+		return err
+	}
+	return fmt.Errorf("not a valid tree type")
+}
+
+// RootNode is a test utility
+func RootNode(tree *MultiAlgorithmTreeQueue) *Node {
+	return tree.rootNode
+}
+
+// DeleteNode is a test utility
+func DeleteNode(startingNode *Node, pathFromNode QueuePath) bool {
+	if len(pathFromNode) == 0 {
+		// node cannot delete itself
+		return false
+	}
+
+	// parentPath is everything except the last node, childNode is the last in path
+	parentPath, deleteNodeName := pathFromNode[:len(pathFromNode)-1], pathFromNode[len(pathFromNode)-1]
+
+	parentNode := startingNode.getNode(parentPath)
+	if parentNode == nil {
+		// not found
+		return false
+	}
+	if deleteNode := parentNode.getNode(QueuePath{deleteNodeName}); deleteNode != nil {
+		// empty the node so that update state properly deletes it
+		deleteNode.queueMap = map[string]*Node{}
+		deleteNode.localQueue = list.New()
+		parentNode.queuingAlgorithm.dequeueUpdateState(parentNode, deleteNode)
+		return true
+	}
+	return false
 }

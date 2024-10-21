@@ -12,7 +12,7 @@ const unregisteredWorkerID = -1
 // querierConnections manages information about queriers connected to the request queue. The queueBroker
 // receives information about querier connections via RequestQueue's querierWorkerOperations channel.
 type querierConnections struct {
-	queriersByID map[QuerierID]*querierState
+	queriersByID map[string]*querierState
 
 	// How long to wait before removing a querier which has got disconnected
 	// but hasn't notified about a graceful shutdown.
@@ -21,13 +21,13 @@ type querierConnections struct {
 
 func newQuerierConnections(forgetDelay time.Duration) *querierConnections {
 	return &querierConnections{
-		queriersByID:       map[QuerierID]*querierState{},
+		queriersByID:       map[string]*querierState{},
 		querierForgetDelay: forgetDelay,
 	}
 }
 
 // querierIsAvailable returns true if the querier is registered to the querierConnections and is not shutting down.
-func (qc *querierConnections) querierIsAvailable(querierID QuerierID) bool {
+func (qc *querierConnections) querierIsAvailable(querierID string) bool {
 	q := qc.queriersByID[querierID]
 	return q != nil && !q.shuttingDown
 }
@@ -93,7 +93,7 @@ func (qc *querierConnections) removeQuerierWorkerConn(conn *QuerierWorkerConn, n
 
 // shutdownQuerier handles a graceful shutdown notification from a querier. It updates the querier state to shuttingDown
 // if applicable, and returns true if the querier is inactive; the querier can be removed from queriersByID in this case.
-func (qc *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQuerier bool) {
+func (qc *querierConnections) shutdownQuerier(querierID string) (canRemoveQuerier bool) {
 	querier := qc.queriersByID[querierID]
 	if querier == nil {
 		// The querier may have already been removed, so we just ignore it.
@@ -116,13 +116,13 @@ func (qc *querierConnections) shutdownQuerier(querierID QuerierID) (canRemoveQue
 // removeForgettableQueriers removes all querier connections which no longer have any querier-worker connections and for whom
 // querierForgetDelay time has passed since the querier disconnected. It returns a slice of all querier IDs which were
 // removed.
-func (qc *querierConnections) removeForgettableQueriers(now time.Time) []QuerierID {
+func (qc *querierConnections) removeForgettableQueriers(now time.Time) []string {
 	// if forget delay is disabled, removal is done immediately on querier disconnect or shutdown; do nothing
 	if qc.querierForgetDelay == 0 {
 		return nil
 	}
 
-	removableQueriers := make([]QuerierID, 0)
+	removableQueriers := make([]string, 0)
 	// Remove all queriers with no connections that have gone since at least the forget delay.
 	threshold := now.Add(-qc.querierForgetDelay)
 	for querierID, querier := range qc.queriersByID {
@@ -147,11 +147,11 @@ func (qc *querierConnections) removeForgettableQueriers(now time.Time) []Querier
 // In these cases the relevant ID fields are ignored and should be left as their unregistered or zero values.
 type QuerierWorkerConn struct {
 	ctx       context.Context
-	QuerierID QuerierID
+	QuerierID string
 	WorkerID  int
 }
 
-func NewUnregisteredQuerierWorkerConn(ctx context.Context, querierID QuerierID) *QuerierWorkerConn {
+func NewUnregisteredQuerierWorkerConn(ctx context.Context, querierID string) *QuerierWorkerConn {
 	return &QuerierWorkerConn{
 		ctx:       ctx,
 		QuerierID: querierID,

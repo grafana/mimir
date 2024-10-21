@@ -200,7 +200,7 @@ func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 }
 
 type requestToEnqueue struct {
-	tenantID    TenantID
+	tenantID    string
 	req         QueryRequest
 	maxQueriers int
 	successFn   func()
@@ -366,7 +366,7 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 	err := q.queueBroker.enqueueRequestBack(&tr, r.maxQueriers)
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
-			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
+			q.discardedRequests.WithLabelValues(r.tenantID).Inc()
 		}
 		return err
 	}
@@ -374,7 +374,7 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 		r.successFn()
 	}
 
-	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
+	q.queueLength.WithLabelValues(r.tenantID).Inc()
 	return nil
 }
 
@@ -410,7 +410,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(dequeueReq *QuerierWorkerDeq
 
 	requestSent := dequeueReq.sendResponse(reqForQuerier)
 	if requestSent {
-		q.queueLength.WithLabelValues(string(tenant.tenantID)).Dec()
+		q.queueLength.WithLabelValues(tenant.tenantID).Dec()
 	} else {
 		// should never error; any item previously in the queue already passed validation
 		err := q.queueBroker.enqueueRequestFront(req, tenant.maxQueriers)
@@ -439,7 +439,7 @@ func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req QueryRequest,
 	}()
 
 	r := requestToEnqueue{
-		tenantID:    TenantID(tenantID),
+		tenantID:    tenantID,
 		req:         req,
 		maxQueriers: maxQueriers,
 		successFn:   successFn,
@@ -533,7 +533,7 @@ func (q *RequestQueue) submitForgetDisconnectedQueriers(ctx context.Context) {
 
 // SubmitNotifyQuerierShutdown is called by the v1 frontend or scheduler when NotifyQuerierShutdown requests
 // are submitted from the querier to an endpoint, separate from any specific querier-worker connection.
-func (q *RequestQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID QuerierID) {
+func (q *RequestQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID string) {
 	// Create a generic querier-worker connection to submit the operation.
 	conn := NewUnregisteredQuerierWorkerConn(ctx, querierID) // querierID matters but workerID does not
 	q.submitQuerierWorkerOperation(conn, notifyShutdown)
