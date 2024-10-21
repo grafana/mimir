@@ -377,12 +377,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		tqaNonFlipped := tree.NewTenantQuerierQueuingAlgorithm()
 		tqaFlipped := tree.NewTenantQuerierQueuingAlgorithm()
 		tqaQuerierWorkerPrioritization := tree.NewTenantQuerierQueuingAlgorithm()
-
-		nonFlippedRoundRobinTree, err := tree.NewTree(tqaNonFlipped, tree.NewRoundRobinState())
-		require.NoError(t, err)
 
 		flippedRoundRobinTree, err := tree.NewTree(tree.NewRoundRobinState(), tqaFlipped)
 		require.NoError(t, err)
@@ -396,11 +392,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			tqa  *tree.TenantQuerierQueuingAlgorithm
 		}{
 			// keeping these names the same length keeps logged results aligned
-			{
-				"tenant-querier -> query component round-robin tree",
-				nonFlippedRoundRobinTree,
-				tqaNonFlipped,
-			},
 			{
 				"query component round-robin -> tenant-querier tree",
 				flippedRoundRobinTree,
@@ -424,14 +415,10 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				queryComponentQueueDurationObservations: map[string][]float64{},
 			}
 
-			// only the non-flipped tree uses the old tenant -> query component hierarchy
-			prioritizeQueryComponents := scenario.tree != nonFlippedRoundRobinTree
-
 			t.Run(testCaseName, func(t *testing.T) {
 				queue, err := NewRequestQueue(
 					log.NewNopLogger(),
 					maxOutStandingPerTenant,
-					prioritizeQueryComponents,
 					querierForgetDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -447,7 +434,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					tenantsByID:      make(map[string]*queueTenant),
 					queuingAlgorithm: scenario.tqa,
 				}
-				queue.queueBroker.prioritizeQueryComponents = prioritizeQueryComponents
 				queue.queueBroker.tree = scenario.tree
 
 				ctx := context.Background()
