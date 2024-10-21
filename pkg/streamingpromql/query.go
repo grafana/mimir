@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -413,7 +414,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		o := operators.NewScalarConstant(
+		o := scalars.NewScalarConstant(
 			e.Val,
 			timeRange,
 			q.memoryConsumptionTracker,
@@ -440,7 +441,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 			return nil, err
 		}
 
-		return operators.NewUnaryNegationOfScalar(inner, e.PositionRange()), nil
+		return scalars.NewUnaryNegationOfScalar(inner, e.PositionRange()), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.

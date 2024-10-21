@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"math"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -136,7 +137,7 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 		return nil, fmt.Errorf("expected a scalar argument for vector, got %T", args[0])
 	}
 
-	return operators.NewScalarToInstantVector(inner, expressionPosition), nil
+	return scalars.NewScalarToInstantVector(inner, expressionPosition), nil
 }
 
 func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
@@ -273,7 +274,7 @@ func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 				return nil, fmt.Errorf("expected a scalar for 2nd argument for round, got %T", args[1])
 			}
 		} else {
-			toNearest = operators.NewScalarConstant(float64(1), timeRange, memoryConsumptionTracker, expressionPosition)
+			toNearest = scalars.NewScalarConstant(float64(1), timeRange, memoryConsumptionTracker, expressionPosition)
 		}
 
 		f := functions.FunctionOverInstantVector{
@@ -365,7 +366,7 @@ func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting
 		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
 	}
 
-	return operators.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
+	return scalars.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
@@ -380,7 +381,7 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 		return nil, fmt.Errorf("expected an instant vector argument for scalar, got %T", args[0])
 	}
 
-	return operators.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
+	return scalars.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) types.InstantVectorOperator {
