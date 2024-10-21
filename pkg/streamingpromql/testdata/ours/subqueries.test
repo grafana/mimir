@@ -112,3 +112,18 @@ eval_warn range from 0 to 5m step 1m sum_over_time(last_over_time(metric[2m:1m])
   {type="histograms"} {{count:0}} {{count:0}} {{count:4}} {{count:10}} {{count:10}} {{count:9}}
   {type="mixed"} 0 0 4 10 10 _
   # Last sample for {type="mixed"} dropped due to mixture of floats and histograms
+
+clear
+
+# Test deeply nested subquery with changing step.
+load 1m
+  metric 0 1 2 3 4
+
+eval range from 0 to 4m step 15s sum_over_time(metric[2m:30s])
+  {} 0 0 0 0 1 1 2 2 4 4 6 6 9 8 11 10 14
+
+eval range from 0 to 4m step 20s sum_over_time(sum_over_time(metric[2m:30s])[3m:15s])
+  {} 0 0 0 1 2 4 10 14 20 35 43 54 78
+
+eval range from 0 to 4m step 3m sum_over_time(sum_over_time(sum_over_time(metric[2m:30s])[3m:15s])[4m:20s])
+  {} 0 86
