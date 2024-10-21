@@ -864,10 +864,10 @@ func TestSubqueries(t *testing.T) {
 	// This test is based on Prometheus' TestSubquerySelector.
 	data := `load 10s
 	           metric 1 2
-	           http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
-	           http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
-	           http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
-	           http_requests{job="api-server", instance="1", group="canary"}		0+40x2000`
+	           http_requests{job="api-server", instance="0", group="production"} 0+10x1000 100+30x1000
+	           http_requests{job="api-server", instance="1", group="production"} 0+20x1000 200+30x1000
+	           http_requests{job="api-server", instance="0", group="canary"}     0+30x1000 300+80x1000
+	           http_requests{job="api-server", instance="1", group="canary"}     0+40x2000`
 
 	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
