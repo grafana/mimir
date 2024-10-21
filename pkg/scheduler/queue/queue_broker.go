@@ -30,7 +30,7 @@ type tenantRequest struct {
 type queueBroker struct {
 	tree tree.Tree
 
-	tenantQuerierAssignments *tenantQuerierSharding
+	tenantQuerierAssignments *tenantQuerierShards
 	querierConnections       *querierConnections
 
 	maxTenantQueueSize        int
@@ -178,8 +178,8 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	return request, tenant, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), nil
 }
 
-// below methods simply pass through to the queueBroker's tenantQuerierSharding; this layering could be skipped
-// but there is no reason to make consumers know that they need to call through to the tenantQuerierSharding.
+// below methods simply pass through to the queueBroker's tenantQuerierShards; this layering could be skipped
+// but there is no reason to make consumers know that they need to call through to the tenantQuerierShards.
 
 func (qb *queueBroker) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
 	// if conn is for a new querier, we need to recompute tenant querier relationship; otherwise, we don't reshard

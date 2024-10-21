@@ -598,19 +598,18 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 	require.Equal(t, "query-1", v)
 
 	// update tqa map to add querier-3 as assigned to tenant-2, then dequeue for querier-3 should dequeue query-3
-	tqa.tenantQuerierIDs["tenant-2"]["querier-3"] = struct{}{}
+	tqa.SetQueriersForTenant("tenant-2", map[QuerierID]struct{}{"querier-3": {}})
 	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier3, LastTenantIndex: newQuerierTenantIndex})
 	require.Equal(t, "query-3", v)
 
 	// during reshuffle, we only ever reassign tenant values, we don't assign an entirely new map value
 	// to tenantQuerierIDs. Reassign tenant-2 to an empty map value, and query-5 (tenant-3), which can be handled
 	// by any querier, should be dequeued,
-	tqa.tenantQuerierIDs["tenant-2"] = map[QuerierID]struct{}{}
+	tqa.SetQueriersForTenant("tenant-2", map[QuerierID]struct{}{})
 	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier3})
 	require.Equal(t, "query-5", v)
 
-	// then we should not be able to dequeue query-4
-	tqa.tenantQuerierIDs["tenant-2"] = map[QuerierID]struct{}{}
+	// then we should not be able to dequeue query-4, because tenant-2 cannot be handled by _any_ queriers
 	_, v = tree.Dequeue(&DequeueArgs{QuerierID: querier3})
 	require.Nil(t, v)
 

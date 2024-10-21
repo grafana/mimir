@@ -440,9 +440,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				)
 				require.NoError(t, err)
 
-				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierSharding
+				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierShards
 				// so we have to override here to use the same structures as the test case
-				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierSharding{
+				queue.queueBroker.tenantQuerierAssignments = &tenantQuerierShards{
 					querierIDsSorted: make([]tree.QuerierID, 0),
 					tenantsByID:      make(map[string]*queueTenant),
 					queuingAlgorithm: scenario.tqa,

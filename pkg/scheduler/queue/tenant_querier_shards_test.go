@@ -19,7 +19,7 @@ import (
 
 func TestShuffleQueriers(t *testing.T) {
 	allQueriers := []tree.QuerierID{"a", "b", "c", "d", "e"}
-	tqs := &tenantQuerierSharding{
+	tqs := &tenantQuerierShards{
 		querierIDsSorted: allQueriers,
 		tenantsByID: map[string]*queueTenant{
 			"team-a": {
@@ -66,7 +66,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 	}
 	slices.Sort(allSortedQueriers)
 
-	tqs := tenantQuerierSharding{
+	tqs := tenantQuerierShards{
 		querierIDsSorted: allSortedQueriers,
 		tenantsByID: map[string]*queueTenant{
 			"team-a": {
