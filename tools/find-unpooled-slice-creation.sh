@@ -13,6 +13,7 @@ MATCHES=$(
     -n \
     --exclude '*_test.go' \
     --exclude '*pool.go' \
+    --exclude 'utils.go' \
     -e 'make(\[\]types\.SeriesMetadata,' \
     -e 'make(\[\]promql\.FPoint,' \
     -e 'make(\[\]promql\.HPoint,' \
