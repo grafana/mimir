@@ -283,7 +283,7 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		}
 		result.EmailConfigs = append(result.EmailConfigs, newNotifierConfig(receiver, cfg))
 	case "googlechat":
-		cfg, err := googlechat.NewConfig(receiver.Settings)
+		cfg, err := googlechat.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}

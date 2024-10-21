@@ -176,7 +176,7 @@ func (sn *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 
 // sendSlackRequest sends a request to the Slack API.
 // Stubbable by tests.
-var sendSlackRequest = func(ctx context.Context, req *http.Request, logger logging.Logger) (string, error) {
+var sendSlackRequest = func(_ context.Context, req *http.Request, logger logging.Logger) (string, error) {
 	resp, err := slackClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -344,7 +344,7 @@ func (sn *Notifier) createSlackMessage(ctx context.Context, alerts []*types.Aler
 
 	if isIncomingWebhook(sn.settings) {
 		// Incoming webhooks cannot upload files, instead share images via their URL
-		_ = images.WithStoredImages(ctx, sn.log, sn.images, func(index int, image images.Image) error {
+		_ = images.WithStoredImages(ctx, sn.log, sn.images, func(_ int, image images.Image) error {
 			if image.URL != "" {
 				req.Attachments[0].ImageURL = image.URL
 				return images.ErrImagesDone
