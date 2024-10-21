@@ -15,7 +15,6 @@ import (
 	rulespb "github.com/grafana/mimir/pkg/ruler/rulespb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
-	"google.golang.org/grpc/mem"
 	status "google.golang.org/grpc/status"
 	_ "google.golang.org/protobuf/types/known/durationpb"
 	_ "google.golang.org/protobuf/types/known/timestamppb"
@@ -140,10 +139,10 @@ func (m *RulesRequest) GetExcludeAlerts() bool {
 }
 
 type RulesResponse struct {
-	Groups []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
-
 	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
+	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
+
+	Groups []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
 }
 
 func (m *RulesResponse) Reset()      { *m = RulesResponse{} }

@@ -43,11 +43,11 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 }
 
 // Unmarshal customizes gRPC unmarshalling.
-// If v implements the BufferHolder interface, its SetBuffer method is called with the unmarshalling buffer.
+// If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	vv := messageV2Of(v)
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
-	// Decrement buf's reference count. Note though that if v implements BufferHolder,
+	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
 
@@ -55,10 +55,11 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		return err
 	}
 
-	unmarshaler, ok := v.(BufferHolder)
-	if ok {
+	if holder, ok := v.(interface {
+		SetBuffer(mem.Buffer)
+	}); ok {
 		buf.Ref()
-		unmarshaler.SetBuffer(buf)
+		holder.SetBuffer(buf)
 	}
 
 	return nil
@@ -68,20 +69,17 @@ func (c *codecV2) Name() string {
 	return c.codec.Name()
 }
 
-// BufferHolder is an interface for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
 // Implementations of this interface should keep a reference to said buffer.
-type BufferHolder interface {
-	// SetBuffer sets the unmarshalling buffer.
-	SetBuffer(mem.Buffer)
+type BufferHolder struct {
+	buffer mem.Buffer
 }
 
-var _ BufferHolder = &WriteRequest{}
-
-func (m *WriteRequest) SetBuffer(buf mem.Buffer) {
+func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
 }
 
-func (m *WriteRequest) FreeBuffer() {
+func (m *BufferHolder) FreeBuffer() {
 	if m.buffer != nil {
 		m.buffer.Free()
 		m.buffer = nil

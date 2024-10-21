@@ -1,22 +1,14 @@
 diff --git a/pkg/ruler/ruler.pb.go b/pkg/ruler/ruler.pb.go
-index 9402108fa..59d3f8df6 100644
+index 86a394818..59d3f8df6 100644
 --- a/pkg/ruler/ruler.pb.go
 +++ b/pkg/ruler/ruler.pb.go
-@@ -15,7 +15,6 @@ import (
- 	rulespb "github.com/grafana/mimir/pkg/ruler/rulespb"
- 	grpc "google.golang.org/grpc"
- 	codes "google.golang.org/grpc/codes"
--	"google.golang.org/grpc/mem"
- 	status "google.golang.org/grpc/status"
- 	_ "google.golang.org/protobuf/types/known/durationpb"
- 	_ "google.golang.org/protobuf/types/known/timestamppb"
-@@ -141,9 +140,6 @@ func (m *RulesRequest) GetExcludeAlerts() bool {
- 
- type RulesResponse struct {
- 	Groups []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
--
--	// Keep reference to buffer for unsafe references.
--	buffer mem.Buffer
+@@ -139,9 +139,6 @@ func (m *RulesRequest) GetExcludeAlerts() bool {
  }
  
- func (m *RulesResponse) Reset()      { *m = RulesResponse{} }
+ type RulesResponse struct {
+-	// Keep reference to buffer for unsafe references.
+-	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
+-
+ 	Groups []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
+ }
+ 

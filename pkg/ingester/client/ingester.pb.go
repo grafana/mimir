@@ -16,7 +16,6 @@ import (
 	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
-	"google.golang.org/grpc/mem"
 	status "google.golang.org/grpc/status"
 	io "io"
 	math "math"
@@ -583,10 +582,10 @@ func (m *ActiveSeriesRequest) GetType() ActiveSeriesRequest_RequestType {
 }
 
 type QueryResponse struct {
-	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
-
 	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
+	mimirpb.BufferHolder
+
+	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 }
 
 func (m *QueryResponse) Reset()      { *m = QueryResponse{} }
@@ -637,14 +636,14 @@ func (m *QueryResponse) GetTimeseries() []mimirpb.TimeSeries {
 //
 // Only one of these two options will be populated.
 type QueryStreamResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Chunkseries           []TimeSeriesChunk         `protobuf:"bytes,1,rep,name=chunkseries,proto3" json:"chunkseries"`
 	Timeseries            []mimirpb.TimeSeries      `protobuf:"bytes,2,rep,name=timeseries,proto3" json:"timeseries"`
 	StreamingSeries       []QueryStreamSeries       `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series"`
 	IsEndOfSeriesStream   bool                      `protobuf:"varint,4,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
 	StreamingSeriesChunks []QueryStreamSeriesChunks `protobuf:"bytes,5,rep,name=streaming_series_chunks,json=streamingSeriesChunks,proto3" json:"streaming_series_chunks"`
-
-	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
 }
 
 func (m *QueryStreamResponse) Reset()      { *m = QueryStreamResponse{} }
@@ -810,10 +809,10 @@ func (m *QueryStreamSeriesChunks) GetChunks() []Chunk {
 }
 
 type ExemplarQueryResponse struct {
-	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
-
 	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
+	mimirpb.BufferHolder
+
+	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 }
 
 func (m *ExemplarQueryResponse) Reset()      { *m = ExemplarQueryResponse{} }
@@ -1331,10 +1330,10 @@ func (m *MetricsForLabelMatchersRequest) GetMatchersSet() []*LabelMatchers {
 }
 
 type MetricsForLabelMatchersResponse struct {
-	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
-
 	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
+	mimirpb.BufferHolder
+
+	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 }
 
 func (m *MetricsForLabelMatchersResponse) Reset()      { *m = MetricsForLabelMatchersResponse{} }
@@ -1479,13 +1478,13 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
 }
 
 type ActiveSeriesResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 	// bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
 	// bucket_count contains the native histogram active buckets count for each series in "metric" above.
 	BucketCount []uint64 `protobuf:"varint,2,rep,packed,name=bucket_count,json=bucketCount,proto3" json:"bucket_count,omitempty"`
-
-	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
 }
 
 func (m *ActiveSeriesResponse) Reset()      { *m = ActiveSeriesResponse{} }

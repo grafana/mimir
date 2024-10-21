@@ -13,7 +13,6 @@ import (
 	types "github.com/gogo/protobuf/types"
 	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
-	"google.golang.org/grpc/mem"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -84,6 +83,9 @@ func (m *PrometheusHeader) GetValues() []string {
 }
 
 type PrometheusResponse struct {
+	// Keep reference to buffer for unsafe references.
+	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
+
 	Status    string              `protobuf:"bytes,1,opt,name=Status,proto3" json:"status"`
 	Data      *PrometheusData     `protobuf:"bytes,2,opt,name=Data,proto3" json:"data,omitempty"`
 	ErrorType string              `protobuf:"bytes,3,opt,name=ErrorType,proto3" json:"errorType,omitempty"`
@@ -91,9 +93,6 @@ type PrometheusResponse struct {
 	Headers   []*PrometheusHeader `protobuf:"bytes,5,rep,name=Headers,proto3" json:"-"`
 	Warnings  []string            `protobuf:"bytes,6,rep,name=Warnings,proto3" json:"warnings,omitempty"`
 	Infos     []string            `protobuf:"bytes,7,rep,name=Infos,proto3" json:"infos,omitempty"`
-
-	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
 }
 
 func (m *PrometheusResponse) Reset()      { *m = PrometheusResponse{} }

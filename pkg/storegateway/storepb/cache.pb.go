@@ -10,7 +10,6 @@ import (
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/grafana/mimir/pkg/mimirpb"
 	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
-	"google.golang.org/grpc/mem"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -30,11 +29,11 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type CachedSeries struct {
+	// Keep reference to buffer for unsafe references.
+	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
+
 	Series              []github_com_grafana_mimir_pkg_mimirpb.PreallocatingMetric `protobuf:"bytes,1,rep,name=series,proto3,customtype=github.com/grafana/mimir/pkg/mimirpb.PreallocatingMetric" json:"series"`
 	DiffEncodedPostings []byte                                                     `protobuf:"bytes,5,opt,name=diffEncodedPostings,proto3" json:"diffEncodedPostings,omitempty"`
-
-	// Keep reference to buffer for unsafe references.
-	buffer mem.Buffer
 }
 
 func (m *CachedSeries) Reset()      { *m = CachedSeries{} }

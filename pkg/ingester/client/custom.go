@@ -9,50 +9,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"google.golang.org/grpc/mem"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
-
-var _ mimirpb.BufferHolder = &QueryResponse{}
-
-func (m *QueryResponse) SetBuffer(buf mem.Buffer) {
-	m.buffer = buf
-}
-
-func (m *QueryResponse) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
-	}
-}
-
-var _ mimirpb.BufferHolder = &QueryStreamResponse{}
-
-func (m *QueryStreamResponse) SetBuffer(buf mem.Buffer) {
-	m.buffer = buf
-}
-
-func (m *QueryStreamResponse) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
-	}
-}
-
-var _ mimirpb.BufferHolder = &ExemplarQueryResponse{}
-
-func (m *ExemplarQueryResponse) SetBuffer(buf mem.Buffer) {
-	m.buffer = buf
-}
-
-func (m *ExemplarQueryResponse) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
-	}
-}
 
 func ChunksCount(series []TimeSeriesChunk) int {
 	if len(series) == 0 {
@@ -105,30 +64,4 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 // equivalent to no limits and no filtering.
 func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
-}
-
-var _ mimirpb.BufferHolder = &MetricsForLabelMatchersResponse{}
-
-func (m *MetricsForLabelMatchersResponse) SetBuffer(buf mem.Buffer) {
-	m.buffer = buf
-}
-
-func (m *MetricsForLabelMatchersResponse) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
-	}
-}
-
-var _ mimirpb.BufferHolder = &ActiveSeriesResponse{}
-
-func (m *ActiveSeriesResponse) SetBuffer(buf mem.Buffer) {
-	m.buffer = buf
-}
-
-func (m *ActiveSeriesResponse) FreeBuffer() {
-	if m.buffer != nil {
-		m.buffer.Free()
-		m.buffer = nil
-	}
 }
