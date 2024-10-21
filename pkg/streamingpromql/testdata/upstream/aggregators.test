@@ -207,9 +207,8 @@ load 5m
   http_requests{job="api-server", instance="1", group="production"} 0+1.33x10
   http_requests{job="api-server", instance="0", group="canary"} 0+1.33x10
 
-# Unsupported by streaming engine.
-# eval instant at 50m stddev(http_requests)
-#   {} 0.0
+eval instant at 50m stddev(http_requests)
+  {} 0.0
 
 eval instant at 50m stdvar(http_requests)
   {} 0.0
@@ -446,11 +445,10 @@ load 10s
 	data{test="uneven samples",point="c"} 4
 	foo .8
 
-# Unsupported by streaming engine.
-# eval instant at 1m group without(point)(data)
-# 	{test="two samples"} 1
-# 	{test="three samples"} 1
-# 	{test="uneven samples"} 1
+eval instant at 1m group without(point)(data)
+	{test="two samples"} 1
+	{test="three samples"} 1
+	{test="uneven samples"} 1
 
 eval instant at 1m group(foo)
 	{} 1
