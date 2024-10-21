@@ -1280,7 +1280,7 @@ metadata:
   name: memcached
   namespace: default
 spec:
-  replicas: 3
+  replicas: 6
   selector:
     matchLabels:
       name: memcached
@@ -1357,7 +1357,7 @@ metadata:
   name: memcached-frontend
   namespace: default
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       name: memcached-frontend
@@ -1434,7 +1434,7 @@ metadata:
   name: memcached-index-queries
   namespace: default
 spec:
-  replicas: 3
+  replicas: 4
   selector:
     matchLabels:
       name: memcached-index-queries
@@ -1511,7 +1511,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
-  replicas: 1
+  replicas: 8
   selector:
     matchLabels:
       name: memcached-metadata
