@@ -51,6 +51,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -312,6 +313,8 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
+	costAttributionMgr *costattribution.Manager
+
 	tsdbMetrics *tsdbMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
@@ -366,21 +369,21 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
+		tsdbs:         make(map[string]*userTSDB),
+		usersMetadata: make(map[string]*userMetricsMetadata),
+
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		shipperMetrics:      newShipperMetrics(registerer),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-
-		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
+		errorSamplers:       newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -388,7 +391,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
-
+	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
@@ -788,6 +791,13 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
+				if i.isCostAttributionEnabledForUser(userID) {
+					calb := i.costAttributionMgr.UserAttributionLabel(userID)
+					labelAttributions := userDB.activeSeries.ActiveByAttributionValue(calb)
+					for value, count := range labelAttributions {
+						i.costAttributionMgr.SetActiveSeries(userID, calb, value, float64(count))
+					}
+				}
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
 				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
@@ -951,6 +961,8 @@ type extendedAppender interface {
 type pushStats struct {
 	succeededSamplesCount       int
 	failedSamplesCount          int
+	failedSamplesAttribution    map[string]int
+	attributionLabel            string
 	succeededExemplarsCount     int
 	failedExemplarsCount        int
 	sampleOutOfBoundsCount      int
@@ -1159,7 +1171,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-		stats pushStats
+
+		stats = pushStats{
+			failedSamplesAttribution: make(map[string]int, i.limits.MaxCostAttributionPerUser(userID)),
+		}
 
 		firstPartialErr error
 		// updateFirstPartial is a function that, in case of a softError, stores that error
@@ -1276,6 +1291,15 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 			db.ingestedAPISamples.Add(int64(stats.succeededSamplesCount))
 		}
 	}
+	if i.isCostAttributionEnabledForUser(userID) {
+		for value, count := range stats.failedSamplesAttribution {
+			i.costAttributionMgr.IncrementDiscardedSamples(userID, stats.attributionLabel, value, float64(count))
+		}
+	}
+}
+
+func (i *Ingester) isCostAttributionEnabledForUser(userID string) bool {
+	return i.costAttributionMgr != nil && i.costAttributionMgr.EnabledForUser(userID)
 }
 
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
@@ -1284,9 +1308,14 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
-
 	// Return true if handled as soft error, and we can ingest more series.
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+	// get the cost attribution value for the series
+	caEnabled := i.isCostAttributionEnabledForUser(userID)
+	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter, caValue string) bool {
+		if caEnabled {
+			stats.failedSamplesAttribution[caValue]++
+		}
+
 		stats.failedSamplesCount++
 
 		// Check if the error is a soft error we can proceed on. If so, we keep track
@@ -1396,7 +1425,19 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
+	isOutDated := false
 	for _, ts := range timeseries {
+		var caValue string
+		// when cost attribution label is set
+		if caEnabled {
+			isOutDated, caValue = i.costAttributionMgr.UpdateAttributionTimestamp(userID, stats.attributionLabel, mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend)
+			// if the cost attribution label is outdated, we need to reset the attribution counter
+			if isOutDated {
+				stats.attributionLabel = i.costAttributionMgr.UserAttributionLabel(userID)
+				stats.failedSamplesAttribution = make(map[string]int, i.limits.MaxCostAttributionPerUser(userID))
+			}
+		}
+
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -1412,7 +1453,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-
+				if caEnabled {
+					stats.failedSamplesAttribution[caValue] += len(ts.Samples) + len(ts.Histograms)
+				}
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
 					firstTimestamp = ts.Samples[0].TimestampMs
@@ -1433,7 +1476,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleOutOfBoundsCount += len(ts.Samples)
-
+				if caEnabled {
+					stats.failedSamplesAttribution[caValue] += len(ts.Samples)
+				}
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
@@ -1458,10 +1503,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 			// Ensure the sample is not too far in the future.
 			if s.TimestampMs > maxTimestampMs {
-				handleAppendError(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
+				handleAppendError(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels, caValue)
 				continue
 			} else if s.TimestampMs < minTimestampMs {
-				handleAppendError(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
+				handleAppendError(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels, caValue)
 				continue
 			}
 
@@ -1483,7 +1528,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs, ts.Labels) {
+			if handleAppendError(err, s.TimestampMs, ts.Labels, caValue) {
 				continue
 			}
 
@@ -1501,10 +1546,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				)
 
 				if h.Timestamp > maxTimestampMs {
-					handleAppendError(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels)
+					handleAppendError(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels, caValue)
 					continue
 				} else if h.Timestamp < minTimestampMs {
-					handleAppendError(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels)
+					handleAppendError(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels, caValue)
 					continue
 				}
 
@@ -1531,7 +1576,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 				}
 
-				if handleAppendError(err, h.Timestamp, ts.Labels) {
+				if handleAppendError(err, h.Timestamp, ts.Labels, caValue) {
 					continue
 				}
 
@@ -2648,8 +2693,13 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
-		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
+		userID: userID,
+		activeSeries: activeseries.NewActiveSeries(
+			asmodel.NewMatchers(matchersConfig),
+			i.cfg.ActiveSeriesMetrics.IdleTimeout,
+			userID,
+			i.costAttributionMgr,
+		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
