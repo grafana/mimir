@@ -49,6 +49,7 @@ const (
 type OTLPHandlerLimits interface {
 	OTelMetricSuffixesEnabled(id string) bool
 	OTelCreatedTimestampZeroIngestionEnabled(id string) bool
+	PromoteOTelResourceAttributes(id string) []string
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -162,12 +163,13 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
+		promoteResourceAttributes := limits.PromoteOTelResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
-		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
+		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return err
 		}
@@ -189,6 +191,7 @@ func OTLPHandler(
 			"sample_count", sampleCount,
 			"histogram_count", histogramCount,
 			"exemplar_count", exemplarCount,
+			"promoted_resource_attributes", promoteResourceAttributes,
 		)
 
 		req.Timeseries = metrics
@@ -394,11 +397,12 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, promoteResourceAttributes []string, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
 	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+		PromoteResourceAttributes:           promoteResourceAttributes,
 	}, logger)
 	mimirTS := converter.TimeSeries()
 	if errs != nil {

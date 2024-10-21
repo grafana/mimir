@@ -1347,12 +1347,16 @@ func mustMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
 
 type otlpLimitsMock struct{}
 
-func (o otlpLimitsMock) OTelMetricSuffixesEnabled(_ string) bool {
+func (o otlpLimitsMock) OTelMetricSuffixesEnabled(string) bool {
 	return false
 }
 
-func (o otlpLimitsMock) OTelCreatedTimestampZeroIngestionEnabled(_ string) bool {
+func (o otlpLimitsMock) OTelCreatedTimestampZeroIngestionEnabled(string) bool {
 	return false
+}
+
+func (o otlpLimitsMock) PromoteOTelResourceAttributes(string) []string {
+	return nil
 }
 
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
