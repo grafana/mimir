@@ -25,6 +25,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -148,9 +152,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			lookbackDelta = q.engine.lookbackDelta
 		}
 
-		return &operators.InstantVectorSelector{
+		return &selectors.InstantVectorSelector{
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			Selector: &operators.Selector{
+			Selector: &selectors.Selector{
 				Queryable:     q.queryable,
 				TimeRange:     timeRange,
 				Timestamp:     e.Timestamp,
@@ -175,7 +179,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		return operators.NewAggregation(
+		return aggregations.NewAggregation(
 			inner,
 			timeRange,
 			e.Grouping,
@@ -228,7 +232,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 			scalarIsLeftSide := e.LHS.Type() == parser.ValueTypeScalar
 
-			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, e.ReturnBool, timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, e.ReturnBool, timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 			if err != nil {
 				return nil, err
 			}
@@ -261,11 +265,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 		switch e.Op {
 		case parser.LAND, parser.LUNLESS:
-			return operators.NewAndUnlessBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, e.Op == parser.LUNLESS, timeRange, e.PositionRange()), nil
+			return binops.NewAndUnlessBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, e.Op == parser.LUNLESS, timeRange, e.PositionRange()), nil
 		case parser.LOR:
-			return operators.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
+			return binops.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
 		default:
-			return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			return binops.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 		}
 
 	case *parser.UnaryExpr:
@@ -321,7 +325,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		vectorSelector := e.VectorSelector.(*parser.VectorSelector)
-		selector := &operators.Selector{
+		selector := &selectors.Selector{
 			Queryable: q.queryable,
 			TimeRange: timeRange,
 			Timestamp: vectorSelector.Timestamp,
@@ -332,7 +336,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			ExpressionPosition: e.PositionRange(),
 		}
 
-		return operators.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
+		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
 		if !q.engine.featureToggles.EnableSubqueries {
@@ -413,7 +417,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		o := operators.NewScalarConstant(
+		o := scalars.NewScalarConstant(
 			e.Val,
 			timeRange,
 			q.memoryConsumptionTracker,
@@ -440,7 +444,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 			return nil, err
 		}
 
-		return operators.NewUnaryNegationOfScalar(inner, e.PositionRange()), nil
+		return scalars.NewUnaryNegationOfScalar(inner, e.PositionRange()), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
@@ -462,7 +466,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 			return nil, err
 		}
 
-		return operators.NewScalarScalarBinaryOperation(lhs, rhs, e.Op, q.memoryConsumptionTracker, e.PositionRange())
+		return binops.NewScalarScalarBinaryOperation(lhs, rhs, e.Op, q.memoryConsumptionTracker, e.PositionRange())
 
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for scalars", e))
