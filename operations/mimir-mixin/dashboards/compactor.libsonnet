@@ -256,6 +256,18 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ),
       )
       .addPanel(
+        $.timeseriesPanel('Source blocks age') +
+        $.latencyPanel('cortex_compactor_block_max_time_delta_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.panelDescription(
+          'Source blocks age',
+          |||
+            The difference between the maximum timestamp of the block being compacted and the current time.
+            A steadily increasing value indicates that the compactor cannot keep up with the produced blocks by the ingesters.
+            Increase the number of compactors when this value is consistently increasing.
+          |||
+        ),
+      )
+      .addPanel(
         $.timeseriesPanel('TSDB compactions / sec') +
         $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'compactions') +
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
