@@ -3,11 +3,12 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operators
+package binops
 
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"math"
 	"sort"
 	"time"
@@ -44,8 +45,8 @@ type VectorVectorBinaryOperation struct {
 	rightMetadata []types.SeriesMetadata
 
 	remainingSeries []*binaryOperationOutputSeries
-	leftBuffer      *InstantVectorOperatorBuffer
-	rightBuffer     *InstantVectorOperatorBuffer
+	leftBuffer      *operators.InstantVectorOperatorBuffer
+	rightBuffer     *operators.InstantVectorOperatorBuffer
 	leftIterator    types.InstantVectorSeriesDataIterator
 	rightIterator   types.InstantVectorSeriesDataIterator
 	opFunc          binaryOperationFunc
@@ -149,8 +150,8 @@ func (b *VectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
-	b.rightBuffer = NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
+	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
+	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -443,7 +444,7 @@ func (b *VectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 //
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
 func (b *VectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
-	merged, conflict, err := MergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
+	merged, conflict, err := operators.MergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
 
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -456,7 +457,7 @@ func (b *VectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSer
 	return merged, nil
 }
 
-func (b *VectorVectorBinaryOperation) mergeConflictToError(conflict *MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
+func (b *VectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.firstConflictingSeriesIndex].Labels
 	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 

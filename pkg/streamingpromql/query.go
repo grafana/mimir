@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"time"
 
@@ -229,7 +230,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 			scalarIsLeftSide := e.LHS.Type() == parser.ValueTypeScalar
 
-			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, e.ReturnBool, timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, e.Op, e.ReturnBool, timeRange, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 			if err != nil {
 				return nil, err
 			}
@@ -262,11 +263,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 		switch e.Op {
 		case parser.LAND, parser.LUNLESS:
-			return operators.NewAndUnlessBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, e.Op == parser.LUNLESS, timeRange, e.PositionRange()), nil
+			return binops.NewAndUnlessBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, e.Op == parser.LUNLESS, timeRange, e.PositionRange()), nil
 		case parser.LOR:
-			return operators.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
+			return binops.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
 		default:
-			return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			return binops.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 		}
 
 	case *parser.UnaryExpr:
@@ -463,7 +464,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 			return nil, err
 		}
 
-		return operators.NewScalarScalarBinaryOperation(lhs, rhs, e.Op, q.memoryConsumptionTracker, e.PositionRange())
+		return binops.NewScalarScalarBinaryOperation(lhs, rhs, e.Op, q.memoryConsumptionTracker, e.PositionRange())
 
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for scalars", e))

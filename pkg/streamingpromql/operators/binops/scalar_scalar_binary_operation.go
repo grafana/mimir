@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operators
+package binops
 
 import (
 	"context"
 	"fmt"
-
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 

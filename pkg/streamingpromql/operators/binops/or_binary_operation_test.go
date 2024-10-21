@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operators
+package binops
 
 import (
 	"context"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -242,8 +243,8 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			left := &testOperator{series: testCase.leftSeries}
-			right := &testOperator{series: testCase.rightSeries}
+			left := &operators.testOperator{series: testCase.leftSeries}
+			right := &operators.testOperator{series: testCase.rightSeries}
 
 			op := NewOrBinaryOperation(
 				left,
@@ -257,7 +258,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			actualSeriesMetadata, err := op.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
-			expectedSeriesMetadata := labelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
+			expectedSeriesMetadata := operators.labelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
 			require.Equal(t, expectedSeriesMetadata, actualSeriesMetadata)
 		})
 	}
