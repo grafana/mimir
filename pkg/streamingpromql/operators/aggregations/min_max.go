@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -49,7 +48,7 @@ func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
 	}
 }
 
-func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ types.EmitAnnotationFunc) error {
 	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.floatValues == nil {
 		// Even if we only have histograms, we have to populate the float slices, as we'll treat histograms as if they have value 0.
 		// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711

@@ -33,7 +33,7 @@ type AvgAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
@@ -154,7 +154,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
 	var err error
 	if len(data.Histograms) > 0 && g.histograms == nil {
 		// First series with histogram values for this group, populate it.

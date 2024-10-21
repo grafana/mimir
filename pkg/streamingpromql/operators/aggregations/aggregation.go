@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -40,7 +39,7 @@ type Aggregation struct {
 	currentSeriesIndex int
 
 	expressionPosition posrange.PositionRange
-	emitAnnotationFunc functions.EmitAnnotationFunc
+	emitAnnotationFunc types.EmitAnnotationFunc
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -302,7 +301,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 	return nil
 }
 
-func (a *Aggregation) emitAnnotation(generator functions.AnnotationGenerator) {
+func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := a.metricNames.GetMetricNameForSeries(a.currentSeriesIndex)
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }

@@ -52,7 +52,7 @@ type VectorVectorBinaryOperation struct {
 	opFunc          binaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	emitAnnotation     functions.EmitAnnotationFunc
+	emitAnnotation     types.EmitAnnotationFunc
 }
 
 var _ types.InstantVectorOperator = &VectorVectorBinaryOperation{}
@@ -109,7 +109,7 @@ func NewVectorVectorBinaryOperation(
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
-	b.emitAnnotation = func(generator functions.AnnotationGenerator) {
+	b.emitAnnotation = func(generator types.AnnotationGenerator) {
 		annotations.Add(generator("", expressionPosition))
 	}
 

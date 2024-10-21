@@ -31,7 +31,7 @@ var Increase = FunctionOverRangeVectorDefinition{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step types.RangeVectorStepData, rangeSeconds float64, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
 		fCount := len(fHead) + len(fTail)
 
@@ -63,7 +63,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 	}
 }
 
-func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	var firstPoint promql.HPoint
 	if len(hHead) > 0 {
 		firstPoint = hHead[0]
@@ -260,7 +260,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	// by only checking a name we haven't already checked.
 	lastCheckedMetricName := ""
 
-	return func(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
+	return func(data types.InstantVectorSeriesData, metricName string, emitAnnotation types.EmitAnnotationFunc) {
 		if len(data.Floats) == 0 {
 			return
 		}

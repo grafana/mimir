@@ -4,7 +4,6 @@ package functions
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -73,17 +72,11 @@ func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarD
 type RangeVectorStepFunction func(
 	step types.RangeVectorStepData,
 	rangeSeconds float64,
-	emitAnnotation EmitAnnotationFunc,
+	emitAnnotation types.EmitAnnotationFunc,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
-// EmitAnnotationFunc is a function that emits the annotation created by generator.
-type EmitAnnotationFunc func(generator AnnotationGenerator)
-
-// AnnotationGenerator is a function that returns an annotation for the given metric name and expression position.
-type AnnotationGenerator func(metricName string, expressionPosition posrange.PositionRange) error
-
 // RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.
-type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc)
+type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeriesData, metricName string, emitAnnotation types.EmitAnnotationFunc)
 
 // RangeVectorSeriesValidationFunctionFactory is a factory function that returns a RangeVectorSeriesValidationFunction
 type RangeVectorSeriesValidationFunctionFactory func() RangeVectorSeriesValidationFunction

@@ -57,7 +57,7 @@ func HistogramSum(seriesData types.InstantVectorSeriesData, _ []types.ScalarData
 	return data, nil
 }
 
-func NativeHistogramErrorToAnnotation(err error, emitAnnotation EmitAnnotationFunc) error {
+func NativeHistogramErrorToAnnotation(err error, emitAnnotation types.EmitAnnotationFunc) error {
 	if err == nil {
 		return nil
 	}

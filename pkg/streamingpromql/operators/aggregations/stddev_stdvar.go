@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -34,7 +33,7 @@ type StddevStdvarAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ types.EmitAnnotationFunc) error {
 	var err error
 
 	// Native histograms are ignored for stddev

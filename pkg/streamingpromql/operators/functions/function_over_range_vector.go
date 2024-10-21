@@ -33,7 +33,7 @@ type FunctionOverRangeVector struct {
 	rangeSeconds float64
 
 	expressionPosition   posrange.PositionRange
-	emitAnnotationFunc   EmitAnnotationFunc
+	emitAnnotationFunc   types.EmitAnnotationFunc
 	seriesValidationFunc RangeVectorSeriesValidationFunction
 }
 
@@ -147,7 +147,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 }
 
-func (m *FunctionOverRangeVector) emitAnnotation(generator AnnotationGenerator) {
+func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex)
 	m.Annotations.Add(generator(metricName, m.Inner.ExpressionPosition()))
 }

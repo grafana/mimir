@@ -31,7 +31,7 @@ type VectorScalarBinaryOperation struct {
 	opFunc    vectorScalarBinaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	emitAnnotation     functions.EmitAnnotationFunc
+	emitAnnotation     types.EmitAnnotationFunc
 	scalarData         types.ScalarData
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
@@ -73,7 +73,7 @@ func NewVectorScalarBinaryOperation(
 		expressionPosition: expressionPosition,
 	}
 
-	b.emitAnnotation = func(generator functions.AnnotationGenerator) {
+	b.emitAnnotation = func(generator types.AnnotationGenerator) {
 		annotations.Add(generator("", expressionPosition))
 	}
 

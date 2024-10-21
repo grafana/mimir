@@ -7,14 +7,13 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // AggregationGroup accumulates series that have been grouped together and computes the output series data.
 type AggregationGroup interface {
 	// AccumulateSeries takes in a series as part of the group
-	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error
+	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
 	ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
 }
