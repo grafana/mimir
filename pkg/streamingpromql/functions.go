@@ -278,9 +278,9 @@ func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 
 		f := functions.FunctionOverInstantVector{
 			SeriesDataFunc: functions.Round,
-			// TODO(jhesketh): With the currently vendored prometheus, round does not consistently drop the __name__ label
-			//                 (as verified by our tests). We match this for consistency, but will
-			//                 need to drop them once prometheus 3.0 is vendored in.
+			// TODO(jhesketh): With the version of Prometheus vendored at the time of writing, round does not drop the
+			//                 __name__ label, and this is verified by our tests.
+			//                 We match this for consistency, but will  need to drop them once prometheus 3.0 is vendored in.
 			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{},
 		}
 
