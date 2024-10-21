@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -151,9 +152,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			lookbackDelta = q.engine.lookbackDelta
 		}
 
-		return &operators.InstantVectorSelector{
+		return &selectors.InstantVectorSelector{
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			Selector: &operators.Selector{
+			Selector: &selectors.Selector{
 				Queryable:     q.queryable,
 				TimeRange:     timeRange,
 				Timestamp:     e.Timestamp,
@@ -324,7 +325,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		vectorSelector := e.VectorSelector.(*parser.VectorSelector)
-		selector := &operators.Selector{
+		selector := &selectors.Selector{
 			Queryable: q.queryable,
 			TimeRange: timeRange,
 			Timestamp: vectorSelector.Timestamp,
@@ -335,7 +336,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			ExpressionPosition: e.PositionRange(),
 		}
 
-		return operators.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
+		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
 		if !q.engine.featureToggles.EnableSubqueries {
