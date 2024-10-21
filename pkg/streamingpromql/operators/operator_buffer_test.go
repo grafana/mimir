@@ -22,8 +22,8 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	series5Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 5}}}
 	series6Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 6}}}
 
-	inner := &testOperator{
-		series: []labels.Labels{
+	inner := &TestOperator{
+		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
 			labels.FromStrings("series", "1"),
 			labels.FromStrings("series", "2"),
@@ -32,7 +32,7 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 			labels.FromStrings("series", "5"),
 			labels.FromStrings("series", "6"),
 		},
-		data: []types.InstantVectorSeriesData{
+		Data: []types.InstantVectorSeriesData{
 			series0Data,
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			series2Data,
@@ -88,8 +88,8 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 	series5Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 5}}}
 	series6Data := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 0, F: 6}}}
 
-	inner := &testOperator{
-		series: []labels.Labels{
+	inner := &TestOperator{
+		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
 			labels.FromStrings("series", "1"),
 			labels.FromStrings("series", "2"),
@@ -98,7 +98,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 			labels.FromStrings("series", "5"),
 			labels.FromStrings("series", "6"),
 		},
-		data: []types.InstantVectorSeriesData{
+		Data: []types.InstantVectorSeriesData{
 			series0Data,
 			series1Data,
 			series2Data,

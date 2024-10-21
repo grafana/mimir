@@ -60,17 +60,10 @@ type RangeVectorOperator interface {
 	// SeriesMetadata must be called exactly once before calling NextSeries.
 	NextSeries(ctx context.Context) error
 
-	// NextStepSamples populates the provided RingBuffers with the samples for the next time step for the
-	// current series and returns the timestamps of the next time step, or returns EOS if no more time
+	// NextStepSamples returns populated RingBuffers with the samples for the next time step for the
+	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
-	// The provided RingBuffers are expected to only contain points for the current series, and the same
-	// RingBuffers should be passed to subsequent NextStepSamples calls for the same series.
-	// The provided RingBuffers may be populated with points beyond the end of the expected time range, and
-	// callers should compare returned points' timestamps to the returned RangeVectorStepData.RangeEnd.
-	// Next must be called at least once before calling NextStepSamples.
-	// Keep in mind that HPoint contains a pointer to a histogram, so it is generally not safe to
-	// modify directly as the histogram may be used for other HPoint values, such as when lookback has occurred.
-	NextStepSamples(floats *FPointRingBuffer, histograms *HPointRingBuffer) (RangeVectorStepData, error)
+	NextStepSamples() (RangeVectorStepData, error)
 }
 
 // ScalarOperator represents all operators that produce scalars.

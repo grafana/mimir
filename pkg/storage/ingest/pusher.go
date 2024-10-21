@@ -388,7 +388,7 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 		// The error handler needs to determine if this is a server error or not.
 		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
 		p.metrics.processingTime.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
-		if err != nil && p.errorHandler.IsServerError(wr.Context, err) {
+		if p.errorHandler.IsServerError(wr.Context, err) {
 			queue.ErrorChannel() <- err
 		}
 	}
@@ -433,10 +433,10 @@ func (p *pushErrorHandler) IsServerError(ctx context.Context, err error) bool {
 	// For the sake of simplicity, let's increment the total requests counter here.
 	p.metrics.totalRequests.Inc()
 
-	spanLog := spanlogger.FromContext(ctx, p.fallbackLogger)
 	if err == nil {
 		return false
 	}
+	spanLog := spanlogger.FromContext(ctx, p.fallbackLogger)
 
 	// Only return non-client errors; these will stop the processing of the current Kafka fetches and retry (possibly).
 	if !mimirpb.IsClientError(err) {

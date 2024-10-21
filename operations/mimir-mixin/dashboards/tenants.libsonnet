@@ -518,6 +518,8 @@ local filename = 'mimir-tenants.json';
       ),
     )
 
+    .addRowsIf(std.objectHasAll($._config.injectRows, 'postTenantIngestionFunnel'), $._config.injectRows.postTenantIngestionFunnel($))
+
     .addRow(
       ($.row("Ingesters' storage") + { collapse: true })
       .addPanel(

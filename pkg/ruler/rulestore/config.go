@@ -29,8 +29,21 @@ type Config struct {
 	bucket.Config `yaml:",inline"`
 	Local         LocalStoreConfig `yaml:"local"`
 
+	// RulerCache holds the configuration used for the ruler storage cache.
+	RulerCache RulerCacheConfig `yaml:"cache"`
+}
+
+// RulerCacheConfig is configuration for the cache used by ruler storage as well as
+// additional ruler storage specific configuration.
+//
+// NOTE: This is temporary while caching of rule groups is being tested. This will be removed
+// in the future and cache.BackendConfig will be moved back to the Config struct above.
+type RulerCacheConfig struct {
+	// RuleGroupEnabled enables caching of rule group contents
+	RuleGroupEnabled bool `yaml:"rule_group_enabled" category:"experimental"`
+
 	// Cache holds the configuration used for the ruler storage cache.
-	Cache cache.BackendConfig `yaml:"cache"`
+	Cache cache.BackendConfig `yaml:",inline"`
 }
 
 // RegisterFlags registers the backend storage config.
@@ -41,9 +54,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f)
 
-	f.StringVar(&cfg.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except %q. Supported values: %s.", BackendLocal, strings.Join(supportedCacheBackends, ", ")))
-	cfg.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)
-	cfg.Cache.Redis.RegisterFlagsWithPrefix(prefix+"cache.redis.", f)
+	f.BoolVar(&cfg.RulerCache.RuleGroupEnabled, prefix+"cache.rule-group-enabled", false, "Enabling caching of rule group contents if a cache backend is configured.")
+	f.StringVar(&cfg.RulerCache.Cache.Backend, prefix+"cache.backend", "", fmt.Sprintf("Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except %q. Supported values: %s.", BackendLocal, strings.Join(supportedCacheBackends, ", ")))
+	cfg.RulerCache.Cache.Memcached.RegisterFlagsWithPrefix(prefix+"cache.memcached.", f)
+	cfg.RulerCache.Cache.Redis.RegisterFlagsWithPrefix(prefix+"cache.redis.", f)
 }
 
 func (cfg *Config) Validate() error {
@@ -51,7 +65,7 @@ func (cfg *Config) Validate() error {
 		return err
 	}
 
-	return cfg.Cache.Validate()
+	return cfg.RulerCache.Cache.Validate()
 }
 
 // IsDefaults returns true if the storage options have not been set.

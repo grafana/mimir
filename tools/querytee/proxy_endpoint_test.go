@@ -363,6 +363,57 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 		})
 	}
 }
+func Test_ProxyEndpoint_ComparisonWithRequestCancellation(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+	ctx, cancel := context.WithCancelCause(context.Background())
+
+	preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cancel(errors.New("something cancelled this request"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("preferred response"))
+		require.NoError(t, err)
+	}))
+
+	defer preferredBackend.Close()
+	preferredBackendURL, err := url.Parse(preferredBackend.URL)
+	require.NoError(t, err)
+
+	secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-ctx.Done() // Wait until the incoming request has been cancelled.
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTeapot)
+		_, err := w.Write([]byte("secondary response"))
+		require.NoError(t, err)
+	}))
+
+	defer secondaryBackend.Close()
+	secondaryBackendURL, err := url.Parse(secondaryBackend.URL)
+	require.NoError(t, err)
+
+	backends := []ProxyBackendInterface{
+		NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false),
+		NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false),
+	}
+
+	logger := newMockLogger()
+	reg := prometheus.NewPedanticRegistry()
+	comparator := NewSamplesComparator(SampleComparisonOptions{})
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+
+	resp := httptest.NewRecorder()
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://test/api/v1/test", nil)
+	require.NoError(t, err)
+	endpoint.ServeHTTP(resp, req)
+	require.Equal(t, "preferred response", resp.Body.String())
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+	// Wait for the response comparison to complete before checking the logged messages.
+	waitForResponseComparisonMetric(t, reg, ComparisonSkipped, 1)
+	requireLogMessageWithError(t, logger.messages, "response comparison skipped", "skipped comparison of response because the incoming request to query-tee was cancelled: something cancelled this request")
+}
 
 func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 	testRoute := Route{RouteName: "test"}

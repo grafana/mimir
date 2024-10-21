@@ -1701,17 +1701,6 @@
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "direct_otlp_translation_enabled",
-          "required": false,
-          "desc": "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.direct-otlp-translation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -2041,6 +2030,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-scalars",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_subqueries",
+              "required": false,
+              "desc": "Enable support for subqueries in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-subqueries",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -13669,6 +13669,17 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "rule_group_enabled",
+              "required": false,
+              "desc": "Enabling caching of rule group contents if a cache backend is configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.cache.rule-group-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
             {
               "kind": "field",
               "name": "backend",

@@ -963,11 +963,6 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
-
-# (experimental) When enabled, OTLP write requests are directly translated to
-# Mimir equivalents, for optimum performance.
-# CLI flag: -distributor.direct-otlp-translation-enabled
-[direct_otlp_translation_enabled: <boolean> | default = true]
 ```
 
 ### ingester
@@ -1539,6 +1534,11 @@ mimir_query_engine:
   # applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
+
+  # (experimental) Enable support for subqueries in Mimir's query engine. Only
+  # applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-subqueries
+  [enable_subqueries: <boolean> | default = true]
 ```
 
 ### frontend
@@ -2166,6 +2166,11 @@ local:
   [directory: <string> | default = ""]
 
 cache:
+  # (experimental) Enabling caching of rule group contents if a cache backend is
+  # configured.
+  # CLI flag: -ruler-storage.cache.rule-group-enabled
+  [rule_group_enabled: <boolean> | default = false]
+
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend

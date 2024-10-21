@@ -3347,7 +3347,8 @@ func TestIngester_Push(t *testing.T) {
 			mn := append(metricNames, testData.additionalMetrics...)
 
 			// Check tracked Prometheus metrics
-			util_test.AssertGatherAndCompare(t, registry, testData.expectedMetrics, mn...)
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), mn...)
+			assert.NoError(t, err)
 
 			// Check anonymous usage stats.
 			expectedTenantsCount := 0
@@ -3572,7 +3573,7 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 		cortex_ingester_memory_series_removed_total{user="test-2"} 0
 	`
 
-	util_test.AssertGatherAndCompare(t, registry, expectedMetrics, metricNames...)
+	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
@@ -7269,7 +7270,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
 		"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
 
-	util_test.AssertGatherAndCompare(t, r, `
+	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 		# TYPE cortex_ingester_memory_series_created_total counter
 		cortex_ingester_memory_series_created_total{user="1"} 1
@@ -7293,7 +7294,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 		# TYPE cortex_ingester_memory_metadata_created_total counter
 		cortex_ingester_memory_metadata_created_total{user="1"} 1
-    `, metricsToCheck...)
+    `), metricsToCheck...))
 
 	// Wait until TSDB has been closed and removed.
 	test.Poll(t, 20*time.Second, 0, func() interface{} {
@@ -7307,22 +7308,31 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
-	util_test.AssertGatherAndCompare(t, r, `
+	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
+		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+		# TYPE cortex_ingester_memory_series_created_total counter
+
+		# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+		# TYPE cortex_ingester_memory_series_removed_total counter
+
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 0
 
+		# HELP cortex_ingester_active_series Number of currently active series per user.
+		# TYPE cortex_ingester_active_series gauge
+
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
 		cortex_ingester_memory_metadata 0
-    `, metricsToCheck...)
+    `), metricsToCheck...))
 
 	// Pushing another sample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
 	i.updateActiveSeries(time.Now())
 
 	// User is back.
-	util_test.AssertGatherAndCompare(t, r, `
+	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
 		# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
 		# TYPE cortex_ingester_memory_series_created_total counter
 		cortex_ingester_memory_series_created_total{user="1"} 1
@@ -7346,7 +7356,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		# HELP cortex_ingester_memory_metadata_created_total The total number of metadata that were created per user
 		# TYPE cortex_ingester_memory_metadata_created_total counter
 		cortex_ingester_memory_metadata_created_total{user="1"} 1
-    `, metricsToCheck...)
+    `), metricsToCheck...))
 }
 
 func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
@@ -8492,7 +8502,7 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 		"cortex_ingester_memory_metadata",
 	}
 
-	util_test.AssertGatherAndCompare(t, reg, `
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
 		cortex_ingester_memory_metadata 90
@@ -8501,11 +8511,11 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 		cortex_ingester_memory_metadata_created_total{user="1"} 30
 		cortex_ingester_memory_metadata_created_total{user="2"} 30
 		cortex_ingester_memory_metadata_created_total{user="3"} 30
-	`, metricNames...)
+	`), metricNames...))
 
 	time.Sleep(40 * time.Millisecond)
 	ing.purgeUserMetricsMetadata()
-	util_test.AssertGatherAndCompare(t, reg, `
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_memory_metadata The current number of metadata in memory.
 		# TYPE cortex_ingester_memory_metadata gauge
 		cortex_ingester_memory_metadata 0
@@ -8519,7 +8529,7 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 		cortex_ingester_memory_metadata_removed_total{user="1"} 30
 		cortex_ingester_memory_metadata_removed_total{user="2"} 30
 		cortex_ingester_memory_metadata_removed_total{user="3"} 30
-	`, metricNames...)
+	`), metricNames...))
 
 }
 
@@ -8969,7 +8979,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				`
 
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 		"should cleanup metrics when tsdb closed": {
@@ -9016,10 +9026,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 				`
 
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 				// close tsdbs and check for cleanup
 				ingester.closeAllTSDB()
-				util_test.AssertGatherAndCompare(t, gatherer, "", metricNames...)
+				expectedMetrics = ""
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 		"should track custom matchers, removing when zero": {
@@ -9067,7 +9078,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				`
 
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Pushing second time to have entires which are not going to be purged
 				currentTime = time.Now()
@@ -9105,12 +9116,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 				`
 
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Update active series again in a further future where no series are active anymore.
 				currentTime = currentTime.Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout)
 				ingester.updateActiveSeries(currentTime)
-				util_test.AssertGatherAndCompare(t, gatherer, "", metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
 			},
 		},
 		"successful push, active series disabled": {
@@ -9127,7 +9138,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := ``
 
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Check that no active series are returned
 				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "team", "a")}
@@ -9333,7 +9344,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Add new runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
@@ -9374,7 +9385,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 16
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 16
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Saving time before second push to avoid purging it before exposing.
 				currentTime = time.Now()
@@ -9417,7 +9428,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_a",user="test_user"} 16
             	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 		"remove runtime overwrite and revert to flag based config": {
@@ -9467,7 +9478,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
             	    cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Remove runtime configs
 				limits := defaultLimitsTestConfig()
@@ -9503,7 +9514,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Saving time before second push to avoid purging it before exposing.
 				currentTime = time.Now()
@@ -9546,7 +9557,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_false_flagbased",user="test_user"} 16
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 		"changing runtime override should result in new metrics": {
@@ -9584,7 +9595,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="bool_is_true_flagbased",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Change runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
@@ -9606,7 +9617,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					# TYPE cortex_ingester_active_series_loading gauge
 					cortex_ingester_active_series_loading{user="test_user"} 1
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Saving time before second push to avoid purging it before exposing.
 				currentTime = time.Now()
@@ -9645,7 +9656,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_c",user="test_user"} 16
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_d",user="test_user"} 16
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 		"should cleanup loading metric at close": {
@@ -9695,7 +9706,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_native_histogram_buckets_custom_tracker{name="team_b",user="test_user"} 16
 				`
 				// Check tracked Prometheus metrics
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Remove all configs
 				limits := defaultLimitsTestConfig()
@@ -9709,11 +9720,11 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 					cortex_ingester_active_series_loading{user="test_user"} 1
 					cortex_ingester_active_series_loading{user="other_test_user"} 1
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 				ingester.closeAllTSDB()
 				expectedMetrics = `
 				`
-				util_test.AssertGatherAndCompare(t, gatherer, expectedMetrics, metricNames...)
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
 		},
 	}
@@ -10940,7 +10951,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			}
 
 			// Check tracked Prometheus metrics
-			util_test.AssertGatherAndCompare(t, registry, testData.expectedMetrics, metricNames...)
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), metricNames...)
+			assert.NoError(t, err)
 		})
 	}
 }
