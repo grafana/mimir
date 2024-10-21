@@ -17,13 +17,15 @@ import (
 
 func init() {
 	c := encoding.GetCodecV2(proto.Name)
-	encoding.RegisterCodecV2(&codecV2{c})
+	encoding.RegisterCodecV2(&codecV2{codec: c})
 }
 
 // codecV2 customizes gRPC unmarshalling.
 type codecV2 struct {
-	encoding.CodecV2
+	codec encoding.CodecV2
 }
+
+var _ encoding.CodecV2 = &codecV2{}
 
 func messageV2Of(v any) protobufproto.Message {
 	switch v := v.(type) {
@@ -34,6 +36,10 @@ func messageV2Of(v any) protobufproto.Message {
 	default:
 		panic(fmt.Errorf("unrecognized message type %T", v))
 	}
+}
+
+func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
+	return c.codec.Marshal(v)
 }
 
 // Unmarshal customizes gRPC unmarshalling.
@@ -56,6 +62,10 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	}
 
 	return nil
+}
+
+func (c *codecV2) Name() string {
+	return c.codec.Name()
 }
 
 // BufferHolder is an interface for protobuf messages that keep unsafe references to the unmarshalling buffer.
