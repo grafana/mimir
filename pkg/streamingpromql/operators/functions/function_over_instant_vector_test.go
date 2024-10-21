@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operators
+package functions
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -20,12 +20,12 @@ import (
 // pkg/streamingpromql/testdata.
 
 func TestFunctionOverInstantVector(t *testing.T) {
-	inner := &testOperator{
-		series: []labels.Labels{
+	inner := &operators.TestOperator{
+		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
 			labels.FromStrings("series", "1"),
 		},
-		data: []types.InstantVectorSeriesData{
+		Data: []types.InstantVectorSeriesData{
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
@@ -33,7 +33,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 	metadataFuncCalled := false
 	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-		require.Equal(t, len(inner.series), len(seriesMetadata))
+		require.Equal(t, len(inner.Series), len(seriesMetadata))
 		metadataFuncCalled = true
 		return nil, nil
 	}
@@ -47,9 +47,9 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
-		Func: functions.FunctionOverInstantVector{
+		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc: mustBeCalledSeriesData,
-			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{
+			SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
 				Func: mustBeCalledMetadata,
 			},
 		},
@@ -61,16 +61,16 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	_, err = operator.NextSeries(ctx)
 	require.NoError(t, err)
 	require.True(t, metadataFuncCalled, "Supplied MetadataFunc must be called matching the signature")
-	require.Equal(t, len(inner.data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+	require.Equal(t, len(inner.Data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
 }
 
 func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
-	inner := &testOperator{
-		series: []labels.Labels{
+	inner := &operators.TestOperator{
+		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
 			labels.FromStrings("series", "1"),
 		},
-		data: []types.InstantVectorSeriesData{
+		Data: []types.InstantVectorSeriesData{
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
@@ -98,9 +98,9 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 		Inner:                    inner,
 		ScalarArgs:               []types.ScalarOperator{scalarOperator1, scalarOperator2},
 		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
-		Func: functions.FunctionOverInstantVector{
+		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc:         mustBeCalledSeriesData,
-			SeriesMetadataFunction: functions.DropSeriesName,
+			SeriesMetadataFunction: DropSeriesName,
 		},
 	}
 
@@ -112,7 +112,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	// NextSeries should pass scalarArgsData to SeriesDataFunc, which validates the arguments
 	_, err = operator.NextSeries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, len(inner.data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+	require.Equal(t, len(inner.Data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
 }
 
 type testScalarOperator struct {

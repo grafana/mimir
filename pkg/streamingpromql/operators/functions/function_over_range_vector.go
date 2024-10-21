@@ -4,7 +4,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operators
+package functions
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -22,19 +22,19 @@ import (
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	Func                     functions.FunctionOverRangeVector
+	Func                     FunctionOverRangeVectorDefinition
 
 	Annotations *annotations.Annotations
 
-	metricNames        *MetricNames
+	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
 	numSteps     int
 	rangeSeconds float64
 
 	expressionPosition   posrange.PositionRange
-	emitAnnotationFunc   functions.EmitAnnotationFunc
-	seriesValidationFunc functions.RangeVectorSeriesValidationFunction
+	emitAnnotationFunc   EmitAnnotationFunc
+	seriesValidationFunc RangeVectorSeriesValidationFunction
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -42,7 +42,7 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	f functions.FunctionOverRangeVector,
+	f FunctionOverRangeVectorDefinition,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverRangeVector {
@@ -59,7 +59,7 @@ func NewFunctionOverRangeVector(
 	}
 
 	if f.NeedsSeriesNamesForAnnotations {
-		o.metricNames = &MetricNames{}
+		o.metricNames = &operators.MetricNames{}
 	}
 
 	o.emitAnnotationFunc = o.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
@@ -147,7 +147,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 }
 
-func (m *FunctionOverRangeVector) emitAnnotation(generator functions.AnnotationGenerator) {
+func (m *FunctionOverRangeVector) emitAnnotation(generator AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex)
 	m.Annotations.Add(generator(metricName, m.Inner.ExpressionPosition()))
 }

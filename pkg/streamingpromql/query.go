@@ -9,8 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -27,6 +25,9 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -177,7 +178,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		return operators.NewAggregation(
+		return aggregations.NewAggregation(
 			inner,
 			timeRange,
 			e.Grouping,

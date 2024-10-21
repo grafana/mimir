@@ -88,7 +88,7 @@ type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeri
 // RangeVectorSeriesValidationFunctionFactory is a factory function that returns a RangeVectorSeriesValidationFunction
 type RangeVectorSeriesValidationFunctionFactory func() RangeVectorSeriesValidationFunction
 
-type FunctionOverInstantVector struct {
+type FunctionOverInstantVectorDefinition struct {
 	// SeriesDataFunc is the function that computes an output series for a single input series.
 	SeriesDataFunc InstantVectorSeriesFunction
 
@@ -98,7 +98,7 @@ type FunctionOverInstantVector struct {
 	SeriesMetadataFunction SeriesMetadataFunctionDefinition
 }
 
-type FunctionOverRangeVector struct {
+type FunctionOverRangeVectorDefinition struct {
 	// StepFunc is the function that computes an output sample for a single step.
 	StepFunc RangeVectorStepFunction
 

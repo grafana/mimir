@@ -4,14 +4,13 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operators
+package functions
 
 import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -25,7 +24,7 @@ type FunctionOverInstantVector struct {
 	// Any scalar arguments will be read once and passed to Func.SeriesDataFunc.
 	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	Func                     functions.FunctionOverInstantVector
+	Func                     FunctionOverInstantVectorDefinition
 
 	// scalarArgsData stores the processed ScalarArgs during SeriesMetadata.
 	// The order of scalarArgsData matches the order of ScalarArgs.
@@ -41,7 +40,7 @@ func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
 	scalarArgs []types.ScalarOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	f functions.FunctionOverInstantVector,
+	f FunctionOverInstantVectorDefinition,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{

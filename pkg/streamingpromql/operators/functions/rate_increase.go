@@ -15,14 +15,14 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var Rate = FunctionOverRangeVector{
+var Rate = FunctionOverRangeVectorDefinition{
 	StepFunc:                       rate(true),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-var Increase = FunctionOverRangeVector{
+var Increase = FunctionOverRangeVectorDefinition{
 	StepFunc:                       rate(false),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunction:         DropSeriesName,

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operators
+package aggregations
 
 import (
 	"context"
@@ -18,10 +18,10 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -32,11 +32,11 @@ type Aggregation struct {
 	Without                  bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
-	aggregationGroupFactory aggregations.AggregationGroupFactory
+	aggregationGroupFactory AggregationGroupFactory
 
 	Annotations *annotations.Annotations
 
-	metricNames        *MetricNames
+	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
 	expressionPosition posrange.PositionRange
@@ -58,7 +58,7 @@ func NewAggregation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
-	opGroupFactory := aggregations.AggregationGroupFactories[op]
+	opGroupFactory := AggregationGroupFactories[op]
 	if opGroupFactory == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("aggregation operation with '%s'", op))
 	}
@@ -79,7 +79,7 @@ func NewAggregation(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations,
-		metricNames:              &MetricNames{},
+		metricNames:              &operators.MetricNames{},
 		expressionPosition:       expressionPosition,
 		aggregationGroupFactory:  opGroupFactory,
 	}
@@ -103,7 +103,7 @@ type group struct {
 	lastSeriesIndex int
 
 	// The aggregation for this group of series.
-	aggregation aggregations.AggregationGroup
+	aggregation AggregationGroup
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}

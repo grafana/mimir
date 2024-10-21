@@ -8,7 +8,6 @@ package binops
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"math"
 	"sort"
 	"time"
@@ -22,8 +21,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -458,27 +458,27 @@ func (b *VectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSer
 }
 
 func (b *VectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
-	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.firstConflictingSeriesIndex].Labels
+	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
 	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
-	if conflict.secondConflictingSeriesIndex == -1 {
+	if conflict.SecondConflictingSeriesIndex == -1 {
 		return fmt.Errorf(
 			"found %s for the match group %s on the %s side of the operation at timestamp %s",
-			conflict.description,
+			conflict.Description,
 			groupLabels,
 			side,
-			timestamp.Time(conflict.timestamp).Format(time.RFC3339Nano),
+			timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
 		)
 	}
 
-	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.secondConflictingSeriesIndex].Labels
+	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.SecondConflictingSeriesIndex].Labels
 
 	return fmt.Errorf(
 		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
-		conflict.description,
+		conflict.Description,
 		groupLabels,
 		side,
-		timestamp.Time(conflict.timestamp).Format(time.RFC3339Nano),
+		timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
 		firstConflictingSeriesLabels,
 		secondConflictingSeriesLabels,
 	)

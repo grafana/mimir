@@ -5,6 +5,7 @@ package binops
 import (
 	"context"
 	"fmt"
+
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 

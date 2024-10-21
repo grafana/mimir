@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operators
+package aggregations
 
 import (
 	"context"
@@ -12,7 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -79,15 +80,15 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			aggregator := &Aggregation{
-				Inner:                   &testOperator{series: testCase.inputSeries},
+				Inner:                   &operators.TestOperator{Series: testCase.inputSeries},
 				Grouping:                testCase.grouping,
-				metricNames:             &MetricNames{},
-				aggregationGroupFactory: func() aggregations.AggregationGroup { return &aggregations.SumAggregationGroup{} },
+				metricNames:             &operators.MetricNames{},
+				aggregationGroupFactory: func() AggregationGroup { return &SumAggregationGroup{} },
 			}
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, labelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
 	}
 }
@@ -252,18 +253,4 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 			require.Equal(t, expectedBytes, actualBytes)
 		})
 	}
-}
-
-func labelsToSeriesMetadata(lbls []labels.Labels) []types.SeriesMetadata {
-	if len(lbls) == 0 {
-		return nil
-	}
-
-	m := make([]types.SeriesMetadata, len(lbls))
-
-	for i, l := range lbls {
-		m[i].Labels = l
-	}
-
-	return m
 }

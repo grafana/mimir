@@ -4,7 +4,6 @@ package binops
 
 import (
 	"context"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -14,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -243,8 +244,8 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			left := &operators.testOperator{series: testCase.leftSeries}
-			right := &operators.testOperator{series: testCase.rightSeries}
+			left := &operators.TestOperator{Series: testCase.leftSeries}
+			right := &operators.TestOperator{Series: testCase.rightSeries}
 
 			op := NewOrBinaryOperation(
 				left,
@@ -258,7 +259,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			actualSeriesMetadata, err := op.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
-			expectedSeriesMetadata := operators.labelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
+			expectedSeriesMetadata := testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
 			require.Equal(t, expectedSeriesMetadata, actualSeriesMetadata)
 		})
 	}

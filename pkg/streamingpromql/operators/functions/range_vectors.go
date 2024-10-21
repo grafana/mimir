@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var CountOverTime = FunctionOverRangeVector{
+var CountOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               countOverTime,
 }
@@ -32,7 +32,7 @@ func countOverTime(step types.RangeVectorStepData, _ float64, _ EmitAnnotationFu
 	return float64(fPointCount + hPointCount), true, nil, nil
 }
 
-var LastOverTime = FunctionOverRangeVector{
+var LastOverTime = FunctionOverRangeVectorDefinition{
 	// We want to use the input series as-is, so no need to set SeriesMetadataFunction.
 	StepFunc: lastOverTime,
 }
@@ -53,7 +53,7 @@ func lastOverTime(step types.RangeVectorStepData, _ float64, _ EmitAnnotationFun
 	return 0, false, lastHistogram.H.Copy(), nil
 }
 
-var PresentOverTime = FunctionOverRangeVector{
+var PresentOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               presentOverTime,
 }
@@ -66,7 +66,7 @@ func presentOverTime(step types.RangeVectorStepData, _ float64, _ EmitAnnotation
 	return 0, false, nil, nil
 }
 
-var MaxOverTime = FunctionOverRangeVector{
+var MaxOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               maxOverTime,
 }
@@ -103,7 +103,7 @@ func maxOverTime(step types.RangeVectorStepData, _ float64, _ EmitAnnotationFunc
 	return maxSoFar, true, nil, nil
 }
 
-var MinOverTime = FunctionOverRangeVector{
+var MinOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               minOverTime,
 }
@@ -140,7 +140,7 @@ func minOverTime(step types.RangeVectorStepData, _ float64, _ EmitAnnotationFunc
 	return minSoFar, true, nil, nil
 }
 
-var SumOverTime = FunctionOverRangeVector{
+var SumOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       sumOverTime,
 	NeedsSeriesNamesForAnnotations: true,
@@ -215,7 +215,7 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation EmitAnnotationFunc
 	return sum, nil
 }
 
-var AvgOverTime = FunctionOverRangeVector{
+var AvgOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       avgOverTime,
 	NeedsSeriesNamesForAnnotations: true,
