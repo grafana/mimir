@@ -269,6 +269,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		}
 
 	case *parser.UnaryExpr:
+		if e.Op == parser.ADD {
+			// Unary addition (+value): there's nothing to do, just return the inner expression.
+			return q.convertToInstantVectorOperator(e.Expr, timeRange)
+		}
+
 		if e.Op != parser.SUB {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
 		}
@@ -421,6 +426,11 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 		return q.convertFunctionCallToScalarOperator(e, timeRange)
 
 	case *parser.UnaryExpr:
+		if e.Op == parser.ADD {
+			// Unary addition (+value): there's nothing to do, just return the inner expression.
+			return q.convertToScalarOperator(e.Expr, timeRange)
+		}
+
 		if e.Op != parser.SUB {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
 		}
