@@ -18,6 +18,9 @@
     (import 'dashboards/top-tenants.libsonnet') +
     (import 'dashboards/overview.libsonnet') +
 
+    (if !$._config.block_builder_enabled then {} else
+       (import 'dashboards/block-builder.libsonnet')) +
+
     (if !$._config.resources_dashboards_enabled then {} else
        (import 'dashboards/overview-resources.libsonnet') +
        (import 'dashboards/overview-networking.libsonnet') +
