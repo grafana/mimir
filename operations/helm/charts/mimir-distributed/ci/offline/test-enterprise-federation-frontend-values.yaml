@@ -20,6 +20,10 @@ mimir:
       type: trust
     instrumentation:
       enabled: false
+    # The federation-frontend doesn't handle auth. Disabling multi-tenant means the FF doesn't need to check for the X-Scope-OrgID header
+    # and will use the auth material from the proxy_targets configuration.
+    # If using the federation-frontend.
+    multitenancy_enabled: false
     federation:
       proxy_targets:
         - name: "mimir-distributed-1"
@@ -27,14 +31,16 @@ mimir:
         - name: "mimir-distributed-2"
           url: "http://mimir-query-frontend.real-deployment.svc.cluster.local:8080/prometheus"
 
-# Need the distributor so that the gateway can healthcheck it upon startup. This can be removed once the gateway can work without a distributor deployment.
-distributor:
-  replicas: 1
-
 # Disable all other components
+distributor:
+  replicas: 0
+admin_api:
+  replicas: 0
 alertmanager:
   enabled: false
 ingester:
+  replicas: 0
+gateway:
   replicas: 0
 querier:
   replicas: 0
@@ -65,4 +71,10 @@ results-cache:
 
 # Keep using minio to allow setting up the admin bucket
 minio:
+  enabled: false
+
+rollout_operator:
   enabled: true
+
+tokengenJob:
+  enable: false

@@ -15,7 +15,7 @@ metadata:
   namespace: "citestns"
 spec:
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir

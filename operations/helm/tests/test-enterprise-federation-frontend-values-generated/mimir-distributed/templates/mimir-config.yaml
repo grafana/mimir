@@ -21,27 +21,12 @@ data:
           kvstore:
             store: memberlist
     admin_client:
-      storage:
-        s3:
-          access_key_id: grafana-mimir
-          bucket_name: enterprise-metrics-admin
-          endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
-          insecure: true
-          secret_access_key: supersecret
-        type: s3
+      storage: null
     alertmanager:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
-    alertmanager_storage:
-      backend: s3
-      s3:
-        access_key_id: grafana-mimir
-        bucket_name: mimir-ruler
-        endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
-        insecure: true
-        secret_access_key: supersecret
     auth:
       admin:
         pass_access_policy_name: true
@@ -51,12 +36,6 @@ data:
       backend: s3
       bucket_store:
         sync_dir: /data/tsdb-sync
-      s3:
-        access_key_id: grafana-mimir
-        bucket_name: mimir-tsdb
-        endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
-        insecure: true
-        secret_access_key: supersecret
       tsdb:
         dir: /data/tsdb
         head_compaction_interval: 15m
@@ -139,6 +118,7 @@ data:
       compression_enabled: false
       join_members:
       - dns+test-enterprise-federation-frontend-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+    multitenancy_enabled: false
     querier:
       max_concurrent: 16
     query_scheduler:
@@ -147,14 +127,6 @@ data:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-federation-frontend-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
-    ruler_storage:
-      backend: s3
-      s3:
-        access_key_id: grafana-mimir
-        bucket_name: mimir-ruler
-        endpoint: test-enterprise-federation-frontend-values-minio.citestns.svc:9000
-        insecure: true
-        secret_access_key: supersecret
     runtime_config:
       file: /var/mimir/runtime.yaml
     store_gateway:

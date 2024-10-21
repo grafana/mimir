@@ -13,7 +13,7 @@ metadata:
   name: test-enterprise-federation-frontend-values-mimir-gateway
   namespace: "citestns"
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir

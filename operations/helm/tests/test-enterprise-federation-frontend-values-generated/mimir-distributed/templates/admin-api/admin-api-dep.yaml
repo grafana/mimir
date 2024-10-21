@@ -14,7 +14,7 @@ metadata:
   name: test-enterprise-federation-frontend-values-mimir-admin-api
   namespace: "citestns"
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
