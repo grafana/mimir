@@ -27,6 +27,7 @@ type ringBuffer[T any] interface {
 	First() T
 	Reset()
 	Use(s []T)
+	Release()
 	GetPoints() []T
 	GetFirstIndex() int
 	GetTimestamp(point T) int64
@@ -116,6 +117,12 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	shouldHavePoints(t, buf, points...)
 
 	buf.DiscardPointsBefore(5)
+	shouldHavePoints(t, buf, points[4:]...)
+
+	buf.Release()
+	shouldHaveNoPoints(t, buf)
+
+	buf.Use(points[4:])
 	shouldHavePoints(t, buf, points[4:]...)
 }
 
