@@ -12,12 +12,13 @@ import (
 func NewTestEngineOpts() EngineOpts {
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
-			Logger:               nil,
-			Reg:                  nil,
-			MaxSamples:           math.MaxInt,
-			Timeout:              100 * time.Second,
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
+			Logger:                   nil,
+			Reg:                      nil,
+			MaxSamples:               math.MaxInt,
+			Timeout:                  100 * time.Second,
+			EnableAtModifier:         true,
+			EnableNegativeOffset:     true,
+			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
 		},
 
 		FeatureToggles: EnableAllFeatures,
