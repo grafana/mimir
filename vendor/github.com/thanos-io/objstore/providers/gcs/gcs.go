@@ -226,12 +226,33 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error, opt
 
 // Get returns a reader for the given object name.
 func (b *Bucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	return b.bkt.Object(name).NewReader(ctx)
+	r, err := b.bkt.Object(name).NewReader(ctx)
+	if err != nil {
+		return r, err
+	}
+
+	return objstore.ObjectSizerReadCloser{
+		ReadCloser: r,
+		Size: func() (int64, error) {
+			return r.Attrs.Size, nil
+		},
+	}, nil
 }
 
 // GetRange returns a new range reader for the given object name and range.
 func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	return b.bkt.Object(name).NewRangeReader(ctx, off, length)
+	r, err := b.bkt.Object(name).NewRangeReader(ctx, off, length)
+	if err != nil {
+		return r, err
+	}
+
+	sz := r.Remain()
+	return objstore.ObjectSizerReadCloser{
+		ReadCloser: r,
+		Size: func() (int64, error) {
+			return sz, nil
+		},
+	}, nil
 }
 
 // Attributes returns information about the specified object.
