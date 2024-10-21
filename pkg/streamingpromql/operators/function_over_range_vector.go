@@ -29,10 +29,8 @@ type FunctionOverRangeVector struct {
 	metricNames        *MetricNames
 	currentSeriesIndex int
 
-	numSteps        int
-	rangeSeconds    float64
-	floatBuffer     *types.FPointRingBuffer
-	histogramBuffer *types.HPointRingBuffer
+	numSteps     int
+	rangeSeconds float64
 
 	expressionPosition   posrange.PositionRange
 	emitAnnotationFunc   functions.EmitAnnotationFunc
@@ -102,21 +100,10 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		m.currentSeriesIndex++
 	}()
 
-	if m.floatBuffer == nil {
-		m.floatBuffer = types.NewFPointRingBuffer(m.MemoryConsumptionTracker)
-	}
-
-	if m.histogramBuffer == nil {
-		m.histogramBuffer = types.NewHPointRingBuffer(m.MemoryConsumptionTracker)
-	}
-
-	m.floatBuffer.Reset()
-	m.histogramBuffer.Reset()
-
 	data := types.InstantVectorSeriesData{}
 
 	for {
-		step, err := m.Inner.NextStepSamples(m.floatBuffer, m.histogramBuffer)
+		step, err := m.Inner.NextStepSamples()
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
@@ -129,7 +116,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer, m.emitAnnotationFunc)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.emitAnnotationFunc)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -167,11 +154,4 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator functions.AnnotationG
 
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
-
-	if m.floatBuffer != nil {
-		m.floatBuffer.Close()
-	}
-	if m.histogramBuffer != nil {
-		m.histogramBuffer.Close()
-	}
 }
