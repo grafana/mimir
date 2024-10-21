@@ -875,8 +875,9 @@ func TestSubqueries(t *testing.T) {
 	`
 
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	storage := promqltest.LoadedStorage(t, data)
 	t.Cleanup(func() { storage.Close() })
 
@@ -1166,11 +1167,22 @@ func TestSubqueries(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(fmt.Sprintf("%v evaluated at %v", testCase.Query, testCase.Start.Unix()), func(t *testing.T) {
-			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.Query, testCase.Start)
-			require.NoError(t, err)
+			runTest := func(t *testing.T, engine promql.QueryEngine) {
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.Query, testCase.Start)
+				require.NoError(t, err)
 
-			res := qry.Exec(context.Background())
-			testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+				res := qry.Exec(context.Background())
+				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+			}
+
+			// Ensure our test cases are correct by running them against Prometheus' engine too.
+			t.Run("Prometheus' engine", func(t *testing.T) {
+				runTest(t, prometheusEngine)
+			})
+
+			t.Run("Mimir's engine", func(t *testing.T) {
+				runTest(t, mimirEngine)
+			})
 		})
 	}
 }
