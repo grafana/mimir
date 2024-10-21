@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/engine_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package streamingpromql
 
@@ -23,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -46,7 +50,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"topk(5, metric{})":                            "'topk' aggregation with parameter",
 		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
-		"rate(metric{}[5m:1m])":                        "PromQL expression type *parser.SubqueryExpr for range vectors",
 		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
 		"quantile(0.95, metric{})":                     "'quantile' aggregation with parameter",
 	}
@@ -54,17 +57,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
 			requireQueryIsUnsupported(t, featureToggles, expression, expectedError)
-		})
-	}
-
-	// These expressions are also unsupported, but are only valid as instant queries.
-	unsupportedInstantQueryExpressions := map[string]string{
-		"metric{}[5m:1m]": "PromQL expression type *parser.SubqueryExpr for range vectors",
-	}
-
-	for expression, expectedError := range unsupportedInstantQueryExpressions {
-		t.Run(expression, func(t *testing.T) {
-			requireInstantQueryIsUnsupported(t, featureToggles, expression, expectedError)
 		})
 	}
 }
@@ -152,6 +144,13 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		featureToggles.EnableScalars = false
 
 		requireQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+	})
+
+	t.Run("subqueries", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableSubqueries = false
+
+		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
 	})
 }
 
@@ -856,6 +855,333 @@ func TestRangeVectorSelectors(t *testing.T) {
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
 			t.Run("Prometheus' engine", func(t *testing.T) {
 				runTest(t, prometheusEngine, testCase.expr, testCase.ts, testCase.expected)
+			})
+		})
+	}
+}
+
+func TestSubqueries(t *testing.T) {
+	// This test is based on Prometheus' TestSubquerySelector.
+	data := `load 10s
+	           metric{type="floats"} 1 2
+	           metric{type="histograms"} {{count:1}} {{count:2}}
+	           http_requests{job="api-server", instance="0", group="production"} 0+10x1000 100+30x1000
+	           http_requests{job="api-server", instance="1", group="production"} 0+20x1000 200+30x1000
+	           http_requests{job="api-server", instance="0", group="canary"}     0+30x1000 300+80x1000
+	           http_requests{job="api-server", instance="1", group="canary"}     0+40x2000
+	           other_metric{type="floats"} 0 4 3 6 -1 10
+	           other_metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:-1}} {{count:10}}
+	           other_metric{type="mixed"} 0 4 3 6 {{count:-1}} {{count:10}}
+	`
+
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	storage := promqltest.LoadedStorage(t, data)
+	t.Cleanup(func() { storage.Close() })
+
+	testCases := []struct {
+		Query  string
+		Result promql.Result
+		Start  time.Time
+	}{
+		{
+			Query: "metric[20s:10s]",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 1}, T: 0}, {H: &histogram.FloatHistogram{Count: 2}, T: 10000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query: "metric[20s:5s]",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 1}, T: 0}, {H: &histogram.FloatHistogram{Count: 1}, T: 5000}, {H: &histogram.FloatHistogram{Count: 2}, T: 10000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 2s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 1}, T: 0}, {H: &histogram.FloatHistogram{Count: 1}, T: 5000}, {H: &histogram.FloatHistogram{Count: 2}, T: 10000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(12, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 6s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 1}, T: 0}, {H: &histogram.FloatHistogram{Count: 1}, T: 5000}, {H: &histogram.FloatHistogram{Count: 2}, T: 10000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(20, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 4s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(35, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 5s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(35, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 6s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(35, 0),
+		},
+		{
+			Query: "metric[20s:5s] offset 7s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(35, 0),
+		},
+		{ // Normal selector.
+			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
+						Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+					},
+				},
+			},
+			Start: time.Unix(10020, 0),
+		},
+		{ // Default step.
+			Query: `http_requests{group=~"pro.*",instance="0"}[5m:]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 9840, T: 9840000}, {F: 9900, T: 9900000}, {F: 9960, T: 9960000}, {F: 130, T: 10020000}, {F: 310, T: 10080000}},
+						Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+					},
+				},
+			},
+			Start: time.Unix(10100, 0),
+		},
+		{ // Checking if high offset (>LookbackDelta) is being taken care of.
+			Query: `http_requests{group=~"pro.*",instance="0"}[5m:] offset 20m`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 8640, T: 8640000}, {F: 8700, T: 8700000}, {F: 8760, T: 8760000}, {F: 8820, T: 8820000}, {F: 8880, T: 8880000}},
+						Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+					},
+				},
+			},
+			Start: time.Unix(10100, 0),
+		},
+		{
+			Query: `rate(http_requests[1m])[15s:5s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 4, T: 7985000}, {F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 1, T: 7985000}, {F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 2, T: 7985000}, {F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+						DropName: true,
+					},
+				},
+				Warnings: annotations.New().Add(annotations.NewPossibleNonCounterInfo("http_requests", posrange.PositionRange{Start: 5})),
+			},
+			Start: time.Unix(8000, 0),
+		},
+		{
+			Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		{
+			Query: `sum(http_requests)[40s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 800, T: 80000}, {F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		{
+			Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1000, T: 100000}, {F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		// These tests exercise @ start() and @ end(), and use the same data as testdata/ours/subqueries.test, to
+		// mirror the range query tests there.
+		{
+			Query: `last_over_time(other_metric[20s:10s] @ start())`,
+			Result: promql.Result{
+				Value: promql.Vector{
+					{
+						F:      -1,
+						T:      40000,
+						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
+					},
+					{
+						H:      &histogram.FloatHistogram{Count: -1, CounterResetHint: histogram.CounterReset},
+						T:      40000,
+						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
+					},
+					{
+						H:      &histogram.FloatHistogram{Count: -1, CounterResetHint: histogram.UnknownCounterReset},
+						T:      40000,
+						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
+					},
+				},
+			},
+			Start: time.Unix(40, 0),
+		},
+		{
+			Query: `last_over_time(other_metric[20s:10s] @ end())`,
+			Result: promql.Result{
+				Value: promql.Vector{
+					{
+						F:      6,
+						T:      30000,
+						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
+					},
+					{
+						H:      &histogram.FloatHistogram{Count: 6, CounterResetHint: histogram.NotCounterReset},
+						T:      30000,
+						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
+					},
+					{
+						F:      6,
+						T:      30000,
+						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
+					},
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(fmt.Sprintf("%v evaluated at %v", testCase.Query, testCase.Start.Unix()), func(t *testing.T) {
+			runTest := func(t *testing.T, engine promql.QueryEngine) {
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, testCase.Query, testCase.Start)
+				require.NoError(t, err)
+
+				res := qry.Exec(context.Background())
+				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+			}
+
+			// Ensure our test cases are correct by running them against Prometheus' engine too.
+			t.Run("Prometheus' engine", func(t *testing.T) {
+				runTest(t, prometheusEngine)
+			})
+
+			t.Run("Mimir's engine", func(t *testing.T) {
+				runTest(t, mimirEngine)
 			})
 		})
 	}
