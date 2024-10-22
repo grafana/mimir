@@ -338,9 +338,17 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('Store-gateway')
       .addPanel(
-        $.timeseriesPanel('Blocks queried / sec') +
-        $.queryPanel('sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), 'blocks') +
-        { fieldConfig+: { defaults+: { unit: 'ops' } } },
+        $.timeseriesPanel('Blocks queried / sec by compaction level') +
+        $.panelDescription(
+          'Blocks queried / sec by compaction level',
+          |||
+            Increased volume of lower levels (for example levels 1 and 2) can indicate that the compactor is not keeping up.
+            In that case the store-gateway will start serving more blocks which aren't that well compacted.
+          |||
+        ) +
+        $.queryPanel('sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{level}}') +
+        { fieldConfig+: { defaults+: { unit: 'ops' } } } +
+        $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Data fetched / sec') +
