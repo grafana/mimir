@@ -582,6 +582,9 @@ func (m *ActiveSeriesRequest) GetType() ActiveSeriesRequest_RequestType {
 }
 
 type QueryResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 }
 
@@ -633,6 +636,9 @@ func (m *QueryResponse) GetTimeseries() []mimirpb.TimeSeries {
 //
 // Only one of these two options will be populated.
 type QueryStreamResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Chunkseries           []TimeSeriesChunk         `protobuf:"bytes,1,rep,name=chunkseries,proto3" json:"chunkseries"`
 	Timeseries            []mimirpb.TimeSeries      `protobuf:"bytes,2,rep,name=timeseries,proto3" json:"timeseries"`
 	StreamingSeries       []QueryStreamSeries       `protobuf:"bytes,3,rep,name=streaming_series,json=streamingSeries,proto3" json:"streaming_series"`
@@ -803,6 +809,9 @@ func (m *QueryStreamSeriesChunks) GetChunks() []Chunk {
 }
 
 type ExemplarQueryResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Timeseries []mimirpb.TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 }
 
@@ -1321,6 +1330,9 @@ func (m *MetricsForLabelMatchersRequest) GetMatchersSet() []*LabelMatchers {
 }
 
 type MetricsForLabelMatchersResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 }
 
@@ -1466,6 +1478,9 @@ func (m *MetricsMetadataResponse) GetMetadata() []*mimirpb.MetricMetadata {
 }
 
 type ActiveSeriesResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	Metric []*mimirpb.Metric `protobuf:"bytes,1,rep,name=metric,proto3" json:"metric,omitempty"`
 	// bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
 	// bucket_count contains the native histogram active buckets count for each series in "metric" above.

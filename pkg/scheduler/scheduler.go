@@ -428,7 +428,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(querier.Context(), queue.QuerierID(querierID))
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(querier.Context(), querierID)
 	err = s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 	if err != nil {
 		return s.transformRequestQueueError(err)
@@ -485,7 +485,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 func (s *Scheduler) NotifyQuerierShutdown(ctx context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	level.Info(s.log).Log("msg", "received shutdown notification from querier", "querier", req.GetQuerierID())
 
-	s.requestQueue.SubmitNotifyQuerierShutdown(ctx, queue.QuerierID(req.GetQuerierID()))
+	s.requestQueue.SubmitNotifyQuerierShutdown(ctx, req.GetQuerierID())
 
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }

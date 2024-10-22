@@ -123,6 +123,7 @@ type TCPTransport struct {
 	sentPackets           prometheus.Counter
 	sentPacketsBytes      prometheus.Counter
 	sentPacketsErrors     prometheus.Counter
+	droppedPackets        prometheus.Counter
 	unknownConnections    prometheus.Counter
 }
 
@@ -463,8 +464,9 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	// If this blocks for too long (as configured), abort and log an error.
 	select {
 	case <-time.After(t.cfg.AcquireWriterTimeout):
-		level.Warn(t.logger).Log("msg", "WriteTo failed to acquire a writer. Dropping message", "timeout", t.cfg.AcquireWriterTimeout, "addr", addr)
-		t.sentPacketsErrors.Inc()
+		// Dropped packets are not an issue, the memberlist protocol will retry later.
+		level.Debug(t.logger).Log("msg", "WriteTo failed to acquire a writer. Dropping message", "timeout", t.cfg.AcquireWriterTimeout, "addr", addr)
+		t.droppedPackets.Inc()
 		// WriteTo is used to send "UDP" packets. Since we use TCP, we can detect more errors,
 		// but memberlist library doesn't seem to cope with that very well. That is why we return nil instead.
 		return time.Now(), nil
@@ -679,6 +681,13 @@ func (t *TCPTransport) registerMetrics(registerer prometheus.Registerer) {
 		Subsystem: subsystem,
 		Name:      "packets_received_errors_total",
 		Help:      "Number of errors when receiving memberlist packets",
+	})
+
+	t.droppedPackets = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		Namespace: t.cfg.MetricsNamespace,
+		Subsystem: subsystem,
+		Name:      "packets_dropped_total",
+		Help:      "Number of dropped memberlist packets. These packets were not sent due to timeout waiting for a writer.",
 	})
 
 	t.sentPackets = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
