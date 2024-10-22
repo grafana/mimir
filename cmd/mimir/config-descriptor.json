@@ -16387,17 +16387,6 @@
         },
         {
           "kind": "field",
-          "name": "prioritize_query_components",
-          "required": false,
-          "desc": "When enabled, the query scheduler primarily prioritizes dequeuing fairly from queue components and secondarily prioritizes dequeuing fairly across tenants. When disabled, the query scheduler primarily prioritizes tenant fairness.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-scheduler.prioritize-query-components",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "querier_forget_delay",
           "required": false,
           "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",

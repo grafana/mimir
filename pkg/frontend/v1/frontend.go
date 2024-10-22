@@ -126,7 +126,6 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 	f.requestQueue, err = queue.NewRequestQueue(
 		log,
 		cfg.MaxOutstandingPerTenant,
-		false, //prioritizeQueryComponents -- currently no-op
 		cfg.QuerierForgetDelay,
 		f.queueLength,
 		f.discardedRequests,
