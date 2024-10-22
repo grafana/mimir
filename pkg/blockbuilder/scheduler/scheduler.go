@@ -93,9 +93,9 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 
 	startOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionStartOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		s.metrics.partitionStartOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 	endOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionEndOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		s.metrics.partitionEndOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 }
