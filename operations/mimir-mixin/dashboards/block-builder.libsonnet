@@ -9,10 +9,10 @@ local filename = 'mimir-block-builder.json';
     .addRow(
       $.row('Summary')
       .addPanel(
-        $.timeseriesPanel('Overall consumption / sec') +
+        $.timeseriesPanel('Kafka fetched records / sec') +
         $.panelDescription(
           'Overall consumption / sec',
-          'Overview of per-second rate of records consumed from Kafka.',
+          'Overview of per-second rate of records fetched from Kafka.',
         ) +
         $.queryPanel(
           [
@@ -27,13 +27,13 @@ local filename = 'mimir-block-builder.json';
         $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Per-instance consumption / sec') +
+        $.timeseriesPanel('Per pod Kafka fetched records / sec') +
         $.panelDescription(
           'Per-instance consumption / sec',
           '',
         ) +
         $.queryPanel(
-          'rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval])' % { job: $.jobMatcher($._config.job_names.block_builder) },
+          'sum by(pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
           '{{pod}}'
         ) +
         $.stack,
@@ -56,7 +56,7 @@ local filename = 'mimir-block-builder.json';
       .addPanel(
         $.timeseriesPanel('Lag records') +
         $.panelDescription(
-          'Lag records',
+          'Per partition records lag',
           |||
             Number of records in the partition's backlog, as seen when starting a consumption cycle.
           |||
