@@ -221,10 +221,10 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	maxTenantQueueSize := 100
 	qb := newQueueBroker(maxTenantQueueSize, 0)
 	additionalQueueDimensions := map[int][]string{
-		0: nil,
-		1: {"ingester"},
-		2: {"store-gateway"},
-		3: {"ingester-and-store-gateway"},
+		0: {unknownQueueDimension},
+		1: {ingesterQueueDimension},
+		2: {storeGatewayQueueDimension},
+		3: {ingesterAndStoreGatewayQueueDimension},
 	}
 	req := &SchedulerRequest{
 		Ctx:          context.Background(),
