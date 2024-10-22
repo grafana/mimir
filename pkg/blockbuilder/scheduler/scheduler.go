@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
@@ -51,13 +50,11 @@ func (s *BlockBuilderScheduler) starting(context.Context) error {
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
-		kgo.ConsumerGroup(s.cfg.SchedulerConsumerGroup),
-		// Scheduler is just an observer; we don't want to it committing any offsets.
-		kgo.DisableAutoCommit(),
-
 		// Dial these back as we're only fetching single records.
-		kgo.FetchMaxBytes(100*int32(units.KiB)),
-		kgo.FetchMaxPartitionBytes(16*int32(units.KiB)),
+		kgo.FetchMaxBytes(16*int32(units.MiB)),
+		kgo.FetchMaxPartitionBytes(1),
+		kgo.MaxConcurrentFetches(64),
+		kgo.FetchMaxWait(1*time.Minute),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
@@ -170,6 +167,9 @@ func (s *BlockBuilderScheduler) fetchSingleRecords(ctx context.Context, offsets 
 	defer s.kafkaClient.PurgeTopicsFromConsuming(s.cfg.Kafka.Topic)
 	out := make(map[int32]*kgo.Record)
 	f := s.kafkaClient.PollFetches(ctx)
+	if err := f.Err(); err != nil {
+		return nil, err
+	}
 	f.EachError(func(_ string, _ int32, err error) {
 		if !errors.Is(err, context.Canceled) {
 			level.Error(s.logger).Log("msg", "failed to fetch records", "err", err)
