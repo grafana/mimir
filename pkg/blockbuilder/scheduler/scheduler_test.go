@@ -44,7 +44,7 @@ func TestMonitor(t *testing.T) {
 		},
 		BuilderConsumerGroup:   "test-builder",
 		SchedulerConsumerGroup: "test-scheduler",
-		KafkaMonitorInterval:   1000000 * time.Hour,
+		SchedulingInterval:     1000000 * time.Hour,
 	}
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
@@ -65,24 +65,24 @@ func TestMonitor(t *testing.T) {
 		}
 	}
 
-	sched.monitorPartitions(ctx)
+	sched.updateSchedule(ctx)
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_partition_start_offsets The observed start offset of each partition.
-		# TYPE cortex_blockbuilder_scheduler_partition_start_offsets gauge
-		cortex_blockbuilder_scheduler_partition_start_offsets{partition="0"} 0
-		cortex_blockbuilder_scheduler_partition_start_offsets{partition="1"} 0
-		cortex_blockbuilder_scheduler_partition_start_offsets{partition="2"} 0
-		cortex_blockbuilder_scheduler_partition_start_offsets{partition="3"} 0
-	`), "cortex_blockbuilder_scheduler_partition_start_offsets"))
+		`# HELP cortex_blockbuilder_scheduler_partition_start_offset The observed start offset of each partition.
+		# TYPE cortex_blockbuilder_scheduler_partition_start_offset gauge
+		cortex_blockbuilder_scheduler_partition_start_offset{partition="0"} 0
+		cortex_blockbuilder_scheduler_partition_start_offset{partition="1"} 0
+		cortex_blockbuilder_scheduler_partition_start_offset{partition="2"} 0
+		cortex_blockbuilder_scheduler_partition_start_offset{partition="3"} 0
+	`), "cortex_blockbuilder_scheduler_partition_start_offset"))
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_partition_end_offsets The observed end offset of each partition.
-		# TYPE cortex_blockbuilder_scheduler_partition_end_offsets gauge
-		cortex_blockbuilder_scheduler_partition_end_offsets{partition="0"} 0
-		cortex_blockbuilder_scheduler_partition_end_offsets{partition="1"} 1
-		cortex_blockbuilder_scheduler_partition_end_offsets{partition="2"} 2
-		cortex_blockbuilder_scheduler_partition_end_offsets{partition="3"} 3
-	`), "cortex_blockbuilder_scheduler_partition_end_offsets"))
+		`# HELP cortex_blockbuilder_scheduler_partition_end_offset The observed end offset of each partition.
+		# TYPE cortex_blockbuilder_scheduler_partition_end_offset gauge
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="0"} 0
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="1"} 1
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
+		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
+	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
 }
 
 func TestFetchSingle(t *testing.T) {
@@ -98,7 +98,7 @@ func TestFetchSingle(t *testing.T) {
 		},
 		BuilderConsumerGroup:   "test-builder",
 		SchedulerConsumerGroup: "test-scheduler",
-		KafkaMonitorInterval:   1000000 * time.Hour,
+		SchedulingInterval:     1000000 * time.Hour,
 	}
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
