@@ -262,7 +262,11 @@ func (c *Container) get(name string, headers swift.Headers, checkHash bool) (io.
 	if err != nil {
 		return nil, errors.Wrap(err, "open object")
 	}
-	return file, err
+
+	return objstore.ObjectSizerReadCloser{
+		ReadCloser: file,
+		Size:       file.Length,
+	}, nil
 }
 
 // Get returns a reader for the given object name.
