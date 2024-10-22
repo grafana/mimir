@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -289,10 +288,6 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	userID := tenant.tenantID
 	userLogger := util_log.WithUserID(userID, b.logger)
 
-	udb := &userTSDB{
-		userID: userID,
-	}
-
 	db, err := tsdb.Open(udir, userLogger, nil, &tsdb.Options{
 		RetentionDuration:           0,
 		MinBlockDuration:            2 * time.Hour.Milliseconds(),
@@ -301,11 +296,10 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		StripeSize:                  b.blocksStorageCfg.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:   b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksWriteQueueSize:    b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
-		WALSegmentSize:              -1, // No WAL
-		SeriesLifecycleCallback:     udb,
-		BlocksToDelete:              udb.blocksToDelete,
+		WALSegmentSize:              -1,                                                                             // No WAL
+		BlocksToDelete:              func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
 		IsolationDisabled:           true,
-		EnableOverlappingCompaction: false,                                                // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableOverlappingCompaction: false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:        b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:            int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
 		EnableNativeHistograms:      b.limits.NativeHistogramsIngestionEnabled(userID),
@@ -317,7 +311,10 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 	db.DisableCompactions()
 
-	udb.DB = db
+	udb := &userTSDB{
+		DB:     db,
+		userID: userID,
+	}
 
 	return udb, nil
 }
@@ -464,11 +461,4 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (u *userTSDB) PreCreation(_ labels.Labels) error                     { return nil }
-func (u *userTSDB) PostCreation(_ labels.Labels)                          {}
-func (u *userTSDB) PostDeletion(_ map[chunks.HeadSeriesRef]labels.Labels) {}
-func (u *userTSDB) blocksToDelete(_ []*tsdb.Block) map[ulid.ULID]struct{} {
-	return map[ulid.ULID]struct{}{}
 }
