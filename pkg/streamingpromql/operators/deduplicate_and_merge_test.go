@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -156,14 +157,14 @@ func TestDeduplicateAndMerge(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			inner := &testOperator{series: testCase.inputSeries, data: testCase.inputData}
+			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData}
 			o := NewDeduplicateAndMerge(inner, limiting.NewMemoryConsumptionTracker(0, nil))
 
 			outputSeriesMetadata, err := o.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
 			if !testCase.expectConflict {
-				require.Equal(t, labelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata)
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata)
 			}
 
 			outputData := []types.InstantVectorSeriesData{}

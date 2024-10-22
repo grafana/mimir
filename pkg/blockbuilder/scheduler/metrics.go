@@ -8,32 +8,32 @@ import (
 )
 
 type schedulerMetrics struct {
-	monitorPartitionsDuration prometheus.Histogram
-	partitionStartOffsets     *prometheus.GaugeVec
-	partitionCommittedOffsets *prometheus.GaugeVec
-	partitionEndOffsets       *prometheus.GaugeVec
-	partitionBacklogTime      *prometheus.GaugeVec
+	updateScheduleDuration   prometheus.Histogram
+	partitionStartOffset     *prometheus.GaugeVec
+	partitionCommittedOffset *prometheus.GaugeVec
+	partitionEndOffset       *prometheus.GaugeVec
+	partitionBacklogTime     *prometheus.GaugeVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 	return schedulerMetrics{
-		monitorPartitionsDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_blockbuilder_scheduler_monitor_partitions_duration_seconds",
-			Help: "Time spent monitoring partitions.",
+		updateScheduleDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_blockbuilder_scheduler_schedule_update_seconds",
+			Help: "Time spent updating the schedule.",
 
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		partitionStartOffsets: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_start_offsets",
+		partitionStartOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_start_offset",
 			Help: "The observed start offset of each partition.",
 		}, []string{"partition"}),
-		partitionCommittedOffsets: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_committed_offsets",
-			Help: "The observed committed offset of each partition.",
-		}, []string{"partition"}),
-		partitionEndOffsets: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_blockbuilder_scheduler_partition_end_offsets",
+		partitionEndOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_end_offset",
 			Help: "The observed end offset of each partition.",
+		}, []string{"partition"}),
+		partitionCommittedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
+			Help: "The observed committed offset of each partition.",
 		}, []string{"partition"}),
 		partitionBacklogTime: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_partition_backlog_time_seconds",

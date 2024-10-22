@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
@@ -45,8 +46,8 @@ func New(
 	return s, nil
 }
 
-func (s *BlockBuilderScheduler) starting(context.Context) (err error) {
-	s.kafkaClient, err = ingest.NewKafkaReaderClient(
+func (s *BlockBuilderScheduler) starting(context.Context) error {
+	kc, err := ingest.NewKafkaReaderClient(
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
@@ -61,7 +62,9 @@ func (s *BlockBuilderScheduler) starting(context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
-	s.adminClient = kadm.NewClient(s.kafkaClient)
+
+	s.kafkaClient = kc
+	s.adminClient = kadm.NewClient(kc)
 	return nil
 }
 
@@ -71,41 +74,41 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
-	monitorTick := time.NewTicker(s.cfg.KafkaMonitorInterval)
-	defer monitorTick.Stop()
+	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
+	defer updateTick.Stop()
 	for {
 		select {
-		case <-monitorTick.C:
-			s.monitorPartitions(ctx)
+		case <-updateTick.C:
+			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-// monitorPartitions updates knowledge of all active partitions.
-func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
+func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	startTime := time.Now()
 	defer func() {
-		s.metrics.monitorPartitionsDuration.Observe(time.Since(startTime).Seconds())
+		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
+
+	// Eventually this will also include job computation. But for now, collect partition data.
 
 	startOffsets, err := s.adminClient.ListStartOffsets(ctx, s.cfg.Kafka.Topic)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to list start offsets", "err", err)
 	}
-
 	endOffsets, err := s.adminClient.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
 	}
 
 	startOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionStartOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		s.metrics.partitionStartOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 
 	endOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionEndOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		s.metrics.partitionEndOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 
 	// Any errors from here on are ones that cause us to bail from this monitoring iteration.
@@ -117,7 +120,7 @@ func (s *BlockBuilderScheduler) monitorPartitions(ctx context.Context) {
 	}
 
 	committedOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionCommittedOffsets.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
 	})
 
 	consumedOffsets, err := s.adminClient.FetchOffsets(ctx, s.cfg.BuilderConsumerGroup)

@@ -321,6 +321,14 @@ rules:
   verbs:
   - update
 - apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - update
+  - create
+- apiGroups:
   - rollout-operator.grafana.com
   resources:
   - replicatemplates/scale
@@ -1197,6 +1205,8 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
+        - -use-zone-tracker=true
+        - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         image: grafana/rollout-operator:v0.19.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator

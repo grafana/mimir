@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 )
 
 func TestRegisterInstantVectorFunctionOperatorFactory(t *testing.T) {

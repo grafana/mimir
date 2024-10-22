@@ -207,14 +207,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_memcached_operation_failures_total{operation!="add"}[%(range_interval)s])
-                or
                 rate(thanos_cache_operation_failures_total{operation!="add"}[%(range_interval)s])
               )
               /
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_memcached_operations_total{operation!="add"}[%(range_interval)s])
-                or
                 rate(thanos_cache_operations_total{operation!="add"}[%(range_interval)s])
               )
             ) * 100 > 5

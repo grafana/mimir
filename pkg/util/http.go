@@ -242,11 +242,17 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		sz += bytes.MinRead
 	}
 	buf := buffers.Get(sz)
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[started_reading]"))
+	}
 	if _, err := buf.ReadFrom(reader); err != nil {
 		if compression == Gzip {
 			return nil, errors.Wrap(err, "decompress gzip")
 		}
 		return nil, errors.Wrap(err, "read body")
+	}
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[finished_reading]"))
 	}
 
 	if compression == RawSnappy {

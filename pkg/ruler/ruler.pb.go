@@ -139,6 +139,9 @@ func (m *RulesRequest) GetExcludeAlerts() bool {
 }
 
 type RulesResponse struct {
+	// Keep reference to buffer for unsafe references.
+	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
+
 	Groups []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
 }
 

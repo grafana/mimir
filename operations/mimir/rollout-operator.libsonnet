@@ -42,6 +42,8 @@
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
+    'use-zone-tracker': true,
+    'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
   } + if $._config.enable_rollout_operator_webhook then {
     '-server-tls.enabled': 'true',
   } else {},
@@ -93,6 +95,9 @@
         policyRule.withApiGroups('apps') +
         policyRule.withResources(['statefulsets/status']) +
         policyRule.withVerbs(['update']),
+        policyRule.withApiGroups('') +
+        policyRule.withResources(['configmaps']) +
+        policyRule.withVerbs(['get', 'update', 'create']),
       ] + (
         if $._config.rollout_operator_replica_template_access_enabled then [
           policyRule.withApiGroups($.replica_template.spec.group) +
