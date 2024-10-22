@@ -20,6 +20,7 @@ scrape_configs:
           - 'store-gateway-1:8008'
           - 'store-gateway-2:8009'
           - 'query-scheduler:8011'
+          - 'continuous-test:8090'
         labels:
           cluster: 'docker-compose'
           namespace: 'mimir-microservices-mode'
