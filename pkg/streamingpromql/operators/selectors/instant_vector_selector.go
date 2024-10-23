@@ -124,11 +124,13 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
 		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
 		if h != nil {
+			// Only create the slice once we know the series is a histogram or not.
+			// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 			if len(data.Histograms) == 0 {
-				// Only create the slice once we know the series is a histogram or not.
-				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
+				remainingStepCount := v.Selector.TimeRange.StepCount - int(v.Selector.TimeRange.PointIndex(stepT)) // Only get a slice for the number of points remaining in the query range.
+
 				var err error
-				if data.Histograms, err = types.HPointSlicePool.Get(v.Selector.TimeRange.StepCount, v.MemoryConsumptionTracker); err != nil {
+				if data.Histograms, err = types.HPointSlicePool.Get(remainingStepCount, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
@@ -142,10 +144,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			lastHistogramT = t
 			lastHistogram = h
 		} else {
+			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
-				// Only create the slice once we know the series is a histogram or not
+				remainingStepCount := v.Selector.TimeRange.StepCount - int(v.Selector.TimeRange.PointIndex(stepT)) // Only get a slice for the number of points remaining in the query range.
+
 				var err error
-				if data.Floats, err = types.FPointSlicePool.Get(v.Selector.TimeRange.StepCount, v.MemoryConsumptionTracker); err != nil {
+				if data.Floats, err = types.FPointSlicePool.Get(remainingStepCount, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
