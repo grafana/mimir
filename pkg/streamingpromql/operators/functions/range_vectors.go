@@ -22,8 +22,8 @@ var CountOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func countOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fPointCount := step.Floats.CountAtOrBefore(step.RangeEnd)
-	hPointCount := step.Histograms.CountAtOrBefore(step.RangeEnd)
+	fPointCount := step.Floats.Count()
+	hPointCount := step.Histograms.Count()
 
 	if fPointCount == 0 && hPointCount == 0 {
 		return 0, false, nil, nil
@@ -38,8 +38,8 @@ var LastOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func lastOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	lastFloat, floatAvailable := step.Floats.LastAtOrBefore(step.RangeEnd)
-	lastHistogram, histogramAvailable := step.Histograms.LastAtOrBefore(step.RangeEnd)
+	lastFloat, floatAvailable := step.Floats.Last()
+	lastHistogram, histogramAvailable := step.Histograms.Last()
 
 	if !floatAvailable && !histogramAvailable {
 		return 0, false, nil, nil
@@ -59,7 +59,7 @@ var PresentOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func presentOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	if step.Floats.AnyAtOrBefore(step.RangeEnd) || step.Histograms.AnyAtOrBefore(step.RangeEnd) {
+	if step.Floats.Any() || step.Histograms.Any() {
 		return 1, true, nil, nil
 	}
 
@@ -72,7 +72,7 @@ var MaxOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func maxOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	head, tail := step.Floats.UnsafePoints(step.RangeEnd)
+	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
 		return 0, false, nil, nil
@@ -109,7 +109,7 @@ var MinOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func minOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	head, tail := step.Floats.UnsafePoints(step.RangeEnd)
+	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
 		return 0, false, nil, nil
@@ -147,8 +147,8 @@ var SumOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func sumOverTime(step types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
-	hHead, hTail := step.Histograms.UnsafePoints(step.RangeEnd)
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
 
 	haveFloats := len(fHead) > 0 || len(fTail) > 0
 	haveHistograms := len(hHead) > 0 || len(hTail) > 0
@@ -222,8 +222,8 @@ var AvgOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func avgOverTime(step types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
-	hHead, hTail := step.Histograms.UnsafePoints(step.RangeEnd)
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
 
 	haveFloats := len(fHead) > 0 || len(fTail) > 0
 	haveHistograms := len(hHead) > 0 || len(hTail) > 0
