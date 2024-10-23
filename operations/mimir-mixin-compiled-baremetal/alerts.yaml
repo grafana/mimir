@@ -1139,11 +1139,11 @@ groups:
             severity: critical
         - alert: MimirBlockBuilderNoCycleProcessing
           annotations:
-            message: Mimir Block-builder {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not processed cycles in the past hour.
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not processed cycles in the past hour.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
           expr: |
-            max by(cluster, namespace) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[1h]))) == 0
-          for: 30m
+            max by(cluster, namespace, instance) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
+          for: 5m
           labels:
             severity: warning
         - alert: MimirBlockBuilderCompactAndUploadFailed
