@@ -346,11 +346,12 @@ local filename = 'mimir-queries.json';
             In that case the store-gateway will start serving more blocks which aren't that well compacted.
           |||
         ) +
-        $.queryPanel([
+        $.queryPanel(
+          [
             'sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level=~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
             'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
           ],
-          ['{{level}}','5+'],
+          ['{{level}}', '5+'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
         $.stack,
