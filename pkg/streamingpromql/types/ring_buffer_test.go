@@ -13,24 +13,28 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 )
 
-// We want to ensure fPoint+hPoint ring buffers are tested consistently,
+// We want to ensure FPoint+HPoint ring buffers are tested consistently,
 // and we don't care about performance here so we can use an interface+generics.
 type ringBuffer[T any] interface {
 	DiscardPointsBefore(t int64)
 	Append(p T) error
-	ForEach(f func(p T))
-	UnsafePoints(maxT int64) (head []T, tail []T)
-	CopyPoints(maxT int64) ([]T, error)
-	LastAtOrBefore(maxT int64) (T, bool)
-	CountAtOrBefore(maxT int64) int
-	AnyAtOrBefore(maxT int64) bool
-	First() T
 	Reset()
 	Use(s []T)
 	Release()
+	ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[T]
 	GetPoints() []T
 	GetFirstIndex() int
 	GetTimestamp(point T) int64
+}
+
+type ringBufferView[T any] interface {
+	ForEach(f func(p T))
+	UnsafePoints() (head []T, tail []T)
+	CopyPoints() ([]T, error)
+	Last() (T, bool)
+	Count() int
+	Any() bool
+	First() T
 }
 
 func TestRingBuffer(t *testing.T) {
@@ -286,20 +290,33 @@ func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
 }
 
 func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
-	var pointsFromForEach []T
+	var pointsFromForEachAfterSearchingForwards []T
 
-	buf.ForEach(func(p T) {
-		pointsFromForEach = append(pointsFromForEach, p)
+	buf.ViewUntilForTesting(math.MaxInt64, true).ForEach(func(p T) {
+		pointsFromForEachAfterSearchingForwards = append(pointsFromForEachAfterSearchingForwards, p)
 	})
 
-	require.Equal(t, expected, pointsFromForEach)
+	require.Equal(t, expected, pointsFromForEachAfterSearchingForwards)
+
+	var pointsFromForEachAfterSearchingBackwards []T
+
+	buf.ViewUntilForTesting(math.MaxInt64, false).ForEach(func(p T) {
+		pointsFromForEachAfterSearchingBackwards = append(pointsFromForEachAfterSearchingBackwards, p)
+	})
+
+	require.Equal(t, expected, pointsFromForEachAfterSearchingBackwards)
 
 	if len(expected) == 0 {
 		shouldHavePointsAtOrBeforeTime(t, buf, math.MaxInt64, expected...)
-		_, present := buf.LastAtOrBefore(math.MaxInt64)
+
+		_, present := buf.ViewUntilForTesting(math.MaxInt64, true).Last()
+		require.False(t, present)
+
+		_, present = buf.ViewUntilForTesting(math.MaxInt64, false).Last()
 		require.False(t, present)
 	} else {
-		require.Equal(t, expected[0], buf.First())
+		require.Equal(t, expected[0], buf.ViewUntilForTesting(math.MaxInt64, true).First())
+		require.Equal(t, expected[0], buf.ViewUntilForTesting(math.MaxInt64, false).First())
 		// We test LastAtOrBefore() below.
 
 		lastPointT := buf.GetTimestamp(expected[len(expected)-1])
@@ -311,24 +328,33 @@ func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
 }
 
 func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts int64, expected ...T) {
-	head, tail := buf.UnsafePoints(ts)
+	viewShouldHavePoints(t, buf.ViewUntilForTesting(ts, true), expected...)
+	viewShouldHavePoints(t, buf.ViewUntilForTesting(ts, false), expected...)
+}
+
+func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected ...T) {
+	head, tail := view.UnsafePoints()
 	combinedPoints := append(head, tail...)
 
 	if len(expected) == 0 {
 		require.Len(t, combinedPoints, 0)
-		require.False(t, buf.AnyAtOrBefore(ts))
+		require.False(t, view.Any())
 	} else {
 		require.Equal(t, expected, combinedPoints)
-		require.True(t, buf.AnyAtOrBefore(ts))
+		require.True(t, view.Any())
 	}
 
-	require.Equal(t, len(expected), buf.CountAtOrBefore(ts))
+	require.Equal(t, len(expected), view.Count())
 
-	copiedPoints, err := buf.CopyPoints(ts)
+	copiedPoints, err := view.CopyPoints()
 	require.NoError(t, err)
-	require.Equal(t, expected, copiedPoints)
+	if len(expected) == 0 {
+		require.Nil(t, copiedPoints)
+	} else {
+		require.Equal(t, expected, copiedPoints)
+	}
 
-	end, present := buf.LastAtOrBefore(ts)
+	end, present := view.Last()
 
 	if len(expected) == 0 {
 		require.False(t, present)
@@ -341,6 +367,10 @@ func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts i
 // Wrapper for FPointRingBuffer to work around indirection to get points
 type fPointRingBufferWrapper struct {
 	*FPointRingBuffer
+}
+
+func (w *fPointRingBufferWrapper) ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[promql.FPoint] {
+	return w.ViewUntil(maxT, searchForwards)
 }
 
 func (w *fPointRingBufferWrapper) GetPoints() []promql.FPoint {
@@ -358,6 +388,10 @@ func (w *fPointRingBufferWrapper) GetTimestamp(point promql.FPoint) int64 {
 // Wrapper for HPointRingBuffer to work around indirection to get points
 type hPointRingBufferWrapper struct {
 	*HPointRingBuffer
+}
+
+func (w *hPointRingBufferWrapper) ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[promql.HPoint] {
+	return w.ViewUntil(maxT, searchForwards)
 }
 
 func (w *hPointRingBufferWrapper) GetPoints() []promql.HPoint {
