@@ -335,3 +335,112 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 
 	return avgSoFar, nil
 }
+
+var Changes = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       changes,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func changes(step types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
+	hHead, hTail := step.Histograms.UnsafePoints(step.RangeEnd)
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+	haveHistograms := len(hHead) > 0 || len(hTail) > 0
+
+	if !haveFloats && !haveHistograms {
+		return 0, false, nil, nil
+	}
+
+	if haveFloats && haveHistograms {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
+	}
+
+	if haveFloats {
+		return changesFloats(fHead, fTail), true, nil, nil
+	}
+
+	h, err := changesHistograms(hHead, hTail, emitAnnotation)
+	return 0, false, h, err
+}
+
+func changesFloats(head, tail []promql.FPoint) float64 {
+	changes := 0.0
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0
+	}
+
+	if len(head) > 0 {
+		prev := head[0].F
+		for _, sample := range head[1:] {
+			current := sample.F
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+				changes++
+			}
+			prev = current
+		}
+	}
+
+	if len(tail) > 0 {
+		prev := tail[0].F
+		for _, sample := range tail[1:] {
+			current := sample.F
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+				changes++
+			}
+			prev = current
+		}
+	}
+
+	return changes
+}
+
+func changesHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	var changes *histogram.FloatHistogram
+
+	if len(head) > 0 {
+		changes = head[0].H
+		head = head[1:]
+	} else {
+		changes = tail[0].H
+		tail = tail[1:]
+	}
+
+	// We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	changes = changes.Copy()
+
+	if len(head) > 0 {
+		prev := head[0].H
+		for _, p := range head[1:] {
+			current := p.H
+			diff, err := current.Sub(prev)
+			if err != nil {
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return nil, err
+			}
+			if diff.Sum > 0 {
+				// TODO
+			}
+		}
+	}
+
+	if len(tail) > 0 {
+		prev := tail[0].H
+		for _, p := range tail[1:] {
+			current := p.H
+			diff, err := current.Sub(prev)
+			if err != nil {
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return nil, err
+			}
+			if diff.Sum > 0 {
+				// TODO
+			}
+		}
+	}
+
+	return changes, nil
+}

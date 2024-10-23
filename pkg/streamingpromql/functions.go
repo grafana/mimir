@@ -302,6 +302,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
 	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
 	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"changes":           FunctionOverRangeVectorOperatorFactory("changes", functions.Changes),
 	"clamp":             ClampFunctionOperatorFactory(),
 	"clamp_max":         ClampMinMaxFunctionOperatorFactory("clamp_max", false),
 	"clamp_min":         ClampMinMaxFunctionOperatorFactory("clamp_min", true),
