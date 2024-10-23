@@ -22,8 +22,10 @@ std.manifestYamlDoc({
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
     ring: 'memberlist',
 
+    enable_continuous_test: true,
+
     // If true, a load generator is started.
-    enable_load_generator: true,
+    enable_load_generator: false,
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
@@ -49,6 +51,7 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.nginx +
     self.minio +
+    (if $._config.enable_continuous_test then self.continuous_test else {}) +
     (if $._config.enable_prometheus then self.prometheus + self.prompair1 + self.prompair2 else {}) +
     self.grafana +
     (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
@@ -177,6 +180,21 @@ std.manifestYamlDoc({
       target: 'store-gateway',
       httpPort: 8009,
       jaegerApp: 'store-gateway-2',
+    }),
+  },
+
+  continuous_test:: {
+    'continuous-test': mimirService({
+      name: 'continuous-test',
+      target: 'continuous-test',
+      httpPort: 8090,
+      extraArguments:
+        ' -tests.run-interval=2m' +
+        ' -tests.read-endpoint=http://query-frontend:8007/prometheus' +
+        ' -tests.tenant-id=mimir-continuous-test' +
+        ' -tests.write-endpoint=http://distributor-1:8000' +
+        ' -tests.write-read-series-test.max-query-age=1h' +
+        ' -tests.write-read-series-test.num-series=100',
     }),
   },
 
