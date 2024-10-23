@@ -1611,6 +1611,31 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
+### MimirBlockBuilderNoCycleProcessing
+
+This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
+
+How it **works**:
+
+- Block-builder periodically consumes a portion of the backlog from Kafka topic, and processes the consumed data into TSDB blocks. The block-buikder calls these periods "cycles".
+- If no cycles were processed during extended period of time, that can indicate that block-builder is stuck and cannot complete cycle processing.
+
+How to **investigate**:
+
+- Check block-builder logs to see what block-builder is busy with, and troubleshoot based on that.
+
+### MimirBlockBuilderCompactAndUploadFailed
+
+How it **works**:
+
+- Block-builder periodically consumes data from Kafka topic, and processes the consumed data into TSDB blocks.
+- It compacts and uploads the produced TSDB blocks to the object storage.
+- If block-builder encounters issues during compaction or uploading of the blocks if reports the failure metric, that triggers the alert.
+
+How to **investigate**:
+
+- Explore block-builder logs to check what errors are there.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
