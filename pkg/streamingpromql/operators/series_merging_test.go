@@ -404,10 +404,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{3, 2},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  3,
-				secondConflictingSeriesIndex: 2,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  3,
+				SecondConflictingSeriesIndex: 2,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"histogram only input series with conflict": {
@@ -427,10 +427,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{3, 2},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  3,
-				secondConflictingSeriesIndex: 2,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  3,
+				SecondConflictingSeriesIndex: 2,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"float only input series with conflict after resorting": {
@@ -456,10 +456,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{6, 9, 4},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  6,
-				secondConflictingSeriesIndex: 4,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  6,
+				SecondConflictingSeriesIndex: 4,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"histogram only input series with conflict after resorting": {
@@ -485,10 +485,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{6, 9, 4},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  6,
-				secondConflictingSeriesIndex: 4,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  6,
+				SecondConflictingSeriesIndex: 4,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"float and histogram input series with no conflict": {
@@ -605,10 +605,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{5, 1},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  1,
-				secondConflictingSeriesIndex: -1,
-				description:                  "both float and histogram samples",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  1,
+				SecondConflictingSeriesIndex: -1,
+				Description:                  "both float and histogram samples",
+				Timestamp:                    2,
 			},
 		},
 		"mixed float and histogram input series, series in conflict on different type and not in time order": {
@@ -627,10 +627,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{5, 1},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  5,
-				secondConflictingSeriesIndex: -1,
-				description:                  "both float and histogram samples",
-				timestamp:                    3,
+				FirstConflictingSeriesIndex:  5,
+				SecondConflictingSeriesIndex: -1,
+				Description:                  "both float and histogram samples",
+				Timestamp:                    3,
 			},
 		},
 		"input series have no points": {

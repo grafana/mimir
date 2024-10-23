@@ -1534,6 +1534,11 @@ mimir_query_engine:
   # applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
+
+  # (experimental) Enable support for subqueries in Mimir's query engine. Only
+  # applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-subqueries
+  [enable_subqueries: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1712,13 +1717,6 @@ The `query_scheduler` block configures the query-scheduler.
 # 429.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-# (experimental) When enabled, the query scheduler primarily prioritizes
-# dequeuing fairly from queue components and secondarily prioritizes dequeuing
-# fairly across tenants. When disabled, the query scheduler primarily
-# prioritizes tenant fairness.
-# CLI flag: -query-scheduler.prioritize-query-components
-[prioritize_query_components: <boolean> | default = false]
 
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's

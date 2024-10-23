@@ -259,7 +259,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 			expectedResponse, actualResponse = actualResponse, expectedResponse
 		}
 
-		result, err := p.compareResponses(ctx, expectedResponse, actualResponse, evaluationTime)
+		result, err := p.compareResponses(expectedResponse, actualResponse, evaluationTime)
 		if result == ComparisonFailed {
 			level.Error(logger).Log(
 				"msg", "response comparison failed",
@@ -315,17 +315,13 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 	return firstResponse
 }
 
-func (p *ProxyEndpoint) compareResponses(ctx context.Context, expectedResponse, actualResponse *backendResponse, queryEvaluationTime time.Time) (ComparisonResult, error) {
+func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse, queryEvaluationTime time.Time) (ComparisonResult, error) {
 	if expectedResponse.err != nil {
 		return ComparisonFailed, fmt.Errorf("skipped comparison of response because the request to the preferred backend failed: %w", expectedResponse.err)
 	}
 
 	if actualResponse.err != nil {
 		return ComparisonFailed, fmt.Errorf("skipped comparison of response because the request to the secondary backend failed: %w", actualResponse.err)
-	}
-
-	if ctx.Err() != nil {
-		return ComparisonSkipped, fmt.Errorf("skipped comparison of response because the incoming request to query-tee was cancelled: %w", context.Cause(ctx))
 	}
 
 	if expectedResponse.status != actualResponse.status {

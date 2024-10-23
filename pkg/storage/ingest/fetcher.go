@@ -21,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kotel"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -355,7 +356,7 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
 }
 
-// fetchSingle attempts to find out the leader leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
+// fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
 // fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
@@ -474,7 +475,7 @@ func sumRecordLengths(records []*kgo.Record) (sum int) {
 	return sum
 }
 
-func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger) {
+func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger, highWatermark *atomic.Int64) {
 	defer r.wg.Done()
 
 	errBackoff := backoff.New(ctx, backoff.Config{
@@ -500,7 +501,9 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			if f.Err != nil {
 				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
 			}
-
+			if hwm := f.HighWatermark; hwm >= 0 {
+				casHWM(highWatermark, hwm)
+			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
 				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
@@ -557,15 +560,27 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 	}
 }
 
+func casHWM(highWwatermark *atomic.Int64, newHWM int64) {
+	for hwm := highWwatermark.Load(); hwm < newHWM; hwm = highWwatermark.Load() {
+		if highWwatermark.CompareAndSwap(hwm, newHWM) {
+			break
+		}
+	}
+}
+
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
+
+	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
+	// A value of 0 doesn't prevent progress because we ensure there is at least one dispatched fetchWant.
+	highWatermark := atomic.NewInt64(0)
 
 	wants := make(chan fetchWant)
 	defer close(wants)
 	r.wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
-		go r.run(ctx, wants, logger)
+		go r.run(ctx, wants, logger, highWatermark)
 	}
 
 	var (
@@ -587,13 +602,23 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			// So we don't try to get new results from the fetchers.
 			refillBufferedResult = nil
 		}
+		dispatchNextWant := chan fetchWant(nil)
+		if nextResult == nil || nextFetch.startOffset <= highWatermark.Load() {
+			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
+			// So we dispatch a fetch only if it's fetching an existing offset.
+			// This shouldn't noticeably affect performance with Apache Kafka, after all franz-go only has a concurrency of 1 per partition.
+			//
+			// At the same time we don't want to reach a deadlock where the HWM is not updated and there are no fetches in flight.
+			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
+			dispatchNextWant = wants
+		}
 		select {
 		case <-r.done:
 			return
 		case <-ctx.Done():
 			return
 
-		case wants <- nextFetch:
+		case dispatchNextWant <- nextFetch:
 			pendingResults.PushBack(nextFetch.result)
 			if nextResult == nil {
 				// In case we previously exhausted pendingResults, we just created

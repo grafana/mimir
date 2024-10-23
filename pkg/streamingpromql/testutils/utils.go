@@ -11,6 +11,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
@@ -154,4 +156,18 @@ func combine(arr []string, length int, start int) [][]string {
 		}
 	}
 	return result
+}
+
+func LabelsToSeriesMetadata(lbls []labels.Labels) []types.SeriesMetadata {
+	if len(lbls) == 0 {
+		return nil
+	}
+
+	m := make([]types.SeriesMetadata, len(lbls))
+
+	for i, l := range lbls {
+		m[i].Labels = l
+	}
+
+	return m
 }

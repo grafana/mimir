@@ -345,15 +345,6 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           |||
             sum by(operation) (
-              # Backwards compatibility
-              rate(
-                thanos_memcached_operations_total{
-                  component="store-gateway",
-                  name="index-cache",
-                  %s
-                }[$__rate_interval]
-              )
-              or ignoring(backend)
               rate(
                 thanos_cache_operations_total{
                   component="store-gateway",
@@ -362,10 +353,7 @@ local filename = 'mimir-reads.json';
                 }[$__rate_interval]
               )
             )
-          ||| % [
-            $.jobMatcher($._config.job_names.store_gateway),
-            $.jobMatcher($._config.job_names.store_gateway),
-          ],
+          ||| % $.jobMatcher($._config.job_names.store_gateway),
           '{{operation}}'
         ) +
         $.stack +
@@ -373,8 +361,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency (getmulti)') +
-        $.backwardsCompatibleLatencyPanel(
-          'thanos_memcached_operation_duration_seconds',
+        $.latencyPanel(
           'thanos_cache_operation_duration_seconds',
           |||
             {
