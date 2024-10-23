@@ -347,10 +347,10 @@ local filename = 'mimir-queries.json';
           |||
         ) +
         $.queryPanel([
-            'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
             'sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level=~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+            'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
           ],
-          ['5+', '{{level}}'],
+          ['{{level}}','5+'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
         $.stack,
