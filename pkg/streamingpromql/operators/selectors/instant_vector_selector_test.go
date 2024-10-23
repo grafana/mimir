@@ -216,6 +216,59 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 	}
 }
 
+func TestInstantVectorSelector_SliceSizing(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{type="float"} _ _ _ _ 1 2 3 4
+			metric{type="histogram"} _ _ _ _ {{count:1}} {{count:2}} {{count:3}} {{count:4}}
+	`)
+
+	for _, startT := range []int{0, 4} {
+		t.Run(fmt.Sprintf("starting at T=%vm", startT), func(t *testing.T) {
+			timeZero := time.Unix(0, 0)
+			startTime := timeZero.Add(time.Duration(startT) * time.Minute)
+			endTime := timeZero.Add(7 * time.Minute)
+
+			selector := &InstantVectorSelector{
+				Selector: &Selector{
+					Queryable: storage,
+					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
+					Matchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+					},
+					LookbackDelta: 5 * time.Minute,
+				},
+				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+			}
+
+			ctx := context.Background()
+			series, err := selector.SeriesMetadata(ctx)
+			require.NoError(t, err)
+
+			expectedSeries := []types.SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "float")},
+				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "histogram")},
+			}
+
+			require.Equal(t, expectedSeries, series)
+
+			// First series should contain floats.
+			floatSeries, err := selector.NextSeries(ctx)
+			require.NoError(t, err)
+			require.Len(t, floatSeries.Floats, 4)
+			require.Equal(t, 4, cap(floatSeries.Floats))
+			require.Empty(t, floatSeries.Histograms)
+
+			// Second series should contain histograms.
+			histogramSeries, err := selector.NextSeries(ctx)
+			require.NoError(t, err)
+			require.Len(t, histogramSeries.Histograms, 4)
+			require.Equal(t, 4, cap(histogramSeries.Histograms))
+			require.Empty(t, histogramSeries.Floats)
+		})
+	}
+}
+
 func requireNotSameSlices[T any](t *testing.T, s1, s2 []T, description string, context string) {
 	require.NotSamef(t, s1, s2, "%v: must not point to the same %v slice", context, description)
 
