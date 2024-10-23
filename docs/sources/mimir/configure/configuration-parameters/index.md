@@ -2959,6 +2959,11 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
+# (advanced) How frequently to notify watchers when a key changes. Can reduce
+# CPU activity in large memberlist deployments. 0 to notify without delay.
+# CLI flag: -memberlist.notify-interval
+[notify_interval: <duration> | default = 0s]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr
