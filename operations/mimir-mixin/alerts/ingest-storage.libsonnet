@@ -212,6 +212,36 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s Kafka client produce buffer utilization is {{ printf "%%.2f" $value }}%%.' % $._config,
           },
         },
+
+        // Alert if block-builder didn't process cycles in the past hour.
+        {
+          alert: $.alertName('BlockBuilderNoCycleProcessing'),
+          'for': '30m',
+          expr: |||
+            max by(%(alert_aggregation_labels)s) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[1h]))) == 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Block-builder %(alert_instance_variable)s in %(alert_aggregation_variables)s has not processed cycles in the past hour.' % $._config,
+          },
+        },
+
+        // Alert if block-builder is failing to compact and upload any blocks.
+        {
+          alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
+          'for': '5m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to compact and upload blocks.' % $._config,
+          },
+        },
       ],
     },
   ],
