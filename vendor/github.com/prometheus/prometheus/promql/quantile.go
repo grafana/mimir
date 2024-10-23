@@ -51,20 +51,20 @@ var excludedLabels = []string{
 	labels.BucketLabel,
 }
 
-type bucket struct {
-	upperBound float64
-	count      float64
+type Bucket struct {
+	UpperBound float64
+	Count      float64
 }
 
-// buckets implements sort.Interface.
-type buckets []bucket
+// Buckets implements sort.Interface.
+type Buckets []Bucket
 
 type metricWithBuckets struct {
 	metric  labels.Labels
-	buckets buckets
+	buckets Buckets
 }
 
-// bucketQuantile calculates the quantile 'q' based on the given buckets. The
+// BucketQuantile calculates the quantile 'q' based on the given buckets. The
 // buckets will be sorted by upperBound by this function (i.e. no sorting
 // needed before calling this function). The quantile value is interpolated
 // assuming a linear distribution within a bucket. However, if the quantile
@@ -95,7 +95,7 @@ type metricWithBuckets struct {
 // and another bool to indicate if small differences between buckets (that
 // are likely artifacts of floating point precision issues) have been
 // ignored.
-func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
+func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
 		return math.NaN(), false, false
 	}
@@ -105,17 +105,17 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if q > 1 {
 		return math.Inf(+1), false, false
 	}
-	slices.SortFunc(buckets, func(a, b bucket) int {
+	slices.SortFunc(buckets, func(a, b Bucket) int {
 		// We don't expect the bucket boundary to be a NaN.
-		if a.upperBound < b.upperBound {
+		if a.UpperBound < b.UpperBound {
 			return -1
 		}
-		if a.upperBound > b.upperBound {
+		if a.UpperBound > b.UpperBound {
 			return +1
 		}
 		return 0
 	})
-	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
+	if !math.IsInf(buckets[len(buckets)-1].UpperBound, +1) {
 		return math.NaN(), false, false
 	}
 
@@ -125,33 +125,33 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if len(buckets) < 2 {
 		return math.NaN(), false, false
 	}
-	observations := buckets[len(buckets)-1].count
+	observations := buckets[len(buckets)-1].Count
 	if observations == 0 {
 		return math.NaN(), false, false
 	}
 	rank := q * observations
-	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].count >= rank })
+	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].Count >= rank })
 
 	if b == len(buckets)-1 {
-		return buckets[len(buckets)-2].upperBound, forcedMonotonic, fixedPrecision
+		return buckets[len(buckets)-2].UpperBound, forcedMonotonic, fixedPrecision
 	}
-	if b == 0 && buckets[0].upperBound <= 0 {
-		return buckets[0].upperBound, forcedMonotonic, fixedPrecision
+	if b == 0 && buckets[0].UpperBound <= 0 {
+		return buckets[0].UpperBound, forcedMonotonic, fixedPrecision
 	}
 	var (
 		bucketStart float64
-		bucketEnd   = buckets[b].upperBound
-		count       = buckets[b].count
+		bucketEnd   = buckets[b].UpperBound
+		count       = buckets[b].Count
 	)
 	if b > 0 {
-		bucketStart = buckets[b-1].upperBound
-		count -= buckets[b-1].count
-		rank -= buckets[b-1].count
+		bucketStart = buckets[b-1].UpperBound
+		count -= buckets[b-1].Count
+		rank -= buckets[b-1].Count
 	}
 	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic, fixedPrecision
 }
 
-// histogramQuantile calculates the quantile 'q' based on the given histogram.
+// HistogramQuantile calculates the quantile 'q' based on the given histogram.
 //
 // The quantile value is interpolated assuming a linear distribution within a
 // bucket.
@@ -174,7 +174,7 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 // If q>1, +Inf is returned.
 //
 // If q is NaN, NaN is returned.
-func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
+func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	if q < 0 {
 		return math.Inf(-1)
 	}
@@ -361,12 +361,12 @@ func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 // coalesceBuckets merges buckets with the same upper bound.
 //
 // The input buckets must be sorted.
-func coalesceBuckets(buckets buckets) buckets {
+func coalesceBuckets(buckets Buckets) Buckets {
 	last := buckets[0]
 	i := 0
 	for _, b := range buckets[1:] {
-		if b.upperBound == last.upperBound {
-			last.count += b.count
+		if b.UpperBound == last.UpperBound {
+			last.Count += b.Count
 		} else {
 			buckets[i] = last
 			last = b
@@ -403,11 +403,11 @@ func coalesceBuckets(buckets buckets) buckets {
 //
 // We return a bool to indicate if this monotonicity was forced or not, and
 // another bool to indicate if small deltas were ignored or not.
-func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bool, bool) {
+func ensureMonotonicAndIgnoreSmallDeltas(buckets Buckets, tolerance float64) (bool, bool) {
 	var forcedMonotonic, fixedPrecision bool
-	prev := buckets[0].count
+	prev := buckets[0].Count
 	for i := 1; i < len(buckets); i++ {
-		curr := buckets[i].count // Assumed always positive.
+		curr := buckets[i].Count // Assumed always positive.
 		if curr == prev {
 			// No correction needed if the counts are identical between buckets.
 			continue
@@ -416,14 +416,14 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 			// Silently correct numerically insignificant differences from floating
 			// point precision errors, regardless of direction.
 			// Do not update the 'prev' value as we are ignoring the difference.
-			buckets[i].count = prev
+			buckets[i].Count = prev
 			fixedPrecision = true
 			continue
 		}
 		if curr < prev {
 			// Force monotonicity by removing any decreases regardless of magnitude.
 			// Do not update the 'prev' value as we are ignoring the decrease.
-			buckets[i].count = prev
+			buckets[i].Count = prev
 			forcedMonotonic = true
 			continue
 		}

@@ -26,6 +26,7 @@ const (
 	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
+	StringSize           = uint64(unsafe.Sizeof(""))
 )
 
 var (
@@ -74,6 +75,14 @@ var (
 			return make([]*histogram.FloatHistogram, 0, size)
 		}),
 		HistogramPointerSize,
+		true,
+	)
+
+	StringSlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []string {
+			return make([]string, 0, size)
+		}),
+		StringSize,
 		true,
 	)
 )
