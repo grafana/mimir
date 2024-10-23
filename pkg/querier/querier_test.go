@@ -214,6 +214,12 @@ func TestQuerier(t *testing.T) {
 		t.Run(q.query, func(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
+			dbQueryable := TimeRangeQueryable{
+				Queryable: db,
+				IsApplicable: func(_ string, _ time.Time, _, _ int64) bool {
+					return true
+				},
+			}
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
@@ -223,7 +229,7 @@ func TestQuerier(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _, err := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -617,10 +623,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// block storage will not be hit; provide nil querier
-			var storeQueryable storage.Queryable
-
-			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
@@ -1073,13 +1076,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// block storage will not be hit; provide nil querier
-			var storeQueryable storage.Queryable
-
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1293,7 +1293,11 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _, err := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
+			querierQueryables := []TimeRangeQueryable{
+				NewStoreGatewayTimeRangeQueryable(newMockBlocksStorageQueryable(querier), cfg),
+			}
+
+			queryable, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
