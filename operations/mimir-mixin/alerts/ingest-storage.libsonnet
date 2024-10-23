@@ -216,15 +216,15 @@
         // Alert if block-builder didn't process cycles in the past hour.
         {
           alert: $.alertName('BlockBuilderNoCycleProcessing'),
-          'for': '30m',
+          'for': '5m',
           expr: |||
-            max by(%(alert_aggregation_labels)s) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[1h]))) == 0
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
           ||| % $._config,
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s Block-builder %(alert_instance_variable)s in %(alert_aggregation_variables)s has not processed cycles in the past hour.' % $._config,
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not processed cycles in the past hour.' % $._config,
           },
         },
 

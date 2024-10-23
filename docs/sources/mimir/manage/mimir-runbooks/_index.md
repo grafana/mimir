@@ -1618,11 +1618,11 @@ This alert fires when the block-builder stops reporting any processed cycles for
 How it **works**:
 
 - Block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-buikder calls these periods "cycles".
-- If no cycles were processed during extended period of time, that can indicate that block-builder is stuck and cannot complete cycle processing.
+- If no cycles were processed during extended period of time, that can indicate that a block-builder instance is stuck and cannot complete cycle processing.
 
 How to **investigate**:
 
-- Check block-builder logs to see what block-builder is busy with, and troubleshoot based on that.
+- Check block-builder logs to see what its pods are busy with. Troubleshoot based on that.
 
 ### MimirBlockBuilderCompactAndUploadFailed
 
