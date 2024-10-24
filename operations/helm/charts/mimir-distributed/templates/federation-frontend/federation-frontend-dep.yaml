@@ -64,9 +64,6 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: active-queries
               mountPath: /active-query-tracker
-          {{- if .Values.federation_frontend.extraVolumeMounts }}
-            {{- toYaml .Values.federation_frontend.extraVolumeMounts | nindent 12 }}
-          {{- end }}
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
