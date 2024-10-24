@@ -4444,6 +4444,14 @@ federation_frontend:
 
   # -- Additional environment variables for the federation-frontend container
   env: []
+
+  # -- Extra environment from secret/configmap for continuous test containers
+  # For example to inject values from a Secret, use:
+  # extraEnvFrom:
+  #   - secretRef:
+  #       name: mysecret
+  extraEnvFrom: []
+
   # -- Additional volume mounts for the federation-frontend container
   extraVolumeMounts: []
   # -- Additional volumes for the federation-frontend pods
