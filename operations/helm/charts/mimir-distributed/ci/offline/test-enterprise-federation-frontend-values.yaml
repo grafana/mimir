@@ -41,7 +41,7 @@ ingester:
 gateway:
   enabled: false
 querier:
-  replicas: 0
+  enabled: false
 query_frontend:
   replicas: 0
 query_scheduler:
