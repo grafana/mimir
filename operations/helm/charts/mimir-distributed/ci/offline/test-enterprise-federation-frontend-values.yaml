@@ -49,7 +49,7 @@ query_scheduler:
 compactor:
   enabled: false
 store_gateway:
-  replicas: 0
+  enabled: false
 ruler:
   enabled: false
 overrides_exporter:

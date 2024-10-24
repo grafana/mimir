@@ -2005,6 +2005,9 @@ query_scheduler:
   jaegerReporterMaxQueueSize: null
 
 store_gateway:
+  # -- Whether to render the manifests related to the store-gateway component.
+  enabled: true
+
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
