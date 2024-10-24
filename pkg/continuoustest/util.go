@@ -420,7 +420,7 @@ func randTime(min, max time.Time) time.Time {
 		return min
 	}
 
-	sec := rand.Int63n(delta) + min.Unix()  // #nosec G404 smoke-test data does not require a CSPRNG
+	sec := rand.Int63n(delta) + min.Unix()  // #nosec G404 -- smoke-test data does not require a CSPRNG
 	return time.Unix(sec, 0)
 }
 

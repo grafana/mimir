@@ -239,7 +239,7 @@ func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.
 	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
 	if jitterAmount := int64(delaySeconds * jitterFactor); jitterAmount > 0 {
 		// The random jitter can be negative too, so we generate a 2x greater the random number and subtract the jitter.
-		randomJitter := float64(rand.Int63n(jitterAmount*2+1) - jitterAmount) // #nosec G404 request jitter does not require a CSPRNG
+		randomJitter := float64(rand.Int63n(jitterAmount*2+1) - jitterAmount) // #nosec G404 -- request jitter does not require a CSPRNG
 		delaySeconds += randomJitter
 	}
 	// Jitter might have pushed the delaySeconds over maxBackoff or minBackoff, so we need to clamp it again.

@@ -331,7 +331,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 	defer sp.Finish()
 	// Until we have a mechanism to combine the results from multiple alertmanagers,
 	// we forward the request to only one of the alertmanagers.
-	amDesc := replicationSet.Instances[rand.Intn(len(replicationSet.Instances))]  // #nosec G404 load balancing does not require a CSPRNG
+	amDesc := replicationSet.Instances[rand.Intn(len(replicationSet.Instances))]  // #nosec G404 -- load balancing does not require a CSPRNG
 	resp, err := d.doRequest(ctx, amDesc, req)
 	if err != nil {
 		respondFromError(err, w, logger)
