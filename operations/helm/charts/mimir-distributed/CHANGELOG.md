@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [FEATURE] Add support for GEM's federation-frontend. See the `federation_frontend` section in the values file. #9673
 * [ENHANCEMENT] Add support for setting type and internal traffic policy for Kubernetes service. Set `internalTrafficPolicy=Cluster` by default in all services with type `ClusterIP`. #9619
+* [ENHANCEMENT] helm: add enabled field for admin-api, compactor, distributor, gateway, ingester, querier, query-frontend, store-gateway components. This helps when deploying the GEm federation-frontend on its own. #9734
 * [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
 
 ## 5.5.0
