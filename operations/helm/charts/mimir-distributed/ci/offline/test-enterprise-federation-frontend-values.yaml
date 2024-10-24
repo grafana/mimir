@@ -72,7 +72,7 @@ minio:
   enabled: false
 
 rollout_operator:
-  enabled: true
+  enabled: false
 
 tokengenJob:
   enable: false
