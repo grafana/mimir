@@ -344,26 +344,16 @@ var Changes = FunctionOverRangeVectorDefinition{
 
 func changes(step types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
-	hHead, hTail := step.Histograms.UnsafePoints(step.RangeEnd)
 
 	haveFloats := len(fHead) > 0 || len(fTail) > 0
-	haveHistograms := len(hHead) > 0 || len(hTail) > 0
 
-	if !haveFloats && !haveHistograms {
+	if !haveFloats {
+		// PromQL engine doesn't support histogram for `changes` function yet,
+		// therefore we won't add that yet too.
 		return 0, false, nil, nil
 	}
 
-	if haveFloats && haveHistograms {
-		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
-		return 0, false, nil, nil
-	}
-
-	if haveFloats {
-		return changesFloats(fHead, fTail), true, nil, nil
-	}
-
-	h, err := changesHistograms(hHead, hTail, emitAnnotation)
-	return 0, false, h, err
+	return changesFloats(fHead, fTail), true, nil, nil
 }
 
 func changesFloats(head, tail []promql.FPoint) float64 {
@@ -396,51 +386,4 @@ func changesFloats(head, tail []promql.FPoint) float64 {
 	}
 
 	return changes
-}
-
-func changesHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
-	var changes *histogram.FloatHistogram
-
-	if len(head) > 0 {
-		changes = head[0].H
-		head = head[1:]
-	} else {
-		changes = tail[0].H
-		tail = tail[1:]
-	}
-
-	// We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
-	changes = changes.Copy()
-
-	if len(head) > 0 {
-		prev := head[0].H
-		for _, p := range head[1:] {
-			current := p.H
-			diff, err := current.Sub(prev)
-			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-				return nil, err
-			}
-			if diff.Sum > 0 {
-				// TODO
-			}
-		}
-	}
-
-	if len(tail) > 0 {
-		prev := tail[0].H
-		for _, p := range tail[1:] {
-			current := p.H
-			diff, err := current.Sub(prev)
-			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-				return nil, err
-			}
-			if diff.Sum > 0 {
-				// TODO
-			}
-		}
-	}
-
-	return changes, nil
 }
