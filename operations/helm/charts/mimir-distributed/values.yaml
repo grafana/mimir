@@ -3235,8 +3235,13 @@ ingress:
 # When enterprise.enabled is true the GEM gateway is deployed. Otherwise, it is an nginx.
 # Options except those under gateway.nginx apply to both versions - nginx and GEM gateway.
 gateway:
+  # -- Whether to render the manifests related to the gateway component.
+  # This controls the behaviour both when enterprise.enabled=true and when enterprise.enabled=false.
+  enabled: true
+
   # -- The gateway is deployed by default for enterprise installations (enterprise.enabled=true).
   # Toggle this to have it deployed for non-enterprise installations too.
+  # The value of this field is ignored when gateway.enabled=false.
   enabledNonEnterprise: false
 
   # -- Number of replicas for the Deployment
