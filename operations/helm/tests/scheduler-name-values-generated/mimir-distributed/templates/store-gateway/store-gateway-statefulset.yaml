@@ -54,6 +54,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
+      schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
@@ -191,6 +192,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
+      schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
@@ -328,6 +330,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
+      schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
