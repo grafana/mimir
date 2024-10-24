@@ -308,7 +308,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "section_end", sectionEndTime, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset, "commit_rec_ts", state.CommitRecordTimestamp)
 	}
 	for !sectionEndTime.After(cycleEndTime) {
-		logger := log.With(b.logger, "partition", partition, "section_end", sectionEndTime, "cycle_end_offset", cycleEndOffset)
+		logger := log.With(b.logger, "partition", partition, "section_end", sectionEndTime, "offset", state.Commit.At, "cycle_end_offset", cycleEndOffset)
 		state, err = b.consumePartitionSection(ctx, logger, builder, partition, state, sectionEndTime, cycleEndOffset)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", partition, err)
@@ -332,6 +332,14 @@ func (b *BlockBuilder) consumePartitionSection(
 	// Thus, truncate the timestamp with ConsumptionInterval here to round the block's range.
 	blockEnd := sectionEndTime.Truncate(b.cfg.ConsumeInterval)
 
+	// If the last commit offset has already reached the offset, that marks the end of the cycle, bail. This can happen when the partition
+	// was scaled down (it's inactive now), but block-builder was lagging, and it chopped this cycle into sections. After a cycle section
+	// reaches the cycle end offset, the whole cycle must notice that there is nothing more to consume.
+	if state.Commit.At == cycleEndOffset {
+		level.Info(logger).Log("msg", "nothing to consume")
+		return state, nil
+	}
+
 	var numBlocks int
 	defer func(t time.Time, startState partitionState) {
 		// No need to log or track time of the unfinished section. Just bail out.
@@ -354,7 +362,7 @@ func (b *BlockBuilder) consumePartitionSection(
 	}(time.Now(), state)
 
 	// We always rewind the partition's offset to the commit offset by reassigning the partition to the client (this triggers partition assignment).
-	// This is so the cycle started exactly at the commit offset, and not at what was (potentially over-) consumed previously.
+	// This is so the consumption started exactly at the commit offset, and not at what was (potentially over-) consumed in the previous iteration.
 	// In the end, we remove the partition from the client (refer to the defer below) to guarantee the client always consumes
 	// from one partition at a time. I.e. when this partition is consumed, we start consuming the next one.
 	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
@@ -364,7 +372,7 @@ func (b *BlockBuilder) consumePartitionSection(
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
-	level.Info(logger).Log("msg", "start consuming", "offset", state.Commit.At)
+	level.Info(logger).Log("msg", "start consuming")
 
 	var (
 		firstRec  *kgo.Record
