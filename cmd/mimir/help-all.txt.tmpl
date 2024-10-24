@@ -1139,6 +1139,12 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
+  -cost-attribution-cool-down-duration duration
+    	[experimental] Duration during which any cost attribution for a user will be marked as __overflow__ after exceeding the specified limit, prior to resetting the cache. (default 20m0s)
+  -cost-attribution-eviction-interval duration
+    	[experimental] Time interval at which inactive cost attributions will be evicted from the cache. (default 30m0s)
+  -custom-registry-path string
+    	Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -3097,10 +3103,14 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.cost-attribution-labels comma-separated-list-of-strings
+    	[experimental] List of labels used to define the cost attribution. This label will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total. Set to an empty string to disable cost attribution.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.max-cost-attribution-per-user int
+    	[experimental] Maximum number of cost attribution labels allowed per user.
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int
