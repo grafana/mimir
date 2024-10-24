@@ -1675,6 +1675,9 @@ ruler_query_scheduler:
   jaegerReporterMaxQueueSize: null
 
 querier:
+  # -- Whether to render the manifests related to the querier component.
+  enabled: true
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having

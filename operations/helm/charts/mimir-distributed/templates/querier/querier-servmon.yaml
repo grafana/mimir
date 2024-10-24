@@ -1,1 +1,3 @@
+{{- if .Values.querier.enabled }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "querier" "memberlist" true) }}
+{{- end }}
