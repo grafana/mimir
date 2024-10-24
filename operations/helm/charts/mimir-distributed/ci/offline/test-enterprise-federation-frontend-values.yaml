@@ -18,8 +18,6 @@ mimir:
   structuredConfig:
     auth:
       type: trust
-    instrumentation:
-      enabled: false
     # The federation-frontend doesn't handle auth. Disabling multi-tenant means the FF doesn't need to check for the X-Scope-OrgID header
     # and will use the auth material from the proxy_targets configuration.
     # If using the federation-frontend.
@@ -33,7 +31,7 @@ mimir:
 
 # Disable all other components
 distributor:
-  replicas: 0
+  enabled: false
 admin_api:
   replicas: 0
 alertmanager:
