@@ -66,7 +66,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/alerting v0.0.0-20241021123319-be61d61f71e7
-	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
+	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.15.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
@@ -282,7 +282,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241018090525-641277312a18
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241023201215-e8c852a65765
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
