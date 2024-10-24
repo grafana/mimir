@@ -278,6 +278,7 @@ func (c parallelStoragePusher) Close() []error {
 	for _, p := range c.pushers {
 		errs = append(errs, p.Close()...)
 	}
+	c.metrics.shardsPerPush.Observe(float64(len(c.pushers)))
 	clear(c.pushers)
 	return errs
 }

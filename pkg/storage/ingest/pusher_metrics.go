@@ -37,6 +37,7 @@ type storagePusherMetrics struct {
 	batchAge             prometheus.Histogram
 	processingTime       *prometheus.HistogramVec
 	timeSeriesPerFlush   prometheus.Histogram
+	shardsPerPush        prometheus.Histogram
 	batchingQueueMetrics *batchingQueueMetrics
 	clientErrRequests    prometheus.Counter
 	serverErrRequests    prometheus.Counter
@@ -65,6 +66,11 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 		timeSeriesPerFlush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_pusher_timeseries_per_flush",
 			Help:                        "Number of time series pushed in each batch to an ingestion shard. A lower number than -ingest-storage.kafka.ingestion-concurrency-batch-size indicates that shards are not filling up and may not be parallelizing ingestion as efficiently.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		shardsPerPush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_pusher_shards_per_push",
+			Help:                        "Number of shards that are pushed to in each batch. There is a shard for each tenant and each different Source.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
