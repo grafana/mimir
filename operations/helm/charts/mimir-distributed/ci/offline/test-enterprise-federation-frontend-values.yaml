@@ -43,7 +43,7 @@ gateway:
 querier:
   enabled: false
 query_frontend:
-  replicas: 0
+  enabled: false
 query_scheduler:
   enabled: false
 compactor:
