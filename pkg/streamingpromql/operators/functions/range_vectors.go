@@ -369,3 +369,54 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 
 	return avgSoFar, nil
 }
+
+var Changes = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               changes,
+}
+
+func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+
+	if !haveFloats {
+		// PromQL engine doesn't support histogram for `changes` function yet,
+		// therefore we won't add that yet too.
+		return 0, false, nil, nil
+	}
+
+	return changesFloats(fHead, fTail), true, nil, nil
+}
+
+func changesFloats(head, tail []promql.FPoint) float64 {
+	changes := 0.0
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0
+	}
+
+	if len(head) > 0 {
+		prev := head[0].F
+		for _, sample := range head[1:] {
+			current := sample.F
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+				changes++
+			}
+			prev = current
+		}
+	}
+
+	if len(tail) > 0 {
+		prev := tail[0].F
+		for _, sample := range tail[1:] {
+			current := sample.F
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+				changes++
+			}
+			prev = current
+		}
+	}
+
+	return changes
+}
