@@ -922,6 +922,9 @@ distributor:
   jaegerReporterMaxQueueSize: 1000
 
 ingester:
+  # -- Whether to render the manifests related to the ingester component.
+  enabled: true
+
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
