@@ -1,4 +1,6 @@
 multitenancy_enabled: false
+cost_attribution_registry_path: "/usage-metrics"
+cost_attribution_eviction_interval: 10m
 
 distributor:
   ha_tracker:
@@ -183,6 +185,11 @@ limits:
   ha_cluster_label: ha_cluster
   ha_replica_label: ha_replica
   ha_max_clusters: 10
+
+  cost_attribution_labels: "container"
+  max_cost_attribution_labels_per_user: 2
+  max_cost_attribution_cardinality_per_user: 100
+  cost_attribution_cooldown: 20m
 
 runtime_config:
   file: ./config/runtime.yaml
