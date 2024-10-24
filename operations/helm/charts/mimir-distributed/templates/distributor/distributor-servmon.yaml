@@ -1,1 +1,3 @@
+{{- if .Values.distributor.enabled }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "distributor" "memberlist" true) }}
+{{- end }}

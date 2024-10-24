@@ -289,8 +289,10 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         default:
           url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- if .Values.distributor.enabled }}
         distributor:
           url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
+        {{- end }}
         ingester:
           url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
@@ -330,9 +332,11 @@ mimir:
 
     {{- if .Values.enterprise.enabled }}
     instrumentation:
-      enabled: true
+      enabled: {{ .Values.distributor.enabled }}
+    {{- if .Values.distributor.enabled }}
       distributor_client:
         address: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
+    {{- end }}
 
     license:
       path: "/license/license.jwt"
@@ -794,6 +798,9 @@ alertmanager:
         storageClass: null
 
 distributor:
+  # -- Whether to render the manifests related to the distributor component.
+  enabled: true
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -904,6 +911,9 @@ distributor:
   jaegerReporterMaxQueueSize: 1000
 
 ingester:
+  # -- Whether to render the manifests related to the ingester component.
+  enabled: true
+
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
@@ -1654,6 +1664,9 @@ ruler_query_scheduler:
   jaegerReporterMaxQueueSize: null
 
 querier:
+  # -- Whether to render the manifests related to the querier component.
+  enabled: true
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1782,6 +1795,9 @@ querier:
   jaegerReporterMaxQueueSize: 5000
 
 query_frontend:
+  # -- Whether to render the manifests related to the query-frontend component.
+  enabled: true
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1978,6 +1994,9 @@ query_scheduler:
   jaegerReporterMaxQueueSize: null
 
 store_gateway:
+  # -- Whether to render the manifests related to the store-gateway component.
+  enabled: true
+
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
@@ -2192,6 +2211,9 @@ store_gateway:
         storageClass: null
 
 compactor:
+  # -- Whether to render the manifests related to the compactor component.
+  enabled: true
+
   replicas: 1
 
   service:
@@ -3214,8 +3236,13 @@ ingress:
 # When enterprise.enabled is true the GEM gateway is deployed. Otherwise, it is an nginx.
 # Options except those under gateway.nginx apply to both versions - nginx and GEM gateway.
 gateway:
+  # -- Whether to render the manifests related to the gateway component.
+  # This controls the behaviour both when enterprise.enabled=true and when enterprise.enabled=false.
+  enabled: true
+
   # -- The gateway is deployed by default for enterprise installations (enterprise.enabled=true).
   # Toggle this to have it deployed for non-enterprise installations too.
+  # The value of this field is ignored when gateway.enabled=false.
   enabledNonEnterprise: false
 
   # -- Number of replicas for the Deployment
@@ -3947,6 +3974,9 @@ tokengenJob:
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
 admin_api:
+  # -- Whether to render the manifests related to the admin-api component.
+  enabled: true
+
   replicas: 1
 
   annotations: {}

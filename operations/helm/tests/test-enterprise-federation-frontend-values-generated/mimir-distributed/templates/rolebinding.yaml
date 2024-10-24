@@ -16,5 +16,3 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: test-enterprise-federation-frontend-values-mimir
-- kind: ServiceAccount
-  name: test-enterprise-federation-frontend-values-mimir-distributed

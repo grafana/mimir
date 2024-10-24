@@ -1,1 +1,3 @@
+{{- if .Values.query_frontend.enabled }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "query-frontend") }}
+{{- end }}

@@ -10,7 +10,7 @@ compactor:
 ingester:
   schedulerName: my-scheduler
 
-store-gateway:
+store_gateway:
   schedulerName: my-scheduler
 
 # Reduce scope:

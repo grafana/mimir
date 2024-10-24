@@ -80,8 +80,6 @@ data:
           url: http://test-enterprise-federation-frontend-values-mimir-compactor.citestns.svc:8080
         default:
           url: http://test-enterprise-federation-frontend-values-mimir-admin-api.citestns.svc:8080
-        distributor:
-          url: dns:///test-enterprise-federation-frontend-values-mimir-distributor-headless.citestns.svc.cluster.local.:9095
         ingester:
           url: http://test-enterprise-federation-frontend-values-mimir-ingester-headless.citestns.svc:8080
         query_frontend:
@@ -104,8 +102,6 @@ data:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
     instrumentation:
-      distributor_client:
-        address: dns:///test-enterprise-federation-frontend-values-mimir-distributor-headless.citestns.svc.cluster.local.:9095
       enabled: false
     license:
       path: /license/license.jwt
