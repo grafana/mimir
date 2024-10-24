@@ -70,12 +70,12 @@ type Config struct {
 	// Controls whether index-header lazy loading is enabled.
 	LazyLoadingEnabled     bool          `yaml:"lazy_loading_enabled" category:"advanced"`
 	LazyLoadingIdleTimeout time.Duration `yaml:"lazy_loading_idle_timeout" category:"advanced"`
-
 	// Maximum index-headers loaded into store-gateway concurrently
 	LazyLoadingConcurrency             int           `yaml:"lazy_loading_concurrency" category:"advanced"`
 	LazyLoadingConcurrencyQueueTimeout time.Duration `yaml:"lazy_loading_concurrency_queue_timeout" category:"advanced"`
 
-	VerifyOnLoad bool `yaml:"verify_on_load" category:"advanced"`
+	MinDownloadThroughput int  `yaml:"min_download_throughput" category:"experimental"`
+	VerifyOnLoad          bool `yaml:"verify_on_load" category:"advanced"`
 
 	// EagerLoadingPersistInterval is injected for testing purposes only.
 	EagerLoadingPersistInterval time.Duration `yaml:"-" doc:"hidden"`
@@ -89,6 +89,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.LazyLoadingConcurrencyQueueTimeout, prefix+"lazy-loading-concurrency-queue-timeout", 5*time.Second, "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.")
 	f.BoolVar(&cfg.EagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", true, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled.")
 	f.DurationVar(&cfg.EagerLoadingPersistInterval, prefix+"eager-loading-persist-interval", time.Minute, "Interval at which the store-gateway persists block IDs of lazy loaded index-headers. Ignored if index-header eager loading is disabled.")
+	f.IntVar(&cfg.MinDownloadThroughput, prefix+"min-download-throughput", 256*1024, "The floor of the throughput, in bytes/sec, with which store-gateway expected to download index-header.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }
 
