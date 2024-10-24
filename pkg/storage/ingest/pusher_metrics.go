@@ -38,6 +38,8 @@ type storagePusherMetrics struct {
 	processingTime       *prometheus.HistogramVec
 	timeSeriesPerFlush   prometheus.Histogram
 	shardsPerPush        prometheus.Histogram
+	pushersPerPush       prometheus.Histogram
+	expectedTimeseries   prometheus.Counter
 	batchingQueueMetrics *batchingQueueMetrics
 	clientErrRequests    prometheus.Counter
 	serverErrRequests    prometheus.Counter
@@ -69,8 +71,13 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		shardsPerPush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_pusher_shards_per_push",
-			Help:                        "Number of shards that are pushed to in each batch. There is a shard for each tenant and each different Source.",
+			Name:                        "cortex_ingest_storage_reader_shards_per_push",
+			Help:                        "Number of shards that are pushed to in each batch. There are one or more shards for each each tenant and Source combination.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		pushersPerPush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_pushers_per_push",
+			Help:                        "Number of pushers that are pushed to in each batch. There is a pusher for each tenant and each different Source.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
@@ -78,6 +85,10 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_requests_total",
 			Help: "Number of attempted write requests after batching records from Kafka.",
+		}),
+		expectedTimeseries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_expected_timeseries_total",
+			Help: "Number of time series expected to be pushed to the storage. This is a result of an estimation and should ideally match the histogram_sum(cortex_ingest_storage_reader_pusher_timeseries_per_flush) metric.",
 		}),
 	}
 }

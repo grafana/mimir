@@ -241,9 +241,12 @@ type parallelStoragePusher struct {
 	numShards       int
 	batchSize       int
 	tenantLoadHints ingestionHints
+
+	numActiveShards int
 }
 
 type ingestionHints interface {
+	// TODO dimitarvdimitrov rename to timeseries
 	expectedSamples(tenantID string) int
 }
 
@@ -262,7 +265,7 @@ func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, tena
 }
 
 // PushToStorage implements the PusherCloser interface.
-func (c parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
@@ -273,19 +276,19 @@ func (c parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.Wr
 }
 
 // Close implements the PusherCloser interface.
-func (c parallelStoragePusher) Close() []error {
+func (c *parallelStoragePusher) Close() []error {
 	var errs multierror.MultiError
 	for _, p := range c.pushers {
 		errs = append(errs, p.Close()...)
 	}
-	c.metrics.shardsPerPush.Observe(float64(len(c.pushers)))
+	c.metrics.shardsPerPush.Observe(float64(c.numActiveShards))
 	clear(c.pushers)
 	return errs
 }
 
 // shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
 // We create a shard for each tenantID to parallelize the writes.
-func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
+func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
 	// Construct the string inline so that it doesn't escape to the heap. Go doesn't escape strings that are used to only look up map keys.
 	// We can use "|" because that cannot be part of a tenantID in Mimir.
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
@@ -295,10 +298,17 @@ func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.Wr
 	hashLabels := labels.Labels.Hash
 
 	var p PusherCloser
-	if c.tenantLoadHints.expectedSamples(userID) < c.batchSize*2 {
+	expectedSamples := c.tenantLoadHints.expectedSamples(userID)
+	c.metrics.expectedTimeseries.Add(float64(expectedSamples))
+	idealShards := expectedSamples / (2 * c.batchSize)
+	idealShards = max(idealShards, 1)
+	idealShards = min(idealShards, c.numShards)
+	c.numActiveShards += idealShards
+
+	if idealShards == 1 {
 		p = newSequentialStoragePusherWithErrorHanlder(c.metrics, c.upstreamPusher, c.errorHandler)
 	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
+		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
 	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
