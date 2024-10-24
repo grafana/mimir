@@ -1,1 +1,3 @@
+{{- if .Values.compactor.enabled }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "compactor" "memberlist" true) }}
+{{- end }}
