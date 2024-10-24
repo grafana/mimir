@@ -121,7 +121,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		}
 	}(ctx, records, recordsChannel)
 
-	writer := c.newStorageWriter()
+	writer := c.newStorageWriter(records)
 	for r := range recordsChannel {
 		if r.err != nil {
 			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
@@ -142,7 +142,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 	return multierror.New(writer.Close()...).Err()
 }
 
-func (c pusherConsumer) newStorageWriter() PusherCloser {
+func (c pusherConsumer) newStorageWriter(records []record) PusherCloser {
 	if c.kafkaConfig.IngestionConcurrency == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
@@ -150,11 +150,26 @@ func (c pusherConsumer) newStorageWriter() PusherCloser {
 	return newParallelStoragePusher(
 		c.metrics.storagePusherMetrics,
 		c.pusher,
+		recordsLoadHints(records),
 		c.kafkaConfig.FallbackClientErrorSampleRate,
 		c.kafkaConfig.IngestionConcurrency,
 		c.kafkaConfig.IngestionConcurrencyBatchSize,
 		c.logger,
 	)
+}
+
+type recordsLoadHints []record
+
+func (r recordsLoadHints) expectedSamples(tenantID string) int {
+	const bytesPerSample = 100
+	// Count the number of bytes for this tenant
+	var totalBytes int
+	for _, record := range r {
+		if record.tenantID == tenantID {
+			totalBytes += len(record.content)
+		}
+	}
+	return totalBytes / bytesPerSample
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
@@ -186,6 +201,14 @@ func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sa
 	}
 }
 
+func newSequentialStoragePusherWithErrorHanlder(metrics *storagePusherMetrics, pusher Pusher, errorHandler *pushErrorHandler) sequentialStoragePusher {
+	return sequentialStoragePusher{
+		metrics:      metrics,
+		pusher:       pusher,
+		errorHandler: errorHandler,
+	}
+}
+
 // PushToStorage implements the PusherCloser interface.
 func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	ssp.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
@@ -212,23 +235,29 @@ type parallelStoragePusher struct {
 	logger  log.Logger
 
 	// pushers is map["$tenant|$source"]*parallelStorageShards
-	pushers        map[string]PusherCloser
-	upstreamPusher Pusher
-	errorHandler   *pushErrorHandler
-	numShards      int
-	batchSize      int
+	pushers         map[string]PusherCloser
+	upstreamPusher  Pusher
+	errorHandler    *pushErrorHandler
+	numShards       int
+	batchSize       int
+	tenantLoadHints ingestionHints
+}
+
+type ingestionHints interface {
+	expectedSamples(tenantID string) int
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, tenantLoadHints ingestionHints, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
-		logger:         log.With(logger, "component", "parallel-storage-pusher"),
-		pushers:        make(map[string]PusherCloser),
-		upstreamPusher: pusher,
-		numShards:      numShards,
-		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
-		batchSize:      batchSize,
-		metrics:        metrics,
+		logger:          log.With(logger, "component", "parallel-storage-pusher"),
+		pushers:         make(map[string]PusherCloser),
+		upstreamPusher:  pusher,
+		numShards:       numShards,
+		tenantLoadHints: tenantLoadHints,
+		errorHandler:    newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
+		batchSize:       batchSize,
+		metrics:         metrics,
 	}
 }
 
@@ -263,7 +292,13 @@ func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.Wr
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
-	p := newParallelStorageShards(c.metrics, c.errorHandler, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
+
+	var p PusherCloser
+	if c.tenantLoadHints.expectedSamples(userID) < c.batchSize*2 {
+		p = newSequentialStoragePusherWithErrorHanlder(c.metrics, c.upstreamPusher, c.errorHandler)
+	} else {
+		p = newParallelStorageShards(c.metrics, c.errorHandler, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
+	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
 }

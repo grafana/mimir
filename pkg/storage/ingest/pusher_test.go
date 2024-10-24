@@ -855,8 +855,16 @@ func TestParallelStoragePusher(t *testing.T) {
 				receivedPushes[tenantID][req.Source]++
 			}).Return(nil)
 
+			samplesPerTenant := tenantHintsFunc(func(tenantID string) (samples int) {
+				for _, req := range tc.requests {
+					if req.tenantID == tenantID {
+						samples += len(req.Timeseries)
+					}
+				}
+				return
+			})
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, 0, 1, 1, logger)
+			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, logger)
 
 			// Process requests
 			for _, req := range tc.requests {
@@ -875,6 +883,12 @@ func TestParallelStoragePusher(t *testing.T) {
 			pusher.AssertExpectations(t)
 		})
 	}
+}
+
+type tenantHintsFunc func(string) int
+
+func (t tenantHintsFunc) expectedSamples(tenantID string) int {
+	return t(tenantID)
 }
 
 func TestBatchingQueue_NoDeadlock(t *testing.T) {
