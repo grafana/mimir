@@ -161,7 +161,7 @@ func (c pusherConsumer) newStorageWriter(records []record) PusherCloser {
 type recordsLoadHints []record
 
 func (r recordsLoadHints) expectedSamples(tenantID string) int {
-	const bytesPerSample = 100
+	const bytesPerSample = 500
 	// Count the number of bytes for this tenant
 	var totalBytes int
 	for _, record := range r {
