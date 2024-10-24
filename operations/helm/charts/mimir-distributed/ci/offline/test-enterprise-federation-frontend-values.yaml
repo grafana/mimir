@@ -33,7 +33,7 @@ mimir:
 distributor:
   enabled: false
 admin_api:
-  replicas: 0
+  enabled: false
 alertmanager:
   enabled: false
 ingester:

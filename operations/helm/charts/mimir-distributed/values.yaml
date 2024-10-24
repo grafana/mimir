@@ -3965,6 +3965,9 @@ tokengenJob:
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
 admin_api:
+  # -- Whether to render the manifests related to the admin-api component.
+  enabled: true
+
   replicas: 1
 
   annotations: {}
