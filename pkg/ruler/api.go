@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +63,7 @@ type Alert struct {
 // RuleDiscovery has info for all rules
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
+	NextToken  string       `json:"groupNextToken,omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group
@@ -172,12 +172,23 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	var maxGroups int
+	if maxGroupsVal := req.URL.Query().Get("group_limit"); maxGroupsVal != "" {
+		maxGroups, err = strconv.Atoi(maxGroupsVal)
+		if err != nil || maxGroups < 0 {
+			respondInvalidRequest(logger, w, "invalid group limit value")
+			return
+		}
+	}
+
 	rulesReq := RulesRequest{
 		Filter:        AnyRule,
 		RuleName:      req.URL.Query()["rule_name"],
 		RuleGroup:     req.URL.Query()["rule_group"],
 		File:          req.URL.Query()["file"],
 		ExcludeAlerts: excludeAlerts,
+		NextToken:     req.URL.Query().Get("group_next_token"),
+		MaxGroups:     int32(maxGroups),
 	}
 
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
@@ -194,7 +205,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(ctx, rulesReq)
+	rgs, token, err := a.ruler.GetRules(ctx, rulesReq)
 
 	if err != nil {
 		respondServerError(logger, w, err.Error())
@@ -202,7 +213,6 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	groups := make([]*RuleGroup, 0, len(rgs))
-
 	for _, g := range rgs {
 		grp := RuleGroup{
 			Name:           g.Group.Name,
@@ -251,17 +261,13 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 				}
 			}
 		}
+
 		groups = append(groups, &grp)
 	}
 
-	// keep data.groups are in order
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].File < groups[j].File
-	})
-
 	b, err := json.Marshal(&response{
 		Status: "success",
-		Data:   &RuleDiscovery{RuleGroups: groups},
+		Data:   &RuleDiscovery{RuleGroups: groups, NextToken: token},
 	})
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
@@ -287,7 +293,6 @@ func parseExcludeAlerts(req *http.Request) (bool, error) {
 	}
 
 	return value, nil
-
 }
 
 func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
@@ -302,7 +307,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
+	rgs, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
 
 	if err != nil {
 		respondServerError(logger, w, err.Error())

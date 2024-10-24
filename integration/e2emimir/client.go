@@ -674,11 +674,27 @@ type successResult struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
-	// Create HTTP request
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress), nil)
+func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.RuleGroup, string, error) {
+	url, err := url.Parse(fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress))
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if token != "" {
+		q := url.Query()
+		q.Add("group_next_token", token)
+		url.RawQuery = q.Encode()
+	}
+
+	if maxGroups != 0 {
+		q := url.Query()
+		q.Add("group_limit", strconv.Itoa(maxGroups))
+		url.RawQuery = q.Encode()
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("GET", url.String(), nil)
+	if err != nil {
+		return nil, "", err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -688,13 +704,13 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Decode the response.
@@ -702,19 +718,20 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 		Status string `json:"status"`
 		Data   struct {
 			RuleGroups []*promv1.RuleGroup `json:"groups"`
+			NextToken  string              `json:"groupNextToken,omitempty"`
 		} `json:"data"`
 	}
 
 	decoded := response{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if decoded.Status != "success" {
-		return nil, fmt.Errorf("unexpected response status '%s'", decoded.Status)
+		return nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
 	}
 
-	return decoded.Data.RuleGroups, nil
+	return decoded.Data.RuleGroups, decoded.Data.NextToken, nil
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
