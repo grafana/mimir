@@ -26,13 +26,14 @@ func TestPostings_Expand(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
@@ -57,13 +58,14 @@ func TestPostings_Seek(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
@@ -88,13 +90,14 @@ func TestPostings_SeekToEnd(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 0, allActive)

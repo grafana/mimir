@@ -34,20 +34,8 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/scrape"
-	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -60,6 +48,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/scrape"
+	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 )
 
 func init() {
@@ -112,6 +112,7 @@ type Distributor struct {
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
 
+	costAttributionMgr *costattribution.Manager
 	// For handling HA replicas.
 	HATracker haTracker
 
@@ -328,7 +329,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -349,6 +350,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
+		costAttributionMgr:    costAttributionMgr,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -742,13 +744,16 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+
+func (d *Distributor) validateSamples(tnow model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Samples) == 0 {
 		return nil
 	}
 
+	cat := d.costAttributionMgr.TrackerForUser(userID)
+
 	if len(ts.Samples) == 1 {
-		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0])
+		return validateSample(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
@@ -762,7 +767,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 		}
 
 		timestamps[s.TimestampMs] = struct{}{}
-		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
+		if err := validateSample(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, s, cat); err != nil {
 			return err
 		}
 
@@ -782,13 +787,14 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+func (d *Distributor) validateHistograms(tnow model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Histograms) == 0 {
 		return nil
 	}
 
+	cat := d.costAttributionMgr.TrackerForUser(userID)
 	if len(ts.Histograms) == 1 {
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0])
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
 		if err != nil {
 			return err
 		}
@@ -801,6 +807,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
 	currPos := 0
 	histogramsUpdated := false
+
 	for idx := range ts.Histograms {
 		if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
 			// A sample with the same timestamp has already been validated, so we skip it.
@@ -809,7 +816,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		}
 
 		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
 		if err != nil {
 			return err
 		}
@@ -873,10 +880,10 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (bool, error) {
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
+	cat := d.costAttributionMgr.TrackerForUser(userID)
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
 		return true, err
 	}
-
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
 
@@ -966,7 +973,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		numSamples := 0
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
+		tnow := time.Now()
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), tnow)
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
@@ -980,6 +988,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 			if errors.As(err, &tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+				d.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, tnow)
 			}
 
 			return err
@@ -1237,6 +1246,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
+			if len(req.Timeseries) > 0 {
+				d.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(validatedSamples), reasonRateLimited, now)
+			}
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
@@ -1817,9 +1829,11 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
+
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
+		d.costAttributionMgr.TrackerForUser(userID).IncrementReceivedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(receivedSamples), mtime.Now())
 	}
 	receivedMetadata = len(req.Metadata)
 

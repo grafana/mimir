@@ -26,7 +26,7 @@ func TestNativeHistogramPostings_Expand(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -34,10 +34,10 @@ func TestNativeHistogramPostings_Expand(t *testing.T) {
 		if i+1 == 3 || i+1 == 4 {
 			buckets = 10 // Native histogram with 10 buckets.
 		}
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
@@ -62,7 +62,7 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
@@ -70,10 +70,10 @@ func TestNativeHistogramPostings_ExpandWithBucketCount(t *testing.T) {
 		if i == 2 || i == 3 {
 			buckets = i * 10 // Native histogram with i*10 buckets.
 		}
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 5, allActive)
@@ -106,17 +106,18 @@ func TestNativeHistogramPostings_SeekSkipsNonNative(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		buckets := i * 10
 		if i+1 == 4 {
 			buckets = -1 // Make ref==4 not a native histogram to check that Seek skips it.
 		}
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
@@ -145,14 +146,15 @@ func TestNativeHistogramPostings_Seek(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
+
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
 		buckets := i * 10
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), buckets, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 2, allActive)
@@ -181,14 +183,14 @@ func TestNativeHistogramPostings_SeekToEnd(t *testing.T) {
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
 	storagePostings := index.NewListPostings(allStorageRefs)
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), 10)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), 10, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	allActive, _, _, _, _, _ := activeSeries.ActiveWithMatchers()
 	require.True(t, valid)
 	require.Equal(t, 0, allActive)
