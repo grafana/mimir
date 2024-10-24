@@ -78,6 +78,7 @@
 * [ENHANCEMENT] Make label-selector in ReplicaTemplate/ingester-zone-a object configurable when using ingest-storage. #9480
 * [ENHANCEMENT] Add `querier_only_args` option to specify CLI flags that apply only to queriers but not ruler-queriers. #9503
 * [ENHANCEMENT] Validate the Kafka client ID configured when ingest storage is enabled. #9573
+* [ENHANCEMENT] Configure pod anti-affinity and tolerations to run etcd pods multi-AZ when `_config.multi_zone_etcd_enabled` is set to `true`. #9725
 
 ### Mimirtool
 
