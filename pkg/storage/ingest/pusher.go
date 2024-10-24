@@ -212,7 +212,7 @@ type parallelStoragePusher struct {
 	logger  log.Logger
 
 	// pushers is map["$tenant|$source"]*parallelStorageShards
-	pushers        map[string]*parallelStorageShards
+	pushers        map[string]PusherCloser
 	upstreamPusher Pusher
 	errorHandler   *pushErrorHandler
 	numShards      int
@@ -223,7 +223,7 @@ type parallelStoragePusher struct {
 func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
-		pushers:        make(map[string]*parallelStorageShards),
+		pushers:        make(map[string]PusherCloser),
 		upstreamPusher: pusher,
 		numShards:      numShards,
 		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
@@ -240,14 +240,14 @@ func (c parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.Wr
 	}
 
 	shards := c.shardsFor(userID, wr.Source)
-	return shards.ShardWriteRequest(ctx, wr)
+	return shards.PushToStorage(ctx, wr)
 }
 
 // Close implements the PusherCloser interface.
 func (c parallelStoragePusher) Close() []error {
 	var errs multierror.MultiError
 	for _, p := range c.pushers {
-		errs.Add(p.Stop())
+		errs = append(errs, p.Close()...)
 	}
 	clear(c.pushers)
 	return errs
@@ -255,7 +255,7 @@ func (c parallelStoragePusher) Close() []error {
 
 // shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
 // We create a shard for each tenantID to parallelize the writes.
-func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) *parallelStorageShards {
+func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
 	// Construct the string inline so that it doesn't escape to the heap. Go doesn't escape strings that are used to only look up map keys.
 	// We can use "|" because that cannot be part of a tenantID in Mimir.
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
@@ -312,10 +312,10 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 	return p
 }
 
-// ShardWriteRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
-// ShardWriteRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
-// ShardWriteRequest aborts the request if it encounters an error.
-func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+// PushToStorage hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
+// PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
+// PushToStorage aborts the request if it encounters an error.
+func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	var (
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
@@ -347,8 +347,8 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 	return nil
 }
 
-// Stop stops all the shards and waits for them to finish.
-func (p *parallelStorageShards) Stop() error {
+// Close stops all the shards and waits for them to finish.
+func (p *parallelStorageShards) Close() []error {
 	var errs multierror.MultiError
 
 	for _, shard := range p.shards {
@@ -357,7 +357,7 @@ func (p *parallelStorageShards) Stop() error {
 
 	p.wg.Wait()
 
-	return errs.Err()
+	return errs
 }
 
 // start starts the shards, each in its own goroutine.

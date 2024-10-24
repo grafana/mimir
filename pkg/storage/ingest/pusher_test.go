@@ -681,7 +681,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			}
 			var actualPushErrs []error
 			for _, req := range tc.requests {
-				err := shardingP.ShardWriteRequest(context.Background(), req)
+				err := shardingP.PushToStorage(context.Background(), req)
 				actualPushErrs = append(actualPushErrs, err)
 			}
 
@@ -697,8 +697,13 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 				require.Equalf(t, tc.expectedErrsCount, receivedErrs, "received %d errors instead of %d: %v", receivedErrs, tc.expectedErrsCount, actualPushErrs)
 			}
 
-			closeErr := shardingP.Stop()
-			require.ErrorIs(t, closeErr, tc.expectedCloseErr)
+			closeErr := shardingP.Close()
+			if tc.expectedCloseErr != nil {
+				require.Len(t, closeErr, 1)
+				require.ErrorIs(t, closeErr[0], tc.expectedCloseErr)
+			} else {
+				require.Empty(t, closeErr)
+			}
 			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
 			pusher.AssertExpectations(t)
 
