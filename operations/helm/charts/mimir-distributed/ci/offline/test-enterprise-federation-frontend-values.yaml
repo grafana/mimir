@@ -39,7 +39,7 @@ alertmanager:
 ingester:
   enabled: false
 gateway:
-  replicas: 0
+  enabled: false
 querier:
   replicas: 0
 query_frontend:
