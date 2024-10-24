@@ -337,9 +337,8 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 }
 
 var Changes = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction:         DropSeriesName,
-	StepFunc:                       changes,
-	NeedsSeriesNamesForAnnotations: true,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               changes,
 }
 
 func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
