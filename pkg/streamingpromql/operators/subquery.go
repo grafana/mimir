@@ -94,8 +94,8 @@ func (s *Subquery) NextStepSamples() (types.RangeVectorStepData, error) {
 	s.nextStepT += s.ParentQueryTimeRange.IntervalMilliseconds
 
 	return types.RangeVectorStepData{
-		Floats:     s.floats,
-		Histograms: s.histograms,
+		Floats:     s.floats.ViewUntil(rangeEnd, true),
+		Histograms: s.histograms.ViewUntil(rangeEnd, true),
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,

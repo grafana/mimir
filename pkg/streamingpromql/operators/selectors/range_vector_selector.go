@@ -97,8 +97,8 @@ func (m *RangeVectorSelector) NextStepSamples() (types.RangeVectorStepData, erro
 	m.nextT += m.Selector.TimeRange.IntervalMilliseconds
 
 	return types.RangeVectorStepData{
-		Floats:     m.floats,
-		Histograms: m.histograms,
+		Floats:     m.floats.ViewUntil(rangeEnd, false),
+		Histograms: m.histograms.ViewUntil(rangeEnd, false),
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
