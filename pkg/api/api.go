@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
@@ -282,6 +283,11 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
+}
+
+// RegisterUsageMetricsRoute registers a Prometheus HTTP handler for the custom registry.
+func (a *API) RegisterUsageMetricsRoute(customRegistryPath string, reg *prometheus.Registry) {
+	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
 // Ingester is defined as an interface to allow for alternative implementations

@@ -52,6 +52,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -314,6 +315,8 @@ type Ingester struct {
 
 	activeGroups *util.ActiveGroupsCleanupService
 
+	costAttributionMgr *costattribution.Manager
+
 	tsdbMetrics *tsdbMetrics
 
 	forceCompactTrigger chan requestWithUsersAndCallback
@@ -368,8 +371,9 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:               make(map[string]*userTSDB),
-		usersMetadata:       make(map[string]*userMetricsMetadata),
+		tsdbs:         make(map[string]*userTSDB),
+		usersMetadata: make(map[string]*userMetricsMetadata),
+
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		shipperMetrics:      newShipperMetrics(registerer),
@@ -382,7 +386,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
 		return nil, err
@@ -391,6 +395,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
 
+	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
@@ -783,10 +788,13 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		}
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
-		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
+		newCostAttributionTracker := i.costAttributionMgr.TrackerForUser(userID)
+		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionTracker) {
 			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
 		}
-		valid := userDB.activeSeries.Purge(now)
+
+		idx, _ := userDB.Head().Index()
+		valid := userDB.activeSeries.Purge(now, idx)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
@@ -1159,7 +1167,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// Note that we don't .Finish() the span in this method on purpose
 	spanlog := spanlogger.FromContext(ctx, i.logger)
 	spanlog.DebugLog("event", "acquired append lock")
-
 	var (
 		startAppend = time.Now()
 
@@ -1190,48 +1197,56 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			},
 			func(timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.sampleTimestampTooOldCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTimestampTooOld, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
 					return newSampleTimestampTooOldError(model.Time(timestamp), labels)
 				})
 			},
 			func(timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.sampleOutOfOrderCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfOrder, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
 					return newSampleOutOfOrderError(model.Time(timestamp), labels)
 				})
 			},
 			func(timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.sampleTooOldCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooOld, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
 					return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
 				})
 			},
 			func(timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.sampleTooFarInFutureCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooFarInFuture, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
 					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 				})
 			},
 			func(timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.newValueForTimestampCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonNewValueForTimestamp, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
 					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
 				})
 			},
-			func() {
+			func(labels []mimirpb.LabelAdapter) {
 				stats.perUserSeriesLimitCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerUserSeriesLimit, startAppend)
 				updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() softError {
 					return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
 				})
 			},
 			func(labels []mimirpb.LabelAdapter) {
 				stats.perMetricSeriesLimitCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerMetricSeriesLimit, startAppend)
 				updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.sampleOutOfOrderCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfOrder, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
 					return e
@@ -1239,30 +1254,35 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
 				})
@@ -1377,7 +1397,6 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
-
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
@@ -1390,6 +1409,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
+
+	// idx is used to decrease active series count in case of error for cost attribution.
+	idx, _ := i.getTSDB(userID).Head().Index()
+	// TODO: deal with the error here
+
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -1405,8 +1429,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
-				stats.sampleTimestampTooOldCount += len(ts.Samples) + len(ts.Histograms)
 
+				stats.sampleTimestampTooOldCount += len(ts.Samples) + len(ts.Histograms)
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), reasonSampleTimestampTooOld, startAppend)
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
 					firstTimestamp = ts.Samples[0].TimestampMs
@@ -1424,10 +1449,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			// ignore native histograms in the condition and statitics as well
 			if outOfOrderWindow <= 0 && minAppendTimeAvailable && len(ts.Exemplars) == 0 &&
 				len(ts.Samples) > 0 && allOutOfBoundsFloats(ts.Samples, minAppendTime) {
-
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleTimestampTooOldCount += len(ts.Samples)
-
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)), reasonSampleTimestampTooOld, startAppend)
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
@@ -1548,7 +1572,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets)
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, idx)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -2642,8 +2666,12 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
-		userID:                  userID,
-		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
+		userID: userID,
+		activeSeries: activeseries.NewActiveSeries(
+			asmodel.NewMatchers(matchersConfig),
+			i.cfg.ActiveSeriesMetrics.IdleTimeout,
+			i.costAttributionMgr.TrackerForUser(userID),
+		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -3243,7 +3271,12 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		}
 
 		// Purge the active series so that the next call to Active() will return the up-to-date count.
-		db.activeSeries.Purge(now)
+		idx, err := db.Head().Index()
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to get the index of the TSDB head", "user", userID, "err", err)
+			continue
+		}
+		db.activeSeries.Purge(now, idx)
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
