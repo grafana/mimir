@@ -4349,6 +4349,28 @@
         },
         {
           "kind": "field",
+          "name": "cost_attribution_labels",
+          "required": false,
+          "desc": "List of labels used to define the cost attribution. This label will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total. Set to an empty string to disable cost attribution.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.cost-attribution-labels",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_per_user",
+          "required": false,
+          "desc": "Maximum number of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.max-cost-attribution-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ruler_evaluation_delay_duration",
           "required": false,
           "desc": "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.",
@@ -18348,6 +18370,17 @@
     },
     {
       "kind": "field",
+      "name": "custom_registry_path",
+      "required": false,
+      "desc": "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.",
+      "fieldValue": null,
+      "fieldDefaultValue": "",
+      "fieldFlag": "custom-registry-path",
+      "fieldType": "string",
+      "fieldCategory": "advanced"
+    },
+    {
+      "kind": "field",
       "name": "timeseries_unmarshal_caching_optimization_enabled",
       "required": false,
       "desc": "Enables optimized marshaling of timeseries.",
@@ -18355,6 +18388,28 @@
       "fieldDefaultValue": true,
       "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
       "fieldType": "boolean",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_eviction_interval",
+      "required": false,
+      "desc": "Time interval at which inactive cost attributions will be evicted from the cache.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1800000000000,
+      "fieldFlag": "cost-attribution-eviction-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_cool_down_duration",
+      "required": false,
+      "desc": "Duration during which any cost attribution for a user will be marked as __overflow__ after exceeding the specified limit, prior to resetting the cache.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1200000000000,
+      "fieldFlag": "cost-attribution-cool-down-duration",
+      "fieldType": "duration",
       "fieldCategory": "experimental"
     }
   ],

@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -80,6 +81,7 @@ const (
 	OverridesExporter               string = "overrides-exporter"
 	Server                          string = "server"
 	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
+	CostAttributionService          string = "cost-attribution-service"
 	Distributor                     string = "distributor"
 	DistributorService              string = "distributor-service"
 	Ingester                        string = "ingester"
@@ -462,7 +464,9 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
+		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
+		canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -644,6 +648,21 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 	return t.ActiveGroupsCleanup, nil
 }
 
+func (t *Mimir) initCostAttributionService() (services.Service, error) {
+	// The cost attribution service is only initilized if the custom registry path is provided.
+	if t.Cfg.CustomRegistryPath != "" {
+		// if custom registry path is provided, create a custom registry and use it for cost attribution service
+		customRegistry := prometheus.NewRegistry()
+		// Register the custom registry with the provided URL.
+		// This allows users to expose custom metrics on a separate endpoint.
+		// This is useful when users want to expose metrics that are not part of the default Mimir metrics.
+		http.Handle(t.Cfg.CustomRegistryPath, promhttp.HandlerFor(customRegistry, promhttp.HandlerOpts{Registry: customRegistry}))
+		err := customRegistry.Register(t.CostAttributionManager)
+		return t.CostAttributionManager, err
+	}
+	return nil, nil
+}
+
 func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
@@ -655,7 +674,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1136,6 +1155,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
+	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
@@ -1175,9 +1195,9 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                       {RuntimeConfig},
 		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, CostAttributionService, Vault},
 		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, CostAttributionService, Vault},
 		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                         {Overrides, API},
 		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},

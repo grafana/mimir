@@ -624,7 +624,9 @@ func (u *userTSDB) computeOwnedSeries() int {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
 			} else {
-				u.activeSeries.Delete(refs[i])
+				idx, _ := u.Head().Index()
+				// TODO: deal with the err here
+				u.activeSeries.Delete(refs[i], idx)
 			}
 		}
 	})
