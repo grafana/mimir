@@ -4,16 +4,22 @@ package storegateway
 
 import (
 	_ "embed" // Used to embed html template
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/multierror"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -33,6 +39,25 @@ type blocksPageContents struct {
 	ShowSources     bool                 `json:"-"`
 	ShowParents     bool                 `json:"-"`
 	SplitCount      int                  `json:"-"`
+	ActionType      ActionType           `json:"-"`
+	InfoText        string               `json:"infoText"`
+}
+
+type ActionType string
+
+const (
+	ActionTypeNone            ActionType = "none"
+	ActionTypeNoCompact       ActionType = "no-compact"
+	ActionTypeDeleteNoCompact ActionType = "delete-no-compact"
+)
+
+func isValidActionType(value ActionType) bool {
+	switch value {
+	case ActionTypeNone, ActionTypeNoCompact, ActionTypeDeleteNoCompact:
+		return true
+	default:
+		return false
+	}
 }
 
 type formattedBlockData struct {
@@ -58,22 +83,40 @@ type richMeta struct {
 	SplitID     *uint32 `json:"splitId,omitempty"`
 }
 
-func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
+func (s *StoreGateway) BlocksReadHandler(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	tenantID := vars["tenant"]
 	if tenantID == "" {
 		util.WriteTextResponse(w, "Tenant ID can't be empty")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if err := req.ParseForm(); err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Can't parse form: %s", err))
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
+	action := ActionTypeNone
+	if actionType := req.Form.Get("action_type"); actionType != "" {
+		if !isValidActionType(ActionType(actionType)) {
+			util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		action = ActionType(actionType)
+	}
+
+	// we pass action into readBlocks just to keep the current action on the UI
+	s.readBlocks(req, w, action, tenantID, "")
+}
+
+func (s *StoreGateway) readBlocks(req *http.Request, w http.ResponseWriter, action ActionType, tenantID string, infoText string) {
 	showDeleted := req.Form.Get("show_deleted") == "on"
 	showSources := req.Form.Get("show_sources") == "on"
 	showParents := req.Form.Get("show_parents") == "on"
+
 	var splitCount int
 	if sc := req.Form.Get("split_count"); sc != "" {
 		splitCount, _ = strconv.Atoi(sc)
@@ -156,7 +199,103 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowDeleted: showDeleted,
 		ShowSources: showSources,
 		ShowParents: showParents,
+		ActionType:  action,
+		InfoText:    infoText,
 	}, blocksPageTemplate, req)
+}
+
+func (s *StoreGateway) BlocksWriteHandler(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	tenantID := vars["tenant"]
+	if tenantID == "" {
+		util.WriteTextResponse(w, "Tenant ID can't be empty")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err := req.ParseForm(); err != nil {
+		util.WriteTextResponse(w, fmt.Sprintf("Can't parse form: %s", err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	action := ActionTypeNone
+	if actionType := req.Form.Get("action_type"); actionType != "" {
+		if !isValidActionType(ActionType(actionType)) {
+			util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		action = ActionType(actionType)
+	}
+
+	blockUlidsString := req.Form.Get("block_ulids")
+	var infoText string
+	if blockUlidsString != "" {
+		var uids []string
+
+		err := json.Unmarshal([]byte(blockUlidsString), &uids)
+		if err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		performedBlocks, err := s.performActionsOnBlocks(tenantID, req, action, uids)
+		if err != nil {
+			infoText += fmt.Sprintf("!! Error(s) found during marking block(s), error(s):\n %s !! \n\n", err.Error())
+		}
+		if len(performedBlocks) > 0 {
+			infoText += fmt.Sprintf("Total %d block(s) modified with action %s, block(s): %s\n", len(performedBlocks), action, strings.Join(performedBlocks, ", "))
+		} else {
+			infoText += "There is no block modified. \n"
+		}
+	}
+	s.readBlocks(req, w, action, tenantID, infoText)
+}
+
+func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) ([]string, error) {
+	// When blockUlids is set, and dropdown action is "no-compact" or "delete-no-compact",
+	// we will perform the action on the selected blocks
+	performedBlocks := []string{}
+	if (action != ActionTypeNoCompact && action != ActionTypeDeleteNoCompact) || len(blockUlids) == 0 {
+		return performedBlocks, nil
+	}
+
+	errs := multierror.MultiError{}
+	bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
+	for _, uid := range blockUlids {
+		ulid, err := ulid.Parse(uid)
+		if err != nil {
+			return performedBlocks, fmt.Errorf("can't parse ULID %s: %w", uid, err)
+		}
+		switch action {
+		case ActionTypeNoCompact:
+			err := block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil)
+			if err != nil {
+				errs.Add(err)
+			} else {
+				performedBlocks = append(performedBlocks, uid)
+			}
+		case ActionTypeDeleteNoCompact:
+			err := block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid)
+			if err != nil {
+				errs.Add(err)
+			} else {
+				performedBlocks = append(performedBlocks, uid)
+			}
+		default:
+			return performedBlocks, nil
+		}
+	}
+	ip := req.Header.Get("X-Forwarded-For")
+	// If X-Forwarded-For is empty, fall back to RemoteAddr
+	if ip == "" {
+		ip = strings.Split(req.RemoteAddr, ":")[0]
+	}
+	level.Info(s.logger).Log("msg", "Performed action on blocks", "action", action, "blocks", blockUlids, "ip", ip)
+	if errs.Err() != nil {
+		return performedBlocks, fmt.Errorf("action failed with error: %w", errs.Err())
+	}
+	return performedBlocks, nil
 }
 
 func formatTimeIfNotZero(t int64, format string) string {
