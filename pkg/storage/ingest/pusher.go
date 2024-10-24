@@ -282,6 +282,7 @@ func (c *parallelStoragePusher) Close() []error {
 		errs = append(errs, p.Close()...)
 	}
 	c.metrics.shardsPerPush.Observe(float64(c.numActiveShards))
+	c.metrics.pushersPerPush.Observe(float64(len(c.pushers)))
 	clear(c.pushers)
 	return errs
 }
