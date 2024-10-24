@@ -301,7 +301,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	var p PusherCloser
 	expectedSamples := c.tenantLoadHints.expectedSamples(userID)
 	c.metrics.expectedTimeseries.Add(float64(expectedSamples))
-	idealShards := expectedSamples / (2 * c.batchSize)
+	idealShards := expectedSamples / (80 * c.batchSize)
 	idealShards = max(idealShards, 1)
 	idealShards = min(idealShards, c.numShards)
 	c.numActiveShards += idealShards
