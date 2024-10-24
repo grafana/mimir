@@ -289,8 +289,10 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         default:
           url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- if .Values.distributor.enabled }}
         distributor:
           url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
+        {{- end }}
         ingester:
           url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
@@ -330,9 +332,11 @@ mimir:
 
     {{- if .Values.enterprise.enabled }}
     instrumentation:
-      enabled: true
+      enabled: {{ .Values.distributor.enabled }}
+    {{- if .Values.distributor.enabled }}
       distributor_client:
         address: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
+    {{- end }}
 
     license:
       path: "/license/license.jwt"
@@ -805,6 +809,9 @@ alertmanager:
         storageClass: null
 
 distributor:
+  # -- Whether to render the manifests related to the distributor component.
+  enabled: true
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 

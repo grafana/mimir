@@ -1,3 +1,4 @@
+{{- if .Values.distributor.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -176,4 +177,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
-
+{{- end }}
