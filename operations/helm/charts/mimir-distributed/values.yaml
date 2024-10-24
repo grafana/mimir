@@ -1806,6 +1806,9 @@ querier:
   jaegerReporterMaxQueueSize: 5000
 
 query_frontend:
+  # -- Whether to render the manifests related to the query-frontend component.
+  enabled: true
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
