@@ -47,7 +47,7 @@ query_frontend:
 query_scheduler:
   enabled: false
 compactor:
-  replicas: 0
+  enabled: false
 store_gateway:
   replicas: 0
 ruler:
