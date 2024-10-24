@@ -718,7 +718,7 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 		Status string `json:"status"`
 		Data   struct {
 			RuleGroups []*promv1.RuleGroup `json:"groups"`
-			NextToken  string              `json:"nextToken,omitempty"`
+			NextToken  string              `json:"groupNextToken,omitempty"`
 		} `json:"data"`
 	}
 
