@@ -681,13 +681,13 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 	}
 	if token != "" {
 		q := url.Query()
-		q.Add("next_token", token)
+		q.Add("group_next_token", token)
 		url.RawQuery = q.Encode()
 	}
 
 	if maxGroups != 0 {
 		q := url.Query()
-		q.Add("max_groups", strconv.Itoa(maxGroups))
+		q.Add("group_limit", strconv.Itoa(maxGroups))
 		url.RawQuery = q.Encode()
 	}
 
