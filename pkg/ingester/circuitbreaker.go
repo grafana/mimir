@@ -199,6 +199,13 @@ func (cb *circuitBreaker) activate() {
 	})
 }
 
+func (cb *circuitBreaker) deactivate() {
+	if cb == nil {
+		return
+	}
+	cb.active.Store(false)
+}
+
 func (cb *circuitBreaker) isOpen() bool {
 	if !cb.isActive() {
 		return false
