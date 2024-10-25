@@ -2032,6 +2032,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-scalars",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_subqueries",
+              "required": false,
+              "desc": "Enable support for subqueries in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-subqueries",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -16373,17 +16384,6 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "query-scheduler.max-outstanding-requests-per-tenant",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "prioritize_query_components",
-          "required": false,
-          "desc": "When enabled, the query scheduler primarily prioritizes dequeuing fairly from queue components and secondarily prioritizes dequeuing fairly across tenants. When disabled, the query scheduler primarily prioritizes tenant fairness.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-scheduler.prioritize-query-components",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

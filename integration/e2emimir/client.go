@@ -395,29 +395,29 @@ func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte,
 }
 
 // Series finds series by label matchers.
-func (c *Client) Series(matches []string, start, end time.Time) ([]model.LabelSet, error) {
+func (c *Client) Series(matches []string, start, end time.Time, opts ...promv1.Option) ([]model.LabelSet, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.Series(ctx, matches, start, end)
+	result, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
 	return result, err
 }
 
 // LabelValues gets label values
-func (c *Client) LabelValues(label string, start, end time.Time, matches []string) (model.LabelValues, error) {
+func (c *Client) LabelValues(label string, start, end time.Time, matches []string, opts ...promv1.Option) (model.LabelValues, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end)
+	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
 	return result, err
 }
 
 // LabelNames gets label names
-func (c *Client) LabelNames(start, end time.Time, matches []string) ([]string, error) {
+func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...promv1.Option) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end)
+	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
 	return result, err
 }
 

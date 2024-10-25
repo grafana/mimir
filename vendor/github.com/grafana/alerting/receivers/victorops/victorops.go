@@ -87,7 +87,7 @@ func (vn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	_ = images.WithStoredImages(ctx, vn.log, vn.images,
-		func(index int, image images.Image) error {
+		func(_ int, image images.Image) error {
 			if image.URL != "" {
 				bodyJSON["image_url"] = image.URL
 				return images.ErrImagesDone

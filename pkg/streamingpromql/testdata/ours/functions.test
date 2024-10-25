@@ -214,6 +214,7 @@ eval instant at 54m scalar(multiple_series)
 
 clear
 
+# Unary negation (-) and unary addition (+)
 load 6m
   metric{series="float"} 1 2 3 4 -5 0 NaN -NaN
   metric{series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
@@ -225,6 +226,11 @@ eval range from 0 to 42m step 6m -metric
 # Ensure unary negation of histograms behaves correctly when lookback is involved.
 eval range from 0 to 1m step 1m -metric{series="histogram"}
   {series="histogram"} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}} {{schema:3 sum:-4 count:-23 buckets:[-1 -2 -4] n_buckets:[-3 -5 -8]}}
+
+# Unary addition should do nothing.
+eval range from 0 to 42m step 6m +metric
+  metric{series="float"} 1 2 3 4 -5 0 NaN -NaN
+  metric{series="histogram"} {{schema:3 sum:4 count:23 buckets:[1 2 4] n_buckets:[3 5 8]}} {{schema:3 sum:14 count:27 buckets:[1 2 6] n_buckets:[3 5 10]}}
 
 clear
 
@@ -436,3 +442,21 @@ eval range from 0 to 54m step 6m clamp_min(series, scalar(mins))
 
 eval range from 0 to 54m step 6m clamp_max(series, scalar(maxes))
   {}     0 _ 0 0 5 _ 3 NaN 2 NaN
+
+clear
+
+load 6m
+  toNearest      1    _    3 4 0.1
+  series{a="b"}  -5.5 2.75 _ _ 6.87
+
+eval range from 0 to 24m step 6m round(series, scalar(toNearest))
+  series{a="b"}  -5   NaN  _ _ 6.9
+
+clear
+
+load 6m
+  toNearest      1    -0.1 0.5   10    0.1   0.25    100       0.0001  5          1000      NaN _   _   NaN _ 2 2
+  series{a="b"}  -5.5 2.75 0.25  15.5  9.999 3.14159 -0.999999 1000.01 0.49999999 -1e6      10  20  NaN NaN _ _ 10.5
+
+eval range from 0 to 96m step 6m round(series, scalar(toNearest))
+  series{a="b"}  -5   2.7  0.5   20    10    3.25    0         1000.01 0          -1000000  NaN NaN NaN NaN _ _ 10

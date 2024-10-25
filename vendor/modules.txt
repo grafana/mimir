@@ -517,6 +517,7 @@ github.com/google/gnostic-models/openapiv2
 # github.com/google/go-cmp v0.6.0
 ## explicit; go 1.13
 github.com/google/go-cmp/cmp
+github.com/google/go-cmp/cmp/cmpopts
 github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
@@ -583,8 +584,8 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20240926144415-27f4e81b4b6b
-## explicit; go 1.21
+# github.com/grafana/alerting v0.0.0-20241021123319-be61d61f71e7
+## explicit; go 1.22
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
 github.com/grafana/alerting/images
@@ -617,7 +618,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20241013223235-619c42124e93
+# github.com/grafana/dskit v0.0.0-20241021153333-9018c0eb8c52
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -672,15 +673,15 @@ github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db
 github.com/grafana/e2e/images
-# github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56
-## explicit; go 1.18
+# github.com/grafana/gomemcache v0.0.0-20241016125027-0a5bcc5aef40
+## explicit; go 1.22
 github.com/grafana/gomemcache/memcache
 # github.com/grafana/pyroscope-go/godeltaprof v0.1.8
 ## explicit; go 1.18
 github.com/grafana/pyroscope-go/godeltaprof
 github.com/grafana/pyroscope-go/godeltaprof/http/pprof
 github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
-# github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b
+# github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
@@ -828,8 +829,8 @@ github.com/miekg/dns
 # github.com/minio/md5-simd v1.1.2
 ## explicit; go 1.14
 github.com/minio/md5-simd
-# github.com/minio/minio-go/v7 v7.0.77
-## explicit; go 1.21
+# github.com/minio/minio-go/v7 v7.0.78
+## explicit; go 1.22
 github.com/minio/minio-go/v7
 github.com/minio/minio-go/v7/pkg/cors
 github.com/minio/minio-go/v7/pkg/credentials
@@ -921,7 +922,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.27.0 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240924175849-b8b7c2c74eb6
+# github.com/prometheus/alertmanager v0.27.0 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240930132144-b5e64e81e8d3
 ## explicit; go 1.22
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -1007,7 +1008,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20241016140351-5e9a771537ba
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20241023201215-e8c852a65765
 ## explicit; go 1.22.0
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1132,7 +1133,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20241010161353-f90c89a0ef90
+# github.com/thanos-io/objstore v0.0.0-20241015070247-5f04b8b0b52a
 ## explicit; go 1.21
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp
@@ -1161,7 +1162,7 @@ github.com/twmb/franz-go/pkg/sasl/plain
 # github.com/twmb/franz-go/pkg/kadm v1.13.0
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20241010233600-b66ceb79e585
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20241015013301-cea7aa5d8037
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.8.0
@@ -1477,7 +1478,7 @@ google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.66.0 => google.golang.org/grpc v1.65.0
+# google.golang.org/grpc v1.66.2
 ## explicit; go 1.21
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -1507,7 +1508,9 @@ google.golang.org/grpc/credentials/oauth
 google.golang.org/grpc/encoding
 google.golang.org/grpc/encoding/gzip
 google.golang.org/grpc/encoding/proto
+google.golang.org/grpc/experimental/stats
 google.golang.org/grpc/grpclog
+google.golang.org/grpc/grpclog/internal
 google.golang.org/grpc/health/grpc_health_v1
 google.golang.org/grpc/internal
 google.golang.org/grpc/internal/backoff
@@ -1531,12 +1534,14 @@ google.golang.org/grpc/internal/resolver/dns/internal
 google.golang.org/grpc/internal/resolver/passthrough
 google.golang.org/grpc/internal/resolver/unix
 google.golang.org/grpc/internal/serviceconfig
+google.golang.org/grpc/internal/stats
 google.golang.org/grpc/internal/status
 google.golang.org/grpc/internal/syscall
 google.golang.org/grpc/internal/transport
 google.golang.org/grpc/internal/transport/networktype
 google.golang.org/grpc/internal/xds
 google.golang.org/grpc/keepalive
+google.golang.org/grpc/mem
 google.golang.org/grpc/metadata
 google.golang.org/grpc/peer
 google.golang.org/grpc/resolver
@@ -1671,13 +1676,12 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241016140351-5e9a771537ba
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241023201215-e8c852a65765
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240924175849-b8b7c2c74eb6
+# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240930132144-b5e64e81e8d3
 # github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
-# google.golang.org/grpc => google.golang.org/grpc v1.65.0

@@ -54,10 +54,10 @@ func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int
 		if floats[idxFloats].T == histograms[idxHistograms].T {
 			// Histogram and float at the same timestamp: we have a conflict.
 			conflict := &MergeConflict{
-				firstConflictingSeriesIndex:  sourceSeriesIndices[0],
-				secondConflictingSeriesIndex: -1,
-				description:                  "both float and histogram samples",
-				timestamp:                    floats[idxFloats].T,
+				FirstConflictingSeriesIndex:  sourceSeriesIndices[0],
+				SecondConflictingSeriesIndex: -1,
+				Description:                  "both float and histogram samples",
+				Timestamp:                    floats[idxFloats].T,
 			}
 
 			return types.InstantVectorSeriesData{}, conflict, nil
@@ -174,10 +174,10 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
 				conflict := &MergeConflict{
-					firstConflictingSeriesIndex:  sourceSeriesIndices[sourceSeriesIndexInData],
-					secondConflictingSeriesIndex: sourceSeriesIndices[seriesIndexInData],
-					description:                  "duplicate series",
-					timestamp:                    nextT,
+					FirstConflictingSeriesIndex:  sourceSeriesIndices[sourceSeriesIndexInData],
+					SecondConflictingSeriesIndex: sourceSeriesIndices[seriesIndexInData],
+					Description:                  "duplicate series",
+					Timestamp:                    nextT,
 				}
 
 				return nil, conflict, nil
@@ -299,10 +299,10 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
 				conflict := &MergeConflict{
-					firstConflictingSeriesIndex:  sourceSeriesIndices[sourceSeriesIndexInData],
-					secondConflictingSeriesIndex: sourceSeriesIndices[seriesIndexInData],
-					description:                  "duplicate series",
-					timestamp:                    nextT,
+					FirstConflictingSeriesIndex:  sourceSeriesIndices[sourceSeriesIndexInData],
+					SecondConflictingSeriesIndex: sourceSeriesIndices[seriesIndexInData],
+					Description:                  "duplicate series",
+					Timestamp:                    nextT,
 				}
 
 				return nil, conflict, nil
@@ -329,10 +329,10 @@ func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limi
 }
 
 type MergeConflict struct {
-	firstConflictingSeriesIndex  int // Will be the index of any input series in the case of a mixed float / histogram conflict.
-	secondConflictingSeriesIndex int // Will be -1 in the case of a mixed float / histogram conflict.
-	description                  string
-	timestamp                    int64
+	FirstConflictingSeriesIndex  int // Will be the index of any input series in the case of a mixed float / histogram conflict.
+	SecondConflictingSeriesIndex int // Will be -1 in the case of a mixed float / histogram conflict.
+	Description                  string
+	Timestamp                    int64
 }
 
 // floatSideSorter sorts side by the timestamp of the first float point in each series.
