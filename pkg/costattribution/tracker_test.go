@@ -24,24 +24,24 @@ func Test_NewTracker(t *testing.T) {
 	vals := []string{"foo", "user1"}
 	cat.activeSeriesPerUserAttribution.WithLabelValues(vals...).Set(1.0)
 	cat.receivedSamplesAttribution.WithLabelValues(vals...).Add(5)
-	cat.discardedSampleAttribution.WithLabelValues(vals...).Add(2)
+	cat.discardedSampleAttribution.WithLabelValues(append(vals, "out-of-window")...).Add(2)
 
 	expectedMetrics := `
-	# HELP cortex_discarded_samples_attribution_total The total number of samples that were discarded per attribution.
-    # TYPE cortex_discarded_samples_attribution_total counter
-    cortex_discarded_samples_attribution_total{platform="foo",user="user1"} 2
-    # HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
-    # TYPE cortex_ingester_active_series_attribution gauge
-    cortex_ingester_active_series_attribution{platform="foo",user="user1"} 1
-    # HELP cortex_received_samples_attribution_total The total number of samples that were received per attribution.
-    # TYPE cortex_received_samples_attribution_total counter
-    cortex_received_samples_attribution_total{platform="foo",user="user1"} 5
+	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+    # TYPE cortex_discarded_attributed_samples_total counter
+    cortex_discarded_attributed_samples_total{platform="foo",reason="out-of-window", user="user1"} 2
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{platform="foo",user="user1"} 1
+    # HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+    # TYPE cortex_received_attributed_samples_total counter
+    cortex_received_attributed_samples_total{platform="foo",user="user1"} 5
 	`
 
 	metricNames := []string{
-		"cortex_discarded_samples_attribution_total",
-		"cortex_received_samples_attribution_total",
-		"cortex_ingester_active_series_attribution",
+		"cortex_discarded_attributed_samples_total",
+		"cortex_received_attributed_samples_total",
+		"cortex_ingester_attributed_active_series",
 	}
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 

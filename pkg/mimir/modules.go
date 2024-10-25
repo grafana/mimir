@@ -44,6 +44,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -651,6 +652,7 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	// The cost attribution service is only initilized if the custom registry path is provided.
 	if t.Cfg.CustomRegistryPath != "" {
+		t.CostAttributionManager = costattribution.NewManager(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides)
 		// if custom registry path is provided, create a custom registry and use it for cost attribution service
 		customRegistry := prometheus.NewRegistry()
 		// Register the custom registry with the provided URL.

@@ -23,21 +23,19 @@ type Manager struct {
 	logger          log.Logger
 	inactiveTimeout time.Duration
 	limits          *validation.Overrides
-	cooldownTimeout time.Duration
 
 	// mu protects the trackersByUserID map
-	tlock            sync.RWMutex
-	trackersByUserID map[string]*Tracker
+	mtx              sync.RWMutex
+	trackersByUserID map[string]*TrackerImp
 }
 
 // NewManager creates a new cost attribution manager. which is responsible for managing the cost attribution of series.
 // It will clean up inactive series and update the cost attribution of series every 3 minutes.
-func NewManager(cleanupInterval, inactiveTimeout time.Duration, cooldownTimeout time.Duration, logger log.Logger, limits *validation.Overrides) *Manager {
+func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides) *Manager {
 	s := &Manager{
-		trackersByUserID: make(map[string]*Tracker),
+		trackersByUserID: make(map[string]*TrackerImp),
 		limits:           limits,
-		tlock:            sync.RWMutex{},
-		cooldownTimeout:  cooldownTimeout,
+		mtx:              sync.RWMutex{},
 		inactiveTimeout:  inactiveTimeout,
 		logger:           logger,
 	}
@@ -53,27 +51,27 @@ func (m *Manager) iteration(_ context.Context) error {
 
 // EnabledForUser returns true if the cost attribution is enabled for the user
 func (m *Manager) EnabledForUser(userID string) bool {
-	return len(m.limits.CostAttributionLabel(userID)) > 0
+	return len(m.limits.CostAttributionLabels(userID)) > 0
 }
 
-func (m *Manager) TrackerForUser(userID string) *Tracker {
+func (m *Manager) TrackerForUser(userID string) Tracker {
 	// if cost attribution is not enabled, return nil
 	if !m.EnabledForUser(userID) {
-		return nil
+		return NewNoopTracker()
 	}
-	m.tlock.Lock()
-	defer m.tlock.Unlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 
 	// if not exists, create a new tracker
 	if _, exists := m.trackersByUserID[userID]; !exists {
-		m.trackersByUserID[userID], _ = newTracker(m.limits.CostAttributionLabel(userID), m.limits.MaxCostAttributionPerUser(userID))
+		m.trackersByUserID[userID], _ = newTracker(m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
 	}
 	return m.trackersByUserID[userID]
 }
 
 func (m *Manager) Collect(out chan<- prometheus.Metric) {
-	m.tlock.RLock()
-	defer m.tlock.RUnlock()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
 	for _, tracker := range m.trackersByUserID {
 		tracker.Collect(out)
 	}
@@ -86,8 +84,8 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 
 // deleteUserTracer is delete user tracker since the user is disabled for cost attribution
 func (m *Manager) deleteUserTracer(userID string) {
-	m.tlock.Lock()
-	defer m.tlock.Unlock()
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
 	if _, exists := m.trackersByUserID[userID]; !exists {
 		return
 	}
@@ -99,24 +97,23 @@ func (m *Manager) deleteUserTracer(userID string) {
 func (m *Manager) purgeInactiveAttributions(inactiveTimeout time.Duration) {
 
 	// Get all userIDs from the map
-	m.tlock.RLock()
+	m.mtx.RLock()
 	userIDs := make([]string, 0, len(m.trackersByUserID))
 	for userID := range m.trackersByUserID {
 		userIDs = append(userIDs, userID)
 	}
-	m.tlock.RUnlock()
+	m.mtx.RUnlock()
 
 	// Iterate over all userIDs and purge inactive attributions of each user
 	currentTime := time.Now()
 	for _, userID := range userIDs {
 		// if cost attribution is not enabled for the user, delete the user tracker and continue
-		if len(m.limits.CostAttributionLabel(userID)) == 0 || m.limits.MaxCostAttributionPerUser(userID) <= 0 {
+		if len(m.limits.CostAttributionLabels(userID)) == 0 || m.limits.MaxCostAttributionCardinalityPerUser(userID) <= 0 {
 			m.deleteUserTracer(userID)
 			continue
 		}
 		// get all inactive attributions for the user and clean up the tracker
 		inactiveObs := m.purgeInactiveObservationsForUser(userID, currentTime.Add(-inactiveTimeout).UnixNano())
-
 		for _, ob := range inactiveObs {
 			m.trackersByUserID[userID].cleanupTrackerAttribution(ob.lvalues)
 		}
@@ -136,23 +133,27 @@ func compareStringSlice(a, b []string) bool {
 	return true
 }
 
-func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64) []*observation {
+func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64) []*Observation {
 	cat := m.TrackerForUser(userID)
-	if cat == nil {
+	if _, ok := cat.(*NoopTracker); ok {
+		// It's a noop implementation
 		return nil
 	}
 
-	newTrackedLabels := sort.StringSlice(m.limits.CostAttributionLabel(userID))
-	// if they are different, we need to update the tracker, we don't mind, just reinitalized the tracker
-	if !compareStringSlice(cat.trackedLabels, newTrackedLabels) {
-		m.tlock.Lock()
-		m.trackersByUserID[userID], _ = newTracker(m.limits.CostAttributionLabel(userID), m.limits.MaxCostAttributionPerUser(userID))
+	newTrackedLabels := m.limits.CostAttributionLabels(userID)
+	sort.Slice(newTrackedLabels, func(i, j int) bool {
+		return newTrackedLabels[i] < newTrackedLabels[j]
+	})
+	// if they are different, we need to update the tracker, we don't mind, just reinitialized the tracker
+	if !compareStringSlice(cat.GetCALabels(), newTrackedLabels) {
+		m.mtx.Lock()
+		m.trackersByUserID[userID], _ = newTracker(m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
 		// update the tracker with the new tracker
 		cat = m.trackersByUserID[userID]
-		m.tlock.Unlock()
-	} else if maxCardinality := m.limits.MaxCostAttributionPerUser(userID); cat.maxCardinality != maxCardinality {
+		m.mtx.Unlock()
+	} else if maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID); cat.GetMaxCardinality() != maxCardinality {
 		// if the maxCardinality is different, update the tracker
-		cat.updateMaxCardinality(maxCardinality)
+		cat.UpdateMaxCardinality(maxCardinality)
 	}
 
 	return cat.PurgeInactiveObservations(deadline)

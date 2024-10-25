@@ -151,7 +151,6 @@ type Config struct {
 
 	TimeseriesUnmarshalCachingOptimizationEnabled bool          `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 	CostAttributionEvictionInterval               time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
-	CostAttributionCoolDownDuration               time.Duration `yaml:"cost_attribution_cool_down_duration" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -174,8 +173,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
-	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution-eviction-interval", 30*time.Minute, "Time interval at which inactive cost attributions will be evicted from the cache.")
-	f.DurationVar(&c.CostAttributionCoolDownDuration, "cost-attribution-cool-down-duration", 20*time.Minute, "Duration during which any cost attribution for a user will be marked as __overflow__ after exceeding the specified limit, prior to resetting the cache.")
+	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 30*time.Minute, "Time interval at which inactive cost attributions will be evicted from the counter, so it won't be counted when checking max_cost_attribution_cardinality_per_user.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")

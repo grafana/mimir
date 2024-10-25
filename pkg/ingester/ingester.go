@@ -774,9 +774,9 @@ func (i *Ingester) replaceMatchers(asm *asmodel.Matchers, userDB *userTSDB, now 
 
 // getCATrackerForUser returns the cost attribution tracker for the user.
 // If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns nil.
-func getCATrackerForUser(userID string, cam *costattribution.Manager) *costattribution.Tracker {
+func getCATrackerForUser(userID string, cam *costattribution.Manager) costattribution.Tracker {
 	if cam == nil {
-		return nil
+		return costattribution.NewNoopTracker()
 	}
 	return cam.TrackerForUser(userID)
 }
@@ -790,7 +790,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		newCostAttributionTracker := getCATrackerForUser(userID, i.costAttributionMgr)
-		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() || newCostAttributionTracker != userDB.activeSeries.CurrentCostAttributionTracker() {
+		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionTracker) {
 			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
 		}
 
@@ -1302,7 +1302,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 	// Return true if handled as soft error, and we can ingest more series.
 	// get the cost attribution value for the series
-
 	cat := getCATrackerForUser(userID, i.costAttributionMgr)
 
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
@@ -1314,9 +1313,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// we actually ingested all samples which haven't failed.
 		switch {
 		case errors.Is(err, storage.ErrOutOfBounds):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfBounds, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfBounds, startAppend)
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
 				return newSampleTimestampTooOldError(model.Time(timestamp), labels)
@@ -1324,9 +1321,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, storage.ErrOutOfOrderSample):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfOrder, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfOrder, startAppend)
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
 				return newSampleOutOfOrderError(model.Time(timestamp), labels)
@@ -1334,9 +1329,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, storage.ErrTooOldSample):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooOld, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooOld, startAppend)
 			stats.sampleTooOldCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
 				return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
@@ -1344,9 +1337,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, globalerror.SampleTooFarInFuture):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooFarInFuture, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooFarInFuture, startAppend)
 			stats.sampleTooFarInFutureCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
 				return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
@@ -1354,9 +1345,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonNewValueForTimestamp, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonNewValueForTimestamp, startAppend)
 			stats.newValueForTimestampCount++
 			updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
 				return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
@@ -1364,9 +1353,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, globalerror.MaxSeriesPerUser):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerUserSeriesLimit, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerUserSeriesLimit, startAppend)
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() softError {
 				return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
@@ -1374,9 +1361,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, globalerror.MaxSeriesPerMetric):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerMetricSeriesLimit, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerMetricSeriesLimit, startAppend)
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
@@ -1391,45 +1376,35 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramCountMismatch):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
-			if cat != nil {
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
-			}
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
@@ -1451,8 +1426,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
-	for _, ts := range timeseries {
 
+	// idx is used to decrease active series count in case of error for cost attribution.
+	idx, _ := i.getTSDB(userID).Head().Index()
+	// TODO: deal with the error here
+
+	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -1468,9 +1447,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-				if cat != nil {
-					cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), reasonSampleOutOfBounds, startAppend)
-				}
+				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), reasonSampleOutOfBounds, startAppend)
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
 					firstTimestamp = ts.Samples[0].TimestampMs
@@ -1491,9 +1468,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleOutOfBoundsCount += len(ts.Samples)
-				if cat != nil {
-					cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)), reasonSampleOutOfBounds, startAppend)
-				}
+				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)), reasonSampleOutOfBounds, startAppend)
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
@@ -1614,8 +1589,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			idx, _ := i.getTSDB(userID).Head().Index()
-			// TODO: deal with the error here
 			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, idx)
 		}
 
@@ -2709,13 +2682,12 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		ownedSeriedStateShardSize = i.ownedSeriesService.ringStrategy.shardSizeForUser(userID)
 	}
 
-	cat := getCATrackerForUser(userID, i.costAttributionMgr)
 	userDB := &userTSDB{
 		userID: userID,
 		activeSeries: activeseries.NewActiveSeries(
 			asmodel.NewMatchers(matchersConfig),
 			i.cfg.ActiveSeriesMetrics.IdleTimeout,
-			cat,
+			getCATrackerForUser(userID, i.costAttributionMgr),
 		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

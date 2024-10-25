@@ -1139,10 +1139,8 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
-  -cost-attribution-cool-down-duration duration
-    	[experimental] Duration during which any cost attribution for a user will be marked as __overflow__ after exceeding the specified limit, prior to resetting the cache. (default 20m0s)
-  -cost-attribution-eviction-interval duration
-    	[experimental] Time interval at which inactive cost attributions will be evicted from the cache. (default 30m0s)
+  -cost-attribution.eviction-interval duration
+    	[experimental] Time interval at which inactive cost attributions will be evicted from the counter, so it won't be counted when checking max_cost_attribution_cardinality_per_user. (default 30m0s)
   -custom-registry-path string
     	Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
@@ -3109,8 +3107,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
-  -validation.max-cost-attribution-per-user int
-    	[experimental] Maximum number of cost attribution labels allowed per user.
+  -validation.max-cost-attribution-cardinality-per-user int
+    	[experimental] Maximum cardinality of cost attribution labels allowed per user.
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int
