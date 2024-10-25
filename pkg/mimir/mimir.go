@@ -720,6 +720,7 @@ type Mimir struct {
 	RuntimeConfig                   *runtimeconfig.Manager
 	QuerierQueryable                prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable               prom_storage.ExemplarQueryable
+	AdditionalStorageQueryables     []querier.TimeRangeQueryable
 	MetadataSupplier                querier.MetadataSupplier
 	QuerierEngine                   promql.QueryEngine
 	QueryFrontendTripperware        querymiddleware.Tripperware
@@ -730,7 +731,6 @@ type Mimir struct {
 	Alertmanager                    *alertmanager.MultitenantAlertmanager
 	Compactor                       *compactor.MultitenantCompactor
 	StoreGateway                    *storegateway.StoreGateway
-	StoreQueryable                  prom_storage.Queryable
 	MemberlistKV                    *memberlist.KVInitService
 	ActivityTracker                 *activitytracker.ActivityTracker
 	Vault                           *vault.Vault

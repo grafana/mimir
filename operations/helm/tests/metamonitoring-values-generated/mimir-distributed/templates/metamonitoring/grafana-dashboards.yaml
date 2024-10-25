@@ -12730,18 +12730,19 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Blocks queried / sec by compaction level\nIncreased volume of lower levels (for example levels 1 and 2) can indicate that the compactor is not keeping up.\nIn that case the store-gateway will start serving more blocks which aren't that well compacted.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
-                               "lineWidth": 1,
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
                                "pointSize": 5,
                                "showPoints": "never",
                                "spanNulls": false,
                                "stacking": {
                                   "group": "A",
-                                  "mode": "none"
+                                  "mode": "normal"
                                }
                             },
                             "min": 0,
@@ -12767,13 +12768,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                            "expr": "sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level=~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                             "format": "time_series",
-                            "legendFormat": "blocks",
+                            "legendFormat": "{{level}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level!~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "5+",
                             "legendLink": null
                          }
                       ],
-                      "title": "Blocks queried / sec",
+                      "title": "Blocks queried / sec by compaction level",
                       "type": "timeseries"
                    },
                    {
