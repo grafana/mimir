@@ -49,7 +49,7 @@ This guide focuses specifically on deploying the Federation-Frontend component a
    # Enable and configure federation-frontend
    federation_frontend:
      enabled: true
-     # Since this is a standalone deployment, we configure the chart to not render any of the other GEM components.  
+     # Since this is a standalone deployment, we configure the chart to not render any of the other GEM components.
      disableOtherComponents: true
      replicas: 2
      resources:
@@ -106,11 +106,16 @@ This guide focuses specifically on deploying the Federation-Frontend component a
 5. Verify that the Federation-Frontend is running. The simplest way to do this is to issue a label names query against the Federation-Frontend service.
 
    This example tries to reach the Kubernetes service from within the cluster.
+
    ```bash
    curl -XPOST 'https://mimir-federation-frontend:8080/prometheus/api/v1/labels' -d 'start=2024-01-01T00:00:00.0Z' -d 'end=2025-01-01T00:00:00.0Z'
    ```
 
    You should receive a response with the label names from the remote GEM clusters similar to this:
+
    ```json
-   {"status":"success","data":["__cluster__","__name__","hash_extra","series_id"]}
+   {
+     "status": "success",
+     "data": ["__cluster__", "__name__", "hash_extra", "series_id"]
+   }
    ```
