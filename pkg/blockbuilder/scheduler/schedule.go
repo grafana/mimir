@@ -1,9 +1,19 @@
 package scheduler
 
 import (
+	"errors"
 	"slices"
 	"sync"
 	"time"
+)
+
+const (
+	leaseTime = 5 * time.Minute
+)
+
+var (
+	errJobNotFound    = errors.New("job not found")
+	errJobNotAssigned = errors.New("job not assigned to worker")
 )
 
 type schedule struct {
@@ -26,24 +36,41 @@ func (s *schedule) assign(worker string) (*job, error) {
 	return j, nil
 }
 
-func (s *schedule) addOrUpdate(id string, time time.Time) {
+func (s *schedule) addOrUpdate(id string, jobTime time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if j, ok := s.jobs[id]; ok {
-		j.time = time
-		return
+		j.time = jobTime
+	} else {
+		s.jobs[id] = &job{
+			id:          id,
+			time:        jobTime,
+			assignee:    "",
+			leaseExpiry: time.Now().Add(leaseTime),
+		}
+		s.schedule = append(s.schedule, s.jobs[id])
 	}
 
-	s.jobs[id] = &job{
-		id:       id,
-		assignee: "",
-		time:     time,
-	}
-	s.schedule = append(s.schedule, s.jobs[id])
-	slices.SortFunc(s.schedule, func(i, j *job) int {
+	// Keep the schedule sorted.
+	slices.SortStableFunc(s.schedule, func(i, j *job) int {
 		return i.time.Compare(j.time)
 	})
+}
+
+func (s *schedule) renewLease(id string, worker string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if j, ok := s.jobs[id]; !ok {
+		return errJobNotFound
+	} else {
+		if j.assignee != worker {
+			return errJobNotAssigned
+		}
+		j.leaseExpiry = time.Now().Add(leaseTime)
+	}
+	return nil
 }
 
 /*
@@ -52,8 +79,9 @@ completeJob
 assignJob
 addJob
 updateJobTime
+renewLease
 
-Need a job lease mechanism with an expiry.
+Need a job lease mechanism with an expiry. And a goroutine to do lease expirations.
 
 */
 
