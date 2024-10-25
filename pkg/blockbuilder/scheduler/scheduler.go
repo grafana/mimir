@@ -4,11 +4,9 @@ package scheduler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
@@ -16,6 +14,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -50,11 +49,6 @@ func (s *BlockBuilderScheduler) starting(context.Context) error {
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
-		// Dial these back as we're only fetching single records.
-		kgo.FetchMaxBytes(16*int32(units.MiB)),
-		kgo.FetchMaxPartitionBytes(1),
-		kgo.MaxConcurrentFetches(64),
-		kgo.FetchMaxWait(1*time.Minute),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
@@ -89,100 +83,36 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
 
-	// Eventually this will also include job computation. But for now, collect partition data.
-
-	startOffsets, err := s.adminClient.ListStartOffsets(ctx, s.cfg.Kafka.Topic)
+	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, 0)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list start offsets", "err", err)
-	}
-	endOffsets, err := s.adminClient.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
-	}
-
-	startOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionStartOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
-	})
-
-	endOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionEndOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
-	})
-
-	// Any errors from here on are ones that cause us to bail from this monitoring iteration.
-
-	committedOffsets, err := s.adminClient.ListCommittedOffsets(ctx, s.cfg.Kafka.Topic)
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list committed offsets", "err", err)
+		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
 		return
 	}
 
-	committedOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
-	})
+	if ps, ok := lag[s.cfg.Kafka.Topic]; ok {
+		for part, gl := range ps {
+			partStr := fmt.Sprint(part)
+			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(gl.Start.Offset))
+			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
+			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
+		}
+	}
 
-	consumedOffsets, err := s.adminClient.FetchOffsets(ctx, s.cfg.BuilderConsumerGroup)
+	// See if the group-committed offset per partition is behind our offset that is considered "old."
+	oldTime := time.Now().Add(-s.cfg.ConsumeInterval)
+	offs, err := s.adminClient.ListOffsetsAfterMilli(ctx, oldTime.UnixMilli(), s.cfg.Kafka.Topic)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list consumed offsets", "err", err)
+		level.Warn(s.logger).Log("msg", "failed to list offsets after milli", "err", err)
 		return
 	}
 
-	backlogTime, err := s.computeBacklogTime(ctx, consumedOffsets.KOffsets(), committedOffsets.KOffsets())
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to compute backlog time", "err", err)
-		return
-	}
-
-	for p, t := range backlogTime {
-		s.metrics.partitionBacklogTime.WithLabelValues(fmt.Sprint(p)).Set(t.Seconds())
-	}
-}
-
-func (s *BlockBuilderScheduler) computeBacklogTime(ctx context.Context,
-	consumedOffsets, committedOffsets map[string]map[int32]kgo.Offset,
-) (map[int32]time.Duration, error) {
-	// fetch the (consumed, committed) records for each partition and store the
-	// difference in the returned map.
-
-	loRecords, err := s.fetchSingleRecords(ctx, consumedOffsets)
-	if err != nil {
-		return nil, fmt.Errorf("fetch consumed: %w", err)
-	}
-	hiRecords, err := s.fetchSingleRecords(ctx, committedOffsets)
-	if err != nil {
-		return nil, fmt.Errorf("fetch end records: %w", err)
-	}
-
-	backlogTime := make(map[int32]time.Duration, len(consumedOffsets))
-	for p, loRecord := range loRecords {
-		if hiRecord, ok := hiRecords[p]; ok {
-			backlogTime[p] = hiRecord.Timestamp.Sub(loRecord.Timestamp)
-		}
-	}
-	return backlogTime, nil
-}
-
-// fetchSingleRecords fetches the first record from each partition starting at the given offsets.
-func (s *BlockBuilderScheduler) fetchSingleRecords(ctx context.Context, offsets map[string]map[int32]kgo.Offset) (map[int32]*kgo.Record, error) {
-	s.kafkaClient.AddConsumePartitions(offsets)
-	defer s.kafkaClient.PurgeTopicsFromConsuming(s.cfg.Kafka.Topic)
-	out := make(map[int32]*kgo.Record)
-	f := s.kafkaClient.PollFetches(ctx)
-	if err := f.Err(); err != nil {
-		return nil, err
-	}
-	f.EachError(func(_ string, _ int32, err error) {
-		if !errors.Is(err, context.Canceled) {
-			level.Error(s.logger).Log("msg", "failed to fetch records", "err", err)
+	readyPartitions := []int32{}
+	offs.Each(func(o kadm.ListedOffset) {
+		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
+			if l.Commit.At < o.Offset {
+				readyPartitions = append(readyPartitions, o.Partition)
+				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
+			}
 		}
 	})
-	f.EachPartition(func(tp kgo.FetchTopicPartition) {
-		if _, seen := out[tp.Partition]; seen {
-			return
-		}
-		if len(tp.Records) > 0 {
-			// We're only interested in the first record per partition.
-			out[tp.Partition] = tp.Records[0]
-		}
-	})
-	return out, nil
 }
