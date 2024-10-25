@@ -378,7 +378,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-		errorSamplers:       newIngesterErrSamplers(cfg.ErrorSampleRate),
+
+		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
 
@@ -391,6 +392,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
+
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
@@ -773,7 +775,7 @@ func (i *Ingester) replaceMatchers(asm *asmodel.Matchers, userDB *userTSDB, now 
 }
 
 // getCATrackerForUser returns the cost attribution tracker for the user.
-// If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns nil.
+// If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns a noop tracker.
 func getCATrackerForUser(userID string, cam *costattribution.Manager) costattribution.Tracker {
 	if cam == nil {
 		return costattribution.NewNoopTracker()
@@ -1174,8 +1176,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 		// Keep track of some stats which are tracked only if the samples will be
 		// successfully committed
-
-		stats = pushStats{}
+		stats pushStats
 
 		firstPartialErr error
 		// updateFirstPartial is a function that, in case of a softError, stores that error
@@ -1300,6 +1301,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+
 	// Return true if handled as soft error, and we can ingest more series.
 	// get the cost attribution value for the series
 	cat := getCATrackerForUser(userID, i.costAttributionMgr)
@@ -2703,7 +2705,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			localSeriesLimit: initialLocalLimit,
 		},
 	}
-
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)

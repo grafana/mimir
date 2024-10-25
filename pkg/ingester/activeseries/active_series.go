@@ -167,7 +167,6 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef,
 			c.stripes[deletedStripeID].remove(deleted.ref, idx)
 		}
 	}
-
 }
 
 // PostDeletion should be called when series are deleted from the head.
@@ -201,7 +200,6 @@ func (c *ActiveSeries) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	for s := 0; s < numStripes; s++ {
 		c.stripes[s].purge(keepUntil, idx)
 	}
-
 }
 
 func (c *ActiveSeries) ContainsRef(ref storage.SeriesRef) bool {
@@ -414,7 +412,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	matchesLen := matches.Len()
 
 	s.active++
-
 	if numNativeHistogramBuckets >= 0 {
 		s.activeNativeHistograms++
 		s.activeNativeHistogramBuckets += uint32(numNativeHistogramBuckets)
@@ -521,7 +518,6 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 			s.activeNativeHistograms++
 			s.activeNativeHistogramBuckets += uint32(entry.numNativeHistogramBuckets)
 		}
-
 		ml := entry.matches.Len()
 		for i := 0; i < ml; i++ {
 			match := entry.matches.Get(i)

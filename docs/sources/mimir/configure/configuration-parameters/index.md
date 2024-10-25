@@ -461,8 +461,8 @@ overrides_exporter:
 # (advanced) Defines a custom path for the registry. When specified, Mimir will
 # expose cost attribution metrics through this custom path, if not specified,
 # cost attribution metrics won't be exposed.
-# CLI flag: -custom-registry-path
-[custom_registry_path: <string> | default = ""]
+# CLI flag: -cost-attribution.registry-path
+[cost_attribution_registry_path: <string> | default = ""]
 
 # (experimental) Enables optimized marshaling of timeseries.
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled

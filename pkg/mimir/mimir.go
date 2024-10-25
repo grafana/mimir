@@ -146,8 +146,8 @@ type Config struct {
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
-	Common             CommonConfig `yaml:"common"`
-	CustomRegistryPath string       `yaml:"custom_registry_path" category:"advanced"`
+	Common                      CommonConfig `yaml:"common"`
+	CostAttributionRegistryPath string       `yaml:"cost_attribution_registry_path" category:"advanced"`
 
 	TimeseriesUnmarshalCachingOptimizationEnabled bool          `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 	CostAttributionEvictionInterval               time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
@@ -177,7 +177,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
-	f.StringVar(&c.CustomRegistryPath, "custom-registry-path", "", "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.")
+	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.")
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
@@ -717,7 +717,6 @@ type Mimir struct {
 	TenantLimits                  validation.TenantLimits
 	Overrides                     *validation.Overrides
 	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	CostAttributionManager        *costattribution.Manager
 
 	Distributor                     *distributor.Distributor
 	Ingester                        *ingester.Ingester
@@ -745,6 +744,8 @@ type Mimir struct {
 	BlockBuilderScheduler           *blockbuilderscheduler.BlockBuilderScheduler
 	ContinuousTestManager           *continuoustest.Manager
 	BuildInfoHandler                http.Handler
+
+	CostAttributionManager *costattribution.Manager
 }
 
 // New makes a new Mimir.

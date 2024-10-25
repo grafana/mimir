@@ -106,7 +106,8 @@ type Distributor struct {
 	distributorsLifecycler *ring.BasicLifecycler
 	distributorsRing       *ring.Ring
 	healthyInstancesCount  *atomic.Uint32
-	costAttributionMgr     *costattribution.Manager
+
+	costAttributionMgr *costattribution.Manager
 	// For handling HA replicas.
 	HATracker *haTracker
 
@@ -711,11 +712,12 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	now := model.TimeFromUnixNano(nowt.UnixNano())
 	cat := getCATrackerForUser(userID, d.costAttributionMgr)
 	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
 		return err
 	}
+
+	now := model.TimeFromUnixNano(nowt.UnixNano())
 
 	for _, s := range ts.Samples {
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cat); err != nil {
@@ -852,11 +854,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 			if errors.As(err, &tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				if d.costAttributionMgr != nil {
-					if cat := d.costAttributionMgr.TrackerForUser(userID); cat != nil {
-						cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, now)
-					}
-				}
+				getCATrackerForUser(userID, d.costAttributionMgr).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, now)
 			}
 
 			return err
@@ -1673,13 +1671,12 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 }
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
-	now := mtime.Now()
 	var receivedSamples, receivedExemplars, receivedMetadata int
 
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
-		getCATrackerForUser(userID, d.costAttributionMgr).IncrementReceivedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(receivedSamples), now)
+		getCATrackerForUser(userID, d.costAttributionMgr).IncrementReceivedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(receivedSamples), mtime.Now())
 	}
 	receivedMetadata = len(req.Metadata)
 

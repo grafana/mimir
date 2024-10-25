@@ -651,14 +651,14 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	// The cost attribution service is only initilized if the custom registry path is provided.
-	if t.Cfg.CustomRegistryPath != "" {
+	if t.Cfg.CostAttributionRegistryPath != "" {
 		t.CostAttributionManager = costattribution.NewManager(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides)
 		// if custom registry path is provided, create a custom registry and use it for cost attribution service
 		customRegistry := prometheus.NewRegistry()
 		// Register the custom registry with the provided URL.
 		// This allows users to expose custom metrics on a separate endpoint.
 		// This is useful when users want to expose metrics that are not part of the default Mimir metrics.
-		http.Handle(t.Cfg.CustomRegistryPath, promhttp.HandlerFor(customRegistry, promhttp.HandlerOpts{Registry: customRegistry}))
+		http.Handle(t.Cfg.CostAttributionRegistryPath, promhttp.HandlerFor(customRegistry, promhttp.HandlerOpts{Registry: customRegistry}))
 		err := customRegistry.Register(t.CostAttributionManager)
 		return t.CostAttributionManager, err
 	}

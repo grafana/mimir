@@ -225,7 +225,6 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat costattribution.Tracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
-		// if the validation failed, we need to increment the discarded samples metric
 		cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonTooFarInFuture, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
@@ -382,7 +381,7 @@ func removeNonASCIIChars(in string) (out string) {
 }
 
 // getCATrackerForUser returns the cost attribution tracker for the user.
-// If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns nil.
+// If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns a noop tracker.
 func getCATrackerForUser(userID string, cam *costattribution.Manager) costattribution.Tracker {
 	if cam == nil {
 		return costattribution.NewNoopTracker()

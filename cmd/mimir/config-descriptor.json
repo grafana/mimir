@@ -4364,7 +4364,7 @@
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 10000,
           "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -18370,12 +18370,12 @@
     },
     {
       "kind": "field",
-      "name": "custom_registry_path",
+      "name": "cost_attribution_registry_path",
       "required": false,
       "desc": "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.",
       "fieldValue": null,
       "fieldDefaultValue": "",
-      "fieldFlag": "custom-registry-path",
+      "fieldFlag": "cost-attribution.registry-path",
       "fieldType": "string",
       "fieldCategory": "advanced"
     },

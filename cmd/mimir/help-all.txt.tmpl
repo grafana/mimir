@@ -1141,7 +1141,7 @@ Usage of ./cmd/mimir/mimir:
     	Configuration file to load.
   -cost-attribution.eviction-interval duration
     	[experimental] Time interval at which inactive cost attributions will be evicted from the counter, so it won't be counted when checking max_cost_attribution_cardinality_per_user. (default 30m0s)
-  -custom-registry-path string
+  -cost-attribution.registry-path string
     	Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
@@ -3108,7 +3108,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-cost-attribution-cardinality-per-user int
-    	[experimental] Maximum cardinality of cost attribution labels allowed per user.
+    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int
