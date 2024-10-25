@@ -370,7 +370,7 @@ type fPointRingBufferWrapper struct {
 }
 
 func (w *fPointRingBufferWrapper) ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[promql.FPoint] {
-	return w.ViewUntil(maxT, searchForwards)
+	return w.ViewUntil(maxT, searchForwards, nil)
 }
 
 func (w *fPointRingBufferWrapper) GetPoints() []promql.FPoint {
@@ -391,7 +391,7 @@ type hPointRingBufferWrapper struct {
 }
 
 func (w *hPointRingBufferWrapper) ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[promql.HPoint] {
-	return w.ViewUntil(maxT, searchForwards)
+	return w.ViewUntil(maxT, searchForwards, nil)
 }
 
 func (w *hPointRingBufferWrapper) GetPoints() []promql.HPoint {

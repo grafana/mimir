@@ -85,14 +85,14 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 //   - RangeEnd is 1712016000000 (2024-04-02T00:00:00Z)
 type RangeVectorStepData struct {
 	// Floats contains the float samples for this time step.
-	Floats FPointRingBufferView
+	Floats *FPointRingBufferView
 
 	// Histograms contains the histogram samples for this time step.
 	//
 	// FloatHistogram instances in the buffer must not be modified as they may be returned for subsequent steps.
 	// FloatHistogram instances that are retained after the next call to NextStepSamples must be copied, as they
 	// may be modified on subsequent calls to NextStepSamples.
-	Histograms HPointRingBufferView
+	Histograms *HPointRingBufferView
 
 	// StepT is the timestamp of this time step.
 	StepT int64

@@ -26,7 +26,9 @@ type RangeVectorSelector struct {
 	chunkIterator     chunkenc.Iterator
 	nextT             int64
 	floats            *types.FPointRingBuffer
+	floatView         *types.FPointRingBufferView
 	histograms        *types.HPointRingBuffer
+	histogramView     *types.HPointRingBufferView
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
@@ -95,10 +97,12 @@ func (m *RangeVectorSelector) NextStepSamples() (types.RangeVectorStepData, erro
 	}
 
 	m.nextT += m.Selector.TimeRange.IntervalMilliseconds
+	m.floatView = m.floats.ViewUntil(rangeEnd, false, m.floatView)
+	m.histogramView = m.histograms.ViewUntil(rangeEnd, false, m.histogramView)
 
 	return types.RangeVectorStepData{
-		Floats:     m.floats.ViewUntil(rangeEnd, false),
-		Histograms: m.histograms.ViewUntil(rangeEnd, false),
+		Floats:     m.floatView,
+		Histograms: m.histogramView,
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,

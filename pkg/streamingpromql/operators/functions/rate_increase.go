@@ -146,7 +146,7 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 	return val, err
 }
 
-func floatRate(isRate bool, fCount int, floatBuffer types.FPointRingBufferView, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
+func floatRate(isRate bool, fCount int, floatBuffer *types.FPointRingBufferView, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
 	firstPoint := floatBuffer.First()
 
 	var lastPoint promql.FPoint

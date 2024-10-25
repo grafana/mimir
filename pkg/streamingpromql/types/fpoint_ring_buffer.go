@@ -80,8 +80,13 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 // Set searchForwards to true if it is expected that there are many points with timestamp greater than maxT, and few points with
 // earlier timestamps.
 // Set searchForwards to false if it is expected that only a few of the points will have timestamp greater than maxT.
+// existing is an existing view instance for this buffer that is reused if provided. It can be nil.
 // The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
-func (b *FPointRingBuffer) ViewUntil(maxT int64, searchForwards bool) FPointRingBufferView {
+func (b *FPointRingBuffer) ViewUntil(maxT int64, searchForwards bool, existing *FPointRingBufferView) *FPointRingBufferView {
+	if existing == nil {
+		existing = &FPointRingBufferView{buffer: b}
+	}
+
 	if searchForwards {
 		size := 0
 
@@ -89,7 +94,8 @@ func (b *FPointRingBuffer) ViewUntil(maxT int64, searchForwards bool) FPointRing
 			size++
 		}
 
-		return FPointRingBufferView{buffer: b, size: size}
+		existing.size = size
+		return existing
 	}
 
 	size := b.size
@@ -98,7 +104,8 @@ func (b *FPointRingBuffer) ViewUntil(maxT int64, searchForwards bool) FPointRing
 		size--
 	}
 
-	return FPointRingBufferView{buffer: b, size: size}
+	existing.size = size
+	return existing
 }
 
 // pointAt returns the point at index 'position'.

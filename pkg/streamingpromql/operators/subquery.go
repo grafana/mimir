@@ -25,7 +25,9 @@ type Subquery struct {
 	nextStepT         int64
 	rangeMilliseconds int64
 	floats            *types.FPointRingBuffer
+	floatView         *types.FPointRingBufferView
 	histograms        *types.HPointRingBuffer
+	histogramView     *types.HPointRingBufferView
 }
 
 var _ types.RangeVectorOperator = &Subquery{}
@@ -92,10 +94,12 @@ func (s *Subquery) NextStepSamples() (types.RangeVectorStepData, error) {
 	s.histograms.DiscardPointsBefore(rangeStart)
 
 	s.nextStepT += s.ParentQueryTimeRange.IntervalMilliseconds
+	s.floatView = s.floats.ViewUntil(rangeEnd, true, s.floatView)
+	s.histogramView = s.histograms.ViewUntil(rangeEnd, true, s.histogramView)
 
 	return types.RangeVectorStepData{
-		Floats:     s.floats.ViewUntil(rangeEnd, true),
-		Histograms: s.histograms.ViewUntil(rangeEnd, true),
+		Floats:     s.floatView,
+		Histograms: s.histogramView,
 		StepT:      stepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
