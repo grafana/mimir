@@ -1,8 +1,8 @@
 {
   _config+:: {
+    multi_zone_availability_zones: [],
     multi_zone_distributor_enabled: false,
-    multi_zone_distributor_availability_zones: [],
-    multi_zone_distributor_replicas: std.length($._config.multi_zone_distributor_availability_zones),
+    multi_zone_distributor_replicas: std.length($._config.multi_zone_availability_zones),
   },
 
   local container = $.core.v1.container,
@@ -10,9 +10,9 @@
   local service = $.core.v1.service,
 
   local isMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
-  local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_distributor_availability_zones) >= 1,
-  local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_distributor_availability_zones) >= 2,
-  local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_distributor_availability_zones) >= 3,
+  local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
   distributor_zone_a_args:: $.distributor_args,
   distributor_zone_b_args:: $.distributor_args,
@@ -22,9 +22,9 @@
   distributor_zone_b_env_map:: {},
   distributor_zone_c_env_map:: {},
 
-  distributor_zone_a_node_affinity_matchers:: $.distributor_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_distributor_availability_zones[0])],
-  distributor_zone_b_node_affinity_matchers:: $.distributor_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_distributor_availability_zones[1])],
-  distributor_zone_c_node_affinity_matchers:: $.distributor_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_distributor_availability_zones[2])],
+  distributor_zone_a_node_affinity_matchers:: $.distributor_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])],
+  distributor_zone_b_node_affinity_matchers:: $.distributor_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
+  distributor_zone_c_node_affinity_matchers:: $.distributor_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
 
   distributor_zone_a_container:: if !isZoneAEnabled then null else
     $.newDistributorZoneContainer('a', $.distributor_zone_a_args, $.distributor_zone_a_env_map),
@@ -74,7 +74,7 @@
     local name = 'distributor-zone-%s' % zone;
 
     $.newDistributorDeployment(name, container, nodeAffinityMatchers) +
-    deployment.mixin.spec.withReplicas(std.ceil($._config.multi_zone_distributor_replicas / std.length($._config.multi_zone_distributor_availability_zones))) +
+    deployment.mixin.spec.withReplicas(std.ceil($._config.multi_zone_distributor_replicas / std.length($._config.multi_zone_availability_zones))) +
     deployment.spec.template.spec.withTolerationsMixin([
       $.core.v1.toleration.withKey('topology') +
       $.core.v1.toleration.withOperator('Equal') +
