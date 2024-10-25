@@ -123,8 +123,6 @@ data:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-federation-frontend-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
-    runtime_config:
-      file: /var/mimir/runtime.yaml
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m

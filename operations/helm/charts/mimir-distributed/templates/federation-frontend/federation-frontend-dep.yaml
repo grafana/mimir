@@ -12,13 +12,13 @@ spec:
   replicas: {{ .Values.federation_frontend.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "federation-frontend" "memberlist" true) | nindent 6 }}
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "federation-frontend") | nindent 6 }}
   strategy:
     {{- toYaml .Values.federation_frontend.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "federation-frontend" "memberlist" true) | nindent 8 }}
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "federation-frontend") | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "federation-frontend") | nindent 8 }}
     spec:
@@ -60,8 +60,6 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
-            - name: runtime-config
-              mountPath: /var/{{ include "mimir.name" . }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -70,9 +68,6 @@ spec:
               protocol: TCP
             - name: grpc
               containerPort: {{ include "mimir.serverGrpcListenPort" . }}
-              protocol: TCP
-            - name: memberlist
-              containerPort: {{ include "mimir.memberlistBindPort" . }}
               protocol: TCP
           livenessProbe:
             {{- toYaml .Values.federation_frontend.livenessProbe | nindent 12 }}
@@ -128,9 +123,6 @@ spec:
         - name: license
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
-        - name: runtime-config
-          configMap:
-            name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.federation_frontend.extraVolumes }}
         {{- toYaml .Values.federation_frontend.extraVolumes | nindent 8 }}
         {{- end }}

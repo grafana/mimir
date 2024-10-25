@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-federation-frontend-values
     app.kubernetes.io/component: federation-frontend
-    app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}

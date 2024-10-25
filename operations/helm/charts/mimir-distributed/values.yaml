@@ -397,8 +397,10 @@ mimir:
       {{- end }}
     {{- end }}
 
+    {{- if not .Values.federation_frontend.disableOtherComponents }}
     runtime_config:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
+    {{- end }}
 
     store_gateway:
       sharding_ring:
