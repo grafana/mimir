@@ -25,8 +25,8 @@ This guide focuses specifically on deploying the Federation-Frontend component a
    metadata:
      name: gem-tokens
    data:
-     CLUSTER_LOCAL_GEM_PASSWORD: TOKEN1
-     CLUSTER_REMOTE_GEM_PASSWORD: TOKEN2
+     CLUSTER_1_GEM_TOKEN: TOKEN1
+     CLUSTER_2_GEM_TOKEN: TOKEN2
    ```
 
 2. Apply the secret to your cluster in the `federation-frontend-demo` namespace with the `kubectl` command:
@@ -74,17 +74,17 @@ This guide focuses specifically on deploying the Federation-Frontend component a
        multitenancy_enabled: false
        federation:
          proxy_targets:
-           - name: "cluster-local-gem"
+           - name: "cluster-1"
              url: "http://gem-query-frontend.monitoring.svc.cluster.local:8080/prometheus"
              basic_auth:
                username: tenant-1
-               password: "${CLUSTER_LOCAL_GEM_PASSWORD}"
+               password: "${CLUSTER_1_GEM_TOKEN}"
 
-           - name: "cluster-remote-gem"
+           - name: "cluster-2"
              url: "https://gem.monitoring.acme.local/prometheus"
              basic_auth:
                username: tenant-2
-               password: "${CLUSTER_REMOTE_GEM_PASSWORD}"
+               password: "${CLUSTER_2_GEM_TOKEN}"
 
    # Disable MinIO
    minio:
