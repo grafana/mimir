@@ -1,3 +1,3 @@
-{{- if .Values.ingester.enabled }}
+{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "ingester" "memberlist" true) }}
 {{- end }}

@@ -262,7 +262,7 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
-      {{- if .Values.query_scheduler.enabled }}
+      {{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- end }}
       {{- if .Values.enterprise.enabled }}
@@ -289,7 +289,7 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         default:
           url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        {{- if .Values.distributor.enabled }}
+        {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
         distributor:
           url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
         {{- end }}
@@ -332,8 +332,8 @@ mimir:
 
     {{- if .Values.enterprise.enabled }}
     instrumentation:
-      enabled: {{ .Values.distributor.enabled }}
-    {{- if .Values.distributor.enabled }}
+      enabled: {{ and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+    {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
       distributor_client:
         address: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
     {{- end }}
@@ -4463,6 +4463,11 @@ gr-metricname-cache:
 federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
   enabled: false
+
+  # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
+  # federation-frontend without the rest of the GEM components.
+  disableOtherComponents: false
+
   # -- Number of replicas for the federation-frontend
   replicas: 2
   # -- Deployment strategy for the federation-frontend pods

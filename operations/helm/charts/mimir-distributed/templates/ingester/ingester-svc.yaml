@@ -1,4 +1,4 @@
-{{- if .Values.ingester.enabled }}
+{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}

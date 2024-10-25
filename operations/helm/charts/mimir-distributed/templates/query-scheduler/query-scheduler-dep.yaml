@@ -1,4 +1,4 @@
-{{- if .Values.query_scheduler.enabled }}
+{{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

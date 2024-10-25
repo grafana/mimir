@@ -1,4 +1,4 @@
-{{- if and .Values.query_frontend.enabled .Values.query_frontend.kedaAutoscaling.enabled }}
+{{- if and .Values.query_frontend.enabled .Values.query_frontend.kedaAutoscaling.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:

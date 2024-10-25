@@ -1,3 +1,3 @@
-{{- if .Values.store_gateway.enabled }}
+{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "store-gateway" "memberlist" true) }}
 {{- end }}

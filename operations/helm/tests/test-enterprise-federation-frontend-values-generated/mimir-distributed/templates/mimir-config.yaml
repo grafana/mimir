@@ -67,9 +67,9 @@ data:
       log_query_request_headers: X-Access-Policy-Name,X-Token-Name
       parallelize_shardable_queries: true
     frontend_worker:
-      frontend_address: test-enterprise-federation-frontend-values-mimir-query-frontend-headless.citestns.svc:9095
       grpc_client_config:
         max_send_msg_size: 419430400
+      scheduler_address: test-enterprise-federation-frontend-values-mimir-query-scheduler-headless.citestns.svc:9095
     gateway:
       proxy:
         admin_api:

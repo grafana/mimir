@@ -1,4 +1,4 @@
-{{- if .Values.compactor.enabled }}
+{{- if and .Values.compactor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

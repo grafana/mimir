@@ -1,4 +1,4 @@
-{{- if and .Values.enterprise.enabled .Values.admin_api.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.admin_api.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

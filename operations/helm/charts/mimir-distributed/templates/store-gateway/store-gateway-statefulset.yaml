@@ -1,4 +1,4 @@
-{{- if .Values.store_gateway.enabled }}
+{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}

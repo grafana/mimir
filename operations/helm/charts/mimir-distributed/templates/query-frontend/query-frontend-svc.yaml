@@ -1,4 +1,4 @@
-{{- if .Values.query_frontend.enabled }}
+{{- if and .Values.query_frontend.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: v1
 kind: Service
 metadata:
