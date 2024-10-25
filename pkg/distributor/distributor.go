@@ -1112,7 +1112,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			getCATrackerForUser(userID, d.costAttributionMgr).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(validatedSamples), reasonRateLimited, now)
+			if len(req.Timeseries) > 0 {
+				getCATrackerForUser(userID, d.costAttributionMgr).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(validatedSamples), reasonRateLimited, now)
+			}
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))

@@ -458,9 +458,21 @@ overrides_exporter:
 # time.
 [common: <common>]
 
+# (advanced) Defines a custom path for the registry. When specified, Mimir will
+# expose cost attribution metrics through this custom path, if not specified,
+# cost attribution metrics won't be exposed.
+# CLI flag: -custom-registry-path
+[custom_registry_path: <string> | default = ""]
+
 # (experimental) Enables optimized marshaling of timeseries.
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled
 [timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
+
+# (experimental) Time interval at which inactive cost attributions will be
+# evicted from the counter, so it won't be counted when checking
+# max_cost_attribution_cardinality_per_user.
+# CLI flag: -cost-attribution.eviction-interval
+[cost_attribution_eviction_interval: <duration> | default = 30m]
 ```
 
 ### common
@@ -3526,6 +3538,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # series request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
+
+# (experimental) List of labels used to define the cost attribution. This label
+# will be included in the specified distributor and ingester metrics for each
+# write request, allowing them to be distinguished by the label. The label
+# applies to the following metrics: cortex_distributor_received_samples_total,
+# cortex_ingester_active_series and cortex_discarded_samples_attribution_total.
+# Set to an empty string to disable cost attribution.
+# CLI flag: -validation.cost-attribution-labels
+[cost_attribution_labels: <string> | default = ""]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality-per-user
+[max_cost_attribution_cardinality_per_user: <int> | default = 0]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
