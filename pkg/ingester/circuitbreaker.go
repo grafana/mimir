@@ -133,15 +133,15 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 		WithDelay(cfg.CooldownPeriod).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.ClosedState).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is closed", "previous", event.OldState, "current", event.NewState)
+			level.Info(logger).Log("msg", "circuit breaker is closed", "previous", event.OldState, "current", event.NewState, "requestType", requestType)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.OpenState).Inc()
-			level.Warn(logger).Log("msg", "circuit breaker is open", "previous", event.OldState, "current", event.NewState)
+			level.Warn(logger).Log("msg", "circuit breaker is open", "previous", event.OldState, "current", event.NewState, "requestType", requestType)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.HalfOpenState).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is half-open", "previous", event.OldState, "current", event.NewState)
+			level.Info(logger).Log("msg", "circuit breaker is half-open", "previous", event.OldState, "current", event.NewState, "requestType", requestType)
 		})
 
 	if cfg.testModeEnabled {
