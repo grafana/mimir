@@ -49,6 +49,8 @@ This guide focuses specifically on deploying the Federation-Frontend component a
    # Enable and configure federation-frontend
    federation_frontend:
      enabled: true
+     # Since this is a standalone deployment, we configure the chart to not render any of the other GEM components.  
+     disableOtherComponents: true
      replicas: 2
      resources:
        requests:
@@ -84,44 +86,6 @@ This guide focuses specifically on deploying the Federation-Frontend component a
                username: tenant-2
                password: "${CLUSTER_REMOTE_GEM_PASSWORD}"
 
-   # Disable all other components
-   distributor:
-     enabled: false
-   admin_api:
-     enabled: false
-   alertmanager:
-     enabled: false
-   ingester:
-     enabled: false
-   gateway:
-     enabled: false
-   querier:
-     enabled: false
-   query_frontend:
-     enabled: false
-   query_scheduler:
-     enabled: false
-   compactor:
-     enabled: false
-   store_gateway:
-     enabled: false
-   ruler:
-     enabled: false
-   overrides_exporter:
-     enabled: false
-
-   # Disable all caches
-   admin-cache:
-     enabled: false
-   chunks-cache:
-     enabled: false
-   index-cache:
-     enabled: false
-   metadata-cache:
-     enabled: false
-   results-cache:
-     enabled: false
-
    # Disable MinIO
    minio:
      enabled: false
@@ -129,9 +93,6 @@ This guide focuses specifically on deploying the Federation-Frontend component a
    # The federation-frontend doesn't need the rollout-operator for rollouts, so it can be disabled.
    rollout_operator:
      enabled: false
-
-   tokengenJob:
-     enable: false
    ```
 
 4. Deploy the Federation-Frontend using `helm`:
