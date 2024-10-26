@@ -15,9 +15,9 @@ var (
 type schedule struct {
 	leaseTime time.Duration
 
-	mu       sync.Mutex
-	jobs     map[string]*job
-	schedule []*job
+	mu          sync.Mutex
+	jobs        map[string]*job
+	outstanding []*job
 }
 
 func newSchedule(leaseTime time.Duration) *schedule {
@@ -31,12 +31,12 @@ func (s *schedule) assign(worker string) (*job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.schedule) == 0 {
+	if len(s.outstanding) == 0 {
 		return nil, nil
 	}
 
-	j := s.schedule[0]
-	s.schedule = s.schedule[1:]
+	j := s.outstanding[0]
+	s.outstanding = s.outstanding[1:]
 	j.assignee = worker
 	j.leaseExpiry = time.Now().Add(s.leaseTime)
 	return j, nil
@@ -47,8 +47,11 @@ func (s *schedule) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
 	defer s.mu.Unlock()
 
 	if j, ok := s.jobs[id]; ok {
-		j.sortTime = jobTime
-		j.spec = spec
+		// We'll only update an unassigned job.
+		if j.assignee == "" {
+			j.sortTime = jobTime
+			j.spec = spec
+		}
 	} else {
 		j = &job{
 			id:          id,
@@ -58,15 +61,16 @@ func (s *schedule) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
 			spec:        spec,
 		}
 		s.jobs[id] = j
-		s.schedule = append(s.schedule, j)
+		s.outstanding = append(s.outstanding, j)
 	}
 
-	s.sort()
+	s.sortOutstanding()
 }
 
-// sort maintains the sort order of the schedule. Caller must hold the lock.
-func (s *schedule) sort() {
-	slices.SortStableFunc(s.schedule, func(i, j *job) int {
+// sortOutstanding maintains the sort order of the outstanding list. Caller must
+// hold the lock.
+func (s *schedule) sortOutstanding() {
+	slices.SortStableFunc(s.outstanding, func(i, j *job) int {
 		return i.sortTime.Compare(j.sortTime)
 	})
 }
@@ -93,13 +97,13 @@ func (s *schedule) clearExpiredLeases() {
 	defer s.mu.Unlock()
 
 	for _, j := range s.jobs {
-		if j.assignee != "" && j.leaseExpiry.Before(now) {
+		if j.assignee != "" && now.After(j.leaseExpiry) {
 			j.assignee = ""
-			s.schedule = append(s.schedule, j)
+			s.outstanding = append(s.outstanding, j)
 		}
 	}
 
-	s.sort()
+	s.sortOutstanding()
 }
 
 /*
