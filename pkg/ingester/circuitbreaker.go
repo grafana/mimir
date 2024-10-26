@@ -193,6 +193,7 @@ func (cb *circuitBreaker) activate() {
 	}
 	if cb.cfg.InitialDelay == 0 {
 		cb.active.Store(true)
+		return
 	}
 	time.AfterFunc(cb.cfg.InitialDelay, func() {
 		cb.active.Store(true)
