@@ -192,10 +192,12 @@ func (cb *circuitBreaker) activate() {
 		return
 	}
 	if cb.cfg.InitialDelay == 0 {
+		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
 		cb.active.Store(true)
 		return
 	}
 	time.AfterFunc(cb.cfg.InitialDelay, func() {
+		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
 		cb.active.Store(true)
 	})
 }
@@ -204,6 +206,7 @@ func (cb *circuitBreaker) deactivate() {
 	if cb == nil {
 		return
 	}
+	level.Info(cb.logger).Log("msg", "deactivating circuit breaker", "requestType", cb.requestType)
 	cb.active.Store(false)
 }
 
