@@ -7,19 +7,24 @@ import (
 	"time"
 )
 
-const (
-	leaseTime = 5 * time.Minute
-)
-
 var (
 	errJobNotFound    = errors.New("job not found")
 	errJobNotAssigned = errors.New("job not assigned to worker")
 )
 
 type schedule struct {
+	leaseTime time.Duration
+
 	mu       sync.Mutex
 	jobs     map[string]*job
 	schedule []*job
+}
+
+func newSchedule(leaseTime time.Duration) *schedule {
+	return &schedule{
+		leaseTime: leaseTime,
+		jobs:      make(map[string]*job),
+	}
 }
 
 func (s *schedule) assign(worker string) (*job, error) {
@@ -33,28 +38,36 @@ func (s *schedule) assign(worker string) (*job, error) {
 	j := s.schedule[0]
 	s.schedule = s.schedule[1:]
 	j.assignee = worker
+	j.leaseExpiry = time.Now().Add(s.leaseTime)
 	return j, nil
 }
 
-func (s *schedule) addOrUpdate(id string, jobTime time.Time) {
+func (s *schedule) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if j, ok := s.jobs[id]; ok {
-		j.time = jobTime
+		j.sortTime = jobTime
+		j.spec = spec
 	} else {
-		s.jobs[id] = &job{
+		j = &job{
 			id:          id,
-			time:        jobTime,
+			sortTime:    jobTime,
 			assignee:    "",
-			leaseExpiry: time.Now().Add(leaseTime),
+			leaseExpiry: time.Now().Add(s.leaseTime),
+			spec:        spec,
 		}
-		s.schedule = append(s.schedule, s.jobs[id])
+		s.jobs[id] = j
+		s.schedule = append(s.schedule, j)
 	}
 
-	// Keep the schedule sorted.
+	s.sort()
+}
+
+// sort maintains the sort order of the schedule. Caller must hold the lock.
+func (s *schedule) sort() {
 	slices.SortStableFunc(s.schedule, func(i, j *job) int {
-		return i.time.Compare(j.time)
+		return i.sortTime.Compare(j.sortTime)
 	})
 }
 
@@ -68,9 +81,25 @@ func (s *schedule) renewLease(id string, worker string) error {
 		if j.assignee != worker {
 			return errJobNotAssigned
 		}
-		j.leaseExpiry = time.Now().Add(leaseTime)
+		j.leaseExpiry = time.Now().Add(s.leaseTime)
 	}
 	return nil
+}
+
+func (s *schedule) clearExpiredLeases() {
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, j := range s.jobs {
+		if j.assignee != "" && j.leaseExpiry.Before(now) {
+			j.assignee = ""
+			s.schedule = append(s.schedule, j)
+		}
+	}
+
+	s.sort()
 }
 
 /*
@@ -86,9 +115,22 @@ Need a job lease mechanism with an expiry. And a goroutine to do lease expiratio
 */
 
 type job struct {
-	id   string
-	time time.Time
+	id       string
+	sortTime time.Time
 
 	assignee    string
 	leaseExpiry time.Time
+
+	// job payload details. We can make this generic later for reuse.
+	spec jobSpec
+}
+
+type jobSpec struct {
+	topic          string
+	partition      int32
+	startOffset    int64
+	endOffset      int64
+	commitRecTs    time.Time
+	lastSeenOffset int64
+	lastBlockEndTs time.Time
 }
