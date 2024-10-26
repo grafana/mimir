@@ -1278,6 +1278,41 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 }
 
+// IsSoftAppendError returns true if the error is a soft error we can proceed on.
+func IsSoftAppendError(err error) bool {
+	switch {
+	case errors.Is(err, storage.ErrOutOfBounds):
+		return true
+	case errors.Is(err, storage.ErrOutOfOrderSample):
+		return true
+	case errors.Is(err, storage.ErrTooOldSample):
+		return true
+	case errors.Is(err, globalerror.SampleTooFarInFuture):
+		return true
+	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+		return true
+	case errors.Is(err, globalerror.MaxSeriesPerUser):
+		return true
+	case errors.Is(err, globalerror.MaxSeriesPerMetric):
+		return true
+
+	// Map TSDB native histogram validation errors to soft errors.
+	case errors.Is(err, histogram.ErrHistogramCountMismatch):
+		return true
+	case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
+		return true
+	case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
+		return true
+	case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
+		return true
+	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
+		return true
+	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
+		return true
+	}
+	return false
+}
+
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
@@ -1288,6 +1323,15 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	// Return true if handled as soft error, and we can ingest more series.
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
 		stats.failedSamplesCount++
+
+		// Even though IsSoftAppendError checks the same errors as the below switch case, keeping all the error checks
+		// in a function makes sure that block builders and ingesters are in sync with what errors they treat as client
+		// errors, so that any bug fixes get propagated reliably. This adds a little overhead here, but only for the error
+		// case. It is important to use this function here so that the below switch case and IsSoftAppendError don't go
+		// out of sync.
+		if !IsSoftAppendError(err) {
+			return false
+		}
 
 		// Check if the error is a soft error we can proceed on. If so, we keep track
 		// of it, so that we can return it back to the distributor, which will return a
