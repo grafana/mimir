@@ -105,12 +105,17 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		return
 	}
 
-	readyPartitions := []int32{}
 	offs.Each(func(o kadm.ListedOffset) {
 		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
 			if l.Commit.At < o.Offset {
-				readyPartitions = append(readyPartitions, o.Partition)
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
+				s.schedule.addOrUpdate(fmt.Sprintf("%s-%d", o.Topic, o.Partition), time.Now(), jobSpec{
+					topic:       o.Topic,
+					partition:   o.Partition,
+					startOffset: l.Commit.At,
+					endOffset:   l.End.Offset,
+					// TODO: unmarshal the extra lag info.
+				})
 			}
 		}
 	})
