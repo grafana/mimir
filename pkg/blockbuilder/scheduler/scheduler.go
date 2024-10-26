@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -21,8 +20,8 @@ import (
 type BlockBuilderScheduler struct {
 	services.Service
 
-	kafkaClient *kgo.Client
 	adminClient *kadm.Client
+	schedule    *schedule
 	cfg         Config
 	logger      log.Logger
 	register    prometheus.Registerer
@@ -35,6 +34,7 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
+		schedule: newSchedule(cfg.JobLeaseTime),
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
@@ -54,13 +54,12 @@ func (s *BlockBuilderScheduler) starting(context.Context) error {
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
 
-	s.kafkaClient = kc
 	s.adminClient = kadm.NewClient(kc)
 	return nil
 }
 
 func (s *BlockBuilderScheduler) stopping(_ error) error {
-	s.kafkaClient.Close()
+	s.adminClient.Close()
 	return nil
 }
 

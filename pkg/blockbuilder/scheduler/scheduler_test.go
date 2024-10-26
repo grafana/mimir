@@ -47,7 +47,6 @@ func TestMonitor(t *testing.T) {
 	}
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
-	sched.kafkaClient = cli
 	sched.adminClient = kadm.NewClient(cli)
 	require.NoError(t, err)
 
