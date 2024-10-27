@@ -35,11 +35,11 @@ func TestLease(t *testing.T) {
 	s := newSchedule(988 * time.Hour)
 	s.addOrUpdate("job1", time.Now(), jobSpec{topic: "hello"})
 	j, err := s.assign("w0")
-	// Expire the lease.
-
 	require.NotNil(t, j)
 	require.NoError(t, err)
 	require.Equal(t, "w0", j.assignee)
+
+	// Expire the lease.
 	j.leaseExpiry = time.Now().Add(-1 * time.Minute)
 	s.clearExpiredLeases()
 
