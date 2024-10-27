@@ -21,7 +21,7 @@ type BlockBuilderScheduler struct {
 	services.Service
 
 	adminClient *kadm.Client
-	schedule    *schedule
+	jobs        *jobQueue
 	cfg         Config
 	logger      log.Logger
 	register    prometheus.Registerer
@@ -34,7 +34,7 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		schedule: newSchedule(cfg.JobLeaseTime),
+		jobs:     newJobQueue(cfg.JobLeaseTime),
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
@@ -112,7 +112,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
 				// The job is uniquely identified by {topic, partition, consumption start offset}.
 				jobId := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
-				s.schedule.addOrUpdate(jobId, time.Time{}, jobSpec{
+				s.jobs.addOrUpdate(jobId, time.Time{}, jobSpec{
 					topic:       o.Topic,
 					partition:   o.Partition,
 					startOffset: l.Commit.At,

@@ -12,7 +12,7 @@ var (
 	errJobNotAssigned = errors.New("job not assigned to worker")
 )
 
-type schedule struct {
+type jobQueue struct {
 	leaseTime time.Duration
 
 	mu          sync.Mutex
@@ -20,14 +20,14 @@ type schedule struct {
 	outstanding []*job
 }
 
-func newSchedule(leaseTime time.Duration) *schedule {
-	return &schedule{
+func newJobQueue(leaseTime time.Duration) *jobQueue {
+	return &jobQueue{
 		leaseTime: leaseTime,
 		jobs:      make(map[string]*job),
 	}
 }
 
-func (s *schedule) assign(worker string) (*job, error) {
+func (s *jobQueue) assign(worker string) (*job, error) {
 	if worker == "" {
 		return nil, errors.New("worker cannot not be empty")
 	}
@@ -46,7 +46,7 @@ func (s *schedule) assign(worker string) (*job, error) {
 	return j, nil
 }
 
-func (s *schedule) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
+func (s *jobQueue) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
 	resort := false
 
 	s.mu.Lock()
@@ -80,13 +80,13 @@ func (s *schedule) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
 
 // sortOutstanding maintains the sort order of the outstanding list. Caller must
 // hold the lock.
-func (s *schedule) sortOutstanding() {
+func (s *jobQueue) sortOutstanding() {
 	slices.SortStableFunc(s.outstanding, func(i, j *job) int {
 		return i.sortTime.Compare(j.sortTime)
 	})
 }
 
-func (s *schedule) renewLease(id string, worker string) error {
+func (s *jobQueue) renewLease(id string, worker string) error {
 	if worker == "" {
 		return errors.New("worker cannot not be empty")
 	}
@@ -106,7 +106,7 @@ func (s *schedule) renewLease(id string, worker string) error {
 	return nil
 }
 
-func (s *schedule) clearExpiredLeases() {
+func (s *jobQueue) clearExpiredLeases() {
 	now := time.Now()
 
 	s.mu.Lock()

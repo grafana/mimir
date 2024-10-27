@@ -8,7 +8,7 @@ import (
 )
 
 func TestAssign(t *testing.T) {
-	s := newSchedule(988 * time.Hour)
+	s := newJobQueue(988 * time.Hour)
 
 	j0, err := s.assign("w0")
 	require.Nil(t, j0)
@@ -32,7 +32,7 @@ func TestAssign(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newSchedule(988 * time.Hour)
+	s := newJobQueue(988 * time.Hour)
 	s.addOrUpdate("job1", time.Now(), jobSpec{topic: "hello"})
 	j, err := s.assign("w0")
 	require.NotNil(t, j)
