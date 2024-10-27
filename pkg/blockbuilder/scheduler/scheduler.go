@@ -97,19 +97,22 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		}
 	}
 
-	// See if the group-committed offset per partition is behind our offset that is considered "old."
 	oldTime := time.Now().Add(-s.cfg.ConsumeInterval)
-	offs, err := s.adminClient.ListOffsetsAfterMilli(ctx, oldTime.UnixMilli(), s.cfg.Kafka.Topic)
+	oldOffsets, err := s.adminClient.ListOffsetsAfterMilli(ctx, oldTime.UnixMilli(), s.cfg.Kafka.Topic)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list offsets after milli", "err", err)
+		level.Warn(s.logger).Log("msg", "failed to obtain old offsets", "err", err)
 		return
 	}
 
-	offs.Each(func(o kadm.ListedOffset) {
+	// See if the group-committed offset per partition is behind our "old" offsets.
+
+	oldOffsets.Each(func(o kadm.ListedOffset) {
 		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
 			if l.Commit.At < o.Offset {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
-				s.schedule.addOrUpdate(fmt.Sprintf("%s-%d", o.Topic, o.Partition), time.Now(), jobSpec{
+				// The job is uniquely identified by {topic, partition, consumption start offset}.
+				jobId := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
+				s.schedule.addOrUpdate(jobId, time.Time{}, jobSpec{
 					topic:       o.Topic,
 					partition:   o.Partition,
 					startOffset: l.Commit.At,
