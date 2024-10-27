@@ -2,275 +2,226 @@
 
 package costattribution
 
-// func newTestManager() *Manager {
-// 	logger := log.NewNopLogger()
-// 	limits, _ := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{
-// 		"user1": {
-// 			MaxCostAttributionPerUser: 5,
-// 			CostAttributionLabel:      "team",
-// 		},
-// 		"user2": {
-// 			MaxCostAttributionPerUser: 2,
-// 			CostAttributionLabel:      "",
-// 		},
-// 		"user3": {
-// 			MaxCostAttributionPerUser: 2,
-// 			CostAttributionLabel:      "department",
-// 		},
-// 	}))
-// 	inactiveTimeout := 2 * time.Minute
-// 	cooldownTimeout := 1 * time.Minute
-// 	cleanupInterval := 1 * time.Minute
-// 	return NewManager(cleanupInterval, inactiveTimeout, cooldownTimeout, logger, limits)
-// }
+import (
+	"strings"
+	"testing"
+	"time"
 
-// func Test_NewManager(t *testing.T) {
-// 	manager := newTestManager()
-// 	assert.NotNil(t, manager, "Expected manager to be initialized")
-// 	assert.NotNil(t, manager.attributionTracker, "Expected attribution tracker to be initialized")
-// 	assert.Equal(t, "__overflow__", manager.invalidValue, "Expected invalidValue to be initialized")
-// }
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-// func Test_EnabledForUser(t *testing.T) {
-// 	manager := newTestManager()
-// 	assert.True(t, manager.EnabledForUser("user1"), "Expected cost attribution to be enabled for user1")
-// 	assert.False(t, manager.EnabledForUser("user2"), "Expected cost attribution to be disabled for user2")
-// 	assert.False(t, manager.EnabledForUser("user4"), "Expected cost attribution to be disabled for user4")
-// }
+	"github.com/grafana/mimir/pkg/util/validation"
+)
 
-// func Test_UserAttributionLabel(t *testing.T) {
-// 	manager := newTestManager()
-// 	assert.Equal(t, "team", manager.UserAttributionLabel("user1"))
-// 	assert.Equal(t, "", manager.UserAttributionLabel("user2"))
-// 	assert.Equal(t, "department", manager.UserAttributionLabel("user3"))
-// 	assert.Equal(t, 2, len(manager.attributionTracker.trackersByUserID))
-// 	assert.Equal(t, "team", manager.attributionTracker.trackersByUserID["user1"].trackedLabel)
-// 	assert.Equal(t, "department", manager.attributionTracker.trackersByUserID["user3"].trackedLabel)
-// }
+func getMockLimits(idx int) (*validation.Overrides, error) {
+	// Define base limits
+	baseLimits := map[string]*validation.Limits{
+		"user1": {
+			MaxCostAttributionCardinalityPerUser: 5,
+			CostAttributionLabels:                []string{"team"},
+		},
+		"user2": {
+			MaxCostAttributionCardinalityPerUser: 2,
+			CostAttributionLabels:                []string{},
+		},
+		"user3": {
+			MaxCostAttributionCardinalityPerUser: 2,
+			CostAttributionLabels:                []string{"department", "service"},
+		},
+	}
 
-// func Test_UserAttributionLimit(t *testing.T) {
-// 	manager := newTestManager()
-// 	assert.Equal(t, 5, manager.UserAttributionLimit("user1"))
-// 	assert.Equal(t, 0, manager.UserAttributionLimit("user2"))
-// 	assert.Equal(t, 0, manager.UserAttributionLimit("user4"))
-// }
+	// Adjust specific cases as needed
+	switch idx {
+	case 1:
+		baseLimits["user1"].CostAttributionLabels = []string{}
+	case 2:
+		baseLimits["user3"].CostAttributionLabels = []string{"team", "feature"}
+	case 3:
+		baseLimits["user3"].MaxCostAttributionCardinalityPerUser = 3
+	case 4:
+		baseLimits["user1"].MaxCostAttributionCardinalityPerUser = 2
+	case 5:
+		baseLimits["user1"].CostAttributionLabels = []string{"department"}
+	}
 
-// func Test_UpdateAttributionTimestamp(t *testing.T) {
-// 	manager := newTestManager()
+	return validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(baseLimits))
+}
 
-// 	lbls := labels.NewBuilder(labels.EmptyLabels())
-// 	tm1, tm2, tm3 := "bar", "foo", "baz"
-// 	t.Run("Should update the timestamp when limit not reached for the user attribution", func(t *testing.T) {
-// 		lbls.Set("department", tm1)
-// 		isOutdated, result := manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(0, 0))
-// 		assert.False(t, isOutdated, "Expected label to be the same as the one in the cache")
-// 		assert.Equal(t, tm1, result, "Expected attribution to be returned since user is enabled for cost attribution, and limit is not reached")
-// 		assert.NotNil(t, manager.attributionTracker.trackersByUserID["user3"].observed[tm1])
-// 		assert.Equal(t, int64(0), manager.attributionTracker.trackersByUserID["user3"].observed[tm1].Load())
+func newTestManager() *Manager {
+	logger := log.NewNopLogger()
+	limits, _ := getMockLimits(0)
+	inactiveTimeout := 10 * time.Second
+	cleanupInterval := 5 * time.Second
+	return NewManager(cleanupInterval, inactiveTimeout, logger, limits)
+}
 
-// 		lbls.Set("department", tm2)
-// 		isOutdated, result = manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(1, 0))
-// 		assert.False(t, isOutdated)
-// 		assert.Equal(t, tm2, result, "Expected attribution to be returned since user is enabled for cost attribution, and limit is not reached")
-// 		assert.NotNil(t, manager.attributionTracker.trackersByUserID["user3"].observed[tm2])
-// 		assert.Equal(t, int64(1), manager.attributionTracker.trackersByUserID["user3"].observed[tm2].Load())
-// 	})
+func Test_NewManager(t *testing.T) {
+	manager := newTestManager()
+	assert.NotNil(t, manager, "Expected manager to be initialized")
+	assert.NotNil(t, manager.trackersByUserID, "Expected attribution tracker to be initialized")
+	assert.Equal(t, 10*time.Second, manager.inactiveTimeout, "Expected inactiveTimeout to be initialized")
+}
 
-// 	t.Run("Should only update the timestamp of invalide when limit reached for the user attribution", func(t *testing.T) {
-// 		lbls.Set("department", tm3)
-// 		isOutdated, result := manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(2, 0))
-// 		assert.False(t, isOutdated)
-// 		assert.Equal(t, manager.invalidValue, result, "Expected invalidValue to be returned since user has reached the limit of cost attribution labels")
-// 		assert.NotNil(t, manager.attributionTracker.trackersByUserID["user3"].observed[manager.invalidValue])
-// 		assert.Equal(t, int64(2), manager.attributionTracker.trackersByUserID["user3"].observed[manager.invalidValue].Load())
+func Test_EnabledForUser(t *testing.T) {
+	manager := newTestManager()
+	assert.True(t, manager.EnabledForUser("user1"), "Expected cost attribution to be enabled for user1")
+	assert.False(t, manager.EnabledForUser("user2"), "Expected cost attribution to be disabled for user2")
+	assert.False(t, manager.EnabledForUser("user4"), "Expected cost attribution to be disabled for user4")
+}
 
-// 		lbls.Set("department", tm1)
-// 		isOutdated, result = manager.UpdateAttributionTimestamp("user3", "department", lbls.Labels(), time.Unix(3, 0))
-// 		assert.False(t, isOutdated)
-// 		assert.Equal(t, manager.invalidValue, result, "Expected invalidValue to be returned since user has reached the limit of cost attribution labels")
-// 		assert.Equal(t, int64(3), manager.attributionTracker.trackersByUserID["user3"].observed[manager.invalidValue].Load())
-// 	})
-// }
+func Test_CreateDeleteTracker(t *testing.T) {
+	// Create a new manager and register it with prometheus registry
+	manager := newTestManager()
+	reg := prometheus.NewRegistry()
+	err := reg.Register(manager)
+	require.NoError(t, err)
 
-// func Test_SetActiveSeries(t *testing.T) {
-// 	manager := newTestManager()
-// 	reg := prometheus.NewRegistry()
-// 	err := reg.Register(manager)
-// 	require.NoError(t, err)
-// 	userID := "user1"
+	t.Run("Get tracker for user", func(t *testing.T) {
+		assert.NotNil(t, manager.TrackerForUser("user1").GetCALabels())
+		assert.Equal(t, []string{"team"}, manager.TrackerForUser("user1").GetCALabels())
+		assert.Equal(t, 5, manager.TrackerForUser("user1").GetMaxCardinality())
 
-// 	lbls := labels.NewBuilder(labels.EmptyLabels())
+		// user2 is not enabled for cost attribution, so tracker would be a NoopTracker
+		tr2, ok := manager.TrackerForUser("user2").(*NoopTracker)
+		assert.True(t, ok)
+		assert.Equal(t, []string(nil), tr2.GetCALabels())
 
-// 	t.Run("Should set the active series gauge for the given user and attribution", func(t *testing.T) {
-// 		lbls.Set("team", "foo")
-// 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "team", lbls.Labels(), time.Unix(0, 0))
-// 		assert.False(t, isOutdated)
-// 		manager.SetActiveSeries(userID, "team", val, 1.0)
-// 		expectedMetrics := `
-// 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
-// 		# TYPE cortex_ingester_active_series_attribution gauge
-// 		cortex_ingester_active_series_attribution{team="foo",user="user1"} 1
-// 		`
-// 		metricNames := []string{
-// 			"cortex_ingester_active_series_attribution",
-// 		}
-// 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-// 	})
+		assert.Equal(t, []string{"department", "service"}, manager.TrackerForUser("user3").GetCALabels())
+		assert.Equal(t, 2, manager.TrackerForUser("user3").GetMaxCardinality())
 
-// 	t.Run("Should set the active series gauge for all users and attributions enabled and ignore disabled user", func(t *testing.T) {
-// 		userID = "user3"
-// 		lbls.Set("department", "bar")
-// 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(0, 0))
-// 		assert.False(t, isOutdated)
-// 		manager.SetActiveSeries(userID, "department", val, 2.0)
+		// user4 tenant config doesn't exist, so tracker would be a NoopTracker
+		tr4, ok := manager.TrackerForUser("user4").(*NoopTracker)
+		assert.True(t, ok)
+		assert.Equal(t, []string(nil), tr4.GetCALabels())
 
-// 		lbls.Set("department", "baz")
-// 		isOutdated, val = manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(1, 0))
-// 		assert.False(t, isOutdated)
-// 		manager.SetActiveSeries(userID, "department", val, 3.0)
+		assert.Equal(t, 2, len(manager.trackersByUserID))
+	})
 
-// 		expectedMetrics := `
-// 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
-// 		# TYPE cortex_ingester_active_series_attribution gauge
-// 		cortex_ingester_active_series_attribution{department="bar",user="user3"} 2
-// 		cortex_ingester_active_series_attribution{department="baz",user="user3"} 3
-// 		cortex_ingester_active_series_attribution{team="foo",user="user1"} 1
-// 		`
-// 		metricNames := []string{
-// 			"cortex_ingester_active_series_attribution",
-// 		}
-// 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-// 	})
+	t.Run("Track metrics for enabled user", func(t *testing.T) {
+		// since user2 is not enabled for cost attribution, tracker would be a NoopTracker, no metrics would be tracked
+		manager.TrackerForUser("user2").IncrementReceivedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, time.Unix(0, 0))
 
-// 	t.Run("Cleanup the active series gauge for the given user and attribution when cost attribution disabled", func(t *testing.T) {
-// 		limits := manager.attributionTracker.limits
-// 		defer func() { manager.attributionTracker.limits = limits }()
-// 		userID = "user3"
-// 		lbls.Set("department", "baz")
+		// user1 and user3 is enabled for cost attribution, so metrics would be tracked
+		manager.TrackerForUser("user1").IncrementDiscardedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.TrackerForUser("user3").IncrementDiscardedSamples(labels.FromStrings([]string{"department", "foo"}...), 1, "out-of-window", time.Unix(0, 0))
+		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings([]string{"department", "foo", "service", "dodo"}...), 1, time.Unix(20, 0))
+		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings([]string{"department", "foo", "service", "bar"}...), 1, time.Unix(30, 0))
+		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings([]string{"department", "foo", "service", "far"}...), 1, time.Unix(30, 0))
+		expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 1
+		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="__missing__",user="user3"} 1
+		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_received_attributed_samples_total counter
+		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",user="user3"} 1
+        cortex_received_attributed_samples_total{department="foo",service="bar",user="user3"} 1
+		cortex_received_attributed_samples_total{department="foo",service="dodo",user="user3"} 1
+		`
+		metricNames := []string{
+			"cortex_discarded_attributed_samples_total",
+			"cortex_received_attributed_samples_total",
+		}
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	})
 
-// 		overrides, _ := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(map[string]*validation.Limits{
-// 			userID: {
-// 				MaxCostAttributionPerUser: 2,
-// 				CostAttributionLabel:      "",
-// 			},
-// 		}))
-// 		manager.attributionTracker.limits = overrides
-// 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(5, 0))
-// 		assert.False(t, isOutdated)
-// 		manager.SetActiveSeries(userID, val, "department", 3.0)
+	t.Run("Purge inactive attributions", func(t *testing.T) {
+		// Purge inactive attributions until time 10, metrics cortex_discarded_attributed_samples_total of user3 should be deleted
+		manager.purgeInactiveAttributionsUntil(time.Unix(10, 0).Unix())
+		assert.Equal(t, 2, len(manager.trackersByUserID))
+		expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+        # TYPE cortex_discarded_attributed_samples_total counter
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 1
+		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_received_attributed_samples_total counter
+		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",user="user3"} 1
+        cortex_received_attributed_samples_total{department="foo",service="bar",user="user3"} 1
+		cortex_received_attributed_samples_total{department="foo",service="dodo",user="user3"} 1
+		`
+		metricNames := []string{
+			"cortex_discarded_attributed_samples_total",
+			"cortex_received_attributed_samples_total",
+		}
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	})
 
-// 		expectedMetrics := `
-// 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
-// 		# TYPE cortex_ingester_active_series_attribution gauge
-// 		cortex_ingester_active_series_attribution{team="foo",user="user1"} 1
-// 		`
-// 		metricNames := []string{
-// 			"cortex_ingester_active_series_attribution",
-// 		}
-// 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-// 	})
+	t.Run("Disable user cost attribution, tracker and metrics are removed", func(t *testing.T) {
+		// We disable cost attribution for user1, so the tracker should be deleted
+		manager.limits, err = getMockLimits(1)
+		assert.NoError(t, err)
 
-// 	t.Run("Should ignore setting the active series gauge for disabled user", func(t *testing.T) {
-// 		userID = "user2"
-// 		lbls.Set("department", "bar")
-// 		isOutdated, val := manager.UpdateAttributionTimestamp(userID, "department", lbls.Labels(), time.Unix(0, 0))
-// 		assert.False(t, isOutdated)
-// 		manager.SetActiveSeries(userID, val, "department", 4.0)
+		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
+		assert.Equal(t, 1, len(manager.trackersByUserID))
+		expectedMetrics := `
+		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_received_attributed_samples_total counter
+		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",user="user3"} 1
+        cortex_received_attributed_samples_total{department="foo",service="bar",user="user3"} 1
+		cortex_received_attributed_samples_total{department="foo",service="dodo",user="user3"} 1
+		`
+		metricNames := []string{
+			"cortex_discarded_attributed_samples_total",
+			"cortex_received_attributed_samples_total",
+		}
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	})
 
-// 		expectedMetrics := `
-// 		# HELP cortex_ingester_active_series_attribution The total number of active series per user and attribution.
-// 		# TYPE cortex_ingester_active_series_attribution gauge
-// 		cortex_ingester_active_series_attribution{team="foo",user="user1"} 1
-// 		`
-// 		metricNames := []string{
-// 			"cortex_ingester_active_series_attribution",
-// 		}
-// 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-// 	})
-// }
+	t.Run("Increase user cost attribution max cardinality, since current state is overflow, we clean up the counter", func(t *testing.T) {
+		// user3 has cost attribution labels department and service, we change it to team and feature. user1 should not be affected
+		manager.limits, err = getMockLimits(3)
+		assert.NoError(t, err)
+		manager.TrackerForUser("user1").IncrementDiscardedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
+		assert.Equal(t, 2, len(manager.trackersByUserID))
 
-// func TestUpdateAttributionTimestampForUser(t *testing.T) {
-// 	cooldownTimeout := 10 * time.Second
-// 	t.Run("Should not update the timestamp for the user if attribution lable is not set", func(t *testing.T) {
-// 		// Create mock limits
-// 		limiter, err := validation.NewOverrides(validation.Limits{CostAttributionLabel: "", MaxCostAttributionPerUser: 5}, nil)
-// 		assert.NoError(t, err)
-// 		trackerGroup := newAttributionTrackerGroup(limiter, cooldownTimeout)
-// 		assert.NotNil(t, trackerGroup)
+		expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+        # TYPE cortex_discarded_attributed_samples_total counter
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 1
+		`
+		metricNames := []string{
+			"cortex_discarded_attributed_samples_total",
+			"cortex_received_attributed_samples_total",
+		}
+		assert.Equal(t, 3, manager.TrackerForUser("user3").GetMaxCardinality())
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	})
 
-// 		ts := time.Unix(1, 0)
-// 		trackerGroup.updateAttributionCacheForUser("tenantA", "platform", "platformA", ts)
-// 		trackerGroup.updateAttributionCacheForUser("tenantB", "platform", "teamB", ts)
+	t.Run("Increase user cost attribution max cardinality, user is not in overflow, nothing changed", func(t *testing.T) {
+		// user3 has cost attribution labels department and service, we change it to team and feature
+		manager.limits, err = getMockLimits(4)
+		assert.NoError(t, err)
+		manager.TrackerForUser("user1").IncrementDiscardedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, "invalid-metrics-name", time.Unix(13, 0))
+		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
+		assert.Equal(t, 2, len(manager.trackersByUserID))
+		expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+        # TYPE cortex_discarded_attributed_samples_total counter
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 2
+		`
+		metricNames := []string{
+			"cortex_discarded_attributed_samples_total",
+			"cortex_received_attributed_samples_total",
+		}
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	})
 
-// 		assert.Equal(t, 0, len(trackerGroup.trackersByUserID))
-// 	})
+	t.Run("Change user cost attribution lables, tracker and metrics are reinitialized", func(t *testing.T) {
+		// user3 has cost attribution labels department and service, we change it to team and feature
+		manager.limits, err = getMockLimits(5)
+		assert.NoError(t, err)
 
-// 	t.Run("Should not update the timestamp for the user if max cost attribution per user is 0", func(t *testing.T) {
-// 		// Create mock limits
-// 		limiter, err := validation.NewOverrides(validation.Limits{CostAttributionLabel: "platform", MaxCostAttributionPerUser: 0}, nil)
-// 		assert.NoError(t, err)
-
-// 		trackerGroup := newAttributionTrackerGroup(limiter, cooldownTimeout)
-// 		assert.NotNil(t, trackerGroup)
-
-// 		ts := time.Unix(1, 0)
-// 		trackerGroup.updateAttributionCacheForUser("tenantA", "platform", "platformA", ts)
-// 		trackerGroup.updateAttributionCacheForUser("tenantB", "platform", "teamB", ts)
-
-// 		assert.Equal(t, 0, len(trackerGroup.trackersByUserID))
-// 	})
-
-// 	t.Run("Should update the timestamp for the user attribution", func(t *testing.T) {
-// 		// Create mock limits
-// 		limiter, err := validation.NewOverrides(validation.Limits{CostAttributionLabel: "platform", MaxCostAttributionPerUser: 5}, nil)
-// 		assert.NoError(t, err)
-
-// 		trackerGroup := newAttributionTrackerGroup(limiter, cooldownTimeout)
-// 		assert.NotNil(t, trackerGroup)
-
-// 		ts := time.Unix(1, 0)
-// 		trackerGroup.updateAttributionCacheForUser("tenantA", "platform", "fooA", ts)
-// 		trackerGroup.updateAttributionCacheForUser("tenantB", "platform", "barA", ts)
-
-// 		assert.Equal(t, 2, len(trackerGroup.trackersByUserID))
-// 		fmt.Println(trackerGroup.trackersByUserID)
-// 		assert.NotNil(t, trackerGroup.trackersByUserID["tenantA"])
-// 		assert.NotNil(t, trackerGroup.trackersByUserID["tenantA"].observed["fooA"])
-// 		assert.Equal(t, int64(1), trackerGroup.trackersByUserID["tenantA"].observed["fooA"].Load())
-
-// 		trackerGroup.updateAttributionCacheForUser("tenantB", "platform", "barA", ts.Add(time.Second))
-// 		assert.Equal(t, int64(2), trackerGroup.trackersByUserID["tenantB"].observed["barA"].Load())
-// 	})
-// }
-
-// func TestUserAttributionLabel(t *testing.T) {
-// 	cooldownTimeout := 10 * time.Second
-// 	t.Run("Should return the cost attribution label for the user", func(t *testing.T) {
-// 		// Create mock limits
-// 		limiter, err := validation.NewOverrides(validation.Limits{CostAttributionLabel: "platform", MaxCostAttributionPerUser: 5}, nil)
-// 		assert.NoError(t, err)
-
-// 		trackerGroup := newAttributionTrackerGroup(limiter, cooldownTimeout)
-// 		assert.NotNil(t, trackerGroup)
-// 		trackerGroup.updateAttributionCacheForUser("tenantA", "platform", "fooA", time.Unix(0, 0))
-
-// 		assert.Equal(t, "platform", trackerGroup.getUserAttributionLabelFromCache("tenantA"))
-// 	})
-
-// 	t.Run("Should return the default cost attribution label for the user if it is in cache", func(t *testing.T) {
-// 		// Create mock limits
-// 		limiter, err := validation.NewOverrides(validation.Limits{CostAttributionLabel: "platform", MaxCostAttributionPerUser: 5}, nil)
-// 		assert.NoError(t, err)
-
-// 		trackerGroup := newAttributionTrackerGroup(limiter, cooldownTimeout)
-// 		assert.NotNil(t, trackerGroup)
-
-// 		assert.Equal(t, "platform", trackerGroup.getUserAttributionLabelFromCache("tenantA"))
-
-// 		// update the timestamp for the user, so cache is updated
-// 		trackerGroup.updateAttributionCacheForUser("tenantA", "platform", "fooA", time.Unix(0, 0))
-
-// 		// still read the cost attribution label from cache until cache is updated by timed service
-// 		assert.Equal(t, "platform", trackerGroup.getUserAttributionLabelFromCache("tenantA"))
-// 	})
-// }
+		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
+		assert.Equal(t, 2, len(manager.trackersByUserID))
+		metricNames := []string{
+			"cortex_discarded_attributed_samples_total",
+			"cortex_received_attributed_samples_total",
+		}
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), metricNames...))
+	})
+}

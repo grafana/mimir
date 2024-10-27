@@ -47,7 +47,8 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 }
 
 func (m *Manager) iteration(_ context.Context) error {
-	m.purgeInactiveAttributions(m.inactiveTimeout)
+	currentTime := time.Now()
+	m.purgeInactiveAttributionsUntil(currentTime.Add(-m.inactiveTimeout).Unix())
 	return nil
 }
 
@@ -66,7 +67,7 @@ func (m *Manager) TrackerForUser(userID string) Tracker {
 
 	// if not exists, create a new tracker
 	if _, exists := m.trackersByUserID[userID]; !exists {
-		m.trackersByUserID[userID], _ = newTracker(m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
+		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
 	}
 	return m.trackersByUserID[userID]
 }
@@ -96,8 +97,7 @@ func (m *Manager) deleteUserTracer(userID string) {
 	delete(m.trackersByUserID, userID)
 }
 
-func (m *Manager) purgeInactiveAttributions(inactiveTimeout time.Duration) {
-
+func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 	// Get all userIDs from the map
 	m.mtx.RLock()
 	userIDs := make([]string, 0, len(m.trackersByUserID))
@@ -107,7 +107,6 @@ func (m *Manager) purgeInactiveAttributions(inactiveTimeout time.Duration) {
 	m.mtx.RUnlock()
 
 	// Iterate over all userIDs and purge inactive attributions of each user
-	currentTime := time.Now()
 	for _, userID := range userIDs {
 		// if cost attribution is not enabled for the user, delete the user tracker and continue
 		if len(m.limits.CostAttributionLabels(userID)) == 0 || m.limits.MaxCostAttributionCardinalityPerUser(userID) <= 0 {
@@ -115,7 +114,7 @@ func (m *Manager) purgeInactiveAttributions(inactiveTimeout time.Duration) {
 			continue
 		}
 		// get all inactive attributions for the user and clean up the tracker
-		inactiveObs := m.purgeInactiveObservationsForUser(userID, currentTime.Add(-inactiveTimeout).UnixNano())
+		inactiveObs := m.purgeInactiveObservationsForUser(userID, deadline)
 		for _, ob := range inactiveObs {
 			m.trackersByUserID[userID].cleanupTrackerAttribution(ob.lvalues)
 		}
@@ -149,7 +148,7 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 	// if they are different, we need to update the tracker, we don't mind, just reinitialized the tracker
 	if !compareStringSlice(cat.GetCALabels(), newTrackedLabels) {
 		m.mtx.Lock()
-		m.trackersByUserID[userID], _ = newTracker(m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
+		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
 		// update the tracker with the new tracker
 		cat = m.trackersByUserID[userID]
 		m.mtx.Unlock()

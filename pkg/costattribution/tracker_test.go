@@ -5,20 +5,24 @@ package costattribution
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_NewTracker(t *testing.T) {
-	reg := prometheus.NewRegistry()
 
-	// Initialize a new Tracker
+	// Setup the test environment
+	reg := prometheus.NewRegistry()
 	trackedLabel := []string{"platform"}
-	cat, err := newTracker(trackedLabel, 5)
+	cat, err := newTracker("user1", trackedLabel, 5)
 	require.NoError(t, err)
+
+	// Register the metrics
 	err = reg.Register(cat)
 	require.NoError(t, err)
 
@@ -28,6 +32,7 @@ func Test_NewTracker(t *testing.T) {
 	cat.receivedSamplesAttribution.WithLabelValues(vals...).Add(5)
 	cat.discardedSampleAttribution.WithLabelValues(append(vals, "out-of-window")...).Add(2)
 
+	// Verify the metrics
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
     # TYPE cortex_discarded_attributed_samples_total counter
@@ -47,6 +52,62 @@ func Test_NewTracker(t *testing.T) {
 	}
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 
-	// Clean the tracker for the user attribution
+	// Clean up the metrics
 	cat.cleanupTrackerAttribution(vals)
+}
+
+func Test_PurgeInactiveObservations(t *testing.T) {
+	// Setup the test environment, user1 cost attribution label is "team", max cardinality limit is 5
+	cat := newTestManager().TrackerForUser("user1")
+
+	// create 2 observations
+	lbs := []labels.Labels{
+		labels.FromStrings([]string{"team", "foo"}...),
+		labels.FromStrings([]string{"team", "bar"}...),
+	}
+	cat.IncrementDiscardedSamples(lbs[0], 1, "invalid-metrics-name", time.Unix(1, 0))
+	cat.IncrementDiscardedSamples(lbs[1], 2, "out-of-window-sample", time.Unix(12, 0))
+
+	// Check the observations
+	require.Len(t, cat.(*TrackerImp).observed, 2)
+
+	// Purge the observations older than 10 seconds, we should have 1 observation left
+	purged := cat.PurgeInactiveObservations(10)
+
+	// Verify the purged observations
+	require.Len(t, purged, 1)
+	assert.Equal(t, int64(1), purged[0].lastUpdate.Load())
+	assert.Equal(t, []string{"foo", "user1", "invalid-metrics-name"}, purged[0].lvalues)
+
+	// Verify the remaining observations
+	obs := cat.(*TrackerImp).observed
+	require.Len(t, obs, 1)
+	assert.Equal(t, int64(12), obs[lbs[1].Hash()].lastUpdate.Load())
+}
+
+func Test_GetMaxCardinality(t *testing.T) {
+	// Setup the test environment
+	cat := newTestManager().TrackerForUser("user1")
+
+	// Verify the max cardinality
+	assert.Equal(t, 5, cat.GetMaxCardinality())
+}
+
+func Test_GetCALabels(t *testing.T) {
+	// Setup the test environment
+	cat := newTestManager().TrackerForUser("user1")
+
+	// Verify the CA labels
+	assert.Equal(t, []string{"team"}, cat.GetCALabels())
+}
+
+func Test_UpdateMaxCardinality(t *testing.T) {
+	// Setup the test environment
+	cat := newTestManager().TrackerForUser("user1")
+
+	// Update max cardinality
+	cat.UpdateMaxCardinality(20)
+
+	// Verify the max cardinality
+	assert.Equal(t, 20, cat.GetMaxCardinality())
 }
