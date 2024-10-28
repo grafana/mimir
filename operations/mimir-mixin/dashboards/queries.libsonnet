@@ -93,16 +93,11 @@ local filename = 'mimir-queries.json';
             or
             (
               label_replace(
-                # Query metrics before and after dskit cache refactor.
                 sum (
-                  rate(thanos_cache_memcached_hits_total{name="frontend-cache", $read_path_matcher}[$__rate_interval])
-                  or ignoring(backend)
                   rate(thanos_cache_hits_total{name="frontend-cache", $read_path_matcher}[$__rate_interval])
                 )
                 /
                 sum (
-                  rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", $read_path_matcher}[$__rate_interval])
-                  or ignoring(backend)
                   rate(thanos_cache_requests_total{name=~"frontend-cache", $read_path_matcher}[$__rate_interval])
                 ),
                 "request_type", "query_range", "", "")
