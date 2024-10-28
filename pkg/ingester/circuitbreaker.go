@@ -188,7 +188,7 @@ func (cb *circuitBreaker) isActive() bool {
 }
 
 func (cb *circuitBreaker) activate() {
-	if cb == nil {
+	if cb == nil || cb.active.Load() {
 		return
 	}
 	if cb.cfg.InitialDelay == 0 {
@@ -203,7 +203,7 @@ func (cb *circuitBreaker) activate() {
 }
 
 func (cb *circuitBreaker) deactivate() {
-	if cb == nil {
+	if cb == nil || !cb.active.Load() {
 		return
 	}
 	level.Info(cb.logger).Log("msg", "deactivating circuit breaker", "requestType", cb.requestType)
