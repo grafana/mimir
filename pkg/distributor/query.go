@@ -229,7 +229,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
 	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (result ingesterQueryResult, err error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Span.Finish()
@@ -248,6 +248,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 				cleanup()
 			}
+
+			if err != nil {
+				result.freeBuffers()
+			}
 		}()
 
 		log.Span.SetTag("ingester_address", ing.Addr)
@@ -263,8 +267,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			return ingesterQueryResult{}, err
 		}
 
-		result := ingesterQueryResult{}
-
 		// Why retain the batches rather than iteratively build a single slice?
 		// If we iteratively build a single slice, we'll spend a lot of time copying elements as the slice grows beyond its capacity.
 		// So instead, we build the slice in one go once we know how many series we have.
@@ -279,7 +281,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
 			} else if err != nil {
-				result.freeBuffers()
 				return ingesterQueryResult{}, err
 			}
 
@@ -288,7 +289,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
-						result.freeBuffers()
 						return ingesterQueryResult{}, limitErr
 					}
 				}
@@ -297,24 +297,20 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			} else if len(resp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
 				if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-					result.freeBuffers()
 					return ingesterQueryResult{}, err
 				}
 
 				if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-					result.freeBuffers()
 					return ingesterQueryResult{}, err
 				}
 
 				for _, series := range resp.Chunkseries {
 					if err := queryLimiter.AddSeries(series.Labels); err != nil {
-						result.freeBuffers()
 						return ingesterQueryResult{}, err
 					}
 				}
 
 				if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
-					result.freeBuffers()
 					return ingesterQueryResult{}, err
 				}
 
@@ -325,18 +321,15 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 				for _, s := range resp.StreamingSeries {
 					if err := queryLimiter.AddSeries(s.Labels); err != nil {
-						result.freeBuffers()
 						return ingesterQueryResult{}, err
 					}
 
 					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
 					if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
-						result.freeBuffers()
 						return ingesterQueryResult{}, err
 					}
 
 					if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
-						result.freeBuffers()
 						return ingesterQueryResult{}, err
 					}
 
