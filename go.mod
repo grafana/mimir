@@ -74,7 +74,7 @@ require (
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.9
-	github.com/thanos-io/objstore v0.0.0-20241015070247-5f04b8b0b52a
+	github.com/thanos-io/objstore v0.0.0-20241024120700-168679cbbf20
 	github.com/twmb/franz-go v1.17.1
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20241015013301-cea7aa5d8037
