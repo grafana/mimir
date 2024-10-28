@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -2666,6 +2667,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
+	userDBHasDB := atomic.NewBool(false)
+	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+		if !userDBHasDB.Load() {
+			return nil
+		}
+		return userDB.blocksToDelete(blocks)
+	}
+
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2680,7 +2689,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                        i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                  walReplayConcurrency,
 		SeriesLifecycleCallback:               userDB,
-		BlocksToDelete:                        userDB.blocksToDelete,
+		BlocksToDelete:                        blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
@@ -2721,6 +2730,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB.db = db
+	userDBHasDB.Store(true)
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
