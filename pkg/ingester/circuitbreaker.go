@@ -280,11 +280,6 @@ func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBrea
 	}
 }
 
-func (cb *ingesterCircuitBreaker) activate() {
-	cb.push.activate()
-	cb.read.activate()
-}
-
 // tryAcquirePushPermit tries to acquire a permit to use the push circuit breaker and returns whether a permit was acquired.
 // If it was possible, tryAcquirePushPermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
