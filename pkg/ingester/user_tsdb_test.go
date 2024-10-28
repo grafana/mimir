@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"math"
-	"sync"
 	"testing"
 	"time"
 
@@ -101,40 +100,6 @@ func TestUserTSDB_acquireAppendLock(t *testing.T) {
 		}
 
 		db.releaseAppendLock(stateForcedCompaction)
-	})
-}
-
-func TestUserTSDB_blocksToDelete(t *testing.T) {
-	t.Run("blocksToDelete is concurrency safe and is non-racy", func(*testing.T) {
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		setDBStarted := make(chan struct{})
-		blockDeleteStarted := make(chan struct{})
-		var userDB userTSDB
-
-		go func() {
-			defer wg.Done()
-
-			<-setDBStarted
-
-			for i := 0; i < 1000; i++ {
-				userDB.blocksToDelete(nil)
-				if i == 0 {
-					close(blockDeleteStarted)
-				}
-			}
-		}()
-
-		go func() {
-			defer wg.Done()
-
-			close(setDBStarted)
-			<-blockDeleteStarted
-			userDB.setDB(&tsdb.DB{})
-		}()
-
-		wg.Wait()
 	})
 }
 

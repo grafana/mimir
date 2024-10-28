@@ -92,7 +92,6 @@ type ownedSeriesState struct {
 }
 
 type userTSDB struct {
-	hasDB          atomic.Bool
 	db             *tsdb.DB
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
@@ -143,12 +142,6 @@ type userTSDB struct {
 	ownedTokenRanges ring.TokenRanges
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
-}
-
-// setDB sets u.db.
-func (u *userTSDB) setDB(db *tsdb.DB) {
-	u.db = db
-	u.hasDB.Store(true)
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -368,7 +361,7 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
 func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
-	if !u.hasDB.Load() {
+	if u.db == nil {
 		return nil
 	}
 
