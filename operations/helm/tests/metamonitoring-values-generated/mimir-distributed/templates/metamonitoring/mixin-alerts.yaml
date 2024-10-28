@@ -1172,6 +1172,15 @@ spec:
             for: 5m
             labels:
               severity: warning
+          - alert: MimirBlockBuilderLaging
+            annotations:
+              message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}%.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlaging
+            expr: |
+              max by(cluster, namespace, pod) (max_over_time(cortex_blockbuilder_consumer_lag_records[60m])) > 4e6
+            for: 1h
+            labels:
+              severity: warning
           - alert: MimirBlockBuilderCompactAndUploadFailed
             annotations:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
