@@ -501,6 +501,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
+			// There's a chance that the group is asked to return early. In that case, we should
+			// wait for any in-flight rules to finish evaluating before returning so that we can preserve the same semantics.
+			// At the time of writing, the main reason for this was to make sure we don't clear seriesInPreviousEval before we're done using it.
+			wg.Wait()
 			return
 		default:
 		}

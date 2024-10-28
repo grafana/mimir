@@ -133,12 +133,18 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := NewDistributorQueryable(distributor, limits, queryMetrics, logger)
+	queryables = append(queryables, TimeRangeQueryable{
+		Queryable:   NewDistributorQueryable(distributor, limits, queryMetrics, logger),
+		StorageName: "ingester",
+		IsApplicable: func(tenantID string, now time.Time, _, queryMaxT int64) bool {
+			return ShouldQueryIngesters(limits.QueryIngestersWithin(tenantID), now, queryMaxT)
+		},
+	})
 
-	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
+	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -206,8 +212,7 @@ func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 
 // newQueryable creates a new Queryable for Mimir.
 func newQueryable(
-	distributor storage.Queryable,
-	blockStore storage.Queryable,
+	queryables []TimeRangeQueryable,
 	cfg Config,
 	limits *validation.Overrides,
 	queryMetrics *stats.QueryMetrics,
@@ -215,8 +220,7 @@ func newQueryable(
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		return multiQuerier{
-			distributor:  distributor,
-			blockStore:   blockStore,
+			queryables:   queryables,
 			queryMetrics: queryMetrics,
 			cfg:          cfg,
 			minT:         minT,
@@ -228,10 +232,26 @@ func newQueryable(
 	})
 }
 
+// TimeRangeQueryable is a Queryable that is aware of when it is applicable.
+type TimeRangeQueryable struct {
+	storage.Queryable
+	IsApplicable func(tenantID string, now time.Time, queryMinT, queryMaxT int64) bool
+	StorageName  string
+}
+
+func NewStoreGatewayTimeRangeQueryable(q storage.Queryable, querierConfig Config) TimeRangeQueryable {
+	return TimeRangeQueryable{
+		Queryable:   q,
+		StorageName: "store-gateway",
+		IsApplicable: func(_ string, now time.Time, queryMinT, _ int64) bool {
+			return ShouldQueryBlockStore(querierConfig.QueryStoreAfter, now, queryMinT)
+		},
+	}
+}
+
 // multiQuerier implements storage.Querier, orchestrating requests across a set of queriers.
 type multiQuerier struct {
-	distributor  storage.Queryable
-	blockStore   storage.Queryable
+	queryables   []TimeRangeQueryable
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
 	minT, maxT   int64
@@ -263,28 +283,16 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 	}
 
 	var queriers []storage.Querier
-	// distributor or blockStore queryables passed into newQueryable should only be nil in tests;
-	// the decision of whether to construct the ingesters or block store queryables
-	// should be made here, not by the caller of newQueryable
-	//
-	// queriers may further apply stricter internal logic and decide no-op for a given query
+	for _, queryable := range mq.queryables {
+		if queryable.IsApplicable(tenantID, now, mq.minT, mq.maxT) {
+			q, err := queryable.Querier(mq.minT, mq.maxT)
+			if err != nil {
+				return nil, nil, err
+			}
 
-	if mq.distributor != nil && ShouldQueryIngesters(mq.limits.QueryIngestersWithin(tenantID), now, mq.maxT) {
-		q, err := mq.distributor.Querier(mq.minT, mq.maxT)
-		if err != nil {
-			return nil, nil, err
+			queriers = append(queriers, q)
+			mq.queryMetrics.QueriesExecutedTotal.WithLabelValues(queryable.StorageName).Inc()
 		}
-		queriers = append(queriers, q)
-		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
-	}
-
-	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, mq.minT) {
-		q, err := mq.blockStore.Querier(mq.minT, mq.maxT)
-		if err != nil {
-			return nil, nil, err
-		}
-		queriers = append(queriers, q)
-		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("store-gateway").Inc()
 	}
 
 	return ctx, queriers, nil

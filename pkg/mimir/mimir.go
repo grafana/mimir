@@ -49,6 +49,7 @@ import (
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/blockbuilder"
+	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -113,24 +114,25 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API              api.Config                      `yaml:"api"`
-	Server           server.Config                   `yaml:"server"`
-	Distributor      distributor.Config              `yaml:"distributor"`
-	Querier          querier.Config                  `yaml:"querier"`
-	IngesterClient   client.Config                   `yaml:"ingester_client"`
-	Ingester         ingester.Config                 `yaml:"ingester"`
-	Flusher          flusher.Config                  `yaml:"flusher"`
-	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Worker           querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
-	BlockBuilder     blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
-	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor        compactor.Config                `yaml:"compactor"`
-	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
-	Vault            vault.Config                    `yaml:"vault"`
+	API                   api.Config                      `yaml:"api"`
+	Server                server.Config                   `yaml:"server"`
+	Distributor           distributor.Config              `yaml:"distributor"`
+	Querier               querier.Config                  `yaml:"querier"`
+	IngesterClient        client.Config                   `yaml:"ingester_client"`
+	Ingester              ingester.Config                 `yaml:"ingester"`
+	Flusher               flusher.Config                  `yaml:"flusher"`
+	LimitsConfig          validation.Limits               `yaml:"limits"`
+	Worker                querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor             compactor.Config                `yaml:"compactor"`
+	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
+	Vault                 vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -184,6 +186,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
 	c.BlockBuilder.RegisterFlags(f, logger)
+	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -717,6 +720,7 @@ type Mimir struct {
 	RuntimeConfig                   *runtimeconfig.Manager
 	QuerierQueryable                prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable               prom_storage.ExemplarQueryable
+	AdditionalStorageQueryables     []querier.TimeRangeQueryable
 	MetadataSupplier                querier.MetadataSupplier
 	QuerierEngine                   promql.QueryEngine
 	QueryFrontendTripperware        querymiddleware.Tripperware
@@ -727,12 +731,12 @@ type Mimir struct {
 	Alertmanager                    *alertmanager.MultitenantAlertmanager
 	Compactor                       *compactor.MultitenantCompactor
 	StoreGateway                    *storegateway.StoreGateway
-	StoreQueryable                  prom_storage.Queryable
 	MemberlistKV                    *memberlist.KVInitService
 	ActivityTracker                 *activitytracker.ActivityTracker
 	Vault                           *vault.Vault
 	UsageStatsReporter              *usagestats.Reporter
 	BlockBuilder                    *blockbuilder.BlockBuilder
+	BlockBuilderScheduler           *blockbuilderscheduler.BlockBuilderScheduler
 	ContinuousTestManager           *continuoustest.Manager
 	BuildInfoHandler                http.Handler
 }

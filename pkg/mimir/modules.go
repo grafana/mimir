@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/blockbuilder"
+	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -102,6 +103,7 @@ const (
 	TenantFederation                string = "tenant-federation"
 	UsageStats                      string = "usage-stats"
 	BlockBuilder                    string = "block-builder"
+	BlockBuilderScheduler           string = "block-builder-scheduler"
 	ContinuousTest                  string = "continuous-test"
 	All                             string = "all"
 
@@ -485,7 +487,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
-		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, registerer, util_log.Logger, t.ActivityTracker,
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
@@ -633,7 +635,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
-	t.StoreQueryable = q
+	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
 	return q, nil
 }
 
@@ -866,7 +868,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
@@ -1093,6 +1095,17 @@ func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 	return t.BlockBuilder, nil
 }
 
+func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
+	t.Cfg.BlockBuilderScheduler.Kafka = t.Cfg.IngestStorage.KafkaConfig
+
+	s, err := blockbuilderscheduler.New(t.Cfg.BlockBuilderScheduler, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "block-builder-scheduler init")
+	}
+	t.BlockBuilderScheduler = s
+	return s, nil
+}
+
 func (t *Mimir) initContinuousTest() (services.Service, error) {
 	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger)
 	if err != nil {
@@ -1144,6 +1157,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
+	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
@@ -1180,6 +1194,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:                {Queryable},
 		BlockBuilder:                    {API, Overrides},
+		BlockBuilderScheduler:           {API},
 		ContinuousTest:                  {API},
 		Write:                           {Distributor, Ingester},
 		Read:                            {QueryFrontend, Querier},

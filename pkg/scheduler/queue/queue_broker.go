@@ -33,31 +33,20 @@ type queueBroker struct {
 	tenantQuerierAssignments *tenantQuerierShards
 	querierConnections       *querierConnections
 
-	maxTenantQueueSize        int
-	prioritizeQueryComponents bool
+	maxTenantQueueSize int
 }
 
 func newQueueBroker(
 	maxTenantQueueSize int,
-	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	qc := newQuerierConnections(forgetDelay)
 	tqas := newTenantQuerierAssignments()
 	var treeQueue tree.Tree
 	var err error
-	var algos []tree.QueuingAlgorithm
-	if prioritizeQueryComponents {
-		algos = []tree.QueuingAlgorithm{
-			tree.NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
-			tqas.queuingAlgorithm,                    // query components; algorithm selects tenants
-
-		}
-	} else {
-		algos = []tree.QueuingAlgorithm{
-			tqas.queuingAlgorithm,     // root; algorithm selects tenants
-			tree.NewRoundRobinState(), // tenant queues; algorithm selects query component
-		}
+	algos := []tree.QueuingAlgorithm{
+		tree.NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
+		tqas.queuingAlgorithm,                    // query components; algorithm selects tenants
 	}
 	treeQueue, err = tree.NewTree(algos...)
 
@@ -66,11 +55,10 @@ func newQueueBroker(
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
 	}
 	qb := &queueBroker{
-		tree:                      treeQueue,
-		querierConnections:        qc,
-		tenantQuerierAssignments:  tqas,
-		maxTenantQueueSize:        maxTenantQueueSize,
-		prioritizeQueryComponents: prioritizeQueryComponents,
+		tree:                     treeQueue,
+		querierConnections:       qc,
+		tenantQuerierAssignments: tqas,
+		maxTenantQueueSize:       maxTenantQueueSize,
 	}
 
 	return qb
@@ -128,10 +116,7 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (tree.QueuePath, er
 	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
 		queryComponent = schedulerRequest.ExpectedQueryComponentName()
 	}
-	if qb.prioritizeQueryComponents {
-		return append([]string{queryComponent}, request.tenantID), nil
-	}
-	return append(tree.QueuePath{request.tenantID}, queryComponent), nil
+	return append([]string{queryComponent}, request.tenantID), nil
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(

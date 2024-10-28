@@ -1718,13 +1718,6 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) When enabled, the query scheduler primarily prioritizes
-# dequeuing fairly from queue components and secondarily prioritizes dequeuing
-# fairly across tenants. When disabled, the query scheduler primarily
-# prioritizes tenant fairness.
-# CLI flag: -query-scheduler.prioritize-query-components
-[prioritize_query_components: <boolean> | default = false]
-
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the
