@@ -228,6 +228,21 @@
           },
         },
 
+        // Alert if block-builder per partition lag is higher than the threshhold.
+        {
+          alert: $.alertName('BlockBuilderLaging'),
+          'for': '1h',
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_blockbuilder_consumer_lag_records[60m])) > 4e6
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s reports partition lag of {{ printf "%%.2f" $value }}%%.' % $._config,
+          },
+        },
+
         // Alert if block-builder is failing to compact and upload any blocks.
         {
           alert: $.alertName('BlockBuilderCompactAndUploadFailed'),

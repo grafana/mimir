@@ -1624,6 +1624,21 @@ How to **investigate**:
 
 - Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
 
+### MimirBlockBuilderLaging
+
+This alert fires when the block-builder instances report large lag values for the Kafka partitions.
+
+How it **works**:
+
+- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog.
+- The block-builder must consume and process these records into TSDB blocks.
+- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit the Kafka records.
+
+How to **investigate**:
+
+- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Explore the block-builder logs for any errors reported while it processed the partition.
+
 ### MimirBlockBuilderCompactAndUploadFailed
 
 How it **works**:
