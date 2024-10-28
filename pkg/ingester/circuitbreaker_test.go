@@ -90,6 +90,10 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return cb.isActive()
 	}, time.Second, 10*time.Millisecond)
+
+	// deactivate() makes the circuit breaker inactive again.
+	cb.deactivate()
+	require.False(t, cb.isActive())
 }
 
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
@@ -107,7 +111,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		"if circuit breaker is not active, finish function and no error are returned": {
 			initialDelay: 1 * time.Minute,
 			circuitBreakerSetup: func(cb *circuitBreaker) {
-				cb.active.Store(false)
+				cb.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 		},
@@ -1029,7 +1033,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 	}{
 		"if push circuit breaker is not active, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1184,8 +1188,8 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 	}{
 		"if read circuit breaker is not active and push circuit breaker is not active, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
-				cb.push.active.Store(false)
+				cb.read.deactivate()
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1217,7 +1221,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is not active and push circuit breaker is closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
+				cb.read.deactivate()
 				cb.push.activate()
 				cb.push.cb.Close()
 			},
@@ -1251,7 +1255,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is not active and push circuit breaker is open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
+				cb.read.deactivate()
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
@@ -1285,7 +1289,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is not active and push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
+				cb.read.deactivate()
 				cb.push.activate()
 				cb.push.cb.HalfOpen()
 			},
@@ -1321,7 +1325,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
 				cb.read.activate()
 				cb.read.cb.Close()
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1460,7 +1464,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
 				cb.read.activate()
 				cb.read.cb.Open()
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1599,7 +1603,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
 				cb.read.activate()
 				cb.read.cb.HalfOpen()
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
