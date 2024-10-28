@@ -3615,7 +3615,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 	allLabels, allSamples := benchmarkData(series)
 
 	b.ResetTimer()
-	for iter := 0; iter < b.N; iter++ {
+g	for iter := 0; iter < b.N; iter++ {
 		// Bump the timestamp on each of our test samples each time round the loop
 		for j := 0; j < samples; j++ {
 			for i := range allSamples {

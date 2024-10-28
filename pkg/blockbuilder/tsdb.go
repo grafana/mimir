@@ -24,9 +24,9 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -43,6 +43,8 @@ type TSDBBuilder struct {
 	tsdbsMu sync.RWMutex
 	tsdbs   map[tsdbTenant]*userTSDB
 }
+
+var softErrProcessor = util.SoftAppendErrorProcessor{}
 
 type tsdbTenant struct {
 	partitionID int32
@@ -144,7 +146,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 			if err != nil {
 				// Only abort the processing on a terminal error.
-				if !ingester.IsSoftAppendError(err) {
+				if !softErrProcessor.ProcessErr(err, 0, nil) {
 					return false, err
 				}
 				discardedSamples++
@@ -188,7 +190,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 			if err != nil {
 				// Only abort the processing on a terminal error.
-				if !ingester.IsSoftAppendError(err) {
+				if !softErrProcessor.ProcessErr(err, 0, nil) {
 					return false, err
 				}
 				discardedSamples++
