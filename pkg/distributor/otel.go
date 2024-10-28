@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -74,8 +75,10 @@ func OTLPHandler(
 			compression = util.Gzip
 		case "":
 			compression = util.NoCompression
+		case "lz4":
+			compression = util.Lz4
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
+			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. \"gzip\", \"lz4\" or no compression supported", contentEncoding)
 		}
 
 		var decoderFunc func(io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
@@ -106,12 +109,16 @@ func OTLPHandler(
 					sz += bytes.MinRead
 				}
 				buf := buffers.Get(sz)
-				if compression == util.Gzip {
+				switch compression {
+				case util.Gzip:
 					var err error
 					reader, err = gzip.NewReader(reader)
 					if err != nil {
 						return exportReq, 0, errors.Wrap(err, "create gzip reader")
 					}
+				case util.Lz4:
+					reader = lz4.NewCompressingReader(reader)
+
 				}
 
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))

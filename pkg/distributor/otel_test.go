@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
+	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
@@ -81,7 +82,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
-		req := createOTLPProtoRequest(b, exportReq, false)
+		req := createOTLPProtoRequest(b, exportReq, "")
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -93,7 +94,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	})
 
 	b.Run("JSON", func(b *testing.B) {
-		req := createOTLPJSONRequest(b, exportReq, false)
+		req := createOTLPJSONRequest(b, exportReq, "")
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -105,33 +106,42 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	})
 }
 
-func createOTLPProtoRequest(tb testing.TB, metricRequest pmetricotlp.ExportRequest, compress bool) *http.Request {
+func createOTLPProtoRequest(tb testing.TB, metricRequest pmetricotlp.ExportRequest, compression string) *http.Request {
 	tb.Helper()
 
 	body, err := metricRequest.MarshalProto()
 	require.NoError(tb, err)
 
-	return createOTLPRequest(tb, body, compress, "application/x-protobuf")
+	return createOTLPRequest(tb, body, compression, "application/x-protobuf")
 }
 
-func createOTLPJSONRequest(tb testing.TB, metricRequest pmetricotlp.ExportRequest, compress bool) *http.Request {
+func createOTLPJSONRequest(tb testing.TB, metricRequest pmetricotlp.ExportRequest, compression string) *http.Request {
 	tb.Helper()
 
 	body, err := metricRequest.MarshalJSON()
 	require.NoError(tb, err)
 
-	return createOTLPRequest(tb, body, compress, "application/json")
+	return createOTLPRequest(tb, body, compression, "application/json")
 }
 
-func createOTLPRequest(tb testing.TB, body []byte, compress bool, contentType string) *http.Request {
+func createOTLPRequest(tb testing.TB, body []byte, compression, contentType string) *http.Request {
 	tb.Helper()
 
-	if compress {
+	switch compression {
+	case "gzip":
 		var b bytes.Buffer
 		gz := gzip.NewWriter(&b)
 		_, err := gz.Write(body)
 		require.NoError(tb, err)
 		require.NoError(tb, gz.Close())
+
+		body = b.Bytes()
+	case "lz4":
+		var b bytes.Buffer
+		lz4Writer := lz4.NewWriter(&b)
+		_, err := lz4Writer.Write(body)
+		require.NoError(tb, err)
+		require.NoError(tb, lz4Writer.Close())
 
 		body = b.Bytes()
 	}
@@ -147,8 +157,8 @@ func createOTLPRequest(tb testing.TB, body []byte, compress bool, contentType st
 	req.Header.Set("X-Scope-OrgID", tenantID)
 	ctx := user.InjectOrgID(context.Background(), tenantID)
 	req = req.WithContext(ctx)
-	if compress {
-		req.Header.Set("Content-Encoding", "gzip")
+	if compression != "" {
+		req.Header.Set("Content-Encoding", compression)
 	}
 
 	return req
@@ -223,8 +233,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		series   []prompb.TimeSeries
 		metadata []mimirpb.MetricMetadata
 
-		compression bool
-		encoding    string
+		compression string
 		maxMsgSize  int
 
 		verifyFunc   func(*testing.T, *Request) error
@@ -243,8 +252,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode: http.StatusOK,
 		},
 		{
-			name:         "Write samples. With compression",
-			compression:  true,
+			name:         "Write samples. With gzip compression",
+			compression:  "gzip",
 			maxMsgSize:   100000,
 			verifyFunc:   samplesVerifierFunc,
 			series:       sampleSeries,
@@ -252,11 +261,19 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode: http.StatusOK,
 		},
 		{
-			name:        "Write samples. No compression, request too big",
-			compression: false,
-			maxMsgSize:  30,
-			series:      sampleSeries,
-			metadata:    sampleMetadata,
+			name:         "Write samples. With lz4 compression",
+			compression:  "lz4",
+			maxMsgSize:   100000,
+			verifyFunc:   samplesVerifierFunc,
+			series:       sampleSeries,
+			metadata:     sampleMetadata,
+			responseCode: http.StatusOK,
+		},
+		{
+			name:       "Write samples. No compression, request too big",
+			maxMsgSize: 30,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
 			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
@@ -266,22 +283,22 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
-			name:       "Write samples. Unsupported compression",
-			encoding:   "snappy",
-			maxMsgSize: 100000,
-			series:     sampleSeries,
-			metadata:   sampleMetadata,
+			name:        "Write samples. Unsupported compression",
+			compression: "snappy",
+			maxMsgSize:  100000,
+			series:      sampleSeries,
+			metadata:    sampleMetadata,
 			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode: http.StatusUnsupportedMediaType,
-			errMessage:   "Only \"gzip\" or no compression supported",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\" or no compression supported" insight=true`},
+			errMessage:   "\"gzip\", \"lz4\" or no compression supported",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. \"gzip\", \"lz4\" or no compression supported" insight=true`},
 		},
 		{
-			name:        "Write samples. With compression, request too big",
-			compression: true,
+			name:        "Write samples. With gzip compression, request too big",
+			compression: "gzip",
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
@@ -292,6 +309,20 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode: http.StatusRequestEntityTooLarge,
 			errMessage:   "the incoming OTLP request has been rejected because its message size of 78 bytes is larger",
 			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 78 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+		},
+		{
+			name:        "Write samples. With lz4 compression, request too big",
+			compression: "lz4",
+			maxMsgSize:  30,
+			series:      sampleSeries,
+			metadata:    sampleMetadata,
+			verifyFunc: func(_ *testing.T, pushReq *Request) error {
+				_, err := pushReq.WriteRequest()
+				return err
+			},
+			responseCode: http.StatusRequestEntityTooLarge,
+			errMessage:   "the incoming OTLP request has been rejected because its message size of 80 bytes is larger",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 80 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Rate limited request",
@@ -347,14 +378,53 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode: http.StatusOK,
 		},
+		{
+			name:        "Write histograms. With lz4 compression",
+			compression: "lz4",
+			maxMsgSize:  100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "foo"},
+					},
+					Histograms: []prompb.Histogram{
+						prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
+					},
+				},
+			},
+			metadata: []mimirpb.MetricMetadata{
+				{
+					Help: "metric_help",
+					Unit: "metric_unit",
+				},
+			},
+			verifyFunc: func(t *testing.T, pushReq *Request) error {
+				request, err := pushReq.WriteRequest()
+				require.NoError(t, err)
+
+				series := request.Timeseries
+				require.Len(t, series, 1)
+
+				histograms := series[0].Histograms
+				assert.Equal(t, 1, len(histograms))
+				assert.Equal(t, 1, int(histograms[0].Schema))
+
+				metadata := request.Metadata
+				assert.Equal(t, mimirpb.HISTOGRAM, metadata[0].GetType())
+				assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
+				assert.Equal(t, "metric_help", metadata[0].GetHelp())
+				assert.Equal(t, "metric_unit", metadata[0].GetUnit())
+
+				pushReq.CleanUp()
+				return nil
+			},
+			responseCode: http.StatusOK,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exportReq := TimeseriesToOTLPRequest(tt.series, tt.metadata)
 			req := createOTLPProtoRequest(t, exportReq, tt.compression)
-			if tt.encoding != "" {
-				req.Header.Set("Content-Encoding", tt.encoding)
-			}
 
 			limits, err := validation.NewOverrides(
 				validation.Limits{},
@@ -440,7 +510,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
+	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
@@ -486,7 +556,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
+	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, nil, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
@@ -512,7 +582,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	datapoint3.BucketCounts().FromRaw([]uint64{10, 20, 30, 40, 50})
 	attributes.CopyTo(datapoint3.Attributes())
 
-	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
+	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(100000, nil, nil, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
