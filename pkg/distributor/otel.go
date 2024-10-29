@@ -118,7 +118,6 @@ func OTLPHandler(
 					}
 				case util.Lz4:
 					reader = lz4.NewCompressingReader(reader)
-
 				}
 
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
