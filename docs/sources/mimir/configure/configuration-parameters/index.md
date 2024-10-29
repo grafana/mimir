@@ -3935,6 +3935,26 @@ kafka:
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-batch-size
   [ingestion_concurrency_batch_size: <int> | default = 150]
 
+  # The number of batches that will be prepared and queued at the same time.
+  # This is only used when -ingest-storage.kafka.ingestion-concurrency is
+  # greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
+  [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+  # The ideal number of times we expect to push timeseries to the TSDB after
+  # batching, With fewer flushes, the overhead of splitting up the work is
+  # higher than the benefit of parallelization. This is only used when
+  # -ingest-storage.kafka.ingestion-concurrency is greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
+  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+  # The number of bytes we estimate a sample will have on ingestion, this used
+  # estimate to estimate number of time series without decompressing them. This
+  # is only used when -ingest-storage.kafka.ingestion-concurrency is greater
+  # than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
+  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when

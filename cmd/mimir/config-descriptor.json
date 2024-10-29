@@ -6772,6 +6772,36 @@
               "fieldDefaultValue": 150,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-batch-size",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_queue_capacity",
+              "required": false,
+              "desc": "The number of batches that will be prepared and queued at the same time. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-queue-capacity",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_target_flushes_per_shard",
+              "required": false,
+              "desc": "The ideal number of times we expect to push timeseries to the TSDB after batching, With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 80,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_estimated_bytes_per_sample",
+              "required": false,
+              "desc": "The number of bytes we estimate a sample will have on ingestion, this used estimate to estimate number of time series without decompressing them. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 500,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
+              "fieldType": "int"
             }
           ],
           "fieldValue": null,
