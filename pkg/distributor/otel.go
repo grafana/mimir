@@ -78,7 +78,7 @@ func OTLPHandler(
 		case "lz4":
 			compression = util.Lz4
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. \"gzip\", \"lz4\" or no compression supported", contentEncoding)
+			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. \"gzip\", \"lz4\", or no compression supported", contentEncoding)
 		}
 
 		var decoderFunc func(io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
