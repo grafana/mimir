@@ -60,8 +60,6 @@ type pusherConsumer struct {
 
 	kafkaConfig KafkaConfig
 
-	byteEstimatePerTenant map[string]int
-
 	pusher Pusher
 }
 
@@ -134,7 +132,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		}
 	}(ctx, records, recordsChannel)
 
-	// We use the bytes and the estimated bytes per sample to determine the number of timeseries we expected to receive.
+	// We accumulate the total bytes across all records per tenant to determine the number of timeseries we expected to receive.
 	// Then, we'll use that to determine the number of shards we need to parallelize the writes.
 	var bytesPerTenant = make(map[string]int)
 	for _, r := range records {
@@ -315,12 +313,17 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	return p
 }
 
+// IdealShardsFor returns the number of shards that should be used for the given userID.
 func (c *parallelStoragePusher) IdealShardsFor(userID string) int {
+	// First, determine the number of timeseries we expect to receive based on the bytes of WriteRequest's we received.
 	expectedTimeseries := c.bytesPerTenant[userID] / estimatedBytesPerSample
 
 	c.metrics.estimatedTimeseries.Add(float64(expectedTimeseries))
 
+	// Then, determine the number of shards we should use to parallelize the writes.
 	idealShards := expectedTimeseries / c.batchSize / targetFlushesPerShard
+
+	// Finally, use the lower of the two as a conservative estimate.
 	r := min(idealShards, c.numShards)
 
 	c.numActiveShards += r
