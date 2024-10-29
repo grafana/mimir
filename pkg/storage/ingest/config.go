@@ -105,8 +105,11 @@ type KafkaConfig struct {
 	OngoingRecordsPerFetch            int  `yaml:"ongoing_records_per_fetch"`
 	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 
-	IngestionConcurrency          int `yaml:"ingestion_concurrency"`
-	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
+	IngestionConcurrency                        int `yaml:"ingestion_concurrency"`
+	IngestionConcurrencyBatchSize               int `yaml:"ingestion_concurrency_batch_size"`
+	IngestionConcurrencyQueueCapacity           int `yaml:"ingestion_concurrency_queue_capacity"`
+	IngestionConcurrencyTargetFlushesPerShard   int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
+	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -153,6 +156,10 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.IntVar(&cfg.IngestionConcurrency, prefix+".ingestion-concurrency", 0, "The number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
 	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+".ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting into TSDB. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
+
+	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+".ingestion-concurrency-queue-capacity", 5, "The number of batches that will be prepared and queued at the same time. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+".ingestion-concurrency-target-flushes-per-shard", 80, "The ideal number of times we expect to push timeseries to the TSDB after batching, With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+".ingestion-concurrency-estimated-bytes-per-sample", 500, "The number of bytes we estimate a sample will have on ingestion, this used estimate to estimate number of time series without decompressing them. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
 }
 
 func (cfg *KafkaConfig) Validate() error {

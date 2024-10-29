@@ -861,7 +861,7 @@ func TestParallelStoragePusher(t *testing.T) {
 			}
 
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, logger)
+			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 0, 0, 0, logger)
 
 			// Process requests
 			for _, req := range tc.requests {
