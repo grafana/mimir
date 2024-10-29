@@ -229,11 +229,13 @@
         },
 
         // Alert if block-builder per partition lag is higher than the threshhold.
+        // The value of the threshhold is arbitary large for now. We will reconsider this alert after we get the block-builder-scheduler.
+        // Note on "for: 75m": we assume one cycle is 1hr; with 10m loopback we expect the warning to trigger only if the metric is above the threshold for more than one cycle.
         {
-          alert: $.alertName('BlockBuilderLaging'),
-          'for': '1h',
+          alert: $.alertName('BlockBuilderLagging'),
+          'for': '75m',
           expr: |||
-            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_blockbuilder_consumer_lag_records[60m])) > 4e6
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
           ||| % $._config,
           labels: {
             severity: 'warning',
