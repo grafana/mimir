@@ -117,7 +117,7 @@ func OTLPHandler(
 						return exportReq, 0, errors.Wrap(err, "create gzip reader")
 					}
 				case util.Lz4:
-					reader = lz4.NewCompressingReader(reader)
+					reader = io.NopCloser(lz4.NewReader(reader))
 				}
 
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))

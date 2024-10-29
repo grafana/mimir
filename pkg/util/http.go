@@ -249,7 +249,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	}
 	if _, err := buf.ReadFrom(reader); err != nil {
 		if compression == Gzip {
-			return nil, errors.Wrap(err, "decompress ")
+			return nil, errors.Wrap(err, "decompress gzip")
 		}
 		if compression == Lz4 {
 			return nil, errors.Wrap(err, "decompress lz4")
