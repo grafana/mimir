@@ -73,10 +73,10 @@ func OTLPHandler(
 		switch contentEncoding {
 		case "gzip":
 			compression = util.Gzip
-		case "":
-			compression = util.NoCompression
 		case "lz4":
 			compression = util.Lz4
+		case "":
+			compression = util.NoCompression
 		default:
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. \"gzip\", \"lz4\", or no compression supported", contentEncoding)
 		}
