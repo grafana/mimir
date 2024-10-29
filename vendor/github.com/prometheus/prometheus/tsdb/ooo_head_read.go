@@ -146,9 +146,13 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 	// In the example 5 overlaps with 7 and 6 overlaps with 8 so we will return
 	// [5,7], [6,8].
 	toBeMerged := tmpChks[0]
+	prevIsOOO := isOOOChunkID(chunks.HeadChunkID(toBeMerged.Ref))
 	for _, c := range tmpChks[1:] {
-		if c.MinTime > toBeMerged.MaxTime {
-			// This chunk doesn't overlap. Send current toBeMerged to output and start a new one.
+		currIsOOO := isOOOChunkID(chunks.HeadChunkID(c.Ref))
+		if prevIsOOO == currIsOOO && c.MinTime > toBeMerged.MaxTime {
+			// This chunk doesn't overlap and we are not switching between in-order
+			// and out of order. Send current toBeMerged to output and start a new
+			// one.
 			*chks = append(*chks, toBeMerged)
 			toBeMerged = c
 		} else {
@@ -162,6 +166,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 				toBeMerged.MaxTime = c.MaxTime
 			}
 		}
+		prevIsOOO = currIsOOO
 	}
 	*chks = append(*chks, toBeMerged)
 
