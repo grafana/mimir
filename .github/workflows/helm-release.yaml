@@ -5,10 +5,11 @@ on:
     branches:
       - main
       - "mimir-distributed-release-[0-9]+.[0-9]+"
+      - "vldmr/fix-gh-workflow-update-helm-repo"
 
 jobs:
   call-update-helm-repo:
-    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@vldmr/fix-gh-workflow-update-helm-repo
     with:
       charts_dir: operations/helm/charts
       cr_configfile: operations/helm/cr.yaml
