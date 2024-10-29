@@ -35,6 +35,10 @@ const (
 	// There is some overhead in the parallelization. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization.
 	// 80 was devised experimentally to keep the memory and CPU usage low ongoing consumption, while keeping replay speed high during cold replay.
 	targetFlushesPerShard = 80
+
+	// estimatedBytesPerSample is the estimated number of bytes per sample.
+	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
+	estimatedBytesPerSample = 500
 )
 
 type Pusher interface {
@@ -55,6 +59,8 @@ type pusherConsumer struct {
 	logger  log.Logger
 
 	kafkaConfig KafkaConfig
+
+	byteEstimatePerTenant map[string]int
 
 	pusher Pusher
 }
@@ -128,7 +134,14 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		}
 	}(ctx, records, recordsChannel)
 
-	writer := c.newStorageWriter(records)
+	// We use the bytes and the estimated bytes per sample to determine the number of timeseries we expected to receive.
+	// Then, we'll use that to determine the number of shards we need to parallelize the writes.
+	var bytesPerTenant = make(map[string]int)
+	for _, r := range records {
+		bytesPerTenant[r.tenantID] += len(r.content)
+	}
+
+	writer := c.newStorageWriter(bytesPerTenant)
 	for r := range recordsChannel {
 		if r.err != nil {
 			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
@@ -149,7 +162,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 	return multierror.New(writer.Close()...).Err()
 }
 
-func (c pusherConsumer) newStorageWriter(records []record) PusherCloser {
+func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
 	if c.kafkaConfig.IngestionConcurrency == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
@@ -157,25 +170,12 @@ func (c pusherConsumer) newStorageWriter(records []record) PusherCloser {
 	return newParallelStoragePusher(
 		c.metrics.storagePusherMetrics,
 		c.pusher,
-		recordsLoadHints(records),
+		bytesPerTenant,
 		c.kafkaConfig.FallbackClientErrorSampleRate,
 		c.kafkaConfig.IngestionConcurrency,
 		c.kafkaConfig.IngestionConcurrencyBatchSize,
 		c.logger,
 	)
-}
-
-type recordsLoadHints []record
-
-func (r recordsLoadHints) estimatedTimeseries(tenantID string) int {
-	const bytesPerSample = 500
-	var totalBytes int
-	for _, record := range r {
-		if record.tenantID == tenantID {
-			totalBytes += len(record.content)
-		}
-	}
-	return totalBytes / bytesPerSample
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
@@ -246,23 +246,19 @@ type parallelStoragePusher struct {
 	errorHandler   *pushErrorHandler
 	numShards      int
 	batchSize      int
-	hints          ingestionHints
+	bytesPerTenant map[string]int
 
 	numActiveShards int
 }
 
-type ingestionHints interface {
-	estimatedTimeseries(tenantID string) int
-}
-
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, hints ingestionHints, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
 		pushers:        make(map[string]PusherCloser),
 		upstreamPusher: pusher,
 		numShards:      numShards,
-		hints:          hints,
+		bytesPerTenant: bytesPerTenant,
 		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
 		batchSize:      batchSize,
 		metrics:        metrics,
@@ -303,12 +299,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
 
-	expectedTimeseries := c.hints.estimatedTimeseries(userID)
-	c.metrics.estimatedTimeseries.Add(float64(expectedTimeseries))
-	idealShards := expectedTimeseries / c.batchSize / targetFlushesPerShard
-	idealShards = min(idealShards, c.numShards)
-	c.numActiveShards += idealShards
-
+	idealShards := c.IdealShardsFor(userID)
 	var p PusherCloser
 	if idealShards <= 1 {
 		// If we're going to push only one shard, then we can use the sequential pusher.
@@ -322,6 +313,18 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
+}
+
+func (c *parallelStoragePusher) IdealShardsFor(userID string) int {
+	expectedTimeseries := c.bytesPerTenant[userID] / estimatedBytesPerSample
+
+	c.metrics.estimatedTimeseries.Add(float64(expectedTimeseries))
+
+	idealShards := expectedTimeseries / c.batchSize / targetFlushesPerShard
+	r := min(idealShards, c.numShards)
+
+	c.numActiveShards += r
+	return r
 }
 
 type labelsHashFunc func(labels.Labels) uint64
