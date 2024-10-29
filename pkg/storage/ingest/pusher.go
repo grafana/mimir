@@ -23,8 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const ()
-
 type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
