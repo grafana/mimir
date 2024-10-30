@@ -1,0 +1,66 @@
+name: Feature request
+description: Submit a new idea
+title: "[Idea]: "
+labels: ["enhancement"]
+body:
+- type: textarea
+  id: what
+  attributes:
+    label: What is the problem you are trying to solve?
+    placeholder: A clear and concise description of what the problem is.
+  validations:
+    required: true
+
+- type: textarea
+  id: how
+  attributes:
+    label: Which solution do you envision (roughly)?
+    placeholder: Once the work is started, a design doc would be great!
+  validations:
+    required: true
+
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Have you considered any alternatives?
+    placeholder: A clear and concise description of any alternative solutions or features you've considered.
+  validations:
+    required: false
+
+- type: textarea
+  id: context
+  attributes:
+    label: Any additional context to share?
+    placeholder: Add any other context or screenshots about the feature request here.
+  validations:
+    required: false
+
+- type: dropdown
+  id: size
+  attributes:
+    label: How long do you think this would take to be developed?
+    options:
+      - Small (<= 1 month dev)
+      - Medium (~2 months dev)
+      - Large (~3 months dev)
+      - X-Large (>4 dev)
+      - Not sure
+    default: 4
+
+- type: input
+  id: docs
+  attributes:
+    label: What are the documentation dependencies?
+    placeholder: Any docs to update?
+  validations:
+    required: false
+
+- type: input
+  id: proposer
+  attributes:
+    label: Proposer?
+    placeholder: Who proposed this if not you, the author of the issue?
+  validations:
+    required: false
+
+
