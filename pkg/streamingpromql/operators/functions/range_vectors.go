@@ -347,7 +347,7 @@ func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 	haveFloats := len(fHead) > 0 || len(fTail) > 0
 
 	if !haveFloats {
-		// PromQL engine doesn't support histogram for `changes` function yet,
+		// Prometheus' engine doesn't support histogram for `changes` function yet,
 		// therefore we won't add that yet too.
 		return 0, false, nil, nil
 	}
