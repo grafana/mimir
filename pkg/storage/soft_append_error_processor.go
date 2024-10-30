@@ -1,4 +1,4 @@
-package util
+package storage
 
 import (
 	"github.com/pkg/errors"
@@ -35,76 +35,48 @@ type SoftAppendErrorProcessor struct {
 // the whole request. ProcessErr always calls the CommonCallback() if it exists.
 // err must be non-nil.
 func (e *SoftAppendErrorProcessor) ProcessErr(err error, ts int64, labels []mimirpb.LabelAdapter) bool {
-	if e.CommonCallback != nil {
-		e.CommonCallback()
-	}
+	e.CommonCallback()
 	switch {
 	case errors.Is(err, storage.ErrOutOfBounds):
-		if e.ErrOutOfBounds != nil {
-			e.ErrOutOfBounds(ts, labels)
-		}
+		e.ErrOutOfBounds(ts, labels)
 		return true
 	case errors.Is(err, storage.ErrOutOfOrderSample):
-		if e.ErrOutOfOrderSample != nil {
-			e.ErrOutOfOrderSample(ts, labels)
-		}
+		e.ErrOutOfOrderSample(ts, labels)
 		return true
 	case errors.Is(err, storage.ErrTooOldSample):
-		if e.ErrTooOldSample != nil {
-			e.ErrTooOldSample(ts, labels)
-		}
+		e.ErrTooOldSample(ts, labels)
 		return true
 	case errors.Is(err, globalerror.SampleTooFarInFuture):
-		if e.SampleTooFarInFuture != nil {
-			e.SampleTooFarInFuture(ts, labels)
-		}
+		e.SampleTooFarInFuture(ts, labels)
 		return true
 	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-		if e.ErrDuplicateSampleForTimestamp != nil {
-			e.ErrDuplicateSampleForTimestamp(ts, labels)
-		}
+		e.ErrDuplicateSampleForTimestamp(ts, labels)
 		return true
 	case errors.Is(err, globalerror.MaxSeriesPerUser):
-		if e.MaxSeriesPerUser != nil {
-			e.MaxSeriesPerUser()
-		}
+		e.MaxSeriesPerUser()
 		return true
 	case errors.Is(err, globalerror.MaxSeriesPerMetric):
-		if e.MaxSeriesPerMetric != nil {
-			e.MaxSeriesPerMetric(labels)
-		}
+		e.MaxSeriesPerMetric(labels)
 		return true
 
 	// Map TSDB native histogram validation errors to soft errors.
 	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-		if e.ErrOOONativeHistogramsDisabled != nil {
-			e.ErrOOONativeHistogramsDisabled(ts, labels)
-		}
+		e.ErrOOONativeHistogramsDisabled(ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramCountMismatch):
-		if e.ErrHistogramCountMismatch != nil {
-			e.ErrHistogramCountMismatch(ts, labels)
-		}
+		e.ErrHistogramCountMismatch(ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
-		if e.ErrHistogramCountNotBigEnough != nil {
-			e.ErrHistogramCountNotBigEnough(ts, labels)
-		}
+		e.ErrHistogramCountNotBigEnough(ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
-		if e.ErrHistogramNegativeBucketCount != nil {
-			e.ErrHistogramNegativeBucketCount(ts, labels)
-		}
+		e.ErrHistogramNegativeBucketCount(ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
-		if e.ErrHistogramSpanNegativeOffset != nil {
-			e.ErrHistogramSpanNegativeOffset(ts, labels)
-		}
+		e.ErrHistogramSpanNegativeOffset(ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
-		if e.ErrHistogramSpansBucketsMismatch != nil {
-			e.ErrHistogramSpansBucketsMismatch(ts, labels)
-		}
+		e.ErrHistogramSpansBucketsMismatch(ts, labels)
 		return true
 	}
 	return false

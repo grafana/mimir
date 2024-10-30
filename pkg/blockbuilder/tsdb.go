@@ -25,8 +25,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -44,7 +44,22 @@ type TSDBBuilder struct {
 	tsdbs   map[tsdbTenant]*userTSDB
 }
 
-var softErrProcessor = util.SoftAppendErrorProcessor{}
+var softErrProcessor = mimir_storage.SoftAppendErrorProcessor{
+	CommonCallback:                   func() {},
+	ErrOutOfBounds:                   func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrOutOfOrderSample:              func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrTooOldSample:                  func(ts int64, labels []mimirpb.LabelAdapter) {},
+	SampleTooFarInFuture:             func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrDuplicateSampleForTimestamp:   func(ts int64, labels []mimirpb.LabelAdapter) {},
+	MaxSeriesPerUser:                 func() {},
+	MaxSeriesPerMetric:               func(labels []mimirpb.LabelAdapter) {},
+	ErrOOONativeHistogramsDisabled:   func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrHistogramCountMismatch:        func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrHistogramCountNotBigEnough:    func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrHistogramNegativeBucketCount:  func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrHistogramSpanNegativeOffset:   func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrHistogramSpansBucketsMismatch: func(ts int64, labels []mimirpb.LabelAdapter) {},
+}
 
 type tsdbTenant struct {
 	partitionID int32
