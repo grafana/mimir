@@ -13,7 +13,9 @@ weight: 100
 
 # Send native histograms to Mimir
 
-Native histograms are experimental and subject to change.
+{{% admonition type="note" %}}
+Native histograms is an experimental feature of Grafana Mimir.
+{{% /admonition %}}
 
 Prometheus native histograms is a data type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 
