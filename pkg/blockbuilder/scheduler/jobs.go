@@ -81,7 +81,7 @@ func (s *jobQueue) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
 // sortOutstanding maintains the sort order of the outstanding list. Caller must
 // hold the lock.
 func (s *jobQueue) sortOutstanding() {
-	slices.SortStableFunc(s.outstanding, func(i, j *job) int {
+	slices.SortFunc(s.outstanding, func(i, j *job) int {
 		return i.sortTime.Compare(j.sortTime)
 	})
 }
