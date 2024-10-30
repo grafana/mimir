@@ -17,7 +17,7 @@ weight: 100
 
 Native histograms are experimental and subject to change.
 
-Prometheus native histograms is a data type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
+Prometheus native histograms is a new data type beside the existing floating point time series in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 To learn more about the native histograms data type and how to start sending native histograms to Grafana Mimir,
 refer to [Send native histograms to Mimir]({{< relref "../../send/native-histograms" >}}).
 
