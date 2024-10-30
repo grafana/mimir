@@ -269,6 +269,14 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
+	// Validate if we can convert the request to scheduler request.
+	// If we don't check here, it can fail when trying to send to the scheduler, and break
+	// the connection between frontend and scheduler, failing all the queries that were on that connection.
+	_, err = f.schedulerWorkers.toSchedulerAdapter.extractAdditionalQueueDimensions(freq.ctx, freq.request, time.Now())
+	if err != nil {
+		return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to convert to scheduler enqueue request: %s", err.Error())
+	}
+
 enqueueAgain:
 	spanLogger.DebugLog("msg", "enqueuing request")
 
