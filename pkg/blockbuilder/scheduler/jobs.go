@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/go-kit/log"
 )
 
 var (
@@ -14,16 +16,19 @@ var (
 
 type jobQueue struct {
 	leaseTime time.Duration
+	logger    log.Logger
 
 	mu          sync.Mutex
 	jobs        map[string]*job
 	outstanding []*job
 }
 
-func newJobQueue(leaseTime time.Duration) *jobQueue {
+func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 	return &jobQueue{
 		leaseTime: leaseTime,
-		jobs:      make(map[string]*job),
+		logger:    logger,
+
+		jobs: make(map[string]*job),
 	}
 }
 
@@ -86,15 +91,18 @@ func (s *jobQueue) sortOutstanding() {
 	})
 }
 
-func (s *jobQueue) renewLease(id string, worker string) error {
+func (s *jobQueue) renewLease(jobId, worker string) error {
+	if jobId == "" {
+		return errors.New("jobId cannot be empty")
+	}
 	if worker == "" {
-		return errors.New("worker cannot not be empty")
+		return errors.New("worker cannot be empty")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	j, ok := s.jobs[id]
+	j, ok := s.jobs[jobId]
 	if !ok {
 		return errJobNotFound
 	}
@@ -103,6 +111,29 @@ func (s *jobQueue) renewLease(id string, worker string) error {
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseTime)
+	return nil
+}
+
+func (s *jobQueue) completeJob(jobId string, worker string) error {
+	if jobId == "" {
+		return errors.New("jobId cannot be empty")
+	}
+	if worker == "" {
+		return errors.New("worker cannot be empty")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	j, ok := s.jobs[jobId]
+	if !ok {
+		return errJobNotFound
+	}
+	if j.assignee != worker {
+		return errJobNotAssigned
+	}
+
+	delete(s.jobs, jobId)
 	return nil
 }
 
@@ -122,18 +153,6 @@ func (s *jobQueue) clearExpiredLeases() {
 
 	s.sortOutstanding()
 }
-
-/*
-Operations:
-completeJob
-* assignJob
-addJob
-updateJobTime
-* renewLease
-
-Need a job lease mechanism with an expiry. And a goroutine to do lease expirations.
-
-*/
 
 type job struct {
 	id       string
