@@ -7064,7 +7064,7 @@
                   "kind": "field",
                   "name": "insecure_skip_verify",
                   "required": false,
-                  "desc": "If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "blocks-storage.s3.http.insecure-skip-verify",
@@ -7224,6 +7224,148 @@
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "idle_conn_timeout",
+                  "required": false,
+                  "desc": "The time an idle connection will remain idle before closing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 90000000000,
+                  "fieldFlag": "blocks-storage.gcs.http.idle-conn-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "response_header_timeout",
+                  "required": false,
+                  "desc": "The amount of time the client will wait for a servers response headers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 120000000000,
+                  "fieldFlag": "blocks-storage.gcs.http.response-header-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.gcs.http.insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_handshake_timeout",
+                  "required": false,
+                  "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "blocks-storage.gcs.tls-handshake-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "expect_continue_timeout",
+                  "required": false,
+                  "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "blocks-storage.gcs.expect-continue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "blocks-storage.gcs.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "blocks-storage.gcs.max-idle-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of connections per host. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.gcs.max-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.gcs.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.gcs.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.gcs.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.gcs.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -7306,6 +7448,148 @@
               "fieldFlag": "blocks-storage.azure.user-assigned-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "idle_conn_timeout",
+                  "required": false,
+                  "desc": "The time an idle connection will remain idle before closing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 90000000000,
+                  "fieldFlag": "blocks-storage.azure.http.idle-conn-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "response_header_timeout",
+                  "required": false,
+                  "desc": "The amount of time the client will wait for a servers response headers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 120000000000,
+                  "fieldFlag": "blocks-storage.azure.http.response-header-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.azure.http.insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_handshake_timeout",
+                  "required": false,
+                  "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "blocks-storage.azure.tls-handshake-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "expect_continue_timeout",
+                  "required": false,
+                  "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "blocks-storage.azure.expect-continue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "blocks-storage.azure.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "blocks-storage.azure.max-idle-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of connections per host. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.azure.max-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.azure.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.azure.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.azure.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.azure.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -13143,7 +13427,7 @@
                   "kind": "field",
                   "name": "insecure_skip_verify",
                   "required": false,
-                  "desc": "If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "ruler-storage.s3.http.insecure-skip-verify",
@@ -13303,6 +13587,148 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "idle_conn_timeout",
+                  "required": false,
+                  "desc": "The time an idle connection will remain idle before closing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 90000000000,
+                  "fieldFlag": "ruler-storage.gcs.http.idle-conn-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "response_header_timeout",
+                  "required": false,
+                  "desc": "The amount of time the client will wait for a servers response headers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 120000000000,
+                  "fieldFlag": "ruler-storage.gcs.http.response-header-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.gcs.http.insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_handshake_timeout",
+                  "required": false,
+                  "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "ruler-storage.gcs.tls-handshake-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "expect_continue_timeout",
+                  "required": false,
+                  "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "ruler-storage.gcs.expect-continue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.gcs.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.gcs.max-idle-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of connections per host. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.gcs.max-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.gcs.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.gcs.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.gcs.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.gcs.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -13385,6 +13811,148 @@
               "fieldFlag": "ruler-storage.azure.user-assigned-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "idle_conn_timeout",
+                  "required": false,
+                  "desc": "The time an idle connection will remain idle before closing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 90000000000,
+                  "fieldFlag": "ruler-storage.azure.http.idle-conn-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "response_header_timeout",
+                  "required": false,
+                  "desc": "The amount of time the client will wait for a servers response headers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 120000000000,
+                  "fieldFlag": "ruler-storage.azure.http.response-header-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.azure.http.insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_handshake_timeout",
+                  "required": false,
+                  "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "ruler-storage.azure.tls-handshake-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "expect_continue_timeout",
+                  "required": false,
+                  "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "ruler-storage.azure.expect-continue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.azure.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "ruler-storage.azure.max-idle-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of connections per host. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "ruler-storage.azure.max-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.azure.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.azure.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.azure.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.azure.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -15381,7 +15949,7 @@
                   "kind": "field",
                   "name": "insecure_skip_verify",
                   "required": false,
-                  "desc": "If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "alertmanager-storage.s3.http.insecure-skip-verify",
@@ -15541,6 +16109,148 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "idle_conn_timeout",
+                  "required": false,
+                  "desc": "The time an idle connection will remain idle before closing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 90000000000,
+                  "fieldFlag": "alertmanager-storage.gcs.http.idle-conn-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "response_header_timeout",
+                  "required": false,
+                  "desc": "The amount of time the client will wait for a servers response headers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 120000000000,
+                  "fieldFlag": "alertmanager-storage.gcs.http.response-header-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.gcs.http.insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_handshake_timeout",
+                  "required": false,
+                  "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "alertmanager-storage.gcs.tls-handshake-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "expect_continue_timeout",
+                  "required": false,
+                  "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "alertmanager-storage.gcs.expect-continue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "alertmanager-storage.gcs.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "alertmanager-storage.gcs.max-idle-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of connections per host. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "alertmanager-storage.gcs.max-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.gcs.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.gcs.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.gcs.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.gcs.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -15623,6 +16333,148 @@
               "fieldFlag": "alertmanager-storage.azure.user-assigned-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "idle_conn_timeout",
+                  "required": false,
+                  "desc": "The time an idle connection will remain idle before closing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 90000000000,
+                  "fieldFlag": "alertmanager-storage.azure.http.idle-conn-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "response_header_timeout",
+                  "required": false,
+                  "desc": "The amount of time the client will wait for a servers response headers.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 120000000000,
+                  "fieldFlag": "alertmanager-storage.azure.http.response-header-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "insecure_skip_verify",
+                  "required": false,
+                  "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.azure.http.insecure-skip-verify",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_handshake_timeout",
+                  "required": false,
+                  "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "alertmanager-storage.azure.tls-handshake-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "expect_continue_timeout",
+                  "required": false,
+                  "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000000,
+                  "fieldFlag": "alertmanager-storage.azure.expect-continue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "alertmanager-storage.azure.max-idle-connections",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_idle_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100,
+                  "fieldFlag": "alertmanager-storage.azure.max-idle-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_connections_per_host",
+                  "required": false,
+                  "desc": "Maximum number of connections per host. 0 means no limit.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "alertmanager-storage.azure.max-connections-per-host",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_ca_path",
+                  "required": false,
+                  "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.azure.http.tls-ca-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_cert_path",
+                  "required": false,
+                  "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.azure.http.tls-cert-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_key_path",
+                  "required": false,
+                  "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.azure.http.tls-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "tls_server_name",
+                  "required": false,
+                  "desc": "Override the expected name on the server certificate.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.azure.http.tls-server-name",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -17848,7 +18700,7 @@
                       "kind": "field",
                       "name": "insecure_skip_verify",
                       "required": false,
-                      "desc": "If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                      "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
                       "fieldFlag": "common.storage.s3.http.insecure-skip-verify",
@@ -18008,6 +18860,148 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.gcs.service-account",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "http",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "idle_conn_timeout",
+                      "required": false,
+                      "desc": "The time an idle connection will remain idle before closing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 90000000000,
+                      "fieldFlag": "common.storage.gcs.http.idle-conn-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "response_header_timeout",
+                      "required": false,
+                      "desc": "The amount of time the client will wait for a servers response headers.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 120000000000,
+                      "fieldFlag": "common.storage.gcs.http.response-header-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "insecure_skip_verify",
+                      "required": false,
+                      "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.gcs.http.insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_handshake_timeout",
+                      "required": false,
+                      "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "common.storage.gcs.tls-handshake-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "expect_continue_timeout",
+                      "required": false,
+                      "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "common.storage.gcs.expect-continue-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "common.storage.gcs.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "common.storage.gcs.max-idle-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of connections per host. 0 means no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "common.storage.gcs.max-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.gcs.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.gcs.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.gcs.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.gcs.http.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -18090,6 +19084,148 @@
                   "fieldFlag": "common.storage.azure.user-assigned-id",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "http",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "idle_conn_timeout",
+                      "required": false,
+                      "desc": "The time an idle connection will remain idle before closing.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 90000000000,
+                      "fieldFlag": "common.storage.azure.http.idle-conn-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "response_header_timeout",
+                      "required": false,
+                      "desc": "The amount of time the client will wait for a servers response headers.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 120000000000,
+                      "fieldFlag": "common.storage.azure.http.response-header-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "insecure_skip_verify",
+                      "required": false,
+                      "desc": "If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.azure.http.insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_handshake_timeout",
+                      "required": false,
+                      "desc": "Maximum time to wait for a TLS handshake. 0 means no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "common.storage.azure.tls-handshake-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "expect_continue_timeout",
+                      "required": false,
+                      "desc": "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "common.storage.azure.expect-continue-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "common.storage.azure.max-idle-connections",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_idle_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 100,
+                      "fieldFlag": "common.storage.azure.max-idle-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_connections_per_host",
+                      "required": false,
+                      "desc": "Maximum number of connections per host. 0 means no limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 0,
+                      "fieldFlag": "common.storage.azure.max-connections-per-host",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.azure.http.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.azure.http.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.azure.http.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.azure.http.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,

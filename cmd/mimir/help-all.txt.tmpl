@@ -13,8 +13,32 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -alertmanager-storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -alertmanager-storage.azure.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.azure.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -alertmanager-storage.azure.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -alertmanager-storage.azure.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -alertmanager-storage.azure.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -alertmanager-storage.azure.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager-storage.azure.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager-storage.azure.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -alertmanager-storage.azure.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -alertmanager-storage.azure.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -alertmanager-storage.azure.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
+  -alertmanager-storage.azure.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.azure.user-assigned-id string
     	User assigned managed identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
@@ -23,8 +47,32 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "alertmanager")
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
+  -alertmanager-storage.gcs.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -alertmanager-storage.gcs.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -alertmanager-storage.gcs.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -alertmanager-storage.gcs.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -alertmanager-storage.gcs.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -alertmanager-storage.gcs.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager-storage.gcs.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager-storage.gcs.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -alertmanager-storage.gcs.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -alertmanager-storage.gcs.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -alertmanager-storage.gcs.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -alertmanager-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
+  -alertmanager-storage.gcs.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.local.path string
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
@@ -42,7 +90,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection will remain idle before closing. (default 1m30s)
   -alertmanager-storage.s3.http.insecure-skip-verify
-    	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -alertmanager-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -alertmanager-storage.s3.http.tls-ca-path string
@@ -331,8 +379,32 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -blocks-storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -blocks-storage.azure.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -blocks-storage.azure.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -blocks-storage.azure.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -blocks-storage.azure.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -blocks-storage.azure.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.azure.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.azure.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.azure.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.azure.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -blocks-storage.azure.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -blocks-storage.azure.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
+  -blocks-storage.azure.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.azure.user-assigned-id string
     	User assigned managed identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
@@ -705,8 +777,32 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
+  -blocks-storage.gcs.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -blocks-storage.gcs.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -blocks-storage.gcs.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -blocks-storage.gcs.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -blocks-storage.gcs.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.gcs.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.gcs.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.gcs.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.gcs.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -blocks-storage.gcs.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -blocks-storage.gcs.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -blocks-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
+  -blocks-storage.gcs.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
   -blocks-storage.s3.bucket-lookup-type value
@@ -722,7 +818,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection will remain idle before closing. (default 1m30s)
   -blocks-storage.s3.http.insecure-skip-verify
-    	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -blocks-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -blocks-storage.s3.http.tls-ca-path string
@@ -885,8 +981,32 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -common.storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -common.storage.azure.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -common.storage.azure.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -common.storage.azure.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -common.storage.azure.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -common.storage.azure.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -common.storage.azure.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -common.storage.azure.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -common.storage.azure.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -common.storage.azure.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -common.storage.azure.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -common.storage.azure.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
+  -common.storage.azure.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.azure.user-assigned-id string
     	User assigned managed identity. If empty, then System assigned identity is used.
   -common.storage.backend string
@@ -895,8 +1015,32 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory.
   -common.storage.gcs.bucket-name string
     	GCS bucket name
+  -common.storage.gcs.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -common.storage.gcs.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -common.storage.gcs.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -common.storage.gcs.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -common.storage.gcs.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -common.storage.gcs.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -common.storage.gcs.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -common.storage.gcs.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -common.storage.gcs.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -common.storage.gcs.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -common.storage.gcs.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -common.storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
+  -common.storage.gcs.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.s3.access-key-id string
     	S3 access key ID
   -common.storage.s3.bucket-lookup-type value
@@ -912,7 +1056,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.http.idle-conn-timeout duration
     	The time an idle connection will remain idle before closing. (default 1m30s)
   -common.storage.s3.http.insecure-skip-verify
-    	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -common.storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -common.storage.s3.http.tls-ca-path string
@@ -2395,8 +2539,32 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage container name
   -ruler-storage.azure.endpoint-suffix string
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -ruler-storage.azure.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -ruler-storage.azure.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -ruler-storage.azure.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -ruler-storage.azure.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -ruler-storage.azure.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.azure.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.azure.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.azure.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler-storage.azure.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -ruler-storage.azure.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -ruler-storage.azure.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
+  -ruler-storage.azure.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.azure.user-assigned-id string
     	User assigned managed identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
@@ -2501,8 +2669,32 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
+  -ruler-storage.gcs.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -ruler-storage.gcs.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -ruler-storage.gcs.http.insecure-skip-verify
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -ruler-storage.gcs.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -ruler-storage.gcs.http.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.gcs.http.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.gcs.http.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.gcs.http.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler-storage.gcs.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -ruler-storage.gcs.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -ruler-storage.gcs.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -ruler-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
+  -ruler-storage.gcs.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.local.directory string
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string
@@ -2520,7 +2712,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.http.idle-conn-timeout duration
     	The time an idle connection will remain idle before closing. (default 1m30s)
   -ruler-storage.s3.http.insecure-skip-verify
-    	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+    	If the client connects to object storage via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -ruler-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -ruler-storage.s3.http.tls-ca-path string
