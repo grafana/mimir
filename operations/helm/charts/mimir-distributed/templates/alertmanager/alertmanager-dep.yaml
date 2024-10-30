@@ -27,7 +27,7 @@ spec:
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
       {{- end }}

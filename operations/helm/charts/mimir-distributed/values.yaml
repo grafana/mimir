@@ -544,6 +544,17 @@ alertmanager:
   statefulSet:
     enabled: true
 
+  # -- Dedicated service account for alertmanager pods.
+  # If not set, the default service account defined at the begining of this file will be used.
+  # This service account can be used even if the default one is not set.
+  serviceAccount:
+    create: false
+    # -- Alertmanager specific service account name. If not set and create is set to true, the default
+    # name will be the default mimir service account's name with the "-alertmanager" suffix.
+    name: ""
+    annotations: {}
+    labels: {}
+
   service:
     annotations: {}
     labels: {}
