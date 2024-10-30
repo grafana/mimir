@@ -35,6 +35,7 @@ type config struct {
 	full             bool
 	dryRun           bool
 	maxBlockDuration time.Duration
+	verifyBlocks     bool
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
@@ -46,6 +47,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.full, "full", false, "If set blocks that do not need to be split are included in the output directory")
 	f.BoolVar(&c.dryRun, "dry-run", false, "If set blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged")
 	f.DurationVar(&c.maxBlockDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing a duration boundary are split")
+	f.BoolVar(&c.verifyBlocks, "verify-blocks", false, "Verifies blocks after performing repair")
 }
 
 func (c *config) validate() error {
@@ -202,11 +204,11 @@ func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, meta block
 		return err
 	}
 
-	_, err := splitLocalBlock(ctx, cfg.outputDir, originalBlockDir, meta, cfg.maxBlockDuration, logger)
+	_, err := splitLocalBlock(ctx, cfg.outputDir, originalBlockDir, meta, cfg.maxBlockDuration, cfg.verifyBlocks, logger)
 	return err
 }
 
-func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block.Meta, maxDuration time.Duration, logger log.Logger) ([]ulid.ULID, error) {
+func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block.Meta, maxDuration time.Duration, verifyBlocks bool, logger log.Logger) ([]ulid.ULID, error) {
 	origBlockMaxTime := meta.MaxTime
 	minTime := meta.MinTime
 	result := []ulid.ULID(nil)
@@ -223,9 +225,17 @@ func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block
 		if err := meta.WriteToDir(logger, blockDir); err != nil {
 			return nil, errors.Wrap(err, "failed injecting meta for split")
 		}
-		splitID, err := block.Repair(ctx, logger, parentDir, meta.ULID, block.SplitBlocksSource, block.IgnoreCompleteOutsideChunk, block.IgnoreIssue347OutsideChunk)
+		splitID, err := block.Repair(ctx, logger, parentDir, meta.ULID, block.SplitBlocksSource, true, block.IgnoreCompleteOutsideChunk, block.IgnoreIssue347OutsideChunk)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed while splitting block")
+		}
+
+		if verifyBlocks {
+			blockPath := path.Join(parentDir, splitID.String())
+			err := block.VerifyBlock(ctx, logger, blockPath, meta.MinTime, meta.MaxTime, true)
+			if err != nil {
+				return nil, errors.Wrap(err, "block verification failed")
+			}
 		}
 
 		splitDir := path.Join(parentDir, splitID.String())
