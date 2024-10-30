@@ -46,19 +46,19 @@ type TSDBBuilder struct {
 
 var softErrProcessor = mimir_storage.SoftAppendErrorProcessor{
 	CommonCallback:                   func() {},
-	ErrOutOfBounds:                   func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrOutOfOrderSample:              func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrTooOldSample:                  func(ts int64, labels []mimirpb.LabelAdapter) {},
-	SampleTooFarInFuture:             func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrDuplicateSampleForTimestamp:   func(ts int64, labels []mimirpb.LabelAdapter) {},
+	ErrOutOfBounds:                   func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrOutOfOrderSample:              func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrTooOldSample:                  func(_ int64, _ []mimirpb.LabelAdapter) {},
+	SampleTooFarInFuture:             func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrDuplicateSampleForTimestamp:   func(_ int64, _ []mimirpb.LabelAdapter) {},
 	MaxSeriesPerUser:                 func() {},
-	MaxSeriesPerMetric:               func(labels []mimirpb.LabelAdapter) {},
-	ErrOOONativeHistogramsDisabled:   func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrHistogramCountMismatch:        func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrHistogramCountNotBigEnough:    func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrHistogramNegativeBucketCount:  func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrHistogramSpanNegativeOffset:   func(ts int64, labels []mimirpb.LabelAdapter) {},
-	ErrHistogramSpansBucketsMismatch: func(ts int64, labels []mimirpb.LabelAdapter) {},
+	MaxSeriesPerMetric:               func(_ []mimirpb.LabelAdapter) {},
+	ErrOOONativeHistogramsDisabled:   func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrHistogramCountMismatch:        func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrHistogramCountNotBigEnough:    func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrHistogramNegativeBucketCount:  func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrHistogramSpanNegativeOffset:   func(_ int64, _ []mimirpb.LabelAdapter) {},
+	ErrHistogramSpansBucketsMismatch: func(_ int64, _ []mimirpb.LabelAdapter) {},
 }
 
 type tsdbTenant struct {
