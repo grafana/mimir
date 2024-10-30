@@ -7,7 +7,7 @@ weight: 160
 
 # Configure native histograms
 
-Prometheus native histograms ingestion is an experimental feature of Grafana Mimir.
+Native histograms are experimental and subject to change.
 
 You can configure native histograms ingestion via the Prometheus [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint globally or per tenant.
 

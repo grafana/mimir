@@ -15,16 +15,23 @@ weight: 100
 
 # Visualize native histograms
 
+Native histograms are experimental and subject to change.
+
 Prometheus native histograms is a data type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 To learn more about the native histograms data type and how to start sending native histograms to Grafana Mimir,
 refer to [Send native histograms to Mimir]({{< relref "../../send/native-histograms" >}}).
 
+In general not all visualizations support displaying the new native histogram data type, however you can use the Prometheus Query Language (PromQL) to derive the usual floating point time series from native histograms that can be used in visualizations as before.
+
 ## Prometheus Query Language
 
-The Prometheus Query Language (PromQL) allows you to query native histogram metrics.
-PromQL queries of native histograms are different from those of classic histograms.
+The Prometheus Query Language (PromQL) allows you to query native histogram metrics. The data type of the result depends on the query and the underlying data.
 
 For more information about PromQL, refer to [Querying Prometheus](https://prometheus.io/docs/prometheus/latest/querying/basics/).
+
+The following sections describe common ways to derive floating point time series from native histograms data for visualizations and also how to convert existing queries using classic histograms into queries using native histograms.
+
+Note that the native histogram queries do not include the `_bucket`, `_sum` and `_count` suffixes of classic histograms.
 
 ### Query your histogram’s count or sum
 
@@ -104,10 +111,18 @@ In that case, the current value is an accumulated value over the lifespan of the
 
 ## Create Grafana dashboards
 
-When creating a Grafana dashboard for your native histogram, the most relevant panel types are [Histogram](/docs/grafana/latest/panels-visualizations/visualizations/histogram/) and [Heatmap](/docs/grafana/latest/panels-visualizations/visualizations/heatmap/).
+The panel types [Histogram](/docs/grafana/latest/panels-visualizations/visualizations/histogram/) and [Heatmap](/docs/grafana/latest/panels-visualizations/visualizations/heatmap/) are compatible with the new native histogram data type. Use these to visualize a query such as:
 
-In [Explore](https://grafana.com/docs/grafana/latest/explore/), the functions `histogram_count`, `histogram_sum`, and `histogram_quantile` will result in normal floating point series that you can plot as usual.
+```PromQL
+sum(rate(request_duration_seconds[$__rate_interval]))
+```
+
+For all other panel types, for example [Timeseries](/docs/grafana/latest/panels-visualizations/visualizations/time-series/), use one of the histogram functions above in [Prometheus Query Language](#prometheus-query-language) to visualize a derived float time series.
+
+## Grafana classic explore
+
+In [Explore](https://grafana.com/docs/grafana/latest/explore/), use one of the histogram functions above in [Prometheus Query Language](#prometheus-query-language) to visualize a derived float time series.
 
 {{% admonition type="note" %}}
-Visualizing native histogram series directly in the **Explore** view is a work in progress.
+Visualizing native histogram data type directly without the histogram functions in the **Explore** view is a work in progress.
 {{% /admonition %}}
