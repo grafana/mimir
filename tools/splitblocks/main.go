@@ -47,7 +47,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.full, "full", false, "If set blocks that do not need to be split are included in the output directory")
 	f.BoolVar(&c.dryRun, "dry-run", false, "If set blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged")
 	f.DurationVar(&c.maxBlockDuration, "max-block-duration", 24*time.Hour, "Max block duration, blocks larger than this or crossing a duration boundary are split")
-	f.BoolVar(&c.verifyBlocks, "verify-blocks", false, "Verifies blocks after performing repair")
+	f.BoolVar(&c.verifyBlocks, "verify-blocks", false, "Verifies blocks after splitting them")
 }
 
 func (c *config) validate() error {
