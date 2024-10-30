@@ -17,8 +17,8 @@ When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector
 
 We recommend using each protocol's respective exporter and native Mimir endpoint:
 
-- Prometheus data through `prometheusremotewrite`
-- OTel data through `otlphttp`
+- Prometheus data: `prometheusremotewrite`
+- OTel data: `otlphttp`
 
 ## Prometheus Remote Write
 
