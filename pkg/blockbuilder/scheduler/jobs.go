@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	errNoJobAvailable = errors.New("no job available")
 	errJobNotFound    = errors.New("job not found")
 	errJobNotAssigned = errors.New("job not assigned to worker")
 )
@@ -41,7 +42,7 @@ func (s *jobQueue) assign(worker string) (*job, error) {
 	defer s.mu.Unlock()
 
 	if len(s.outstanding) == 0 {
-		return nil, nil
+		return nil, errNoJobAvailable
 	}
 
 	j := s.outstanding[0]

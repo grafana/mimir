@@ -116,6 +116,13 @@ func TestClientInterface(t *testing.T) {
 	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
 	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
 	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
+
+	{
+		jobId, jobSpec, err := sched.getAssignedJob("w0")
+		require.ErrorIs(t, err, errNoJobAvailable)
+		require.Zero(t, jobSpec)
+		require.Zero(t, jobId)
+	}
 }
 
 func TestMonitor(t *testing.T) {

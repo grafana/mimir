@@ -13,7 +13,7 @@ func TestAssign(t *testing.T) {
 
 	j0, err := s.assign("w0")
 	require.Nil(t, j0)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errNoJobAvailable)
 
 	s.addOrUpdate("job1", time.Now(), jobSpec{topic: "hello"})
 	j, err := s.assign("w0")
@@ -23,7 +23,7 @@ func TestAssign(t *testing.T) {
 
 	j2, err := s.assign("w0")
 	require.Nil(t, j2)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errNoJobAvailable)
 
 	s.addOrUpdate("job2", time.Now(), jobSpec{topic: "hello2"})
 	j3, err := s.assign("w0")
@@ -65,7 +65,7 @@ func TestAssignComplete(t *testing.T) {
 
 	j2, err := s.assign("w0")
 	require.Nil(t, j2, "should be no job available")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errNoJobAvailable)
 }
 
 func TestLease(t *testing.T) {
