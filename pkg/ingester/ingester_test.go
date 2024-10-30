@@ -5705,6 +5705,182 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 	require.Equal(t, expectedSeriesPerChunksMessage, actualSeriesPerChunksMessage)
 }
 
+func TestIngester_QueryStream_CounterResets(t *testing.T) {
+	// Create ingester.
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour // Long enough to not be reached during the test.
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+	// Set the OOO window to 30 minutes and enable native histograms.
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow:                model.Duration(30 * time.Minute),
+			OOONativeHistogramsIngestionEnabled: true,
+			NativeHistogramsIngestionEnabled:    true,
+		},
+	}
+	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push series.
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// Ingesting four samples, counter reset at T2, but since it's OOO, a counter reset is first detected at the in-order T3
+	histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(0), "type", "histogram")
+	histReq := mockHistogramWriteRequest(histLbls, int64(0), 0, false) // TO
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(1), 10, false) // T1
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(3), 4, false) // T3
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(2), 0, false) // T2 (OOO)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	// Query chunks before compaction
+
+	// Create a GRPC server used to query back the data.
+	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
+	defer serv.GracefulStop()
+	client.RegisterIngesterServer(serv, i)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	// Query back the series using GRPC streaming.
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
+	require.NoError(t, err)
+	defer c.Close()
+
+	/*s, err := c.QueryStream(ctx, &client.QueryRequest{
+		StartTimestampMs: 0,
+		EndTimestampMs:   5,
+
+		Matchers: []*client.LabelMatcher{{
+			Type:  client.EQUAL,
+			Name:  model.MetricNameLabel,
+			Value: "foo",
+		}},
+	})
+	require.NoError(t, err)
+
+	recvMsgs := 0
+
+	chunks := []client.Chunk{}
+	for {
+		resp, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		for _, c := range resp.Chunkseries {
+			chunks = append(chunks, c.Chunks...)
+		}
+		recvMsgs++
+	}
+
+	require.Equal(t, recvMsgs, 1)
+	// Two chunks: [T0, T1], [T2, T3] (in order and OOO head samples are merged into chunks together)
+	require.Len(t, chunks, 2)
+	// Sort chunks by time
+	sort.Slice(chunks, func(i, j int) bool {
+		return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+	})
+
+	headers := []chunkenc.CounterResetHeader{}
+	for _, c := range chunks {
+		require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
+		chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
+		require.NoError(t, err)
+
+		headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+	}
+	// Second chunk has counter reset detected as samples from in-order and OOO are merged and counter resets detected
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset}, headers)
+	*/
+	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
+
+	// Compaction
+	i.compactBlocks(context.Background(), false, 0, nil) // Should be compacted because the TSDB is idle.
+	verifyCompactedHead(t, i, true)
+
+	defer c.Close()
+
+	// Query chunks after compaction
+	s, err := c.QueryStream(ctx, &client.QueryRequest{
+		StartTimestampMs: 0,
+		EndTimestampMs:   5,
+
+		Matchers: []*client.LabelMatcher{{
+			Type:  client.EQUAL,
+			Name:  model.MetricNameLabel,
+			Value: "foo",
+		}},
+	})
+	require.NoError(t, err)
+
+	recvMsgs := 0
+
+	chunks := []client.Chunk{}
+	for {
+		resp, err := s.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		for _, c := range resp.Chunkseries {
+			chunks = append(chunks, c.Chunks...)
+		}
+		recvMsgs++
+	}
+
+	require.Equal(t, recvMsgs, 1)
+	// Three chunks: [T0, T1], [T2], [T3] - in-order and OOO blocks are first compacted separately.
+	// When querying, chunks from blocks in an ingesters aren't merged together as the UnorderedChunkQuerier is used.
+	require.Len(t, chunks, 3)
+	// Sort chunks by time
+	sort.Slice(chunks, func(i, j int) bool {
+		return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+	})
+
+	headers := []chunkenc.CounterResetHeader{}
+	for _, c := range chunks {
+		require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
+		chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
+		require.NoError(t, err)
+
+		headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+	}
+	// Chunks:
+	// FIXME: currently returning uk, uk, cr - the last chunk with the in-order T3 sample is set to a counter reset (as chunks in separate blocks aren't merged - if they were, we'd have detected that the counter reset actually happened at T2 and not T3)
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, headers)
+}
+
 func TestIngester_QueryExemplars(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	ctx := user.InjectOrgID(context.Background(), userID)
@@ -10059,6 +10235,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 	}
 }
 
+// TODO: could extend this
 func testIngesterOutOfOrderCompactHead(t *testing.T,
 	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
 	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {

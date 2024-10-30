@@ -410,6 +410,85 @@ func TestBatchMergeChunks(t *testing.T) {
 	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
 }
 
+func TestQuerierCounterResetFixing(t *testing.T) {
+	var (
+		logger     = log.NewNopLogger()
+		queryStart = mustParseTime("2021-11-01T06:00:00Z")
+		queryEnd   = mustParseTime("2021-11-01T06:01:00Z")
+		queryStep  = time.Second
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	limits := defaultLimitsConfig()
+	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	s1 := []mimirpb.Sample{}
+	s2 := []mimirpb.Sample{}
+
+	for i := 0; i < 12; i++ {
+		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
+		if i != 9 { // let series 3 miss a point
+			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
+		}
+	}
+
+	c1 := convertToChunks(t, samplesToInterface(s1))
+	c2 := convertToChunks(t, samplesToInterface(s2))
+	chunks12 := []client.Chunk{}
+	chunks12 = append(chunks12, c1...)
+	chunks12 = append(chunks12, c2...)
+
+	chunks21 := []client.Chunk{}
+	chunks21 = append(chunks21, c2...)
+	chunks21 = append(chunks21, c1...)
+
+	// Mock distributor to return chunks that need merging.
+	distributor := &mockDistributor{}
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		client.CombinedQueryStreamResponse{
+			Chunkseries: []client.TimeSeriesChunk{
+				// Series with chunks in the 1,2 order, that need merge
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+					Chunks: chunks12,
+				},
+				// Series with chunks in the 2,1 order, that need merge
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
+					Chunks: chunks21,
+				},
+			},
+		},
+		nil)
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		Logger:     logger,
+		MaxSamples: 1e6,
+		Timeout:    1 * time.Minute,
+	})
+
+	queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+
+	r := query.Exec(ctx)
+	m, err := r.Matrix()
+	require.NoError(t, err)
+
+	require.Equal(t, 2, m.Len())
+	require.ElementsMatch(t, m[0].Floats, m[1].Floats)
+	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
+}
+
+// TODO: test here? to show if it's not fixed here it doesn't get fixed later
+
 func BenchmarkQueryExecute(b *testing.B) {
 	var (
 		logger    = log.NewNopLogger()
