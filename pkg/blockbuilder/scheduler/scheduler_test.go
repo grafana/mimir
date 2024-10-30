@@ -31,6 +31,93 @@ func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
 	return writeClient
 }
 
+func TestClientInterface(t *testing.T) {
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
+	cli := mustKafkaClient(t, kafkaAddr)
+
+	cfg := Config{
+		Kafka: ingest.KafkaConfig{
+			Topic: "ingest",
+		},
+		BuilderConsumerGroup: "test-builder",
+		SchedulingInterval:   1000000 * time.Hour,
+	}
+	reg := prometheus.NewPedanticRegistry()
+	sched, err := New(cfg, test.NewTestingLogger(t), reg)
+	sched.adminClient = kadm.NewClient(cli)
+	require.NoError(t, err)
+
+	sched.ensurePartitionCount(128)
+
+	// Do some things a client might do.
+
+	require.ErrorIs(t,
+		sched.jobs.completeJob("job1", "w0"),
+		errJobNotFound,
+	)
+
+	now := time.Now()
+
+	sched.jobs.addOrUpdate("ingest/64/1000", now.Add(-2*time.Hour), jobSpec{
+		topic:       "ingest",
+		partition:   64,
+		startOffset: 1000,
+		endOffset:   2000,
+	})
+	sched.jobs.addOrUpdate("ingest/65/256", now.Add(-1*time.Hour), jobSpec{
+		topic:       "ingest",
+		partition:   65,
+		startOffset: 256,
+		endOffset:   9111,
+	})
+
+	jobId, jobSpec, err := sched.getAssignedJob("w0")
+	require.NoError(t, err)
+	require.NotZero(t, jobSpec)
+	require.Equal(t, "ingest/64/1000", jobId)
+
+	// Heartbeat a bunch of times.
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+
+	// Complete a bunch of times.
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+
+	// Take the next job.
+	jobId, jobSpec, err = sched.getAssignedJob("w0")
+	require.NoError(t, err)
+	require.NotZero(t, jobSpec)
+	require.Equal(t, "ingest/65/256", jobId)
+
+	// Heartbeat a bunch of times.
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+
+	// Complete a bunch of times.
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+
+	// And repeat completion with the first job. Like clients will do.
+	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
+}
+
 func TestMonitor(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })

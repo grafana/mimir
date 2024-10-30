@@ -4,7 +4,9 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,6 +28,10 @@ type BlockBuilderScheduler struct {
 	logger      log.Logger
 	register    prometheus.Registerer
 	metrics     schedulerMetrics
+
+	mu        sync.Mutex
+	committed []int64
+	dirty     bool
 }
 
 func New(
@@ -34,7 +40,7 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:     newJobQueue(cfg.JobLeaseTime),
+		jobs:     newJobQueue(cfg.JobLeaseTime, logger),
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
@@ -69,6 +75,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-updateTick.C:
+			s.jobs.clearExpiredLeases()
 			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
@@ -82,6 +89,8 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
 
+	// TODO: Flush committed offsets to Kafka.
+
 	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, 0)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
@@ -89,6 +98,8 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	}
 
 	if ps, ok := lag[s.cfg.Kafka.Topic]; ok {
+		s.ensurePartitionCount(len(ps))
+
 		for part, gl := range ps {
 			partStr := fmt.Sprint(part)
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(gl.Start.Offset))
@@ -112,7 +123,8 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
 				// The job is uniquely identified by {topic, partition, consumption start offset}.
 				jobId := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
-				s.jobs.addOrUpdate(jobId, time.Time{}, jobSpec{
+				t := time.Time{} // TODO: this should be the time of the last commit from the lag info.
+				s.jobs.addOrUpdate(jobId, t, jobSpec{
 					topic:       o.Topic,
 					partition:   o.Partition,
 					startOffset: l.Commit.At,
@@ -122,4 +134,53 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 			}
 		}
 	})
+}
+
+func (s *BlockBuilderScheduler) ensurePartitionCount(ps int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.committed) < ps {
+		s.committed = append(s.committed, make([]int64, ps-len(s.committed))...)
+	}
+}
+
+func (s *BlockBuilderScheduler) getAssignedJob(workerId string) (string, jobSpec, error) {
+	if j, err := s.jobs.assign(workerId); err != nil {
+		return "", jobSpec{}, err
+	} else {
+		return j.id, j.spec, nil
+	}
+}
+
+// updateJob takes a job update from the client and
+// (This is a temporary method for unit tests until we have RPCs.)
+func (s *BlockBuilderScheduler) updateJob(jobId, workerId string, complete bool, j jobSpec) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if p := j.partition; p < 0 || int(p) >= len(s.committed) {
+		return fmt.Errorf("partition %d out of range", p)
+	}
+
+	if j.endOffset <= s.committed[j.partition] {
+		// History. Ignore.
+		return nil
+	}
+
+	if complete {
+		if err := s.jobs.completeJob(jobId, workerId); err != nil {
+			// job not found is fine, as clients will be re-informing us.
+			if !errors.Is(err, errJobNotFound) {
+				return fmt.Errorf("complete job: %w", err)
+			}
+		}
+		s.committed[j.partition] = j.endOffset
+		s.dirty = true
+	} else {
+		// It's an in-progress job whose lease we need to renew.
+		if err := s.jobs.renewLease(jobId, workerId); err != nil {
+			return fmt.Errorf("renew lease: %w", err)
+		}
+	}
+	return nil
 }
