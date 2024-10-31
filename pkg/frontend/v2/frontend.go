@@ -146,6 +146,9 @@ const (
 
 type enqueueResult struct {
 	status enqueueStatus
+	// If the status is failed and if it was because of a client error on the frontend,
+	// the clientErr should be updated with the appropriate error.
+	clientErr error
 
 	cancelCh chan<- uint64 // Channel that can be used for request cancellation. If nil, cancellation is not possible.
 }
@@ -287,6 +290,11 @@ enqueueAgain:
 			cancelCh = enqRes.cancelCh
 			break // go wait for response.
 		} else if enqRes.status == failed {
+			if enqRes.clientErr != nil {
+				// It failed because of a client error. No need to retry.
+				return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
+			}
+
 			retries--
 			if retries > 0 {
 				spanLogger.DebugLog("msg", "enqueuing request failed, will retry")
