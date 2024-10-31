@@ -3919,38 +3919,38 @@ kafka:
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
-  # using uncompressed bytes. Different Kafka implementations interpret MaxBytes
-  # differently.
+  # using uncompressed bytes. Different Kafka implementations-max interpret
+  # MaxBytes differently.
   # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
 
-  # The number of concurrent ingestion streams to the TSDB head. Every tenant
-  # has their own set of streams. 0 to disable.
-  # CLI flag: -ingest-storage.kafka.ingestion-concurrency
-  [ingestion_concurrency: <int> | default = 0]
+  # The maximum number of concurrent ingestion streams to the TSDB head. Every
+  # tenant has their own set of str-maxeams. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
+  [ingestion_concurrency_max: <int> | default = 0]
 
-  # The number of timeseries to batch together before ingesting into TSDB. This
-  # is only used when -ingest-storage.kafka.ingestion-concurrency is greater
-  # than 0.
+  # The number of timeseries to batch together before ingesting to the TSDB
+  # head. This is only used when -ingest-storage.kafka.ingestion-concurrency-max
+  # is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-batch-size
   [ingestion_concurrency_batch_size: <int> | default = 150]
 
-  # The number of batches that will be prepared and queued at the same time.
-  # This is only used when -ingest-storage.kafka.ingestion-concurrency is
-  # greater than 0.
+  # The number of batches that will be prepared and queued to ingest to the TSDB
+  # head. This is only used when -ingest-storage.kafka.ingestion-concurrency-max
+  # is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
   [ingestion_concurrency_queue_capacity: <int> | default = 5]
 
-  # The ideal number of times we expect to push timeseries to the TSDB after
-  # batching, With fewer flushes, the overhead of splitting up the work is
+  # The ideal number of times we expect to ingest timeseries to the TSDB head
+  # after batching, with fewer flushes, the overhead of splitting up the work is
   # higher than the benefit of parallelization. This is only used when
-  # -ingest-storage.kafka.ingestion-concurrency is greater than 0.
+  # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
   [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
 
   # The number of bytes we estimate a sample will have on ingestion, this used
   # estimate to estimate number of time series without decompressing them. This
-  # is only used when -ingest-storage.kafka.ingestion-concurrency is greater
+  # is only used when -ingest-storage.kafka.ingestion-concurrency-max is greater
   # than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
   [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
