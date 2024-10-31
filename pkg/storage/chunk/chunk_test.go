@@ -318,31 +318,51 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 		switch encoding {
 		case PrometheusXorChunk:
 			require.Equal(t, chunkenc.ValFloat, chunkType)
-			batch = iter.Batch(BatchSize, chunkenc.ValFloat, nil, nil)
+			batch = iter.BatchFloats(BatchSize)
 			require.Equal(t, chunkenc.ValFloat, batch.ValueType, "Batch contains floats")
 			for j := 0; j < batch.Length; j++ {
-				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, float64(i+j), batch.Values[j])
+				require.Equal(t, int64((i+j)*step), batch.AtTime())
+				ts, v := batch.At()
+				require.Equal(t, int64((i+j)*step), ts)
+				require.Equal(t, float64(i+j), v)
+				batch.Index++
 			}
 		case PrometheusHistogramChunk:
 			require.Equal(t, chunkenc.ValHistogram, chunkType)
-			batch = iter.Batch(BatchSize, chunkenc.ValHistogram, nil, nil)
+			batch = iter.Batch(BatchSize, chunkenc.ValHistogram, 42, nil, nil)
 			require.Equal(t, chunkenc.ValHistogram, batch.ValueType, "Batch contains histograms")
 			for j := 0; j < batch.Length; j++ {
-				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, expectedHistogram(i+j), (*histogram.Histogram)(batch.PointerValues[j]))
+				require.Equal(t, int64((i+j)*step), batch.AtTime())
+				ts, h := batch.AtHistogram()
+				require.EqualValues(t, expectedHistogram(i+j), (*histogram.Histogram)(h))
+				require.Equal(t, int64((i+j)*step), ts)
+				if j == 0 {
+					require.Equal(t, int64(42), batch.PrevT())
+				} else {
+					require.Equal(t, int64((i+j-1)*step), batch.PrevT())
+				}
+				batch.Index++
 			}
 		case PrometheusFloatHistogramChunk:
 			require.Equal(t, chunkenc.ValFloatHistogram, chunkType)
-			batch = iter.Batch(BatchSize, chunkenc.ValFloatHistogram, nil, nil)
+			batch = iter.Batch(BatchSize, chunkenc.ValFloatHistogram, 42, nil, nil)
 			require.Equal(t, chunkenc.ValFloatHistogram, batch.ValueType, "Batch contains float histograms")
 			for j := 0; j < batch.Length; j++ {
-				require.EqualValues(t, int64((i+j)*step), batch.Timestamps[j])
-				require.EqualValues(t, expectedFloatHistogram(i+j), (*histogram.FloatHistogram)(batch.PointerValues[j]))
+				require.Equal(t, int64((i+j)*step), batch.AtTime())
+				ts, fh := batch.AtFloatHistogram()
+				require.EqualValues(t, expectedFloatHistogram(i+j), (*histogram.FloatHistogram)(fh))
+				require.Equal(t, int64((i+j)*step), ts)
+				if j == 0 {
+					require.Equal(t, int64(42), batch.PrevT())
+				} else {
+					require.Equal(t, int64((i+j-1)*step), batch.PrevT())
+				}
+				batch.Index++
 			}
 		default:
 			require.FailNowf(t, "Unexpected encoding", "%v", encoding)
 		}
+		batch.Index = 0
 		i += batch.Length
 	}
 	require.Equal(t, chunkenc.ValNone, iter.Scan())

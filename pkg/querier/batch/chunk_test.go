@@ -224,7 +224,7 @@ func (i *mockIterator) Timestamp() int64 {
 	return 0
 }
 
-func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) chunk.Batch {
+func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ int64, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) chunk.Batch {
 	batch := chunk.Batch{
 		Length:    chunk.BatchSize,
 		ValueType: valueType,
@@ -233,6 +233,13 @@ func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Po
 		batch.Timestamps[i] = int64(i)
 	}
 	return batch
+}
+
+func (i *mockIterator) BatchFloats(_ int) chunk.Batch {
+	return chunk.Batch{
+		Length:    chunk.BatchSize,
+		ValueType: chunkenc.ValFloat,
+	}
 }
 
 func (i *mockIterator) Err() error {

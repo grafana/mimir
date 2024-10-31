@@ -78,7 +78,7 @@ type Iterator interface {
 	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
 	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
 	Timestamp() int64
-	// Batch returns a batch of the provisded size; NB not idempotent!  Should only be called
+	// Batch returns a batch of the provided size; NB not idempotent!  Should only be called
 	// once per Scan.
 	// When the optional *zeropool.Pool arguments hPool and fhPool are passed, they will be
 	// used to optimize memory allocations for histogram.Histogram and histogram.FloatHistogram
@@ -86,7 +86,9 @@ type Iterator interface {
 	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
 	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
 	// the hPool or fhPool pool will be used instead of creating new ones.
-	Batch(size int, valueType chunkenc.ValueType, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
+	Batch(size int, valueType chunkenc.ValueType, prevT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
+	// BatchFloats is a specialized Batch funtion for chunkenc.ValFloat values.
+	BatchFloats(size int) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	Err() error
@@ -101,12 +103,17 @@ const BatchSize = 12
 // Batch is intended to be small, and passed by value!
 type Batch struct {
 	Timestamps [BatchSize]int64
-	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
+	// Values meaning depends on the ValueType field.
+	// If ValueType is ValFloat then it stores float sample values.
+	// Otherwise, it stores the timestamp of the previous sample or
+	// zero if unknown - after Seek for example.
 	Values [BatchSize]float64
-	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
-	// Since Batch is expected to be passed by value, the array needs to be constant sized,
-	// however increasing the size of the Batch also adds memory management overhead. Using the unsafe.Pointer
-	// combined with the ValueType implements a kind of "union" type to keep the memory use down.
+	// PointerValues store pointers to non-float complex values like histograms,
+	// float histograms or future additions. Since Batch is expected to be passed
+	// by value, the array needs to be constant sized, however increasing the
+	// size of the Batch also adds memory management overhead. Using the
+	// unsafe.Pointer combined with the ValueType implements a kind of "union"
+	// type to keep the memory use down.
 	PointerValues [BatchSize]unsafe.Pointer
 	ValueType     chunkenc.ValueType
 	Index         int
@@ -138,6 +145,21 @@ func (b *Batch) AtHistogram() (int64, unsafe.Pointer) {
 
 func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
 	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+}
+
+// PrevT returns the timestamp of the previous sample when
+// the value type is not ValFloat.
+func (b *Batch) PrevT() int64 {
+	if b.ValueType == chunkenc.ValFloat {
+		return 0
+	}
+	return *(*int64)(unsafe.Pointer(&(b.Values[b.Index])))
+}
+
+func (b *Batch) SetPrevT(t int64) {
+	if b.ValueType != chunkenc.ValFloat {
+		*(*int64)(unsafe.Pointer(&(b.Values[b.Index]))) = t
+	}
 }
 
 // Chunk contains encoded timeseries data

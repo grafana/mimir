@@ -129,7 +129,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		b.ValueType = valueType
 	}
 
-	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType) {
+	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType, clearHint bool) {
 		if b.Index == 0 {
 			// Starting to write this Batch, it is safe to set the value type
 			b.ValueType = valueType
@@ -144,49 +144,100 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 			b.Timestamps[b.Index], b.Values[b.Index] = batch.At()
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
+			if clearHint {
+				(*histogram.Histogram)(b.PointerValues[b.Index]).CounterResetHint = histogram.UnknownCounterReset
+			}
+			b.SetPrevT(batch.PrevT())
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
+			if clearHint {
+				(*histogram.FloatHistogram)(b.PointerValues[b.Index]).CounterResetHint = histogram.UnknownCounterReset
+			}
+			b.SetPrevT(batch.PrevT())
 		}
 		b.Index++
 	}
 
 	for lt, rt := bs.hasNext(), batch.HasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = bs.hasNext(), batch.HasNext() {
 		t1, t2 := bs.curr().AtTime(), batch.AtTime()
+
 		if t1 < t2 {
-			populate(bs.curr(), lt)
+			// We have a definite next sample in the left stream.
+			// Reset the counter hint if the previous sample was unknown.
+			populate(bs.curr(), lt, lt != chunkenc.ValFloat && bs.curr().PrevT() == 0)
 			bs.next()
-		} else if t1 > t2 {
-			populate(batch, rt)
+			// Trigger the reset of the hint on the right side to indicate that the
+			// right side had a discontinuity.
+			batch.SetPrevT(0)
+			continue
+		}
+		if t2 < t1 {
+			// Reset the counter hint if the previous sample was unknown.
+			// We have a definite next sample in the right stream.
+			populate(batch, rt, rt != chunkenc.ValFloat && batch.PrevT() == 0)
 			batch.Next()
-		} else {
-			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
-				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(batch, rt)
-			} else {
-				populate(bs.curr(), lt)
-				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
-				if rt == chunkenc.ValHistogram && bs.hPool != nil {
-					_, h := batch.AtHistogram()
-					bs.hPool.Put((*histogram.Histogram)(h))
-				}
-				// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object from batch, so it can be reused.
-				if rt == chunkenc.ValFloatHistogram && bs.fhPool != nil {
-					_, fh := batch.AtFloatHistogram()
-					bs.fhPool.Put((*histogram.FloatHistogram)(fh))
-				}
+			// Trigger the reset of the hint on the left side to indicate that the
+			// left side had a discontinuity.
+			bs.curr().SetPrevT(0)
+			continue
+		}
+
+		// We have samples at the same time.
+		// Happy case is that they are of the same type.
+		if lt == rt {
+			// We need to reset the counter hint if the previous sample was unknown.
+			// Do not trigger resetting the next sample hint, as we are at the same
+			// time.
+			populate(bs.curr(), lt, lt != chunkenc.ValFloat && (bs.curr().PrevT() == 0 || batch.PrevT() == 0))
+			// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
+			if rt == chunkenc.ValHistogram && bs.hPool != nil {
+				_, h := batch.AtHistogram()
+				bs.hPool.Put((*histogram.Histogram)(h))
+			}
+			// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object from batch, so it can be reused.
+			if rt == chunkenc.ValFloatHistogram && bs.fhPool != nil {
+				_, fh := batch.AtFloatHistogram()
+				bs.fhPool.Put((*histogram.FloatHistogram)(fh))
 			}
 			bs.next()
 			batch.Next()
+			continue
 		}
+
+		// The more exotic cases:
+		switch {
+		case lt == chunkenc.ValFloat:
+			// Left side is float, right side is histogram.
+			// Take the right side.
+			populate(batch, rt, true)
+		case rt == chunkenc.ValFloat:
+			// Left side is histogram, right side is float.
+			// Take the left side.
+			populate(bs.curr(), lt, true)
+		default: // Both are histograms, take the left side.
+			populate(bs.curr(), lt, true)
+			// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
+			if rt == chunkenc.ValHistogram && bs.hPool != nil {
+				_, h := batch.AtHistogram()
+				bs.hPool.Put((*histogram.Histogram)(h))
+			}
+			// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object from batch, so it can be reused.
+			if rt == chunkenc.ValFloatHistogram && bs.fhPool != nil {
+				_, fh := batch.AtFloatHistogram()
+				bs.fhPool.Put((*histogram.FloatHistogram)(fh))
+			}
+		}
+		bs.next()
+		batch.Next()
 	}
 
 	for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
-		populate(bs.curr(), t)
+		populate(bs.curr(), t, bs.curr().PrevT() == 0)
 		bs.next()
 	}
 
 	for t := batch.HasNext(); t != chunkenc.ValNone; t = batch.HasNext() {
-		populate(batch, t)
+		populate(batch, t, batch.PrevT() == 0)
 		batch.Next()
 	}
 

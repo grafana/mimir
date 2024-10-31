@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -241,8 +242,8 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 	}
 
 	streamReader := createTestStreamReader([]client.QueryStreamSeriesChunks{
-		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4))},
-		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3))},
+		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4), false)},
+		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3), false)},
 	})
 
 	d := &mockDistributor{}
@@ -251,11 +252,11 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1)),
+					Chunks: convertToChunks(t, samplesToInterface(s1), false),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1)),
+					Chunks: convertToChunks(t, samplesToInterface(s1), false),
 				},
 			},
 
@@ -377,11 +378,11 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1)),
+					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1)),
+					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
 				},
 			},
 
@@ -476,11 +477,11 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...)),
+					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...)),
+					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
 				},
 			},
 
@@ -518,6 +519,100 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
+}
+
+func TestDistributorQuerier_Select_FixedInflatedCounterResets(t *testing.T) {
+	var (
+		queryStart int64 = 0
+		queryEnd   int64 = 1000
+	)
+
+	h1 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 40},
+		Sum:   40,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{40},
+		Timestamp:      queryStart + 100,
+	}
+	h2 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 30},
+		Sum:   30,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{30},
+		Timestamp:      queryStart + 200,
+	}
+	h3 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 20},
+		Sum:   20,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{20},
+		Timestamp:      queryStart + 300,
+	}
+
+	ingesterOneReturns := []mimirpb.Histogram{h1, h3}     // Counter reset at h3.
+	ingesterTwoReturns := []mimirpb.Histogram{h1, h2, h3} // Counter reset at h2, should invalidate the reset at h3.
+
+	testCases := map[string]struct {
+		combinedResponse client.CombinedQueryStreamResponse
+		// To be able to encode unsupported cases that might become supported in
+		// the future.
+		expectError bool
+	}{
+		"chunkseries": {
+			combinedResponse: client.CombinedQueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: append(convertToChunks(t, histogramsToInterface(ingesterOneReturns), true), convertToChunks(t, histogramsToInterface(ingesterTwoReturns), true)...),
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			d := &mockDistributor{}
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.combinedResponse, nil)
+
+			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+			querier, err := queryable.Querier(queryStart, queryEnd)
+			require.NoError(t, err)
+
+			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: queryStart, End: queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+			require.True(t, seriesSet.Next())
+			require.NoError(t, seriesSet.Err())
+
+			series := seriesSet.At()
+			it := series.Iterator(nil)
+			count := int64(0)
+			for it.Next() == chunkenc.ValHistogram {
+				count++
+				ts, h := it.AtHistogram(nil)
+				require.Equal(t, queryStart+(count*100), ts)
+				require.NotNil(t, h)
+				switch count {
+				case 1:
+					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
+				case 2:
+					require.Contains(t, []histogram.CounterResetHint{histogram.CounterReset, histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+				case 3:
+					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset, histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+				}
+			}
+			require.NoError(t, it.Err())
+			require.Equal(t, int64(3), count)
+
+			require.False(t, seriesSet.Next())
+		})
+	}
 }
 
 func TestDistributorQuerier_LabelNames(t *testing.T) {
@@ -652,21 +747,23 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 	require.Nil(t, it.Err())
 }
 
-func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
+func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []client.Chunk {
 	var (
 		overflow chunk.EncodedChunk
+		enc      chunk.Encoding
+		ts       int64
 		err      error
 	)
 
 	chunks := []chunk.Chunk{}
-	ensureChunk := func(enc chunk.Encoding, ts int64) {
-		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != enc {
-			c, err := chunk.NewForEncoding(enc)
+	ensureChunk := func(reqEnc chunk.Encoding, reqTs int64) {
+		enc = reqEnc
+		ts = reqTs
+		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != reqEnc {
+			c, err := chunk.NewForEncoding(reqEnc)
 			require.NoError(t, err)
-			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts)))
-			return
+			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(reqTs), model.Time(reqTs)))
 		}
-		chunks[len(chunks)-1].Through = model.Time(ts)
 	}
 
 	for _, s := range samples {
@@ -686,7 +783,18 @@ func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 			t.Errorf("convertToChunks - unhandled type: %T", s)
 		}
 		require.NoError(t, err)
-		require.Nil(t, overflow)
+		if overflow == nil {
+			chunks[len(chunks)-1].Through = model.Time(ts)
+			continue
+		}
+		if !allowOverflow {
+			require.Nil(t, overflow)
+			continue
+		}
+		c, err := chunk.NewForEncoding(enc)
+		require.NoError(t, err)
+		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts)))
+		chunks[len(chunks)-1].Data = overflow
 	}
 
 	clientChunks, err := client.ToChunks(chunks)

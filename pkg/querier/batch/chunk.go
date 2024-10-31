@@ -51,7 +51,14 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 		}
 	}
 	if typ := i.it.FindAtOrAfter(model.Time(t)); typ != chunkenc.ValNone {
-		i.batch = i.it.Batch(size, typ, i.hPool, i.fhPool)
+		if typ == chunkenc.ValFloat {
+			i.batch = i.it.BatchFloats(size)
+		} else {
+			// We set the previous timestamp to 0 (unknown) because FindAtOrAfter,
+			// Seek does not return the information. However it doesn't matter for
+			// the first sample anyway.
+			i.batch = i.it.Batch(size, typ, 0, i.hPool, i.fhPool)
+		}
 		if i.batch.Length > 0 {
 			return typ
 		}
@@ -61,7 +68,17 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 
 func (i *chunkIterator) Next(size int) chunkenc.ValueType {
 	if typ := i.it.Scan(); typ != chunkenc.ValNone {
-		i.batch = i.it.Batch(size, typ, i.hPool, i.fhPool)
+		if typ == chunkenc.ValFloat {
+			i.batch = i.it.BatchFloats(size)
+		} else {
+			prevT := int64(0)
+			// Carry over the last timestamp of the previous batch,
+			// if it exists and is of the same type.
+			if i.batch.ValueType == typ && i.batch.Length > 0 {
+				prevT = i.batch.Timestamps[i.batch.Length-1]
+			}
+			i.batch = i.it.Batch(size, typ, prevT, i.hPool, i.fhPool)
+		}
 		if i.batch.Length > 0 {
 			return typ
 		}
