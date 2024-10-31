@@ -219,7 +219,6 @@ func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block
 		level.Info(logger).Log("msg", "splitting block", "minTime", timestamp.Time(minTime), "maxTime", timestamp.Time(maxTime))
 
 		// Inject a modified meta and abuse the repair into removing the now "outside" chunks.
-		// Chunks that cross boundaries are included in multiple blocks.
 		meta.MinTime = minTime
 		meta.MaxTime = maxTime
 		if err := meta.WriteToDir(logger, blockDir); err != nil {

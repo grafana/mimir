@@ -554,10 +554,10 @@ OUTER:
 		// Clamp chunk contents to be bounded by the mint and maxt
 		chk := &chks[i]
 		if clampChunks {
-			var err error
-			chk, err = clampChunk(chk, mint, maxt)
-			if err != nil {
+			if clampedChk, err := clampChunk(chk, mint, maxt); err != nil {
 				return nil, errors.Wrap(err, "clamping chunk")
+			} else if clampedChk != nil {
+				chk = clampedChk
 			}
 		}
 
@@ -768,8 +768,8 @@ func rewrite(
 	return nil
 }
 
-// clampChunk returns a chunk that is clamped by the minT and maxT, so that all samples fall within these,
-// else returns  the original chunk if no clamping was performed.
+// clampChunk returns a chunk that is clamped by the minT and maxT so that all samples fall within these,
+// else returns nil if no chunk clamping was needed.
 func clampChunk(input *chunks.Meta, minT, maxT int64) (*chunks.Meta, error) {
 	newChunk, err := chunkenc.NewEmptyChunk(input.Chunk.Encoding())
 	if err != nil {
@@ -799,7 +799,7 @@ func clampChunk(input *chunks.Meta, minT, maxT int64) (*chunks.Meta, error) {
 			Chunk:   newChunk,
 		}, nil
 	}
-	return input, nil
+	return nil, nil
 }
 
 type stringset map[string]struct{}
