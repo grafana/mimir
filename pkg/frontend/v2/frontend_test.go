@@ -256,7 +256,7 @@ func TestFrontendEnqueueFailures(t *testing.T) {
 		require.True(t, strings.Contains(err.Error(), "failed to enqueue request"))
 	})
 	t.Run("scheduler is running fine", func(t *testing.T) {
-		f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		})
 
