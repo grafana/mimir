@@ -81,7 +81,7 @@ func TestLease(t *testing.T) {
 	s.clearExpiredLeases()
 
 	j2, err := s.assign("w1")
-	require.NotNil(t, j2)
+	require.NotNil(t, j2, "should be able to assign a job whose lease was invalidated")
 	require.NoError(t, err)
 	require.Equal(t, "w1", j2.assignee)
 
