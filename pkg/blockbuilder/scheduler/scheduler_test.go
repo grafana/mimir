@@ -71,44 +71,44 @@ func TestClientInterface(t *testing.T) {
 		endOffset:   9111,
 	})
 
-	jobId, jobSpec, err := sched.getAssignedJob("w0")
+	jobID, jobSpec, err := sched.getAssignedJob("w0")
 	require.NoError(t, err)
 	require.NotZero(t, jobSpec)
-	require.Equal(t, "ingest/64/1000", jobId)
+	require.Equal(t, "ingest/64/1000", jobID)
 
 	// Heartbeat a bunch of times.
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
 
 	// Complete a bunch of times.
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
 
 	// Take the next job.
-	jobId, jobSpec, err = sched.getAssignedJob("w0")
+	jobID, jobSpec, err = sched.getAssignedJob("w0")
 	require.NoError(t, err)
 	require.NotZero(t, jobSpec)
-	require.Equal(t, "ingest/65/256", jobId)
+	require.Equal(t, "ingest/65/256", jobID)
 
 	// Heartbeat a bunch of times.
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", false, jobSpec))
 
 	// Complete a bunch of times.
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
-	require.NoError(t, sched.updateJob(jobId, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
+	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
 
 	// And repeat completion with the first job. Like clients will do.
 	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
@@ -118,10 +118,10 @@ func TestClientInterface(t *testing.T) {
 	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
 
 	{
-		jobId, jobSpec, err := sched.getAssignedJob("w0")
+		jobID, jobSpec, err := sched.getAssignedJob("w0")
 		require.ErrorIs(t, err, errNoJobAvailable)
 		require.Zero(t, jobSpec)
-		require.Zero(t, jobId)
+		require.Zero(t, jobID)
 	}
 }
 

@@ -122,14 +122,17 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 			if l.Commit.At < o.Offset {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
 				// The job is uniquely identified by {topic, partition, consumption start offset}.
-				jobId := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
+				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
 				t := time.Time{} // TODO: this should be the time of the last commit from the lag info.
-				s.jobs.addOrUpdate(jobId, t, jobSpec{
+				s.jobs.addOrUpdate(jobID, t, jobSpec{
 					topic:       o.Topic,
 					partition:   o.Partition,
 					startOffset: l.Commit.At,
 					endOffset:   l.End.Offset,
-					// TODO: unmarshal the extra lag info.
+					// TODO: populate these from the unmarshaled lag metadata.
+					commitRecTs:    t,
+					lastSeenOffset: 0,
+					lastBlockEndTs: t,
 				})
 			}
 		}
@@ -144,8 +147,8 @@ func (s *BlockBuilderScheduler) ensurePartitionCount(ps int) {
 	}
 }
 
-func (s *BlockBuilderScheduler) getAssignedJob(workerId string) (string, jobSpec, error) {
-	if j, err := s.jobs.assign(workerId); err != nil {
+func (s *BlockBuilderScheduler) getAssignedJob(workerID string) (string, jobSpec, error) {
+	if j, err := s.jobs.assign(workerID); err != nil {
 		return "", jobSpec{}, err
 	} else {
 		return j.id, j.spec, nil
@@ -154,7 +157,7 @@ func (s *BlockBuilderScheduler) getAssignedJob(workerId string) (string, jobSpec
 
 // updateJob takes a job update from the client and
 // (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) updateJob(jobId, workerId string, complete bool, j jobSpec) error {
+func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -168,7 +171,7 @@ func (s *BlockBuilderScheduler) updateJob(jobId, workerId string, complete bool,
 	}
 
 	if complete {
-		if err := s.jobs.completeJob(jobId, workerId); err != nil {
+		if err := s.jobs.completeJob(jobID, workerID); err != nil {
 			// job not found is fine, as clients will be re-informing us.
 			if !errors.Is(err, errJobNotFound) {
 				return fmt.Errorf("complete job: %w", err)
@@ -178,7 +181,7 @@ func (s *BlockBuilderScheduler) updateJob(jobId, workerId string, complete bool,
 		s.dirty = true
 	} else {
 		// It's an in-progress job whose lease we need to renew.
-		if err := s.jobs.renewLease(jobId, workerId); err != nil {
+		if err := s.jobs.renewLease(jobID, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
 	}

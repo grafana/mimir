@@ -92,9 +92,9 @@ func (s *jobQueue) sortOutstanding() {
 	})
 }
 
-func (s *jobQueue) renewLease(jobId, worker string) error {
-	if jobId == "" {
-		return errors.New("jobId cannot be empty")
+func (s *jobQueue) renewLease(jobID, worker string) error {
+	if jobID == "" {
+		return errors.New("jobID cannot be empty")
 	}
 	if worker == "" {
 		return errors.New("worker cannot be empty")
@@ -103,7 +103,7 @@ func (s *jobQueue) renewLease(jobId, worker string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	j, ok := s.jobs[jobId]
+	j, ok := s.jobs[jobID]
 	if !ok {
 		return errJobNotFound
 	}
@@ -115,9 +115,9 @@ func (s *jobQueue) renewLease(jobId, worker string) error {
 	return nil
 }
 
-func (s *jobQueue) completeJob(jobId string, worker string) error {
-	if jobId == "" {
-		return errors.New("jobId cannot be empty")
+func (s *jobQueue) completeJob(jobID string, worker string) error {
+	if jobID == "" {
+		return errors.New("jobID cannot be empty")
 	}
 	if worker == "" {
 		return errors.New("worker cannot be empty")
@@ -126,7 +126,7 @@ func (s *jobQueue) completeJob(jobId string, worker string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	j, ok := s.jobs[jobId]
+	j, ok := s.jobs[jobID]
 	if !ok {
 		return errJobNotFound
 	}
@@ -134,7 +134,7 @@ func (s *jobQueue) completeJob(jobId string, worker string) error {
 		return errJobNotAssigned
 	}
 
-	delete(s.jobs, jobId)
+	delete(s.jobs, jobID)
 	return nil
 }
 
