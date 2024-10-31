@@ -159,7 +159,7 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 					// Ends up in block 2
 					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
 					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
-					// ENds up in block 3
+					// Ends up in block 3
 					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
 				})),
 			},
@@ -200,27 +200,24 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 }
 
 func listSeriesAndChunksFromBlock(t *testing.T, blockDir string) []*block.SeriesSpec {
-	allKey, allValue := index.AllPostingsKey()
-	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
-	require.NoError(t, err)
-	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
-
-	it, err := r.Postings(context.Background(), allKey, allValue)
-	require.NoError(t, err)
-
 	blk, err := tsdb.OpenBlock(log.NewNopLogger(), blockDir, nil)
 	require.NoError(t, err)
 	chunkReader, err := blk.Chunks()
 	require.NoError(t, err)
 	defer require.NoError(t, chunkReader.Close())
-	result := []*block.SeriesSpec(nil)
 
+	allKey, allValue := index.AllPostingsKey()
+	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
+	require.NoError(t, err)
+	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
+	it, err := r.Postings(context.Background(), allKey, allValue)
+	require.NoError(t, err)
+
+	result := []*block.SeriesSpec(nil)
 	for it.Next() {
+		ref := it.At()
 		lbls := labels.ScratchBuilder{}
 		chks := []chunks.Meta(nil)
-
-		ref := it.At()
-
 		require.NoError(t, r.Series(ref, &lbls, &chks))
 
 		ss := block.SeriesSpec{
