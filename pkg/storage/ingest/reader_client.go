@@ -13,8 +13,9 @@ import (
 // NewKafkaReaderClient returns the kgo.Client that should be used by the Reader.
 func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger, opts ...kgo.Opt) (*kgo.Client, error) {
 	const fetchMaxBytes = 100_000_000
-	clientOpts := commonKafkaClientOptions(cfg, metrics, logger)
-	clientOpts = append(clientOpts,
+
+	opts = append(opts, commonKafkaClientOptions(cfg, metrics, logger)...)
+	opts = append(opts,
 		// Fetch configuration is unused when using concurrent fetchers.
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(fetchMaxBytes),
@@ -27,9 +28,7 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 		// With concurrent fetchers we set FetchMaxBytes and FetchMaxPartitionBytes on a per-request basis, so here we put a high enough limit that should work for those requests.
 		kgo.BrokerMaxReadBytes(1_000_000_000),
 	)
-	// Allow the caller to override our defaults.
-	clientOpts = append(clientOpts, opts...)
-	client, err := kgo.NewClient(clientOpts...)
+	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating kafka client")
 	}
