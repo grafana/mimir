@@ -21,6 +21,8 @@ func TestNewBucketClient(t *testing.T) {
 			ContainerName:      "test",
 			MaxRetries:         3,
 		}
+
+		flagext.DefaultValues(&cfg)
 		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
@@ -34,6 +36,8 @@ func TestNewBucketClient(t *testing.T) {
 			MaxRetries:         3,
 			Endpoint:           "test-endpoint",
 		}
+
+		flagext.DefaultValues(&cfg)
 		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
@@ -48,6 +52,8 @@ func TestNewBucketClient(t *testing.T) {
 			MaxRetries:              3,
 			Endpoint:                "test-endpoint",
 		}
+
+		flagext.DefaultValues(&cfg)
 		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
@@ -63,6 +69,7 @@ func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string
 	expCfg.ContainerName = cfg.ContainerName
 	expCfg.MaxRetries = cfg.MaxRetries
 	expCfg.UserAssignedID = cfg.UserAssignedID
+	expCfg.HTTPConfig = cfg.HTTP.ToExtHTTP()
 	if cfg.Endpoint != "" {
 		expCfg.Endpoint = cfg.Endpoint
 	}

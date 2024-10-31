@@ -18,8 +18,7 @@ func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucke
 }
 
 func newBucketClient(cfg Config, name string, logger log.Logger, factory func(log.Logger, azure.Config, string, func(http.RoundTripper) http.RoundTripper) (*azure.Bucket, error)) (objstore.Bucket, error) {
-	// Start with default config to make sure that all parameters are set to sensible values, especially
-	// HTTP Config field.
+	// Start with default config to make sure that all parameters are set to sensible values
 	bucketConfig := azure.DefaultConfig
 	bucketConfig.StorageAccountName = cfg.StorageAccountName
 	bucketConfig.StorageAccountKey = cfg.StorageAccountKey.String()
@@ -27,6 +26,7 @@ func newBucketClient(cfg Config, name string, logger log.Logger, factory func(lo
 	bucketConfig.ContainerName = cfg.ContainerName
 	bucketConfig.MaxRetries = cfg.MaxRetries
 	bucketConfig.UserAssignedID = cfg.UserAssignedID
+	bucketConfig.HTTPConfig = cfg.HTTP.ToExtHTTP()
 
 	if cfg.Endpoint != "" {
 		// azure.DefaultConfig has the default Endpoint, overwrite it only if a different one was explicitly provided.
