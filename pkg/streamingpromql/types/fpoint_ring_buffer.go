@@ -271,10 +271,6 @@ func (b *FPointRingBuffer) ChangesAtOrBefore(maxT int64) (float64, bool) {
 		return 0, false
 	}
 
-	if len(fHead) == 0 && len(fTail) == 0 {
-		return 0, true
-	}
-
 	changes := 0.0
 
 	// Comparing the point with the point before it.
