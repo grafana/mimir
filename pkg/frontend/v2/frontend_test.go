@@ -242,17 +242,57 @@ func TestFrontendTooManyRequests(t *testing.T) {
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
 }
 
-func TestFrontendEnqueueFailure(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+func TestFrontendEnqueueFailures(t *testing.T) {
+	const (
+		body   = "all fine here"
+		userID = "test"
+	)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		// We cannot call QueryResult directly, as Frontend is not yet waiting for the response.
+		// It first needs to be told that enqueuing has succeeded.
+		go sendResponseWithDelay(f, 100*time.Millisecond, userID, msg.QueryID, &httpgrpc.HTTPResponse{
+			Code: 200,
+			Body: []byte(body),
+		})
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	cases := []struct {
+		name, url, error string
+	}{
+		{
+			name:  "start time is wrong",
+			url:   "/api/v1/query_range?start=9466camnsd84800&end=946771200&step=60&query=up{}",
+			error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "start": cannot parse "9466camnsd84800" to a valid timestamp`,
+		},
+		{
+			name:  "end time is wrong",
+			url:   "/api/v1/query_range?start=946684800&end=946771200dgiu&step=60&query=up{}",
+			error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "end": cannot parse "946771200dgiu" to a valid timestamp`,
+		},
+		{
+			name:  "query time is wrong",
+			url:   "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{",
+			error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "query": 1:4: parse error: unexpected end of input inside braces`,
+		},
+		{
+			name:  "no query provided",
+			url:   "/api/v1/query_range?start=946684800&end=946771200&step=60",
+			error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "query": unknown position: parse error: no expression found in input`,
+		},
 	}
-	_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
-	require.Error(t, err)
-	require.True(t, strings.Contains(err.Error(), "failed to enqueue request"))
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := &httpgrpc.HTTPRequest{
+				Url: c.url,
+			}
+			_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
+			require.Error(t, err)
+			require.Equal(t, c.error, err.Error())
+		})
+	}
 }
 
 func TestFrontendCancellation(t *testing.T) {
