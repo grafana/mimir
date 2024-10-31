@@ -352,37 +352,37 @@ func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 		return 0, false, nil, nil
 	}
 
-	return changesFloats(fHead, fTail), true, nil, nil
-}
+	if len(fHead) == 0 && len(fTail) == 0 {
+		return 0, true, nil, nil
+	}
 
-func changesFloats(head, tail []promql.FPoint) float64 {
 	changes := 0.0
 
-	if len(head) == 0 && len(tail) == 0 {
-		return 0
-	}
-
-	if len(head) > 0 {
-		prev := head[0].F
-		for _, sample := range head[1:] {
+	// Comparing the point with the point before it.
+	accumulate := func(points []promql.FPoint, prev *float64) {
+		for _, sample := range points {
 			current := sample.F
-			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+			if current != *prev && !(math.IsNaN(current) && math.IsNaN(*prev)) {
 				changes++
 			}
-			prev = current
+			*prev = current
 		}
+
 	}
 
-	if len(tail) > 0 {
-		prev := tail[0].F
-		for _, sample := range tail[1:] {
-			current := sample.F
-			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
-				changes++
-			}
-			prev = current
-		}
+	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
+	// and then continue to the tail.
+	if len(fHead) > 0 && len(fTail) > 0 {
+		prev := fHead[0].F
+		pPrev := &prev
+		accumulate(fHead, pPrev)
+		accumulate(fTail, pPrev)
 	}
 
-	return changes
+	if len(fHead) > 0 {
+		prev := fHead[0].F
+		pPrev := &prev
+		accumulate(fHead, pPrev)
+	}
+	return changes, true, nil, nil
 }
