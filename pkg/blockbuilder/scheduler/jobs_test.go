@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestAssign(t *testing.T) {

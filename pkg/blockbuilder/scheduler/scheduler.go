@@ -148,11 +148,11 @@ func (s *BlockBuilderScheduler) ensurePartitionCount(ps int) {
 }
 
 func (s *BlockBuilderScheduler) getAssignedJob(workerID string) (string, jobSpec, error) {
-	if j, err := s.jobs.assign(workerID); err != nil {
+	j, err := s.jobs.assign(workerID)
+	if err != nil {
 		return "", jobSpec{}, err
-	} else {
-		return j.id, j.spec, nil
 	}
+	return j.id, j.spec, nil
 }
 
 // updateJob takes a job update from the client and
