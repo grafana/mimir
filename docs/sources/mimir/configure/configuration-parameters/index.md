@@ -5227,7 +5227,7 @@ http:
   [max_idle_connections: <int> | default = 100]
 
   # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
-  # Set to 0 to use a built-in default value.
+  # Set to 0 to use a built-in default value of 2.
   # CLI flag: -<prefix>.s3.max-idle-connections-per-host
   [max_idle_connections_per_host: <int> | default = 100]
 
@@ -5323,7 +5323,7 @@ http:
   [max_idle_connections: <int> | default = 100]
 
   # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
-  # Set to 0 to use a built-in default value.
+  # Set to 0 to use a built-in default value of 2.
   # CLI flag: -<prefix>.gcs.max-idle-connections-per-host
   [max_idle_connections_per_host: <int> | default = 100]
 
@@ -5429,7 +5429,7 @@ http:
   [max_idle_connections: <int> | default = 100]
 
   # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
-  # Set to 0 to use a built-in default value.
+  # Set to 0 to use a built-in default value of 2.
   # CLI flag: -<prefix>.azure.max-idle-connections-per-host
   [max_idle_connections_per_host: <int> | default = 100]
 

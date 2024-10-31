@@ -34,7 +34,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.azure.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -alertmanager-storage.azure.tls-handshake-timeout duration
@@ -68,7 +68,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.gcs.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -alertmanager-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -alertmanager-storage.gcs.tls-handshake-timeout duration
@@ -110,7 +110,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -alertmanager-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -alertmanager-storage.s3.part-size uint
@@ -400,7 +400,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.azure.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -blocks-storage.azure.tls-handshake-timeout duration
@@ -798,7 +798,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.gcs.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -blocks-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.gcs.tls-handshake-timeout duration
@@ -838,7 +838,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -blocks-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -blocks-storage.s3.part-size uint
@@ -1002,7 +1002,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.azure.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -common.storage.azure.tls-handshake-timeout duration
@@ -1036,7 +1036,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.gcs.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -common.storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.gcs.tls-handshake-timeout duration
@@ -1076,7 +1076,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -common.storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -common.storage.s3.part-size uint
@@ -2560,7 +2560,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.azure.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -ruler-storage.azure.tls-handshake-timeout duration
@@ -2690,7 +2690,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.gcs.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -ruler-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -ruler-storage.gcs.tls-handshake-timeout duration
@@ -2732,7 +2732,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value. (default 100)
+    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -ruler-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -ruler-storage.s3.part-size uint
