@@ -370,18 +370,17 @@ func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 
 	}
 
+	prev := fHead[0].F
+	pPrev := &prev
+
 	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
 	// and then continue to the tail.
 	if len(fHead) > 0 && len(fTail) > 0 {
-		prev := fHead[0].F
-		pPrev := &prev
 		accumulate(fHead, pPrev)
 		accumulate(fTail, pPrev)
 	}
 
-	if len(fHead) > 0 {
-		prev := fHead[0].F
-		pPrev := &prev
+	if len(fHead) > 0 && len(fTail) == 0 {
 		accumulate(fHead, pPrev)
 	}
 	return changes, true, nil, nil
