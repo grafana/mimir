@@ -367,7 +367,6 @@ func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 			}
 			*prev = current
 		}
-
 	}
 
 	prev := fHead[0].F
