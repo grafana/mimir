@@ -33,9 +33,8 @@ eval instant at 15m metric * 2
 	{env="1"} 240
 
 # Drops __name__ for instant-vector functions
-# Unsupported by streaming engine.
-# eval instant at 15m clamp(metric, 0, 100)
-# 	{env="1"} 100
+eval instant at 15m clamp(metric, 0, 100)
+	{env="1"} 100
 
 # Drops __name__ for range-vector functions
 eval instant at 15m rate(metric{env="1"}[10m])

@@ -9,9 +9,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -20,6 +21,7 @@ type InstantVectorFunctionOperatorFactory func(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
 ) (types.InstantVectorOperator, error)
 
 type ScalarFunctionOperatorFactory func(
@@ -36,8 +38,8 @@ type ScalarFunctionOperatorFactory func(
 // Parameters:
 //   - name: The name of the function
 //   - f: The function implementation
-func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionOverInstantVector) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionOverInstantVectorDefinition) InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -49,9 +51,9 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+		var o types.InstantVectorOperator = functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
 
-		if f.NeedsSeriesDeduplication {
+		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 		}
 
@@ -66,10 +68,9 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 //   - name: The name of the function
 //   - seriesDataFunc: The function to handle series data
 func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
-	f := functions.FunctionOverInstantVector{
-		SeriesDataFunc:           seriesDataFunc,
-		SeriesMetadataFunc:       functions.DropSeriesName,
-		NeedsSeriesDeduplication: true,
+	f := functions.FunctionOverInstantVectorDefinition{
+		SeriesDataFunc:         seriesDataFunc,
+		SeriesMetadataFunction: functions.DropSeriesName,
 	}
 
 	return SingleInputVectorFunctionOperatorFactory(name, f)
@@ -83,12 +84,10 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 // Parameters:
 //   - name: The name of the function
 //   - metadataFunc: The function for handling metadata
-//   - needsSeriesDeduplication: Set to true if metadataFunc may produce multiple series with the same labels and therefore deduplication is required
-func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, needsSeriesDeduplication bool) InstantVectorFunctionOperatorFactory {
-	f := functions.FunctionOverInstantVector{
-		SeriesDataFunc:           functions.PassthroughData,
-		SeriesMetadataFunc:       metadataFunc,
-		NeedsSeriesDeduplication: needsSeriesDeduplication,
+func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunctionDefinition) InstantVectorFunctionOperatorFactory {
+	f := functions.FunctionOverInstantVectorDefinition{
+		SeriesDataFunc:         functions.PassthroughData,
+		SeriesMetadataFunction: metadataFunc,
 	}
 
 	return SingleInputVectorFunctionOperatorFactory(name, f)
@@ -102,9 +101,9 @@ func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadata
 //   - f: The function implementation
 func FunctionOverRangeVectorOperatorFactory(
 	name string,
-	f functions.FunctionOverRangeVector,
+	f functions.FunctionOverRangeVectorDefinition,
 ) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -116,9 +115,9 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		var o types.InstantVectorOperator = operators.NewFunctionOverRangeVector(inner, memoryConsumptionTracker, f, annotations, expressionPosition)
+		var o types.InstantVectorOperator = functions.NewFunctionOverRangeVector(inner, memoryConsumptionTracker, f, annotations, expressionPosition)
 
-		if f.NeedsSeriesDeduplication {
+		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 		}
 
@@ -126,7 +125,7 @@ func FunctionOverRangeVectorOperatorFactory(
 	}
 }
 
-func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for vector, got %v", len(args))
@@ -138,11 +137,11 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 		return nil, fmt.Errorf("expected a scalar argument for vector, got %T", args[0])
 	}
 
-	return operators.NewScalarToInstantVector(inner, expressionPosition), nil
+	return scalars.NewScalarToInstantVector(inner, expressionPosition), nil
 }
 
 func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 5 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 5 argument for label_replace, got %v", len(args))
@@ -151,7 +150,7 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 		inner, ok := args[0].(types.InstantVectorOperator)
 		if !ok {
 			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected a range vector for 1st argument for label_replace, got %T", args[0])
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for label_replace, got %T", args[0])
 		}
 
 		dstLabel, ok := args[1].(types.StringOperator)
@@ -178,15 +177,115 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 			return nil, fmt.Errorf("expected a string for 5th argument for label_replace, got %T", args[4])
 		}
 
-		f := functions.FunctionOverInstantVector{
-			SeriesDataFunc:           functions.PassthroughData,
-			SeriesMetadataFunc:       functions.LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
-			NeedsSeriesDeduplication: true,
+		f := functions.FunctionOverInstantVectorDefinition{
+			SeriesDataFunc: functions.PassthroughData,
+			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{
+				Func:                     functions.LabelReplaceFactory(dstLabel, replacement, srcLabel, regex),
+				NeedsSeriesDeduplication: true,
+			},
 		}
 
-		o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+		o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
 
 		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	}
+}
+
+func ClampFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 3 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 3 argument for clamp, got %v", len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for clamp, got %T", args[0])
+		}
+
+		min, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for clamp, got %T", args[1])
+		}
+
+		max, ok := args[2].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 3rd argument for clamp, got %T", args[2])
+		}
+
+		f := functions.FunctionOverInstantVectorDefinition{
+			SeriesDataFunc:         functions.Clamp,
+			SeriesMetadataFunction: functions.DropSeriesName,
+		}
+
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, memoryConsumptionTracker, f, expressionPosition), nil
+	}
+}
+
+func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 2 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 2 argument for %s, got %v", functionName, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		clampTo, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for %s, got %T", functionName, args[1])
+		}
+
+		f := functions.FunctionOverInstantVectorDefinition{
+			SeriesDataFunc:         functions.ClampMinMaxFactory(isMin),
+			SeriesMetadataFunction: functions.DropSeriesName,
+		}
+
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, memoryConsumptionTracker, f, expressionPosition), nil
+	}
+}
+
+func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 1 && len(args) != 2 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 1 or 2 argument for round, got %v", len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for round, got %T", args[0])
+		}
+
+		var toNearest types.ScalarOperator
+		if len(args) == 2 {
+			toNearest, ok = args[1].(types.ScalarOperator)
+			if !ok {
+				// Should be caught by the PromQL parser, but we check here for safety.
+				return nil, fmt.Errorf("expected a scalar for 2nd argument for round, got %T", args[1])
+			}
+		} else {
+			toNearest = scalars.NewScalarConstant(float64(1), timeRange, memoryConsumptionTracker, expressionPosition)
+		}
+
+		f := functions.FunctionOverInstantVectorDefinition{
+			SeriesDataFunc: functions.Round,
+			// TODO(jhesketh): With the version of Prometheus vendored at the time of writing, round does not drop the
+			//                 __name__ label, and this is verified by our tests.
+			//                 We match this for consistency, but will  need to drop them once prometheus 3.0 is vendored in.
+			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{},
+		}
+
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, memoryConsumptionTracker, f, expressionPosition), nil
 	}
 }
 
@@ -203,6 +302,9 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
 	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
 	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"clamp":             ClampFunctionOperatorFactory(),
+	"clamp_max":         ClampMinMaxFunctionOperatorFactory("clamp_max", false),
+	"clamp_min":         ClampMinMaxFunctionOperatorFactory("clamp_min", true),
 	"cos":               InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":   FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
@@ -214,14 +316,15 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"increase":          FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
 	"label_replace":     LabelReplaceFunctionOperatorFactory(),
 	"last_over_time":    FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
-	"max_over_time":     FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
-	"min_over_time":     FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
 	"ln":                InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
 	"log10":             InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
 	"log2":              InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
+	"max_over_time":     FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
+	"min_over_time":     FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
 	"present_over_time": FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
 	"rad":               InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":              FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
+	"round":             RoundFunctionOperatorFactory(),
 	"sgn":               InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
 	"sin":               InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
 	"sinh":              InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
@@ -263,7 +366,7 @@ func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting
 		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
 	}
 
-	return operators.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
+	return scalars.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
@@ -278,16 +381,15 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 		return nil, fmt.Errorf("expected an instant vector argument for scalar, got %T", args[0])
 	}
 
-	return operators.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
+	return scalars.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) types.InstantVectorOperator {
-	f := functions.FunctionOverInstantVector{
-		SeriesDataFunc:           functions.UnaryNegation,
-		SeriesMetadataFunc:       functions.DropSeriesName,
-		NeedsSeriesDeduplication: true,
+	f := functions.FunctionOverInstantVectorDefinition{
+		SeriesDataFunc:         functions.UnaryNegation,
+		SeriesMetadataFunction: functions.DropSeriesName,
 	}
 
-	o := operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, f, expressionPosition)
+	o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }

@@ -107,15 +107,11 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_memcached_operation_failures_total[1m])
-                or
-                rate(thanos_cache_operation_failures_total[1m])
+                rate(thanos_cache_operation_failures_total{operation!="add"}[1m])
               )
               /
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_memcached_operations_total[1m])
-                or
-                rate(thanos_cache_operations_total[1m])
+                rate(thanos_cache_operations_total{operation!="add"}[1m])
               )
             ) * 100 > 5
           for: 5m
@@ -525,7 +521,7 @@ groups:
           expr: |
             max by (cluster, namespace) (memberlist_client_cluster_members_count)
             >
-            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
+            (sum by (cluster, namespace) (up{job=~".*/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
           for: 20m
           labels:
             severity: warning
@@ -1095,7 +1091,12 @@ groups:
             message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to consume write requests read from Kafka due to internal errors.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
           expr: |
-            sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])) > 0
+            sum by (cluster, namespace, pod) (
+                # This is the old metric name. We're keeping support for backward compatibility.
+              rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+              or
+              rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+            ) > 0
           for: 5m
           labels:
             severity: critical
@@ -1105,7 +1106,12 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterstuckprocessingrecordsfromkafka
           expr: |
             # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
-            (sum by (cluster, namespace, pod) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
+            (sum by (cluster, namespace, pod) (
+                # This is the old metric name. We're keeping support for backward compatibility.
+              rate(cortex_ingest_storage_reader_records_total[5m])
+              or
+              rate(cortex_ingest_storage_reader_requests_total[5m])
+            ) == 0)
             and
             # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
             (sum by (cluster, namespace, pod) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
@@ -1145,6 +1151,33 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirBlockBuilderNoCycleProcessing
+          annotations:
+            message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not processed cycles in the past hour.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
+          expr: |
+            max by(cluster, namespace, pod) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: MimirBlockBuilderLagging
+          annotations:
+            message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}%.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
+          expr: |
+            max by(cluster, namespace, pod) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+          for: 75m
+          labels:
+            severity: warning
+        - alert: MimirBlockBuilderCompactAndUploadFailed
+          annotations:
+            message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
+          expr: |
+            sum by (cluster, namespace, pod) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
+          for: 5m
+          labels:
+            severity: warning
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

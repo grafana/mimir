@@ -14,7 +14,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kbin"
 	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kgo/internal/pool"
+	"github.com/twmb/franz-go/pkg/kgo/pool"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -1583,7 +1583,9 @@ func processRecordBatch(
 	}
 
 	rawRecords := batch.Records
-	if compression := byte(batch.Attributes & 0x0007); compression != 0 {
+
+	compression := byte(batch.Attributes & 0x0007)
+	if compression != 0 {
 		var err error
 		if rawRecords, err = decompressor.decompress(rawRecords, compression, o.DecompressBufferPool); err != nil {
 			return 0, 0 // truncated batch
@@ -1616,7 +1618,7 @@ func processRecordBatch(
 		rcBatchBuff      *rcBuffer[byte]
 		rcRawRecordsBuff *rcBuffer[kmsg.Record]
 	)
-	if o.recordPool != nil {
+	if o.recordPool != nil && codecType(compression) != codecNone {
 		rcBatchBuff = newRCBuffer(rawRecords, o.DecompressBufferPool)
 		rcRawRecordsBuff = newRCBuffer(krecords, rawRecordsPool)
 	}

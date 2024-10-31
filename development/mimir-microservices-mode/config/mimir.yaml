@@ -164,7 +164,6 @@ querier:
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
-  prioritize_query_components: true
 
 limits:
   # Limit max query time range to 31d
@@ -173,6 +172,9 @@ limits:
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
+  # expanded OOO window makes it easier to run continuous-test
+  # otherwise catch-up writes are rejected when metamonitoring is on
+  out_of_order_time_window: 1h
   native_histograms_ingestion_enabled: true
   cardinality_analysis_enabled: true
   query_ingesters_within: 20m

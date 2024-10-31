@@ -126,7 +126,6 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 	f.requestQueue, err = queue.NewRequestQueue(
 		log,
 		cfg.MaxOutstandingPerTenant,
-		false, //prioritizeQueryComponents -- currently no-op
 		cfg.QuerierForgetDelay,
 		f.queueLength,
 		f.discardedRequests,
@@ -230,7 +229,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		return err
 	}
 
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(server.Context(), queue.QuerierID(querierID))
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(server.Context(), querierID)
 	err = f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 	if err != nil {
 		return err
@@ -321,7 +320,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 func (f *Frontend) NotifyClientShutdown(ctx context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
 	level.Info(f.log).Log("msg", "received shutdown notification from querier", "querier", req.GetClientID())
-	f.requestQueue.SubmitNotifyQuerierShutdown(ctx, queue.QuerierID(req.GetClientID()))
+	f.requestQueue.SubmitNotifyQuerierShutdown(ctx, req.GetClientID())
 
 	return &frontendv1pb.NotifyClientShutdownResponse{}, nil
 }

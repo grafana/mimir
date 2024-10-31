@@ -374,7 +374,7 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation bool) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
@@ -386,8 +386,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 	}
 
-	numLabelNames := len(ls)
-	if numLabelNames > cfg.MaxLabelNamesPerSeries(userID) {
+	if !skipLabelCountValidation && len(ls) > cfg.MaxLabelNamesPerSeries(userID) {
 		m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
 		metric, ellipsis := getMetricAndEllipsis(ls)
 		return fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)

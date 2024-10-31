@@ -40,6 +40,7 @@ type SampleComparisonOptions struct {
 	Tolerance              float64
 	UseRelativeError       bool
 	SkipRecentSamples      time.Duration
+	SkipSamplesBefore      model.Time
 	RequireExactErrorMatch bool
 }
 
@@ -208,7 +209,7 @@ func formatAnnotationsForErrorMessage(warnings []string) string {
 	return "[" + strings.Join(formatted, ", ") + "]"
 }
 
-func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) (retErr error) {
 	var expected, actual model.Matrix
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -220,8 +221,40 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		return err
 	}
 
-	if allMatrixSamplesWithinRecentSampleWindow(expected, queryEvaluationTime, opts) && allMatrixSamplesWithinRecentSampleWindow(actual, queryEvaluationTime, opts) {
+	if allMatrixSamplesOutsideComparableWindow(expected, queryEvaluationTime, opts) && allMatrixSamplesOutsideComparableWindow(actual, queryEvaluationTime, opts) {
 		return nil
+	}
+
+	if opts.SkipSamplesBefore > 0 {
+		expLen, actLen := len(expected), len(actual)
+		tempExp, tempAct := expected[:0], actual[:0]
+		for _, series := range expected {
+			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			series.Histograms = trimBeginning(series.Histograms, func(p model.SampleHistogramPair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			if len(series.Values) > 0 || len(series.Histograms) > 0 {
+				tempExp = append(tempExp, series)
+			}
+		}
+		for _, series := range actual {
+			series.Values = trimBeginning(series.Values, func(p model.SamplePair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			series.Histograms = trimBeginning(series.Histograms, func(p model.SampleHistogramPair) bool { return p.Timestamp < opts.SkipSamplesBefore })
+			if len(series.Values) > 0 || len(series.Histograms) > 0 {
+				tempAct = append(tempAct, series)
+			}
+		}
+		expected, actual = tempExp, tempAct
+		eChanged, aChanged := len(expected) != expLen, len(actual) != actLen
+		defer func() {
+			if retErr != nil {
+				if eChanged && aChanged {
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the expected and actual response due to the 'skip samples before')", retErr)
+				} else if aChanged {
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the actual response due to the 'skip samples before')", retErr)
+				} else if eChanged {
+					retErr = fmt.Errorf("%w (also, some series were completely filtered out from the expected response due to the 'skip samples before')", retErr)
+				}
+			}
+		}()
 	}
 
 	if len(expected) != len(actual) {
@@ -281,15 +314,15 @@ func compareMatrixSamples(expected, actual *model.SampleStream, queryEvaluationT
 		return nil
 	}
 
-	skipAllRecentFloatSamples := canSkipAllSamples(func(p model.SamplePair) bool {
-		return queryEvaluationTime.Sub(p.Timestamp.Time())-opts.SkipRecentSamples < 0
+	skipAllFloatSamples := canSkipAllSamples(func(p model.SamplePair) bool {
+		return queryEvaluationTime.Sub(p.Timestamp.Time())-opts.SkipRecentSamples < 0 || p.Timestamp < opts.SkipSamplesBefore
 	}, expectedSamplesTail, actualSamplesTail)
 
-	skipAllRecentHistogramSamples := canSkipAllSamples(func(p model.SampleHistogramPair) bool {
-		return queryEvaluationTime.Sub(p.Timestamp.Time())-opts.SkipRecentSamples < 0
+	skipAllHistogramSamples := canSkipAllSamples(func(p model.SampleHistogramPair) bool {
+		return queryEvaluationTime.Sub(p.Timestamp.Time())-opts.SkipRecentSamples < 0 || p.Timestamp < opts.SkipSamplesBefore
 	}, expectedHistogramSamplesTail, actualHistogramSamplesTail)
 
-	if skipAllRecentFloatSamples && skipAllRecentHistogramSamples {
+	if skipAllFloatSamples && skipAllHistogramSamples {
 		return nil
 	}
 
@@ -345,6 +378,28 @@ func comparePairs[S ~[]M, M any](s1, s2 S, compare func(M, M) error) (S, S, erro
 	return s1[i:], s2[i:], nil
 }
 
+// trimBeginning returns s without the prefix that satisfies skip().
+func trimBeginning[S ~[]M, M any](s S, skip func(M) bool) S {
+	var i int
+	for ; i < len(s); i++ {
+		if !skip(s[i]) {
+			break
+		}
+	}
+	return s[i:]
+}
+
+// filterSlice returns a new slice with elements from s removed that satisfy skip().
+func filterSlice[S ~[]M, M any](s S, skip func(M) bool) S {
+	res := make(S, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if !skip(s[i]) {
+			res = append(res, s[i])
+		}
+	}
+	return res
+}
+
 func canSkipAllSamples[S ~[]M, M any](skip func(M) bool, ss ...S) bool {
 	for _, s := range ss {
 		for _, p := range s {
@@ -356,20 +411,22 @@ func canSkipAllSamples[S ~[]M, M any](skip func(M) bool, ss ...S) bool {
 	return true
 }
 
-func allMatrixSamplesWithinRecentSampleWindow(m model.Matrix, queryEvaluationTime time.Time, opts SampleComparisonOptions) bool {
-	if opts.SkipRecentSamples == 0 {
+func allMatrixSamplesOutsideComparableWindow(m model.Matrix, queryEvaluationTime time.Time, opts SampleComparisonOptions) bool {
+	if opts.SkipRecentSamples == 0 && opts.SkipSamplesBefore == 0 {
 		return false
 	}
 
 	for _, series := range m {
 		for _, sample := range series.Values {
-			if queryEvaluationTime.Sub(sample.Timestamp.Time()) > opts.SkipRecentSamples {
+			st := sample.Timestamp
+			if queryEvaluationTime.Sub(st.Time()) > opts.SkipRecentSamples && st >= opts.SkipSamplesBefore {
 				return false
 			}
 		}
 
 		for _, sample := range series.Histograms {
-			if queryEvaluationTime.Sub(sample.Timestamp.Time()) > opts.SkipRecentSamples {
+			st := sample.Timestamp
+			if queryEvaluationTime.Sub(st.Time()) > opts.SkipRecentSamples && st >= opts.SkipSamplesBefore {
 				return false
 			}
 		}
@@ -378,7 +435,7 @@ func allMatrixSamplesWithinRecentSampleWindow(m model.Matrix, queryEvaluationTim
 	return true
 }
 
-func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime time.Time, opts SampleComparisonOptions) (retErr error) {
 	var expected, actual model.Vector
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -391,8 +448,30 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 		return err
 	}
 
-	if allVectorSamplesWithinRecentSampleWindow(expected, queryEvaluationTime, opts) && allVectorSamplesWithinRecentSampleWindow(actual, queryEvaluationTime, opts) {
+	if allVectorSamplesOutsideComparableWindow(expected, queryEvaluationTime, opts) && allVectorSamplesOutsideComparableWindow(actual, queryEvaluationTime, opts) {
 		return nil
+	}
+
+	if opts.SkipSamplesBefore > 0 {
+		// Warning: filtering samples can give out confusing error messages. For example if the actual response had
+		// matching series, but all sample timestamps were before SkipSamplesBefore, while expected response had samples
+		// after SkipSamplesBefore: instead of saying mismatch, it will instead say that some metrics is missing, because
+		// we filter them here.
+		eOrgLen, aOrgLen := len(expected), len(actual)
+		expected = filterSlice(expected, func(p *model.Sample) bool { return p.Timestamp < opts.SkipSamplesBefore })
+		actual = filterSlice(actual, func(p *model.Sample) bool { return p.Timestamp < opts.SkipSamplesBefore })
+		eChanged, aChanged := len(expected) != eOrgLen, len(actual) != aOrgLen
+		defer func() {
+			if retErr != nil {
+				if eChanged && aChanged {
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
+				} else if aChanged {
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
+				} else if eChanged {
+					retErr = fmt.Errorf("%w (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)", retErr)
+				}
+			}
+		}()
 	}
 
 	if len(expected) != len(actual) {
@@ -454,13 +533,14 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 	return nil
 }
 
-func allVectorSamplesWithinRecentSampleWindow(v model.Vector, queryEvaluationTime time.Time, opts SampleComparisonOptions) bool {
-	if opts.SkipRecentSamples == 0 {
+func allVectorSamplesOutsideComparableWindow(v model.Vector, queryEvaluationTime time.Time, opts SampleComparisonOptions) bool {
+	if opts.SkipRecentSamples == 0 && opts.SkipSamplesBefore == 0 {
 		return false
 	}
 
 	for _, sample := range v {
-		if queryEvaluationTime.Sub(sample.Timestamp.Time()) > opts.SkipRecentSamples {
+		st := sample.Timestamp
+		if queryEvaluationTime.Sub(st.Time()) > opts.SkipRecentSamples && st >= opts.SkipSamplesBefore {
 			return false
 		}
 	}
@@ -495,17 +575,27 @@ func compareScalar(expectedRaw, actualRaw json.RawMessage, queryEvaluationTime t
 }
 
 func compareSamplePair(expected, actual model.SamplePair, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+	// If the timestamp is before the configured SkipSamplesBefore then we don't even check if the timestamp is correct.
+	// The reason is that the SkipSamplesBefore feature may be used to compare queries hitting a different storage and one of two storages has no historical data.
+	if expected.Timestamp < opts.SkipSamplesBefore && actual.Timestamp < opts.SkipSamplesBefore {
+		return nil
+	}
+
 	if expected.Timestamp != actual.Timestamp {
-		return fmt.Errorf("expected timestamp %v but got %v", expected.Timestamp, actual.Timestamp)
+		return fmt.Errorf("expected timestamp %v (%v) but got %v (%v)", expected.Timestamp, formatTimestamp(expected.Timestamp), actual.Timestamp, formatTimestamp(actual.Timestamp))
 	}
 	if opts.SkipRecentSamples > 0 && queryEvaluationTime.Sub(expected.Timestamp.Time()) < opts.SkipRecentSamples {
 		return nil
 	}
 	if !compareSampleValue(float64(expected.Value), float64(actual.Value), opts) {
-		return fmt.Errorf("expected value %s for timestamp %v but got %s", expected.Value, expected.Timestamp, actual.Value)
+		return fmt.Errorf("expected value %s for timestamp %v (%v) but got %s", expected.Value, expected.Timestamp, formatTimestamp(expected.Timestamp), actual.Value)
 	}
 
 	return nil
+}
+
+func formatTimestamp(t model.Time) string {
+	return t.Time().UTC().Format(time.RFC3339Nano)
 }
 
 func compareSampleValue(first, second float64, opts SampleComparisonOptions) bool {
@@ -523,6 +613,10 @@ func compareSampleValue(first, second float64, opts SampleComparisonOptions) boo
 }
 
 func compareSampleHistogramPair(expected, actual model.SampleHistogramPair, queryEvaluationTime time.Time, opts SampleComparisonOptions) error {
+	if expected.Timestamp < opts.SkipSamplesBefore && actual.Timestamp < opts.SkipSamplesBefore {
+		return nil
+	}
+
 	if expected.Timestamp != actual.Timestamp {
 		return fmt.Errorf("expected timestamp %v but got %v", expected.Timestamp, actual.Timestamp)
 	}

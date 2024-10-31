@@ -33,7 +33,19 @@ const (
 
 // EmbeddedQueries is a wrapper type for encoding queries
 type EmbeddedQueries struct {
-	Concat []string `json:"Concat"`
+	Concat []EmbeddedQuery `json:"Concat"`
+}
+
+type EmbeddedQuery struct {
+	Expr   string            `json:"Expr"`
+	Params map[string]string `json:"Params,omitempty"`
+}
+
+func NewEmbeddedQuery(expr string, params map[string]string) EmbeddedQuery {
+	return EmbeddedQuery{
+		Expr:   expr,
+		Params: params,
+	}
 }
 
 // JSONCodec is a Codec that uses JSON representations of EmbeddedQueries structs
@@ -41,7 +53,7 @@ var JSONCodec jsonCodec
 
 type jsonCodec struct{}
 
-func (c jsonCodec) Encode(queries []string) (string, error) {
+func (c jsonCodec) Encode(queries []EmbeddedQuery) (string, error) {
 	embedded := EmbeddedQueries{
 		Concat: queries,
 	}
@@ -49,7 +61,7 @@ func (c jsonCodec) Encode(queries []string) (string, error) {
 	return string(b), err
 }
 
-func (c jsonCodec) Decode(encoded string) (queries []string, err error) {
+func (c jsonCodec) Decode(encoded string) (queries []EmbeddedQuery, err error) {
 	var embedded EmbeddedQueries
 	err = json.Unmarshal([]byte(encoded), &embedded)
 	if err != nil {
@@ -59,17 +71,11 @@ func (c jsonCodec) Decode(encoded string) (queries []string, err error) {
 	return embedded.Concat, nil
 }
 
-// VectorSquash reduces an AST into a single vector query which can be hijacked by a Queryable impl.
+// VectorSquash reduces multiple EmbeddedQueries into a single vector query which can be hijacked by a Queryable impl.
 // It always uses a VectorSelector as the substitution expr.
 // This is important because logical/set binops can only be applied against vectors and not matrices.
-func VectorSquasher(exprs ...parser.Expr) (parser.Expr, error) {
-	// concat OR legs
-	strs := make([]string, 0, len(exprs))
-	for _, expr := range exprs {
-		strs = append(strs, expr.String())
-	}
-
-	encoded, err := JSONCodec.Encode(strs)
+func VectorSquasher(exprs ...EmbeddedQuery) (parser.Expr, error) {
+	encoded, err := JSONCodec.Encode(exprs)
 	if err != nil {
 		return nil, err
 	}

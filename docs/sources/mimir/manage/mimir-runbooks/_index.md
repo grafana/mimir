@@ -936,7 +936,7 @@ How to **investigate**:
 
 - Check the number of endpoints matching the `gossip-ring` service:
   ```
-  kubectl --namespace <namespace> get endpoints gossip-ring
+  kubectl --namespace <namespace> get endpoints gossip-ring -ojson | jq '.subsets[].addresses | length'
   ```
 - If the number of endpoints is 1000 then it means you reached the Kubernetes limit, the endpoints get truncated and
   you could be hit by [this bug](https://github.com/kubernetes/kubernetes/issues/127370). Having more than 1000 pods
@@ -1611,6 +1611,47 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
+### MimirBlockBuilderNoCycleProcessing
+
+This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
+
+How it **works**:
+
+- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-builder calls these periods "cycles".
+- If the block-builder doesn't process any cycles for an extended period of time, this could indicate that a block-builder instance is stuck and cannot complete cycle processing.
+
+How to **investigate**:
+
+- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
+
+### MimirBlockBuilderLagging
+
+This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
+
+How it **works**:
+
+- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog. This number is tracked in the `cortex_blockbuilder_consumer_lag_records` metric.
+- The block-builder must consume and process these records into TSDB blocks.
+- At the end of the processing, the block-builder commits the offset of the last fully processed record into Kafka.
+- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit Kafka record.
+
+How to **investigate**:
+
+- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Explore the block-builder logs for any errors reported while it processed the partition.
+
+### MimirBlockBuilderCompactAndUploadFailed
+
+How it **works**:
+
+- The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
+- It compacts and uploads the produced TSDB blocks to object storage.
+- If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+
+How to **investigate**:
+
+- Explore the block-builder logs to check what errors are there.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -1671,7 +1712,7 @@ The series containing such samples are skipped during ingestion, and valid serie
 
 ### err-mimir-native-histogram-count-mismatch
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where the buckets counts don't add up to the overall count recorded in the native histogram, provided that the overall
 sum is a regular float number.
 
@@ -1685,7 +1726,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-count-not-big-enough
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where the buckets counts add up to a higher number than the overall count recorded in the native histogram, provided
 that the overall sum is not a float number (NaN).
 
@@ -1699,7 +1740,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-negative-bucket-count
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where some bucket count is negative.
 
 {{< admonition type="note" >}}
@@ -1712,7 +1753,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-span-negative-offset
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where a bucket span has a negative offset.
 
 {{< admonition type="note" >}}
@@ -1725,8 +1766,21 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-spans-buckets-mismatch
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where the number of bucket counts does not agree with the number of buckets encoded in the bucket spans.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-ooo-disabled
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
+where another sample with a more recent timestamp has already been ingested and `-ingester.ooo-native-histograms-ingestion-enabled` is set to `false`.
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.

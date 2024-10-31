@@ -141,6 +141,14 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
+  # (advanced) Allows to disable enforcement of the label count limit
+  # "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on
+  # the http write path. Allowing this for external clients allows any client to
+  # send invalid label counts. After enabling it, requests with a specific HTTP
+  # header set to true will not have label counts validated.
+  # CLI flag: -api.skip-label-count-validation-header-enabled
+  [skip_label_count_validation_header_enabled: <boolean> | default = false]
+
   # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
   # trigger an ingester shutdown. This is a potentially dangerous operation and
   # should only be enabled consciously.
@@ -955,11 +963,6 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
-
-# (experimental) When enabled, OTLP write requests are directly translated to
-# Mimir equivalents, for optimum performance.
-# CLI flag: -distributor.direct-otlp-translation-enabled
-[direct_otlp_translation_enabled: <boolean> | default = true]
 ```
 
 ### ingester
@@ -1531,6 +1534,11 @@ mimir_query_engine:
   # applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
+
+  # (experimental) Enable support for subqueries in Mimir's query engine. Only
+  # applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-subqueries
+  [enable_subqueries: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1709,13 +1717,6 @@ The `query_scheduler` block configures the query-scheduler.
 # 429.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-# (experimental) When enabled, the query scheduler primarily prioritizes
-# dequeuing fairly from queue components and secondarily prioritizes dequeuing
-# fairly across tenants. When disabled, the query scheduler primarily
-# prioritizes tenant fairness.
-# CLI flag: -query-scheduler.prioritize-query-components
-[prioritize_query_components: <boolean> | default = false]
 
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
@@ -2158,6 +2159,11 @@ local:
   [directory: <string> | default = ""]
 
 cache:
+  # (experimental) Enabling caching of rule group contents if a cache backend is
+  # configured.
+  # CLI flag: -ruler-storage.cache.rule-group-enabled
+  [rule_group_enabled: <boolean> | default = false]
+
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
@@ -2959,6 +2965,11 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
+# (advanced) How frequently to notify watchers when a key changes. Can reduce
+# CPU activity in large memberlist deployments. 0 to notify without delay.
+# CLI flag: -memberlist.notify-interval
+[notify_interval: <duration> | default = 0s]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr
@@ -3050,6 +3061,15 @@ The `memberlist` block configures the Gossip memberlist.
 # (advanced) Timeout for writing 'packet' data.
 # CLI flag: -memberlist.packet-write-timeout
 [packet_write_timeout: <duration> | default = 5s]
+
+# (advanced) Maximum number of concurrent writes to other nodes.
+# CLI flag: -memberlist.max-concurrent-writes
+[max_concurrent_writes: <int> | default = 3]
+
+# (advanced) Timeout for acquiring one of the concurrent write slots. After this
+# time, the message will be dropped.
+# CLI flag: -memberlist.acquire-writer-timeout
+[acquire_writer_timeout: <duration> | default = 250ms]
 
 # (advanced) Enable TLS on the memberlist transport layer.
 # CLI flag: -memberlist.tls-enabled
@@ -3780,6 +3800,16 @@ kafka:
   # additional Metadata requests pressure to Kafka.
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
+
+  # The username used to authenticate to Kafka using the SASL plain mechanism.
+  # To enable SASL, configure both the username and password.
+  # CLI flag: -ingest-storage.kafka.sasl-username
+  [sasl_username: <string> | default = ""]
+
+  # The password used to authenticate to Kafka using the SASL plain mechanism.
+  # To enable SASL, configure both the username and password.
+  # CLI flag: -ingest-storage.kafka.sasl-password
+  [sasl_password: <string> | default = ""]
 
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured

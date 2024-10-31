@@ -18,8 +18,9 @@ func TestMergeSeries(t *testing.T) {
 		input               []types.InstantVectorSeriesData
 		sourceSeriesIndices []int
 
-		expectedOutput   types.InstantVectorSeriesData
-		expectedConflict *MergeConflict
+		expectedOutput                 types.InstantVectorSeriesData
+		expectedConflict               *MergeConflict
+		expectInputHPointSlicesCleared bool
 	}{
 		"no input series": {
 			input:          []types.InstantVectorSeriesData{},
@@ -120,6 +121,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"two float only input series with no overlap, series not in time order": {
 			input: []types.InstantVectorSeriesData{
@@ -178,6 +180,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"three float only input series with no overlap": {
 			input: []types.InstantVectorSeriesData{
@@ -256,6 +259,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 9, H: &histogram.FloatHistogram{Count: 90, Sum: 900}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"two float only input series with overlap": {
 			input: []types.InstantVectorSeriesData{
@@ -314,6 +318,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"three float only input series with overlap": {
 			input: []types.InstantVectorSeriesData{
@@ -380,6 +385,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"float only input series with conflict": {
 			input: []types.InstantVectorSeriesData{
@@ -398,10 +404,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{3, 2},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  3,
-				secondConflictingSeriesIndex: 2,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  3,
+				SecondConflictingSeriesIndex: 2,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"histogram only input series with conflict": {
@@ -421,10 +427,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{3, 2},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  3,
-				secondConflictingSeriesIndex: 2,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  3,
+				SecondConflictingSeriesIndex: 2,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"float only input series with conflict after resorting": {
@@ -450,10 +456,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{6, 9, 4},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  6,
-				secondConflictingSeriesIndex: 4,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  6,
+				SecondConflictingSeriesIndex: 4,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"histogram only input series with conflict after resorting": {
@@ -479,10 +485,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{6, 9, 4},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  6,
-				secondConflictingSeriesIndex: 4,
-				description:                  "duplicate series",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  6,
+				SecondConflictingSeriesIndex: 4,
+				Description:                  "duplicate series",
+				Timestamp:                    2,
 			},
 		},
 		"float and histogram input series with no conflict": {
@@ -546,6 +552,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"mixed float and histogram input series, series not in time order": {
 			input: []types.InstantVectorSeriesData{
@@ -581,6 +588,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"mixed float and histogram input series, series in conflict on different types": {
 			input: []types.InstantVectorSeriesData{
@@ -597,10 +605,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{5, 1},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  1,
-				secondConflictingSeriesIndex: -1,
-				description:                  "both float and histogram samples",
-				timestamp:                    2,
+				FirstConflictingSeriesIndex:  1,
+				SecondConflictingSeriesIndex: -1,
+				Description:                  "both float and histogram samples",
+				Timestamp:                    2,
 			},
 		},
 		"mixed float and histogram input series, series in conflict on different type and not in time order": {
@@ -619,10 +627,10 @@ func TestMergeSeries(t *testing.T) {
 			},
 			sourceSeriesIndices: []int{5, 1},
 			expectedConflict: &MergeConflict{
-				firstConflictingSeriesIndex:  5,
-				secondConflictingSeriesIndex: -1,
-				description:                  "both float and histogram samples",
-				timestamp:                    3,
+				FirstConflictingSeriesIndex:  5,
+				SecondConflictingSeriesIndex: -1,
+				Description:                  "both float and histogram samples",
+				Timestamp:                    3,
 			},
 		},
 		"input series have no points": {
@@ -690,6 +698,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 10, H: &histogram.FloatHistogram{Count: 10, Sum: 10}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 		"input series exclusively with floats, histograms, or mixed, all overlap": {
 			input: []types.InstantVectorSeriesData{
@@ -743,6 +752,7 @@ func TestMergeSeries(t *testing.T) {
 					{T: 10, H: &histogram.FloatHistogram{Count: 10, Sum: 10}},
 				},
 			},
+			expectInputHPointSlicesCleared: true,
 		},
 	}
 
@@ -757,6 +767,14 @@ func TestMergeSeries(t *testing.T) {
 			} else {
 				require.Nil(t, conflict)
 				require.Equal(t, testCase.expectedOutput, result)
+			}
+
+			if testCase.expectInputHPointSlicesCleared {
+				for sliceIdx, slice := range testCase.input {
+					for pointIdx, point := range slice.Histograms {
+						require.Nilf(t, point.H, "expected point at index %v of HPoint slice at index %v to have been cleared, but it was not", pointIdx, sliceIdx)
+					}
+				}
 			}
 		})
 	}

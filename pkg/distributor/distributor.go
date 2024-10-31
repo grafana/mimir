@@ -198,9 +198,13 @@ type Config struct {
 	// for testing and for extending the ingester by adding calls to the client
 	IngesterClientFactory ring_client.PoolFactory `yaml:"-"`
 
-	// when true the distributor does not validate the label name and value, Mimir doesn't directly use
-	// this (and should never use it) but this feature is used by other projects built on top of it
+	// When SkipLabelValidation is true the distributor does not validate the label name and value, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
 	SkipLabelValidation bool `yaml:"-"`
+
+	// When SkipLabelCountValidation is true the distributor does not validate the number of labels, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
+	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
@@ -223,9 +227,6 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
-
-	// DirectOTLPTranslationEnabled allows reverting to the older way of translating from OTLP write requests via Prometheus, in case of problems.
-	DirectOTLPTranslationEnabled bool `yaml:"direct_otlp_translation_enabled" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -244,7 +245,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
-	f.BoolVar(&cfg.DirectOTLPTranslationEnabled, "distributor.direct-otlp-translation-enabled", true, "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -324,12 +324,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices := []services.Service(nil)
 	subservices = append(subservices, haTracker)
 
-	var requestBufferPool util.Pool
-	if cfg.MaxRequestPoolBufferSize > 0 {
-		requestBufferPool = util.NewBucketedBufferPool(1<<10, cfg.MaxRequestPoolBufferSize, 4)
-	} else {
-		requestBufferPool = util.NewBufferPool()
-	}
+	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
 		cfg:                   cfg,
@@ -713,8 +708,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
 		return err
 	}
 
@@ -1051,8 +1046,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
 			skipLabelValidation := d.cfg.SkipLabelValidation || req.GetSkipLabelValidation()
+			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
+
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1382,6 +1379,7 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
+		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 

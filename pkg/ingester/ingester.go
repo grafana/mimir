@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -633,7 +634,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 	}
 
-	i.circuitBreaker.activate()
+	i.circuitBreaker.read.activate()
+	if ro, _ := i.lifecycler.GetReadOnlyState(); !ro {
+		// If the ingester is not read-only, activate the push circuit breaker.
+		i.circuitBreaker.push.activate()
+	}
 	return nil
 }
 
@@ -1344,6 +1349,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		// Map TSDB native histogram validation errors to soft errors.
+		case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
+			stats.sampleOutOfOrderCount++
+			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+				return newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
+			})
+			return true
 		case errors.Is(err, histogram.ErrHistogramCountMismatch):
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
@@ -2660,6 +2671,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
+	userDBHasDB := atomic.NewBool(false)
+	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+		if !userDBHasDB.Load() {
+			return nil
+		}
+		return userDB.blocksToDelete(blocks)
+	}
+
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2674,7 +2693,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                        i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                  walReplayConcurrency,
 		SeriesLifecycleCallback:               userDB,
-		BlocksToDelete:                        userDB.blocksToDelete,
+		BlocksToDelete:                        blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
@@ -2715,6 +2734,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB.db = db
+	userDBHasDB.Store(true)
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
@@ -3849,7 +3869,10 @@ func (i *Ingester) checkAvailableForPush() error {
 
 // PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
 func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
-	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	err := i.PushWithCleanup(ctx, req, func() {
+		req.FreeBuffer()
+		mimirpb.ReuseSlice(req.Timeseries)
+	})
 	if err != nil {
 		return mapPushErrorToErrorWithStatus(err)
 	}

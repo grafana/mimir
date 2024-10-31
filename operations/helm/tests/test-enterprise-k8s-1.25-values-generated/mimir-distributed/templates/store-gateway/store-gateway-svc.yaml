@@ -18,6 +18,7 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Cluster
   ports:
     - port: 8080
       protocol: TCP
@@ -53,6 +54,7 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Cluster
   ports:
     - port: 8080
       protocol: TCP
@@ -88,6 +90,7 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
+  internalTrafficPolicy: Cluster
   ports:
     - port: 8080
       protocol: TCP

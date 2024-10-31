@@ -14,6 +14,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/otel/propagation"
@@ -95,6 +96,16 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 
 	if cfg.AutoCreateTopicEnabled {
 		opts = append(opts, kgo.AllowAutoTopicCreation())
+	}
+
+	// SASL plain auth.
+	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
+		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
+			return plain.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword.String(),
+			}, nil
+		})))
 	}
 
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))

@@ -27,24 +27,8 @@ type InstantVectorSeriesData struct {
 	// Histograms contains histogram samples for this series.
 	// Samples must be sorted in timestamp order, earliest timestamps first.
 	// Samples must not have duplicate timestamps.
-	// HPoint contains a pointer to a histogram, and consecutive HPoints may contain a reference
-	// to the same FloatHistogram.
-	// It is therefore important to check for references to the same FloatHistogram in
-	// subsequent points before mutating it.
+	// Samples must not share FloatHistogram instances.
 	Histograms []promql.HPoint
-}
-
-// RemoveReferencesToRetainedHistogram searches backwards through d.Histograms, starting at lastIndex, removing any
-// points that reference h, stopping once a different FloatHistogram is reached.
-func (d InstantVectorSeriesData) RemoveReferencesToRetainedHistogram(h *histogram.FloatHistogram, lastIndex int) {
-	for i := lastIndex; i >= 0; i-- {
-		if d.Histograms[i].H != h {
-			// We've reached a different histogram. We're done.
-			return
-		}
-
-		d.Histograms[i].H = nil
-	}
 }
 
 type InstantVectorSeriesDataIterator struct {
@@ -83,10 +67,10 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 	return point.T, 0, point.H, true
 }
 
-// RangeVectorStepData contains the timestamps associated with a single time step produced by a
+// RangeVectorStepData contains the data and timestamps associated with a single time step produced by a
 // RangeVectorOperator.
 //
-// All values are in milliseconds since the Unix epoch.
+// All timestamps are in milliseconds since the Unix epoch.
 //
 // For example, if the operator represents the selector "some_metric[5m]", and this time step is for
 // 2024-05-02T00:00:00Z, then:
@@ -100,6 +84,26 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 //   - RangeStart is 1712015700000 (2024-04-01T23:55:00Z)
 //   - RangeEnd is 1712016000000 (2024-04-02T00:00:00Z)
 type RangeVectorStepData struct {
+	// Floats contains the float samples for this time step, and possibly points beyond the end of the
+	// selected range. Callers should compare points' timestamps to RangeEnd.
+	//
+	// The ring buffer must not be modified, including closing it, as RangeVectorOperator implementations
+	// may return the same ring buffer for subsequent steps and reuse the same points, if the ranges for
+	// both steps overlap.
+	Floats *FPointRingBuffer
+
+	// Histograms contains the histogram samples for this time step, and possibly points beyond the end of the
+	// selected range. Callers should compare points' timestamps to RangeEnd.
+	//
+	// The ring buffer must not be modified, including closing it, as RangeVectorOperator implementations
+	// may return the same ring buffer for subsequent steps and reuse the same points, if the ranges for
+	// both steps overlap.
+	//
+	// FloatHistogram instances in the buffer must not be modified as they may be returned for subsequent steps.
+	// FloatHistogram instances that are retained after the next call to NextStepSamples must be copied, as they
+	// may be modified on subsequent calls to NextStepSamples.
+	Histograms *HPointRingBuffer
+
 	// StepT is the timestamp of this time step.
 	StepT int64
 

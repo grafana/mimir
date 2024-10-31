@@ -729,12 +729,13 @@ mimirtool analyze ruler --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment variable | Flag        | Description                                                                                     |
-| -------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| `MIMIR_ADDRESS`      | `--address` | Sets the address of the Prometheus instance.                                                    |
-| `MIMIR_TENANT_ID`    | `--id`      | Sets the basic auth username. If you're using Grafana Cloud, this variable is your instance ID. |
-| `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.     |
-| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-ruler.json`.                         |
+| Environment variable | Flag           | Description                                                                                               |
+| -------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`      | `--address`    | Sets the address of the Prometheus instance.                                                              |
+| `MIMIR_TENANT_ID`    | `--id`         | Sets the basic authentication username. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_API_KEY`      | `--key`        | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.     |
+| `MIMIR_AUTH_TOKEN`   | `--auth-token` | Sets the bearer or JWT token that is required for Mimir clusters authenticating with this method.         |
+| -                    | `--output`     | Sets the output file path, which by default is `metrics-in-ruler.json`.                                   |
 
 ##### Example output file
 
@@ -809,15 +810,16 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment variable | Flag                       | Description                                                                                                              |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address`                | Sets the address of the Prometheus instance.                                                                             |
-| `MIMIR_TENANT_ID`    | `--id`                     | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID, also set as tenant ID.    |
-| `MIMIR_API_KEY`      | `--key`                    | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
-| -                    | `--grafana-metrics-file`   | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`. |
-| -                    | `--ruler-metrics-file`     | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.     |
-| -                    | `--output`                 | Sets the output file path, which by default is `prometheus-metrics.json`.                                                |
-| -                    | `--prometheus-http-prefix` | Sets the HTTP URL path under which the Prometheus api will be served.                                                    |
+| Environment variable | Flag                       | Description                                                                                                                     |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`      | `--address`                | Sets the address of the Prometheus instance.                                                                                    |
+| `MIMIR_TENANT_ID`    | `--id`                     | Sets the basic authentication username. If you're using Grafana Cloud this variable is your instance ID, also set as tenant ID. |
+| `MIMIR_API_KEY`      | `--key`                    | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.                           |
+| `MIMIR_AUTH_TOKEN`   | `--auth-token`             | Sets the bearer or JWT token that is required for Mimir clusters authenticating with this method.                               |
+| -                    | `--grafana-metrics-file`   | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`.        |
+| -                    | `--ruler-metrics-file`     | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.            |
+| -                    | `--output`                 | Sets the output file path, which by default is `prometheus-metrics.json`.                                                       |
+| -                    | `--prometheus-http-prefix` | Sets the HTTP URL path under which the Prometheus api will be served.                                                           |
 
 ##### Example output
 

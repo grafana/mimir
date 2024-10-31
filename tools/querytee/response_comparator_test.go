@@ -84,7 +84,7 @@ Actual result for series:
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[3,"2"]]}
 						]`),
-			err: `float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3
+			err: `float sample pair does not match for metric {foo="bar"}: expected timestamp 2 (1970-01-01T00:00:02Z) but got 3 (1970-01-01T00:00:03Z)
 Expected result for series:
 {foo="bar"} =>
 1 @[1]
@@ -103,7 +103,7 @@ Actual result for series:
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"3"]]}
 						]`),
-			err: `float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3
+			err: `float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 (1970-01-01T00:00:02Z) but got 3
 Expected result for series:
 {foo="bar"} =>
 1 @[1]
@@ -133,7 +133,7 @@ Actual result for series:
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
 							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"3"]]}
 						]`),
-			err: `float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 but got 3
+			err: `float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 (1970-01-01T00:00:02Z) but got 3
 Expected result for series:
 {oops="bar"} =>
 1 @[1]
@@ -759,7 +759,7 @@ func TestCompareVector(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"value":[2,"1"]}
 						]`),
-			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 1 (1970-01-01T00:00:01Z) but got 2 (1970-01-01T00:00:02Z)`),
 		},
 		{
 			name: "difference in float sample value",
@@ -769,7 +769,7 @@ func TestCompareVector(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"value":[1,"2"]}
 						]`),
-			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 1 for timestamp 1 but got 2`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 1 for timestamp 1 (1970-01-01T00:00:01Z) but got 2`),
 		},
 		{
 			name: "correct float samples",
@@ -1100,13 +1100,13 @@ func TestCompareScalar(t *testing.T) {
 			name:     "difference in timestamp",
 			expected: json.RawMessage(`[1,"1"]`),
 			actual:   json.RawMessage(`[2,"1"]`),
-			err:      errors.New("expected timestamp 1 but got 2"),
+			err:      errors.New("expected timestamp 1 (1970-01-01T00:00:01Z) but got 2 (1970-01-01T00:00:02Z)"),
 		},
 		{
 			name:     "difference in value",
 			expected: json.RawMessage(`[1,"1"]`),
 			actual:   json.RawMessage(`[1,"2"]`),
-			err:      errors.New("expected value 1 for timestamp 1 but got 2"),
+			err:      errors.New("expected value 1 for timestamp 1 (1970-01-01T00:00:01Z) but got 2"),
 		},
 		{
 			name:     "correct values",
@@ -1139,6 +1139,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 		err               error
 		useRelativeError  bool
 		skipRecentSamples time.Duration
+		skipSamplesBefore int64 // In unix milliseconds
 	}{
 		{
 			name: "difference in response status",
@@ -1364,7 +1365,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.789"]}]}
 						}`),
-			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 773054.5916666666 for timestamp 1 but got 773054.789`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 773054.5916666666 for timestamp 1 (1970-01-01T00:00:01Z) but got 773054.789`),
 		},
 		{
 			name:      "should fail if large values are significantly different, over the tolerance without using relative error",
@@ -1377,7 +1378,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"4.923488536785281e+41"]}]}
 						}`),
-			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 492348853678528200000000000000000000000000 for timestamp 1 but got 492348853678528100000000000000000000000000`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 492348853678528200000000000000000000000000 for timestamp 1 (1970-01-01T00:00:01Z) but got 492348853678528100000000000000000000000000`),
 		},
 		{
 			name:      "should not fail if large values are significantly different, over the tolerance using relative error",
@@ -2166,12 +2167,284 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			err: errors.New(`expected info annotations ["\"info\" #1"] but got ["\"info\" #2"]`),
 		},
+		{
+			name: "should not fail when we skip samples from the beginning of a matrix for expected and actual - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [100,"10"]]}, {"metric":{"foo":"bar2"},"values":[[100,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[100,"10"]]}, {"metric":{"foo":"bar2"},"values":[[80,"9"], [100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+		},
+		{
+			name: "should not fail when some series is entirely skipped and rest matches - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [100,"10"]]}, {"metric":{"foo":"bar2"},"values":[[90,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+		},
+		{
+			name: "fail when all series from expected are filtered out - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [93,"10"]]}, {"metric":{"foo":"bar2"},"values":[[90,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"10"], [93,"10"], [100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+			err:               errors.New(`expected 0 metrics but got 1 (also, some series were completely filtered out from the expected response due to the 'skip samples before')`),
+		},
+		{
+			name: "should not fail when we skip all samples starting from the beginning - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [100,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 105 * 1000,
+		},
+		{
+			name: "should fail when we skip partial samples in the beginning but compare some other - float",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[90,"9"], [97,"7"], [100,"10"]]}, {"metric":{"foo":"bar2"},"values":[[100,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[100,"10"]]}, {"metric":{"foo":"bar2"},"values":[[90,"10"], [100,"10"]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+			// 9 @[90] is not compared. foo=bar2 does not fail.
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 97 (1970-01-01T00:01:37Z) but got 100 (1970-01-01T00:01:40Z)
+Expected result for series:
+{foo="bar"} =>
+7 @[97]
+10 @[100]
+
+Actual result for series:
+{foo="bar"} =>
+10 @[100]`),
+		},
+		{
+			name: "should not fail when we skip samples from the beginning of a matrix for expected and actual - histogram",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[
+								{"metric":{"foo":"bar"},"histograms":[[90,{"count": "2","sum": "4","buckets": [[1,"0","2","2"]]}], [100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]},
+								{"metric":{"foo":"bar2"},"histograms":[[100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[
+								{"metric":{"foo":"bar"},"histograms":[[100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}, 
+								{"metric":{"foo":"bar2"},"histograms":[[80,{"count": "2","sum": "4","buckets": [[1,"0","2","2"]]}], [100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+		},
+		{
+			name: "should not fail when we skip all samples starting from the beginning - histogram",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"histograms":[[90,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}], [100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"histograms":[[100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}]}
+						}`),
+			skipSamplesBefore: 105 * 1000,
+		},
+		{
+			name: "should fail when we skip partial samples in the beginning but compare some other - histogram",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[
+								{"metric":{"foo":"bar"},"histograms":[[90,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}], [97,{"count": "2","sum": "33","buckets": [[1,"0","2","2"]]}], [100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]},
+								{"metric":{"foo":"bar2"},"histograms":[[100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[
+								{"metric":{"foo":"bar"},"histograms":[[100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]},
+								{"metric":{"foo":"bar2"},"histograms":[[90,{"count": "2","sum": "44","buckets": [[1,"0","2","2"]]}], [100,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]]}]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+			// @[90] is not compared. foo=bar2 does not fail.
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected timestamp 97 but got 100
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 33.000000, Buckets: [[0,2):2] @[97]
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[100]`),
+		},
+		{
+			name: "should not fail when skipped samples properly for vectors",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[90,"1"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[95,"1"]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+		},
+		{
+			name: "should not fail when skipped samples properly for vectors - histogram",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"histogram":[90,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"histogram":[95,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+		},
+		{
+			name: "should fail when skipped samples only for expected vector",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[90,"1"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[105,"1"]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+			err:               errors.New(`expected 0 metrics but got 1 (also, some samples were filtered out from the expected response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)`),
+		},
+		{
+			name: "should fail when skipped samples only for actual vector",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[105,"1"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[95,"1"]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+			err:               errors.New(`expected 1 metrics but got 0 (also, some samples were filtered out from the actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)`),
+		},
+		{
+			name: "should skip properly when there are multiple series in a vector",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[90,"1"]}, {"metric":{"foo":"bar2"},"value":[105,"1"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[95,"1"]}, {"metric":{"foo":"bar2"},"value":[105,"1"]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+		},
+		{
+			name: "should skip properly when there are multiple series in a vector - histogram",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[
+								{"metric":{"foo":"bar"},"histogram":[90,{"count":"2","sum":"333","buckets":[[1,"0","2","2"]]}]}, 
+								{"metric":{"foo":"bar2"},"histogram":[105,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[
+								{"metric":{"foo":"bar"},"histogram":[95,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}, 
+								{"metric":{"foo":"bar2"},"histogram":[105,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+		},
+		{
+			name: "different series skipped in expected and actual, causing an error",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[105,"1"]}, {"metric":{"foo":"bar2"},"value":[90,"1"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[95,"1"]}, {"metric":{"foo":"bar2"},"value":[105,"1"]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+			err:               errors.New(`expected metric {foo="bar"} missing from actual response (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)`),
+		},
+		{
+			name: "different series skipped in expected and actual, causing an error - histogram",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[
+								{"metric":{"foo":"bar"},"histogram":[105,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}, 
+								{"metric":{"foo":"bar2"},"histogram":[90,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[
+								{"metric":{"foo":"bar"},"histogram":[95,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}, 
+								{"metric":{"foo":"bar2"},"histogram":[105,{"count":"2","sum":"3","buckets":[[1,"0","2","2"]]}]}]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+			err:               errors.New(`expected metric {foo="bar"} missing from actual response (also, some samples were filtered out from the expected and actual response due to the 'skip samples before'; if all samples have been filtered out, this could cause the check on the expected number of metrics to fail)`),
+		},
+		{
+			name: "expected is skippable but not the actual, causing an error",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[90,"1"]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[100,"1"]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+			err:               errors.New(`expected timestamp 90 (1970-01-01T00:01:30Z) but got 100 (1970-01-01T00:01:40Z)`),
+		},
+		{
+			name: "actual is skippable but not the expected, causing an error",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[100,"1"]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[90,"1"]}
+						}`),
+			skipSamplesBefore: 95 * 1000,
+			err:               errors.New(`expected timestamp 100 (1970-01-01T00:01:40Z) but got 90 (1970-01-01T00:01:30Z)`),
+		},
+		{
+			name: "both expected and actual are skippable",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[95,"1"]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[90,"1"]}
+						}`),
+			skipSamplesBefore: 100 * 1000,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			samplesComparator := NewSamplesComparator(SampleComparisonOptions{
 				Tolerance:         tc.tolerance,
 				UseRelativeError:  tc.useRelativeError,
 				SkipRecentSamples: tc.skipRecentSamples,
+				SkipSamplesBefore: model.Time(tc.skipSamplesBefore),
 			})
 			result, err := samplesComparator.Compare(tc.expected, tc.actual, nowT.Time())
 			if tc.err == nil {

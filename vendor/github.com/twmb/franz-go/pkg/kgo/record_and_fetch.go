@@ -178,9 +178,13 @@ type Record struct {
 // Once this method has been called, any reference to the passed record should be considered invalid by the caller,
 // as it may be reused as a result of future calls to the PollFetches/PollRecords method.
 func (r *Record) Reuse() {
-	if r.recordsPool != nil {
+	if r.rcRawRecordsBuffer != nil {
 		r.rcRawRecordsBuffer.release()
+	}
+	if r.rcBatchBuffer != nil {
 		r.rcBatchBuffer.release()
+	}
+	if r.recordsPool != nil {
 		r.recordsPool.put(r)
 	}
 }

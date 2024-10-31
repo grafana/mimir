@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r310-e8ae03e
+  tag: r314-97a7589
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -547,6 +547,9 @@ alertmanager:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   # -- Optionally set the scheduler for pods of the alertmanager
   schedulerName: ""
@@ -815,6 +818,9 @@ distributor:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -906,6 +912,9 @@ ingester:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1125,6 +1134,9 @@ overrides_exporter:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   strategy:
     type: RollingUpdate
@@ -1229,6 +1241,9 @@ ruler:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
@@ -1357,6 +1372,9 @@ ruler_querier:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -1464,6 +1482,9 @@ ruler_query_frontend:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -1548,6 +1569,9 @@ ruler_query_scheduler:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -1673,6 +1697,9 @@ querier:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -1779,6 +1806,9 @@ query_frontend:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -1863,6 +1893,9 @@ query_scheduler:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   resources:
     requests:
@@ -1950,6 +1983,9 @@ store_gateway:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -2157,6 +2193,9 @@ compactor:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
@@ -2279,7 +2318,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.31-alpine
+    tag: 1.6.32-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2893,6 +2932,8 @@ nginx:
     annotations: {}
     # -- Labels for nginx service
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
   # Ingress configuration
   ingress:
     # -- Specifies whether an ingress for the nginx should be created
@@ -3288,6 +3329,8 @@ gateway:
     # Instead, it will update the existing one in place.
     # If left as an empty string, a name is generated.
     nameOverride: ""
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
 
   ingress:
     enabled: false
@@ -3862,7 +3905,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r310-ad5d5b56
+    tag: r314-308bed85
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3906,6 +3949,9 @@ admin_api:
   service:
     annotations: {}
     labels: {}
+    # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
+    internalTrafficPolicy: Cluster
+    type: ClusterIP
 
   initContainers: []
 

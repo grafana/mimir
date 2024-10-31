@@ -13,11 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo/pool"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
-
-	"github.com/twmb/franz-go/pkg/kgo/internal/pool"
 )
 
 // Opt is an option to configure a client.
