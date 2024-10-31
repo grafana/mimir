@@ -157,7 +157,6 @@ func TestQuerier(t *testing.T) {
 				// data doesn't have resets and is not a product of a merge.
 				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(nil), point.H)
-
 			},
 		},
 
