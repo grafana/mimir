@@ -207,6 +207,9 @@
     // Used to add extra annotations to all alerts, Careful: takes precedence over default annotations.
     alert_extra_annotations: {},
 
+    // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
+    alert_job_prefix: '.*/',
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
