@@ -77,18 +77,27 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
+	partialCount := 30
+
 	// Mock some blocks in the storage.
 	bkt = block.BucketWithGlobalMarkers(bkt)
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{"hello": "world"})
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_10"})
-	block3 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
 	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+	partialMocks := make([]block.Meta, partialCount)
+	for i := 0; i < partialCount; i++ {
+		partialMocks[i] = block.MockStorageBlockWithExtLabels(t, bkt, userID, 30, int64((i+1)*10), nil)
+	}
 
 	// No compact marks are ignored by bucket index.
-	block.MockNoCompactMark(t, bkt, userID, block3.BlockMeta)
+	for i := 0; i < partialCount; i++ {
+		block.MockNoCompactMark(t, bkt, userID, partialMocks[i].BlockMeta)
+	}
 
 	// Delete a block's meta.json to simulate a partial block.
-	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename)))
+	for i := 0; i < partialCount; i++ {
+		require.NoError(t, bkt.Delete(ctx, path.Join(userID, partialMocks[i].ULID.String(), block.MetaFilename)))
+	}
 
 	w := NewUpdater(bkt, userID, nil, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
@@ -97,8 +106,10 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 		[]block.Meta{block1, block2},
 		[]*block.DeletionMark{block2Mark})
 
-	assert.Len(t, partials, 1)
-	assert.True(t, errors.Is(partials[block3.ULID], ErrBlockMetaNotFound))
+	assert.Len(t, partials, partialCount)
+	for _, p := range partialMocks {
+		assert.True(t, errors.Is(partials[p.ULID], ErrBlockMetaNotFound))
+	}
 }
 
 func TestUpdater_UpdateIndex_ShouldSkipBlocksWithCorruptedMeta(t *testing.T) {
