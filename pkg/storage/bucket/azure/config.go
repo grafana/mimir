@@ -30,7 +30,6 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
 	cfg.HTTP.RegisterFlagsWithPrefix("", f)
-
 }
 
 // RegisterFlagsWithPrefix registers the flags for Azure storage
