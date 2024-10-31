@@ -4,6 +4,7 @@ package types
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/prometheus/prometheus/promql"
 
@@ -255,6 +256,52 @@ func (v FPointRingBufferView) Count() int {
 // Any returns true if this ring buffer view contains any points.
 func (v FPointRingBufferView) Any() bool {
 	return v.size != 0
+}
+
+// ChangesAtOrBefore returns the number of changes between subsequent points in this ring buffer from the first
+// point to the point with timestamp less than or equal to maxT.
+func (b *FPointRingBuffer) ChangesAtOrBefore(maxT int64) (float64, bool) {
+	fHead, fTail := b.UnsafePoints(maxT)
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+
+	if !haveFloats {
+		// Prometheus' engine doesn't support histogram for `changes` function yet,
+		// therefore we won't add that yet too.
+		return 0, false
+	}
+
+	if len(fHead) == 0 && len(fTail) == 0 {
+		return 0, true
+	}
+
+	changes := 0.0
+
+	// Comparing the point with the point before it.
+	accumulate := func(points []promql.FPoint, prev *float64) {
+		for _, sample := range points {
+			current := sample.F
+			if current != *prev && !(math.IsNaN(current) && math.IsNaN(*prev)) {
+				changes++
+			}
+			*prev = current
+		}
+	}
+
+	prev := fHead[0].F
+	pPrev := &prev
+
+	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
+	// and then continue to the tail.
+	if len(fHead) > 0 && len(fTail) > 0 {
+		accumulate(fHead[1:], pPrev)
+		accumulate(fTail, pPrev)
+	}
+
+	if len(fHead) > 0 && len(fTail) == 0 {
+		accumulate(fHead[1:], pPrev)
+	}
+	return changes, true
 }
 
 // These hooks exist so we can override them during unit tests.
