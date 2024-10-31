@@ -99,7 +99,11 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
 			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
-			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(nextExpectedTS)), h, strconv.Itoa(i))
+			expH := test.GenerateTestHistogram(int(nextExpectedTS))
+			if nextExpectedTS > 0 {
+				expH.CounterResetHint = histogram.NotCounterReset
+			}
+			test.RequireHistogramEqual(t, expH, h, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -107,7 +111,11 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
-			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(nextExpectedTS)), fh, strconv.Itoa(i))
+			expFH := test.GenerateTestFloatHistogram(int(nextExpectedTS))
+			if nextExpectedTS > 0 {
+				expFH.CounterResetHint = histogram.NotCounterReset
+			}
+			test.RequireFloatHistogramEqual(t, expFH, fh, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
 		}
 	default:
@@ -135,7 +143,11 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValHistogram, valType)
 			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
-			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(expectedTS)), h)
+			expH := test.GenerateTestHistogram(int(expectedTS))
+			if expectedTS > 0 {
+				expH.CounterResetHint = histogram.NotCounterReset
+			}
+			test.RequireHistogramEqual(t, expH, h)
 			require.NoError(t, iter.Err())
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -143,7 +155,11 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValFloatHistogram, valType)
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
-			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(expectedTS)), fh)
+			expFH := test.GenerateTestFloatHistogram(int(expectedTS))
+			if expectedTS > 0 {
+				expFH.CounterResetHint = histogram.NotCounterReset
+			}
+			test.RequireFloatHistogramEqual(t, expFH, fh)
 			require.NoError(t, iter.Err())
 		}
 	default:
