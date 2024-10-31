@@ -34,6 +34,8 @@ var (
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
+	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
+	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 )
@@ -105,7 +107,7 @@ type KafkaConfig struct {
 	OngoingRecordsPerFetch            int  `yaml:"ongoing_records_per_fetch"`
 	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 
-	IngestionConcurrency                        int `yaml:"ingestion_concurrency"`
+	IngestionConcurrencyMax                     int `yaml:"ingestion_concurrency_max"`
 	IngestionConcurrencyBatchSize               int `yaml:"ingestion_concurrency_batch_size"`
 	IngestionConcurrencyQueueCapacity           int `yaml:"ingestion_concurrency_queue_capacity"`
 	IngestionConcurrencyTargetFlushesPerShard   int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
@@ -152,14 +154,13 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.StartupRecordsPerFetch, prefix+".startup-records-per-fetch", 2500, "The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on "+prefix+".startup-fetch-concurrency being greater than 0.")
 	f.IntVar(&cfg.OngoingFetchConcurrency, prefix+".ongoing-fetch-concurrency", 0, "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless "+prefix+".startup-fetch-concurrency is greater than 0. 0 to disable.")
 	f.IntVar(&cfg.OngoingRecordsPerFetch, prefix+".ongoing-records-per-fetch", 30, "The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on "+prefix+".ongoing-fetch-concurrency being greater than 0.")
-	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
+	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations-max interpret MaxBytes differently.")
 
-	f.IntVar(&cfg.IngestionConcurrency, prefix+".ingestion-concurrency", 0, "The number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
-	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+".ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting into TSDB. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
-
-	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+".ingestion-concurrency-queue-capacity", 5, "The number of batches that will be prepared and queued at the same time. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
-	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+".ingestion-concurrency-target-flushes-per-shard", 80, "The ideal number of times we expect to push timeseries to the TSDB after batching, With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
-	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+".ingestion-concurrency-estimated-bytes-per-sample", 500, "The number of bytes we estimate a sample will have on ingestion, this used estimate to estimate number of time series without decompressing them. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyMax, prefix+".ingestion-concurrency-max", 0, "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of str-maxeams. 0 to disable.")
+	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+".ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting to the TSDB head. This is only used when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+".ingestion-concurrency-queue-capacity", 5, "The number of batches that will be prepared and queued to ingest to the TSDB head. This is only used when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+".ingestion-concurrency-target-flushes-per-shard", 80, "The ideal number of times we expect to ingest timeseries to the TSDB head after batching, with fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. This is only used when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+".ingestion-concurrency-estimated-bytes-per-sample", 500, "The number of bytes we estimate a sample will have on ingestion, this used estimate to estimate number of time series without decompressing them. This is only used when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
@@ -209,6 +210,16 @@ func (cfg *KafkaConfig) Validate() error {
 
 	if (cfg.SASLUsername == "") != (cfg.SASLPassword.String() == "") {
 		return ErrInconsistentSASLCredentials
+	}
+
+	if cfg.IngestionConcurrencyMax < 0 {
+		return ErrInvalidIngestionConcurrencyMax
+	}
+
+	if cfg.IngestionConcurrencyMax >= 1 {
+		if cfg.IngestionConcurrencyBatchSize <= 0 || cfg.IngestionConcurrencyQueueCapacity <= 0 || cfg.IngestionConcurrencyEstimatedBytesPerSample <= 0 || cfg.IngestionConcurrencyTargetFlushesPerShard <= 0 {
+			return ErrInvalidIngestionConcurrencyParams
+		}
 	}
 
 	return nil

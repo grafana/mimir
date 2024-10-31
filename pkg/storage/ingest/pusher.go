@@ -143,7 +143,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 }
 
 func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
-	if c.kafkaConfig.IngestionConcurrency == 0 {
+	if c.kafkaConfig.IngestionConcurrencyMax == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
 
@@ -152,7 +152,7 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 		c.pusher,
 		bytesPerTenant,
 		c.kafkaConfig.FallbackClientErrorSampleRate,
-		c.kafkaConfig.IngestionConcurrency,
+		c.kafkaConfig.IngestionConcurrencyMax,
 		c.kafkaConfig.IngestionConcurrencyBatchSize,
 		c.kafkaConfig.IngestionConcurrencyQueueCapacity,
 		c.kafkaConfig.IngestionConcurrencyEstimatedBytesPerSample,
@@ -228,7 +228,7 @@ type parallelStoragePusher struct {
 	upstreamPusher Pusher
 	errorHandler   *pushErrorHandler
 
-	numShards      int
+	maxShards      int
 	batchSize      int
 	bytesPerTenant map[string]int
 
@@ -252,12 +252,12 @@ type parallelStoragePusher struct {
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, numShards int, batchSize int, queueCapacity int, BytesPerSample int, TargetFlushes int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, maxShards int, batchSize int, queueCapacity int, BytesPerSample int, TargetFlushes int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
 		pushers:        make(map[string]PusherCloser),
 		upstreamPusher: pusher,
-		numShards:      numShards,
+		maxShards:      maxShards,
 		bytesPerTenant: bytesPerTenant,
 		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
 		batchSize:      batchSize,
@@ -329,7 +329,7 @@ func (c *parallelStoragePusher) IdealShardsFor(userID string) int {
 	idealShards := expectedTimeseries / c.batchSize / c.targetFlushes
 
 	// Finally, use the lower of the two as a conservative estimate.
-	r := min(idealShards, c.numShards)
+	r := min(idealShards, c.maxShards)
 
 	c.numActiveShards += r
 	return r
