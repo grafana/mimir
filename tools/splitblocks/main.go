@@ -146,6 +146,12 @@ func splitBlocks(ctx context.Context, cfg config, bkt objstore.Bucket, logger lo
 				if err := block.Download(ctx, logger, bkt, blockID, blockDir); err != nil {
 					return errors.Wrapf(err, "failed to download block")
 				}
+				if cfg.verifyBlocks {
+					level.Info(logger).Log("msg", "verifying block", "blockID", blockID)
+					if err := block.VerifyBlock(ctx, logger, blockDir, blockMinTime.UnixMilli(), blockMaxTime.UnixMilli(), true); err != nil {
+						return errors.Wrapf(err, "block verification failed")
+					}
+				}
 			}
 			return nil
 		}
@@ -231,8 +237,7 @@ func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block
 
 		if verifyBlocks {
 			blockPath := path.Join(parentDir, splitID.String())
-			err := block.VerifyBlock(ctx, logger, blockPath, meta.MinTime, meta.MaxTime, true)
-			if err != nil {
+			if err := block.VerifyBlock(ctx, logger, blockPath, meta.MinTime, meta.MaxTime, true); err != nil {
 				return nil, errors.Wrap(err, "block verification failed")
 			}
 		}
