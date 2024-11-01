@@ -51,6 +51,7 @@
 * [ENHANCEMENT] Ingester: Disable the push circuit breaker when ingester is in read-only mode. #9760
 * [ENHANCEMENT] Ingester: Reduced lock contention in the `PostingsForMatchers` cache. #9773
 * [ENHANCEMENT] Storage: Allow HTTP client settings to be tuned for GCS and Azure backends via an `http` block or corresponding CLI flags. This was already supported by the S3 backend. #9778
+* [ENHANCEMENT] Ruler: Support `group_limit` and `group_next_token` parameters in the `<prometheus-http-prefix>/api/v1/rules` endpoint. #9563
 * [BUGFIX] Fix issue where functions such as `rate()` over native histograms could return incorrect values if a float stale marker was present in the selected range. #9508
 * [BUGFIX] Fix issue where negation of native histograms (eg. `-some_native_histogram_series`) did nothing. #9508
 * [BUGFIX] Fix issue where `metric might not be a counter, name does not end in _total/_sum/_count/_bucket` annotation would be emitted even if `rate` or `increase` did not have enough samples to compute a result. #9508
