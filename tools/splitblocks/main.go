@@ -235,14 +235,13 @@ func splitLocalBlock(ctx context.Context, parentDir, blockDir string, meta block
 			return nil, errors.Wrap(err, "failed while splitting block")
 		}
 
+		splitDir := path.Join(parentDir, splitID.String())
 		if verifyBlocks {
-			blockPath := path.Join(parentDir, splitID.String())
-			if err := block.VerifyBlock(ctx, logger, blockPath, meta.MinTime, meta.MaxTime, true); err != nil {
+			if err := block.VerifyBlock(ctx, logger, splitDir, meta.MinTime, meta.MaxTime, true); err != nil {
 				return nil, errors.Wrap(err, "block verification failed")
 			}
 		}
 
-		splitDir := path.Join(parentDir, splitID.String())
 		splitMeta, err := block.ReadMetaFromDir(splitDir)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed while reading meta.json from split block")
