@@ -109,6 +109,12 @@
   * `--kafka-sasl-username`
   * `--kafka-sasl-password`
 
+## 2.14.1
+
+### Grafana Mimir
+
+* [BUGFIX] Update objstore library to resolve issues observed for some S3-compatible object stores, which respond to `StatObject` with `Range` incorrectly. #9625
+
 ## 2.14.0
 
 ### Grafana Mimir
