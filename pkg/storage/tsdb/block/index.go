@@ -561,7 +561,6 @@ OUTER:
 			} else {
 				continue
 			}
-			        
 		}
 
 		last = chk
