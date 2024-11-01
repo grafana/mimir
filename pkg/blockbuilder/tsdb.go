@@ -44,22 +44,14 @@ type TSDBBuilder struct {
 	tsdbs   map[tsdbTenant]*userTSDB
 }
 
-var softErrProcessor = mimir_storage.SoftAppendErrorProcessor{
-	CommonCallback:                   func() {},
-	ErrOutOfBounds:                   func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrOutOfOrderSample:              func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrTooOldSample:                  func(_ int64, _ []mimirpb.LabelAdapter) {},
-	SampleTooFarInFuture:             func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrDuplicateSampleForTimestamp:   func(_ int64, _ []mimirpb.LabelAdapter) {},
-	MaxSeriesPerUser:                 func() {},
-	MaxSeriesPerMetric:               func(_ []mimirpb.LabelAdapter) {},
-	ErrOOONativeHistogramsDisabled:   func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrHistogramCountMismatch:        func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrHistogramCountNotBigEnough:    func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrHistogramNegativeBucketCount:  func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrHistogramSpanNegativeOffset:   func(_ int64, _ []mimirpb.LabelAdapter) {},
-	ErrHistogramSpansBucketsMismatch: func(_ int64, _ []mimirpb.LabelAdapter) {},
-}
+// We use this only to identify the soft errors.
+var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
+	func() {}, func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
+	func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
+	func() {}, func(_ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
+	func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
+	func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
+)
 
 type tsdbTenant struct {
 	partitionID int32
