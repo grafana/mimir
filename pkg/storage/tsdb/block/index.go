@@ -768,8 +768,8 @@ func rewrite(
 	return nil
 }
 
-// clampChunk returns a chunk that is clamped by the minT and maxT so that all samples fall within these,
-// else returns nil if no chunk clamping was needed.
+// clampChunk returns a chunk that contains only samples within [mint, maxt),
+// else nil if no samples were within that range.
 func clampChunk(input *chunks.Meta, minT, maxT int64) (*chunks.Meta, error) {
 	// Ignore chunks that are empty, all outside or all inside
 	outsideChunk := input.MinTime >= maxT || input.MaxTime < minT
