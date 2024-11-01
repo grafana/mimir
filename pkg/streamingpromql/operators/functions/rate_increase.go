@@ -36,8 +36,8 @@ var Delta = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-// isRate is true for `rate` function, and false for `increase` and `delta` function
-// isCounter is true for `rate` and `increase` functions, and false for `delta` function
+// isCounter and isRate are used to determine if the rate should be calculated
+// as `rate`, `increase` or `delta.
 func rate(isCounter, isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
