@@ -16,21 +16,29 @@ import (
 )
 
 var Rate = FunctionOverRangeVectorDefinition{
-	StepFunc:                       rate(true),
+	StepFunc:                       rate(true, true),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
 var Increase = FunctionOverRangeVectorDefinition{
-	StepFunc:                       rate(false),
+	StepFunc:                       rate(true, false),
 	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-// isRate is true for `rate` function, or false for `instant` function
-func rate(isRate bool) RangeVectorStepFunction {
+var Delta = FunctionOverRangeVectorDefinition{
+	StepFunc:                       rate(false, false),
+	SeriesValidationFuncFactory:    rateSeriesValidator,
+	SeriesMetadataFunction:         DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+// isRate is true for `rate` function, and false for `increase` and `delta` function
+// isCounter is true for `rate` and `increase` functions, and false for `delta` function
+func rate(isCounter, isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
@@ -47,12 +55,12 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
+			val := floatRate(isCounter, isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
 			return val, true, nil, nil
 		}
 
 		if hCount >= 2 {
-			val, err := histogramRate(isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
+			val, err := histogramRate(isCounter, isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return 0, false, nil, err
@@ -64,7 +72,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 	}
 }
 
-func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func histogramRate(isCounter, isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := hHead[0]
 	hHead = hHead[1:]
 
@@ -75,7 +83,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		lastPoint = hHead[len(hHead)-1]
 	}
 
-	if firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType {
+	if isCounter && (firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType) {
 		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
 	}
 
@@ -137,11 +145,14 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		delta = delta.CopyToSchema(desiredSchema)
 	}
 
-	val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
-	return val, err
+	if isCounter {
+		val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+		return val, err
+	}
+	return delta, err
 }
 
-func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
+func floatRate(isCounter, isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
 	firstPoint := fHead[0]
 	fHead = fHead[1:]
 
@@ -153,6 +164,10 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 	}
 
 	delta := lastPoint.F - firstPoint.F
+	if isCounter {
+		return delta
+	}
+
 	previousValue := firstPoint.F
 
 	accumulate := func(points []promql.FPoint) {
