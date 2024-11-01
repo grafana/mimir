@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -70,12 +68,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 		}
 
 		reqs := serv.requests()
-		diff := cmp.Diff(requestsToSend, reqs, cmp.Comparer(func(a, b *mimirpb.WriteRequest) bool {
-			return cmp.Equal(*a, *b, cmpopts.IgnoreUnexported(mimirpb.WriteRequest{}), cmpopts.IgnoreUnexported(mimirpb.BufferHolder{}), cmp.Comparer(func(a, b mimirpb.PreallocTimeseries) bool {
-				return a.TimeSeries.Equal(b.TimeSeries)
-			}))
-		}))
-		require.Empty(t, diff)
+		require.Equal(t, requestsToSend, reqs)
 	})
 
 	t.Run("push with pooling", func(t *testing.T) {
@@ -92,12 +85,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 		}
 
 		reqs := serv.requests()
-		diff := cmp.Diff(requestsToSend, reqs, cmp.Comparer(func(a, b *mimirpb.WriteRequest) bool {
-			return cmp.Equal(*a, *b, cmpopts.IgnoreUnexported(mimirpb.WriteRequest{}), cmpopts.IgnoreUnexported(mimirpb.BufferHolder{}), cmp.Comparer(func(a, b mimirpb.PreallocTimeseries) bool {
-				return a.TimeSeries.Equal(b.TimeSeries)
-			}))
-		}))
-		require.Empty(t, diff)
+		require.Equal(t, requestsToSend, reqs)
 
 		// Verify that pool was used.
 		require.Greater(t, pool.Gets.Load(), int64(0))
@@ -161,12 +149,7 @@ func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T)
 	_, err := bufferingClient.Push(ctx, req)
 	require.NoError(t, err)
 
-	diff := cmp.Diff([]*mimirpb.WriteRequest{req}, serv.requests(), cmp.Comparer(func(a, b *mimirpb.WriteRequest) bool {
-		return cmp.Equal(*a, *b, cmpopts.IgnoreUnexported(mimirpb.WriteRequest{}), cmpopts.IgnoreUnexported(mimirpb.BufferHolder{}), cmp.Comparer(func(a, b mimirpb.PreallocTimeseries) bool {
-			return a.TimeSeries.Equal(b.TimeSeries)
-		}))
-	}))
-	require.Empty(t, diff)
+	require.Equal(t, serv.requests(), []*mimirpb.WriteRequest{req})
 
 	// Verify that all buffers from the pool were returned.
 	require.Greater(t, pool.Gets.Load(), int64(0))
