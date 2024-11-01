@@ -558,7 +558,10 @@ OUTER:
 				return nil, errors.Wrap(err, "clamping chunk")
 			} else if clampedChk != nil {
 				chk = clampedChk
+			} else {
+				continue
 			}
+			        
 		}
 
 		last = chk
