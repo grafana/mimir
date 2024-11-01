@@ -103,7 +103,7 @@
 
 ### Tools
 
-* [FEATURE] `splitblocks`: add new tool to split blocks larger than a specified duration into multiple blocks. #9517
+* [FEATURE] `splitblocks`: add new tool to split blocks larger than a specified duration into multiple blocks. #9517, #9779
 * [ENHANCEMENT] `copyblocks`: Added `--skip-no-compact-block-duration-check`, which defaults to `false`, to simplify targeting blocks that are not awaiting compaction. #9439
 * [ENHANCEMENT] `kafkatool`: add SASL plain authentication support. The following new CLI flags have been added: #9584
   * `--kafka-sasl-username`
