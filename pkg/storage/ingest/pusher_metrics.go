@@ -37,6 +37,9 @@ type storagePusherMetrics struct {
 	batchAge             prometheus.Histogram
 	processingTime       *prometheus.HistogramVec
 	timeSeriesPerFlush   prometheus.Histogram
+	shardsPerPush        prometheus.Histogram
+	pushersPerPush       prometheus.Histogram
+	estimatedTimeseries  prometheus.Counter
 	batchingQueueMetrics *batchingQueueMetrics
 	clientErrRequests    prometheus.Counter
 	serverErrRequests    prometheus.Counter
@@ -67,11 +70,25 @@ func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
 			Help:                        "Number of time series pushed in each batch to an ingestion shard. A lower number than -ingest-storage.kafka.ingestion-concurrency-batch-size indicates that shards are not filling up and may not be parallelizing ingestion as efficiently.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
+		shardsPerPush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_shards_per_push",
+			Help:                        "Number of shards that are pushed to in each batch. There are one or more shards for each unique tenant and Source tuple.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		pushersPerPush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_pushers_per_push",
+			Help:                        "Number of pushers that are pushed to in each batch. There is one pusher for each unique tenant and Source tuple.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
 		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
 		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
 		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_requests_total",
 			Help: "Number of attempted write requests after batching records from Kafka.",
+		}),
+		estimatedTimeseries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_pusher_estimated_timeseries_total",
+			Help: "The estimated number of time series expected to be pushed to each shard. This is based on the decompressed size of records and is used to determine how many shards to use for each tenant for each batch. If the estimation is good, then it should match histogram_sum(cortex_ingest_storage_reader_pusher_timeseries_per_flush).",
 		}),
 	}
 }
