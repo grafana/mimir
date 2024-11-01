@@ -243,10 +243,9 @@ load 5m
 	http_requests_counter{path="/foo"} {{schema:0 sum:0 count:0 buckets:[0 0 0]}}+{{schema:0 sum:1 count:2 buckets:[1 1 1]}}x5
 	http_requests_mix{path="/foo"} 0 50 100 {{schema:0 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:0 sum:1 count:2 buckets:[1 1 1] counter_reset_hint:gauge}}
 
-# Unsupported by streaming engine.
-# eval instant at 20m delta(http_requests[20m])
-# 	{path="/foo"} 200
-# 	{path="/bar"} -200
+eval instant at 20m delta(http_requests[20m])
+	{path="/foo"} 200
+	{path="/bar"} -200
 
 # Unsupported by streaming engine.
 # eval instant at 20m delta(http_requests_gauge[20m])
