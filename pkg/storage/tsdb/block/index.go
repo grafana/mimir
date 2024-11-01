@@ -773,11 +773,13 @@ func rewrite(
 // clampChunk returns a chunk that contains only samples within [mint, maxt),
 // else nil if no samples were within that range.
 func clampChunk(input *chunks.Meta, minT, maxT int64) (*chunks.Meta, error) {
-	// Ignore chunks that are empty, all outside or all inside
-	outsideChunk := input.MinTime >= maxT || input.MaxTime < minT
-	insideChunk := minT <= input.MinTime && input.MaxTime < maxT
-	if input.Chunk.NumSamples() <= 0 || outsideChunk || insideChunk {
+	// Ignore chunks that are empty or all outside
+	if input.Chunk.NumSamples() <= 0 || input.MinTime >= maxT || input.MaxTime < minT {
 		return nil, nil
+	}
+	// Return chunks that are all inside
+	if minT <= input.MinTime && input.MaxTime < maxT {
+		return input, nil
 	}
 
 	newChunk, err := chunkenc.NewEmptyChunk(input.Chunk.Encoding())
