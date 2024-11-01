@@ -46,11 +46,11 @@ type TSDBBuilder struct {
 
 // We use this only to identify the soft errors.
 var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
-	func() {}, func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
-	func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
-	func() {}, func(_ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
-	func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
-	func(_ int64, _ []mimirpb.LabelAdapter) {}, func(_ int64, _ []mimirpb.LabelAdapter) {},
+	func() {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
+	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
+	func() {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 )
 
 type tsdbTenant struct {

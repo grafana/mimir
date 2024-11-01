@@ -24,12 +24,12 @@ type SoftAppendErrorProcessor struct {
 	errDuplicateSampleForTimestamp   func(int64, []mimirpb.LabelAdapter)
 	maxSeriesPerUser                 func()
 	maxSeriesPerMetric               func(labels []mimirpb.LabelAdapter)
-	errOOONativeHistogramsDisabled   func(int64, []mimirpb.LabelAdapter)
-	errHistogramCountMismatch        func(int64, []mimirpb.LabelAdapter)
-	errHistogramCountNotBigEnough    func(int64, []mimirpb.LabelAdapter)
-	errHistogramNegativeBucketCount  func(int64, []mimirpb.LabelAdapter)
-	errHistogramSpanNegativeOffset   func(int64, []mimirpb.LabelAdapter)
-	errHistogramSpansBucketsMismatch func(int64, []mimirpb.LabelAdapter)
+	errOOONativeHistogramsDisabled   func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramCountMismatch        func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramCountNotBigEnough    func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramNegativeBucketCount  func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramSpanNegativeOffset   func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramSpansBucketsMismatch func(error, int64, []mimirpb.LabelAdapter)
 }
 
 func NewSoftAppendErrorProcessor(
@@ -41,12 +41,12 @@ func NewSoftAppendErrorProcessor(
 	errDuplicateSampleForTimestamp func(int64, []mimirpb.LabelAdapter),
 	maxSeriesPerUser func(),
 	maxSeriesPerMetric func(labels []mimirpb.LabelAdapter),
-	errOOONativeHistogramsDisabled func(int64, []mimirpb.LabelAdapter),
-	errHistogramCountMismatch func(int64, []mimirpb.LabelAdapter),
-	errHistogramCountNotBigEnough func(int64, []mimirpb.LabelAdapter),
-	errHistogramNegativeBucketCount func(int64, []mimirpb.LabelAdapter),
-	errHistogramSpanNegativeOffset func(int64, []mimirpb.LabelAdapter),
-	errHistogramSpansBucketsMismatch func(int64, []mimirpb.LabelAdapter),
+	errOOONativeHistogramsDisabled func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramCountMismatch func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramCountNotBigEnough func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramNegativeBucketCount func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramSpanNegativeOffset func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramSpansBucketsMismatch func(error, int64, []mimirpb.LabelAdapter),
 ) SoftAppendErrorProcessor {
 	return SoftAppendErrorProcessor{
 		commonCallback:                   commonCallback,
@@ -97,22 +97,22 @@ func (e *SoftAppendErrorProcessor) ProcessErr(err error, ts int64, labels []mimi
 
 	// Map TSDB native histogram validation errors to soft errors.
 	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-		e.errOOONativeHistogramsDisabled(ts, labels)
+		e.errOOONativeHistogramsDisabled(err, ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramCountMismatch):
-		e.errHistogramCountMismatch(ts, labels)
+		e.errHistogramCountMismatch(err, ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
-		e.errHistogramCountNotBigEnough(ts, labels)
+		e.errHistogramCountNotBigEnough(err, ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
-		e.errHistogramNegativeBucketCount(ts, labels)
+		e.errHistogramNegativeBucketCount(err, ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
-		e.errHistogramSpanNegativeOffset(ts, labels)
+		e.errHistogramSpanNegativeOffset(err, ts, labels)
 		return true
 	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
-		e.errHistogramSpansBucketsMismatch(ts, labels)
+		e.errHistogramSpansBucketsMismatch(err, ts, labels)
 		return true
 	}
 	return false
