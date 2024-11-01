@@ -272,7 +272,8 @@ func (b *FPointRingBuffer) ChangesAtOrBefore(maxT int64) (float64, bool) {
 	}
 
 	changes := 0.0
-	prev := fHead[0].F
+	// The first point in the buffer.
+	prev := b.First().F
 
 	// Comparing the point with the point before it.
 	accumulate := func(points []promql.FPoint) {
@@ -288,11 +289,13 @@ func (b *FPointRingBuffer) ChangesAtOrBefore(maxT int64) (float64, bool) {
 	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
 	// and then continue to the tail.
 	if len(fHead) > 0 && len(fTail) > 0 {
+		// We don't need to compare the first point with itself, hence start from fHead[1:]
 		accumulate(fHead[1:])
 		accumulate(fTail)
 	}
 
 	if len(fHead) > 0 && len(fTail) == 0 {
+		// We don't need to compare the first point with itself, hence start from fHead[1:]
 		accumulate(fHead[1:])
 	}
 	return changes, true
