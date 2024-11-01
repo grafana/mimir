@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -80,7 +81,11 @@ func TestBlockQuerierSeries(t *testing.T) {
 			expectedMetric:  labels.FromStrings("foo", "bar"),
 			expectedSamples: 2,
 			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
-				test.RequireIteratorHistogram(t, time.Unix(i, 0).UnixMilli(), test.GenerateTestHistogram(int(i)), iter, valueType)
+				expH := test.GenerateTestHistogram(int(i))
+				if i > 1 { // 1 because the chunk contains samples starting from timestamp 1, not 0
+					expH.CounterResetHint = histogram.NotCounterReset
+				}
+				test.RequireIteratorHistogram(t, time.Unix(i, 0).UnixMilli(), expH, iter, valueType)
 			},
 		},
 		"should return float histogram series on success": {
@@ -99,7 +104,11 @@ func TestBlockQuerierSeries(t *testing.T) {
 			expectedMetric:  labels.FromStrings("foo", "bar"),
 			expectedSamples: 2,
 			assertSample: func(t *testing.T, i int64, iter chunkenc.Iterator, valueType chunkenc.ValueType) {
-				test.RequireIteratorFloatHistogram(t, time.Unix(i, 0).UnixMilli(), test.GenerateTestFloatHistogram(int(i)), iter, valueType)
+				expFH := test.GenerateTestFloatHistogram(int(i))
+				if i > 1 { // 1 because the chunk contains samples starting from timestamp 1, not 0
+					expFH.CounterResetHint = histogram.NotCounterReset
+				}
+				test.RequireIteratorFloatHistogram(t, time.Unix(i, 0).UnixMilli(), expFH, iter, valueType)
 			},
 		},
 		"should return error on failure while reading encoded chunk data": {
