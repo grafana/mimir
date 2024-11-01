@@ -38,8 +38,11 @@ type MimirClient interface {
 	// QueryRange performs a range query.
 	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error)
 
-	// Query performs an instant query.
-	Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error)
+	// QueryInstant performs an instant query.
+	QueryInstant(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error)
+
+	// QueryInstantRangeVector performs an instant query with a range vector.
+	QueryInstantRangeVector(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Matrix, error)
 }
 
 type ClientConfig struct {
@@ -185,8 +188,8 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 	return matrix, nil
 }
 
-// Query implements MimirClient.
-func (c *Client) Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
+// QueryInstant implements MimirClient.
+func (c *Client) QueryInstant(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
 	ctx = contextWithRequestOptions(ctx, options...)
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
@@ -208,6 +211,31 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 	}
 
 	return vector, nil
+}
+
+// QueryInstantRangeVector implements MimirClient.
+func (c *Client) QueryInstantRangeVector(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Matrix, error) {
+	ctx = contextWithRequestOptions(ctx, options...)
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
+	defer cancel()
+
+	ctx = querierapi.ContextWithReadConsistencyLevel(ctx, querierapi.ReadConsistencyStrong)
+
+	value, _, err := c.readClient.Query(ctx, query, ts)
+	if err != nil {
+		return nil, err
+	}
+
+	if value.Type() != model.ValMatrix {
+		return nil, fmt.Errorf("was expecting to get a Matrix, but got %s", value.Type().String())
+	}
+
+	matrix, ok := value.(model.Matrix)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast type to Matrix, type was %T", value)
+	}
+
+	return matrix, nil
 }
 
 // WriteSeries implements MimirClient.

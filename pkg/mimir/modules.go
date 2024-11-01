@@ -1113,7 +1113,8 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 	}
 
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
-	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+	//t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+	t.ContinuousTestManager.AddTest(continuoustest.NewRecordingRuleReadSeriesTest(t.Cfg.ContinuousTest.RecordingRuleReadSeriesTest, client, util_log.Logger, t.Registerer))
 
 	return services.NewBasicService(nil, func(ctx context.Context) error {
 		return t.ContinuousTestManager.Run(ctx)

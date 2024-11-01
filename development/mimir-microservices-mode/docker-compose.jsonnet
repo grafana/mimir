@@ -193,6 +193,7 @@ std.manifestYamlDoc({
         ' -tests.read-endpoint=http://query-frontend:8007/prometheus' +
         ' -tests.tenant-id=mimir-continuous-test' +
         ' -tests.write-endpoint=http://distributor-1:8000' +
+        ' -tests.recording-rule-read-series-test.max-query-age=1h' +
         ' -tests.write-read-series-test.max-query-age=1h' +
         ' -tests.write-read-series-test.num-series=100',
     }),

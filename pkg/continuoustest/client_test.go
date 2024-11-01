@@ -277,7 +277,7 @@ func TestClient_Query(t *testing.T) {
 	t.Run("results cache not explicitly disabled", func(t *testing.T) {
 		receivedRequests = nil
 
-		_, err := c.Query(ctx, "up", time.Unix(0, 0))
+		_, err := c.QueryInstant(ctx, "up", time.Unix(0, 0))
 		require.NoError(t, err)
 
 		require.Len(t, receivedRequests, 1)
@@ -287,7 +287,7 @@ func TestClient_Query(t *testing.T) {
 	t.Run("results cache disabled", func(t *testing.T) {
 		receivedRequests = nil
 
-		_, err := c.Query(ctx, "up", time.Unix(0, 0), WithResultsCacheEnabled(false))
+		_, err := c.QueryInstant(ctx, "up", time.Unix(0, 0), WithResultsCacheEnabled(false))
 		require.NoError(t, err)
 
 		require.Len(t, receivedRequests, 1)
@@ -401,7 +401,7 @@ func TestClient_QueryHeaders(t *testing.T) {
 
 			ctx := context.Background()
 
-			_, err = c.Query(ctx, "up", time.Unix(0, 0))
+			_, err = c.QueryInstant(ctx, "up", time.Unix(0, 0))
 			require.NoError(t, err)
 
 			require.Len(t, receivedRequests, 1)
@@ -430,7 +430,12 @@ func (m *ClientMock) QueryRange(ctx context.Context, query string, start, end ti
 	return args.Get(0).(model.Matrix), args.Error(1)
 }
 
-func (m *ClientMock) Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
+func (m *ClientMock) QueryInstant(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
 	args := m.Called(ctx, query, ts, options)
 	return args.Get(0).(model.Vector), args.Error(1)
+}
+
+func (m *ClientMock) QueryInstantRangeVector(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Matrix, error) {
+	args := m.Called(ctx, query, ts, options)
+	return args.Get(0).(model.Matrix), args.Error(1)
 }

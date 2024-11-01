@@ -118,7 +118,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("QueryInstant", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -129,7 +129,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "QueryInstant", 4*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -139,7 +139,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
+			client.AssertCalled(t, "QueryInstant", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
@@ -152,7 +152,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("QueryInstant", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -163,7 +163,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "QueryInstant", 4*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -173,7 +173,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
 
-			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), mock.Anything)
+			client.AssertCalled(t, "QueryInstant", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), mock.Anything)
 		}
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
@@ -186,7 +186,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("QueryInstant", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -202,7 +202,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "QueryInstant", 4*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -214,7 +214,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
+			client.AssertCalled(t, "QueryInstant", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
@@ -327,14 +327,14 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 					{Values: []model.SamplePair{newSamplePair(now, tt.generateValue(now)*float64(cfg.NumSeries))}},
 				}, nil)
-				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+				client.On("QueryInstant", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Value: model.SampleValue(tt.generateValue(now) * float64(cfg.NumSeries))},
 				}, nil)
 			} else {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 					{Histograms: []model.SampleHistogramPair{newSampleHistogramPair(now, tt.generateSampleHistogram(now, cfg.NumSeries))}},
 				}, nil)
-				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+				client.On("QueryInstant", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: tt.generateSampleHistogram(now, cfg.NumSeries)},
 				}, nil)
 			}
@@ -348,7 +348,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "QueryInstant", 4*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -358,7 +358,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
+			client.AssertCalled(t, "QueryInstant", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
@@ -378,14 +378,14 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 					{Values: []model.SamplePair{{Timestamp: model.Time(now.UnixMilli()), Value: 12345}}},
 				}, nil)
-				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+				client.On("QueryInstant", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Value: 12345},
 				}, nil)
 			} else {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 					{Histograms: []model.SampleHistogramPair{newSampleHistogramPair(now, tt.generateSampleHistogram(now, 1))}},
 				}, nil)
-				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
+				client.On("QueryInstant", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: tt.generateSampleHistogram(now, 1)},
 				}, nil)
 			}
@@ -399,7 +399,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "QueryInstant", 4*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -409,7 +409,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
 
-			client.AssertCalled(t, "Query", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
+			client.AssertCalled(t, "QueryInstant", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), mock.Anything)
 		}
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
