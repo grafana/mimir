@@ -14,6 +14,7 @@ Source blocks can be read from either object storage or a local filesystem. Bloc
 - `--bucket-prefix` (optional) A prefix applied to the bucket path
 - `--max-block-duration` (optional, defaults to `24h`) Max block duration, blocks larger than this or crossing a duration boundary are split
 - `--full` (optional) If set, blocks that do not need to be split are included in the output directory
+- `--verify-blocks` (optional) Verifies blocks after splitting them
 - `--dry-run` (optional) If set, blocks are not downloaded (except metadata) and splits are not performed; only what would happen is logged
 
 ## Running

@@ -212,6 +212,53 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s Kafka client produce buffer utilization is {{ printf "%%.2f" $value }}%%.' % $._config,
           },
         },
+
+        // Alert if block-builder didn't process cycles in the past hour.
+        {
+          alert: $.alertName('BlockBuilderNoCycleProcessing'),
+          'for': '5m',
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not processed cycles in the past hour.' % $._config,
+          },
+        },
+
+        // Alert if block-builder per partition lag is higher than the threshhold.
+        // The value of the threshhold is arbitary large for now. We will reconsider this alert after we get the block-builder-scheduler.
+        // Note on "for: 75m": we assume one cycle is 1hr; with 10m loopback we expect the warning to trigger only if the metric is above the threshold for more than one cycle.
+        {
+          alert: $.alertName('BlockBuilderLagging'),
+          'for': '75m',
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s reports partition lag of {{ printf "%%.2f" $value }}%%.' % $._config,
+          },
+        },
+
+        // Alert if block-builder is failing to compact and upload any blocks.
+        {
+          alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
+          'for': '5m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to compact and upload blocks.' % $._config,
+          },
+        },
       ],
     },
   ],

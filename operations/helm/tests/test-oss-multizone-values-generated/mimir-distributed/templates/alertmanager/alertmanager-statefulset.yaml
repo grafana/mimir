@@ -29,7 +29,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-multizone-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -179,7 +181,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-multizone-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -329,7 +333,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-multizone-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

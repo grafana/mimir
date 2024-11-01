@@ -133,15 +133,15 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 		WithDelay(cfg.CooldownPeriod).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.ClosedState).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is closed", "previous", event.OldState, "current", event.NewState)
+			level.Info(logger).Log("msg", "circuit breaker is closed", "previous", event.OldState, "current", event.NewState, "requestType", requestType)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.OpenState).Inc()
-			level.Warn(logger).Log("msg", "circuit breaker is open", "previous", event.OldState, "current", event.NewState)
+			level.Warn(logger).Log("msg", "circuit breaker is open", "previous", event.OldState, "current", event.NewState, "requestType", requestType)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.HalfOpenState).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is half-open", "previous", event.OldState, "current", event.NewState)
+			level.Info(logger).Log("msg", "circuit breaker is half-open", "previous", event.OldState, "current", event.NewState, "requestType", requestType)
 		})
 
 	if cfg.testModeEnabled {
@@ -188,15 +188,26 @@ func (cb *circuitBreaker) isActive() bool {
 }
 
 func (cb *circuitBreaker) activate() {
-	if cb == nil {
+	if cb == nil || cb.active.Load() {
 		return
 	}
 	if cb.cfg.InitialDelay == 0 {
+		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
 		cb.active.Store(true)
+		return
 	}
 	time.AfterFunc(cb.cfg.InitialDelay, func() {
+		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
 		cb.active.Store(true)
 	})
+}
+
+func (cb *circuitBreaker) deactivate() {
+	if cb == nil || !cb.active.Load() {
+		return
+	}
+	level.Info(cb.logger).Log("msg", "deactivating circuit breaker", "requestType", cb.requestType)
+	cb.active.Store(false)
 }
 
 func (cb *circuitBreaker) isOpen() bool {
@@ -267,11 +278,6 @@ func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBrea
 		push: newCircuitBreaker(pushCfg, registerer, circuitBreakerPushRequestType, logger),
 		read: newCircuitBreaker(readCfg, registerer, circuitBreakerReadRequestType, logger),
 	}
-}
-
-func (cb *ingesterCircuitBreaker) activate() {
-	cb.push.activate()
-	cb.read.activate()
 }
 
 // tryAcquirePushPermit tries to acquire a permit to use the push circuit breaker and returns whether a permit was acquired.
