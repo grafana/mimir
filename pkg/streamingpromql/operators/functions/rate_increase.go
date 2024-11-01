@@ -164,7 +164,7 @@ func floatRate(isCounter, isRate bool, fCount int, fHead []promql.FPoint, fTail 
 	}
 
 	delta := lastPoint.F - firstPoint.F
-	if isCounter {
+	if !isCounter {
 		return delta
 	}
 
