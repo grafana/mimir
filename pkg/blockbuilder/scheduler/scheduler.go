@@ -123,16 +123,15 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
 				// The job is uniquely identified by {topic, partition, consumption start offset}.
 				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
-				t := time.Time{} // TODO: this should be the time of the last commit from the lag info.
-				s.jobs.addOrUpdate(jobID, t, jobSpec{
+				s.jobs.addOrUpdate(jobID, jobSpec{
 					topic:       o.Topic,
 					partition:   o.Partition,
 					startOffset: l.Commit.At,
 					endOffset:   l.End.Offset,
 					// TODO: populate these from the unmarshaled lag metadata.
-					commitRecTs:    t,
+					commitRecTs:    time.Time{},
 					lastSeenOffset: 0,
-					lastBlockEndTs: t,
+					lastBlockEndTs: time.Time{},
 				})
 			}
 		}
@@ -147,7 +146,7 @@ func (s *BlockBuilderScheduler) ensurePartitionCount(ps int) {
 	}
 }
 
-func (s *BlockBuilderScheduler) getAssignedJob(workerID string) (string, jobSpec, error) {
+func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, error) {
 	j, err := s.jobs.assign(workerID)
 	if err != nil {
 		return "", jobSpec{}, err

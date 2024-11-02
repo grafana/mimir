@@ -2,11 +2,11 @@ package scheduler
 
 import (
 	"errors"
-	"slices"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/btree"
 )
 
 var (
@@ -19,9 +19,9 @@ type jobQueue struct {
 	leaseTime time.Duration
 	logger    log.Logger
 
-	mu          sync.Mutex
-	jobs        map[string]*job
-	outstanding []*job
+	mu         sync.Mutex
+	jobs       map[string]*job
+	unassigned *btree.BTreeG[*job]
 }
 
 func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
@@ -30,6 +30,9 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 		logger:    logger,
 
 		jobs: make(map[string]*job),
+		unassigned: btree.NewG(2, func(a, b *job) bool {
+			return a.less(b)
+		}),
 	}
 }
 
@@ -41,55 +44,35 @@ func (s *jobQueue) assign(worker string) (*job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.outstanding) == 0 {
-		return nil, errNoJobAvailable
+	if j, ok := s.unassigned.DeleteMin(); ok {
+		j.assignee = worker
+		j.leaseExpiry = time.Now().Add(s.leaseTime)
+		return j, nil
 	}
 
-	j := s.outstanding[0]
-	s.outstanding = s.outstanding[1:]
-	j.assignee = worker
-	j.leaseExpiry = time.Now().Add(s.leaseTime)
-	return j, nil
+	return nil, errNoJobAvailable
 }
 
-func (s *jobQueue) addOrUpdate(id string, jobTime time.Time, spec jobSpec) {
-	resort := false
-
+func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if j, ok := s.jobs[id]; ok {
 		// We can only update an unassigned job.
 		if j.assignee == "" {
-			resort = j.sortTime != jobTime
-			j.sortTime = jobTime
 			j.spec = spec
 		}
 	} else {
 		j = &job{
 			id:          id,
-			sortTime:    jobTime,
 			assignee:    "",
 			leaseExpiry: time.Now().Add(s.leaseTime),
 			failCount:   0,
 			spec:        spec,
 		}
 		s.jobs[id] = j
-		s.outstanding = append(s.outstanding, j)
-		resort = true
+		s.unassigned.ReplaceOrInsert(j)
 	}
-
-	if resort {
-		s.sortOutstanding()
-	}
-}
-
-// sortOutstanding maintains the sort order of the outstanding list. Caller must
-// hold the lock.
-func (s *jobQueue) sortOutstanding() {
-	slices.SortFunc(s.outstanding, func(i, j *job) int {
-		return i.sortTime.Compare(j.sortTime)
-	})
 }
 
 func (s *jobQueue) renewLease(jobID, worker string) error {
@@ -148,16 +131,13 @@ func (s *jobQueue) clearExpiredLeases() {
 		if j.assignee != "" && now.After(j.leaseExpiry) {
 			j.assignee = ""
 			j.failCount++
-			s.outstanding = append(s.outstanding, j)
+			s.unassigned.ReplaceOrInsert(j)
 		}
 	}
-
-	s.sortOutstanding()
 }
 
 type job struct {
-	id       string
-	sortTime time.Time
+	id string
 
 	assignee    string
 	leaseExpiry time.Time
@@ -165,6 +145,10 @@ type job struct {
 
 	// job payload details. We can make this generic later for reuse.
 	spec jobSpec
+}
+
+func (a *job) less(b *job) bool {
+	return a.spec.commitRecTs.Before(b.spec.commitRecTs)
 }
 
 type jobSpec struct {

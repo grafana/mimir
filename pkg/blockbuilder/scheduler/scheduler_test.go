@@ -58,20 +58,22 @@ func TestClientInterface(t *testing.T) {
 
 	now := time.Now()
 
-	sched.jobs.addOrUpdate("ingest/64/1000", now.Add(-2*time.Hour), jobSpec{
+	sched.jobs.addOrUpdate("ingest/64/1000", jobSpec{
 		topic:       "ingest",
 		partition:   64,
 		startOffset: 1000,
 		endOffset:   2000,
+		commitRecTs: now.Add(-2 * time.Hour),
 	})
-	sched.jobs.addOrUpdate("ingest/65/256", now.Add(-1*time.Hour), jobSpec{
+	sched.jobs.addOrUpdate("ingest/65/256", jobSpec{
 		topic:       "ingest",
 		partition:   65,
 		startOffset: 256,
 		endOffset:   9111,
+		commitRecTs: now.Add(-1 * time.Hour),
 	})
 
-	jobID, jobSpec, err := sched.getAssignedJob("w0")
+	jobID, jobSpec, err := sched.assignJob("w0")
 	require.NoError(t, err)
 	require.NotZero(t, jobSpec)
 	require.Equal(t, "ingest/64/1000", jobID)
@@ -91,7 +93,7 @@ func TestClientInterface(t *testing.T) {
 	require.NoError(t, sched.updateJob(jobID, "w0", true, jobSpec))
 
 	// Take the next job.
-	jobID, jobSpec, err = sched.getAssignedJob("w0")
+	jobID, jobSpec, err = sched.assignJob("w0")
 	require.NoError(t, err)
 	require.NotZero(t, jobSpec)
 	require.Equal(t, "ingest/65/256", jobID)
@@ -118,7 +120,7 @@ func TestClientInterface(t *testing.T) {
 	require.NoError(t, sched.updateJob("ingest/64/1000", "w0", true, jobSpec))
 
 	{
-		jobID, jobSpec, err := sched.getAssignedJob("w0")
+		jobID, jobSpec, err := sched.assignJob("w0")
 		require.ErrorIs(t, err, errNoJobAvailable)
 		require.Zero(t, jobSpec)
 		require.Zero(t, jobID)
