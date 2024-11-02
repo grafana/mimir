@@ -49,8 +49,6 @@ func TestClientInterface(t *testing.T) {
 	sched.adminClient = kadm.NewClient(cli)
 	require.NoError(t, err)
 
-	sched.ensurePartitionCount(128)
-
 	// Do some things a client might do.
 
 	require.ErrorIs(t,

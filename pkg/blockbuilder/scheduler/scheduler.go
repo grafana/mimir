@@ -30,7 +30,7 @@ type BlockBuilderScheduler struct {
 	metrics     schedulerMetrics
 
 	mu        sync.Mutex
-	committed []int64
+	committed kadm.Offsets
 	dirty     bool
 }
 
@@ -40,11 +40,12 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:     newJobQueue(cfg.JobLeaseTime, logger),
-		cfg:      cfg,
-		logger:   logger,
-		register: reg,
-		metrics:  newSchedulerMetrics(reg),
+		jobs:      newJobQueue(cfg.JobLeaseTime, logger),
+		cfg:       cfg,
+		logger:    logger,
+		register:  reg,
+		metrics:   newSchedulerMetrics(reg),
+		committed: make(kadm.Offsets),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -89,7 +90,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
 
-	// TODO: Flush committed offsets to Kafka.
+	// TODO: Commit the offsets back to Kafka if dirty.
 
 	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, 0)
 	if err != nil {
@@ -98,8 +99,6 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	}
 
 	if ps, ok := lag[s.cfg.Kafka.Topic]; ok {
-		s.ensurePartitionCount(len(ps))
-
 		for part, gl := range ps {
 			partStr := fmt.Sprint(part)
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(gl.Start.Offset))
@@ -138,14 +137,6 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	})
 }
 
-func (s *BlockBuilderScheduler) ensurePartitionCount(ps int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.committed) < ps {
-		s.committed = append(s.committed, make([]int64, ps-len(s.committed))...)
-	}
-}
-
 func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, error) {
 	j, err := s.jobs.assign(workerID)
 	if err != nil {
@@ -160,13 +151,11 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if p := j.partition; p < 0 || int(p) >= len(s.committed) {
-		return fmt.Errorf("partition %d out of range", p)
-	}
-
-	if j.endOffset <= s.committed[j.partition] {
-		// History. Ignore.
-		return nil
+	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
+		if j.startOffset <= c.At {
+			// Update of a completed/committed job. Ignore.
+			return nil
+		}
 	}
 
 	if complete {
@@ -176,7 +165,7 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 				return fmt.Errorf("complete job: %w", err)
 			}
 		}
-		s.committed[j.partition] = j.endOffset
+		s.committed.AddOffset(s.cfg.Kafka.Topic, j.partition, j.endOffset, -1)
 		s.dirty = true
 	} else {
 		// It's an in-progress job whose lease we need to renew.
