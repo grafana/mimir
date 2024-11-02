@@ -18,7 +18,7 @@ func TestAssign(t *testing.T) {
 	require.Nil(t, j0)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job1", jobSpec{topic: "hello"})
+	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
 	j, err := s.assign("w0")
 	require.NotNil(t, j)
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ func TestAssignComplete(t *testing.T) {
 
 func TestLease(t *testing.T) {
 	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
-	s.addOrUpdate("job1", time.Now(), jobSpec{topic: "hello"})
+	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
 	j, err := s.assign("w0")
 	require.NotNil(t, j)
 	require.NoError(t, err)
