@@ -4,6 +4,8 @@ package scheduler
 
 import (
 	"container/heap"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -104,21 +106,32 @@ func TestLease(t *testing.T) {
 }
 
 func TestMinHeap(t *testing.T) {
+	n := 140
+	jobs := make([]*job, n)
+	order := make([]int, n)
+	for i := 0; i < n; i++ {
+		jobs[i] = &job{
+			id:   fmt.Sprintf("job%d", i),
+			spec: jobSpec{topic: "hello", commitRecTs: time.Unix(int64(i), 0)},
+		}
+		order[i] = i
+	}
+
+	// Push them in random order.
+	r := rand.New(rand.NewSource(9900))
+	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+
 	h := jobHeap{}
-	heap.Push(&h, &job{id: "job1", spec: jobSpec{topic: "hello", commitRecTs: time.Now()}})
-	heap.Push(&h, &job{id: "job3", spec: jobSpec{topic: "hello3", commitRecTs: time.Now().Add(-2 * time.Hour)}})
-	heap.Push(&h, &job{id: "job2", spec: jobSpec{topic: "hello2", commitRecTs: time.Now().Add(-1 * time.Hour)}})
+	for _, j := range order {
+		heap.Push(&h, jobs[j])
+	}
 
-	require.Equal(t, 3, h.Len())
+	require.Len(t, h, n)
 
-	j1 := heap.Pop(&h).(*job)
-	require.Equal(t, "job3", j1.id)
+	for i := 0; i < len(jobs); i++ {
+		p := heap.Pop(&h).(*job)
+		require.Equal(t, jobs[i], p, "pop order should be in increasing commitRecTs")
+	}
 
-	j2 := heap.Pop(&h).(*job)
-	require.Equal(t, "job2", j2.id)
-
-	j3 := heap.Pop(&h).(*job)
-	require.Equal(t, "job1", j3.id)
-
-	require.Equal(t, 0, h.Len())
+	require.Empty(t, h)
 }
