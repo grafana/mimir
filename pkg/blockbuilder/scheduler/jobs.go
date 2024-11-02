@@ -3,12 +3,12 @@
 package scheduler
 
 import (
+	"container/heap"
 	"errors"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/google/btree"
 )
 
 var (
@@ -23,7 +23,7 @@ type jobQueue struct {
 
 	mu         sync.Mutex
 	jobs       map[string]*job
-	unassigned *btree.BTreeG[*job]
+	unassigned jobHeap
 }
 
 func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
@@ -32,9 +32,6 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 		logger:    logger,
 
 		jobs: make(map[string]*job),
-		unassigned: btree.NewG(2, func(a, b *job) bool {
-			return a.less(b)
-		}),
 	}
 }
 
@@ -46,13 +43,14 @@ func (s *jobQueue) assign(worker string) (*job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if j, ok := s.unassigned.DeleteMin(); ok {
-		j.assignee = worker
-		j.leaseExpiry = time.Now().Add(s.leaseTime)
-		return j, nil
+	if s.unassigned.Len() == 0 {
+		return nil, errNoJobAvailable
 	}
 
-	return nil, errNoJobAvailable
+	j := s.unassigned.Pop().(*job)
+	j.assignee = worker
+	j.leaseExpiry = time.Now().Add(s.leaseTime)
+	return j, nil
 }
 
 func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
@@ -73,7 +71,7 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 			spec:        spec,
 		}
 		s.jobs[id] = j
-		s.unassigned.ReplaceOrInsert(j)
+		s.unassigned.Push(j)
 	}
 }
 
@@ -133,7 +131,7 @@ func (s *jobQueue) clearExpiredLeases() {
 		if j.assignee != "" && now.After(j.leaseExpiry) {
 			j.assignee = ""
 			j.failCount++
-			s.unassigned.ReplaceOrInsert(j)
+			s.unassigned.Push(j)
 		}
 	}
 }
@@ -162,3 +160,24 @@ type jobSpec struct {
 	lastSeenOffset int64
 	lastBlockEndTs time.Time
 }
+
+type jobHeap []*job
+
+// Implement the heap.Interface for jobHeap.
+func (h jobHeap) Len() int           { return len(h) }
+func (h jobHeap) Less(i, j int) bool { return h[i].less(h[j]) }
+func (h jobHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *jobHeap) Push(x interface{}) {
+	*h = append(*h, x.(*job))
+}
+
+func (h *jobHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+var _ heap.Interface = (*jobHeap)(nil)
