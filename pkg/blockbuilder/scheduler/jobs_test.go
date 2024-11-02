@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"container/heap"
 	"testing"
 	"time"
 
@@ -100,4 +101,24 @@ func TestLease(t *testing.T) {
 		e3 := s.renewLease("job_404", "w0")
 		require.ErrorIs(t, e3, errJobNotFound)
 	})
+}
+
+func TestMinHeap(t *testing.T) {
+	h := jobHeap{}
+	heap.Push(&h, &job{id: "job1", spec: jobSpec{topic: "hello", commitRecTs: time.Now()}})
+	heap.Push(&h, &job{id: "job3", spec: jobSpec{topic: "hello3", commitRecTs: time.Now().Add(-2 * time.Hour)}})
+	heap.Push(&h, &job{id: "job2", spec: jobSpec{topic: "hello2", commitRecTs: time.Now().Add(-1 * time.Hour)}})
+
+	require.Equal(t, 3, h.Len())
+
+	j1 := heap.Pop(&h).(*job)
+	require.Equal(t, "job3", j1.id)
+
+	j2 := heap.Pop(&h).(*job)
+	require.Equal(t, "job2", j2.id)
+
+	j3 := heap.Pop(&h).(*job)
+	require.Equal(t, "job1", j3.id)
+
+	require.Equal(t, 0, h.Len())
 }
