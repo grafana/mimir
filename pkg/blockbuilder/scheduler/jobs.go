@@ -35,22 +35,23 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 	}
 }
 
-func (s *jobQueue) assign(worker string) (*job, error) {
-	if worker == "" {
-		return nil, errors.New("worker cannot not be empty")
+// assign assigns a job to a worker.
+func (s *jobQueue) assign(workerID string) (string, jobSpec, error) {
+	if workerID == "" {
+		return "", jobSpec{}, errors.New("workerID cannot not be empty")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.unassigned.Len() == 0 {
-		return nil, errNoJobAvailable
+		return "", jobSpec{}, errNoJobAvailable
 	}
 
 	j := heap.Pop(&s.unassigned).(*job)
-	j.assignee = worker
+	j.assignee = workerID
 	j.leaseExpiry = time.Now().Add(s.leaseTime)
-	return j, nil
+	return j.id, j.spec, nil
 }
 
 func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
@@ -75,12 +76,12 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	}
 }
 
-func (s *jobQueue) renewLease(jobID, worker string) error {
+func (s *jobQueue) renewLease(jobID, workerID string) error {
 	if jobID == "" {
 		return errors.New("jobID cannot be empty")
 	}
-	if worker == "" {
-		return errors.New("worker cannot be empty")
+	if workerID == "" {
+		return errors.New("workerID cannot be empty")
 	}
 
 	s.mu.Lock()
@@ -90,7 +91,7 @@ func (s *jobQueue) renewLease(jobID, worker string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != worker {
+	if j.assignee != workerID {
 		return errJobNotAssigned
 	}
 
@@ -98,12 +99,12 @@ func (s *jobQueue) renewLease(jobID, worker string) error {
 	return nil
 }
 
-func (s *jobQueue) completeJob(jobID string, worker string) error {
+func (s *jobQueue) completeJob(jobID, workerID string) error {
 	if jobID == "" {
 		return errors.New("jobID cannot be empty")
 	}
-	if worker == "" {
-		return errors.New("worker cannot be empty")
+	if workerID == "" {
+		return errors.New("workerID cannot be empty")
 	}
 
 	s.mu.Lock()
@@ -113,7 +114,7 @@ func (s *jobQueue) completeJob(jobID string, worker string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != worker {
+	if j.assignee != workerID {
 		return errJobNotAssigned
 	}
 

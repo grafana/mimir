@@ -17,25 +17,29 @@ import (
 func TestAssign(t *testing.T) {
 	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
 
-	j0, err := s.assign("w0")
-	require.Nil(t, j0)
+	j0id, j0spec, err := s.assign("w0")
+	require.Empty(t, j0id)
+	require.Zero(t, j0spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
 	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
-	j, err := s.assign("w0")
-	require.NotNil(t, j)
+	j1id, j1spec, err := s.assign("w0")
+	require.NotEmpty(t, j1id)
+	require.NotZero(t, j1spec)
 	require.NoError(t, err)
-	require.Equal(t, "w0", j.assignee)
+	require.Equal(t, "w0", s.jobs[j1id].assignee)
 
-	j2, err := s.assign("w0")
-	require.Nil(t, j2)
+	j2id, j2spec, err := s.assign("w0")
+	require.Zero(t, j2id)
+	require.Zero(t, j2spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
 	s.addOrUpdate("job2", jobSpec{topic: "hello2", commitRecTs: time.Now()})
-	j3, err := s.assign("w0")
-	require.NotNil(t, j3)
+	j3id, j3spec, err := s.assign("w0")
+	require.NotZero(t, j3id)
+	require.NotZero(t, j3spec)
 	require.NoError(t, err)
-	require.Equal(t, "w0", j3.assignee)
+	require.Equal(t, "w0", s.jobs[j3id].assignee)
 }
 
 func TestAssignComplete(t *testing.T) {
@@ -47,9 +51,12 @@ func TestAssignComplete(t *testing.T) {
 	}
 
 	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
-	j, err := s.assign("w0")
-	require.NotNil(t, j)
+	jid, jspec, err := s.assign("w0")
+	require.NotZero(t, jid)
+	require.NotZero(t, jspec)
 	require.NoError(t, err)
+	j, ok := s.jobs[jid]
+	require.True(t, ok)
 	require.Equal(t, "w0", j.assignee)
 
 	{
@@ -69,26 +76,35 @@ func TestAssignComplete(t *testing.T) {
 		require.ErrorIs(t, err2, errJobNotFound)
 	}
 
-	j2, err := s.assign("w0")
-	require.Nil(t, j2, "should be no job available")
+	j2id, j2spec, err := s.assign("w0")
+	require.Zero(t, j2id, "should be no job available")
+	require.Zero(t, j2spec, "should be no job available")
 	require.ErrorIs(t, err, errNoJobAvailable)
 }
 
 func TestLease(t *testing.T) {
 	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
 	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
-	j, err := s.assign("w0")
-	require.NotNil(t, j)
+	jid, jspec, err := s.assign("w0")
+	require.NotZero(t, jid)
+	require.NotZero(t, jspec)
 	require.NoError(t, err)
+
+	j, ok := s.jobs[jid]
+	require.True(t, ok)
 	require.Equal(t, "w0", j.assignee)
 
 	// Expire the lease.
 	j.leaseExpiry = time.Now().Add(-1 * time.Minute)
 	s.clearExpiredLeases()
 
-	j2, err := s.assign("w1")
-	require.NotNil(t, j2, "should be able to assign a job whose lease was invalidated")
+	j2id, j2spec, err := s.assign("w1")
+	require.NotZero(t, j2id, "should be able to assign a job whose lease was invalidated")
+	require.NotZero(t, j2spec, "should be able to assign a job whose lease was invalidated")
+	require.Equal(t, j.spec, j2spec)
 	require.NoError(t, err)
+	j2, ok := s.jobs[j2id]
+	require.True(t, ok)
 	require.Equal(t, "w1", j2.assignee)
 
 	t.Run("renewals", func(t *testing.T) {

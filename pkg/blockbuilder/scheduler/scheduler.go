@@ -138,15 +138,13 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	})
 }
 
+// assignJob returns an assigned job for the given workerID.
+// (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, error) {
-	j, err := s.jobs.assign(workerID)
-	if err != nil {
-		return "", jobSpec{}, err
-	}
-	return j.id, j.spec, nil
+	return s.jobs.assign(workerID)
 }
 
-// updateJob takes a job update from the client and
+// updateJob takes a job update from the client and records it, if necessary.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
 	s.mu.Lock()
