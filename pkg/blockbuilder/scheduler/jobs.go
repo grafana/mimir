@@ -35,7 +35,7 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 	}
 }
 
-// assign assigns a job to a worker.
+// assign assigns the highest-priority unassigned job to the given worker.
 func (s *jobQueue) assign(workerID string) (string, jobSpec, error) {
 	if workerID == "" {
 		return "", jobSpec{}, errors.New("workerID cannot not be empty")
@@ -54,6 +54,7 @@ func (s *jobQueue) assign(workerID string) (string, jobSpec, error) {
 	return j.id, j.spec, nil
 }
 
+// addOrUpdate adds a new job or updates an existing job with the given spec.
 func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -76,6 +77,8 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	}
 }
 
+// renewLease renews the lease of the job with the given ID for the given
+// worker.
 func (s *jobQueue) renewLease(jobID, workerID string) error {
 	if jobID == "" {
 		return errors.New("jobID cannot be empty")
@@ -99,6 +102,8 @@ func (s *jobQueue) renewLease(jobID, workerID string) error {
 	return nil
 }
 
+// completeJob completes the job with the given ID for the given worker,
+// removing it from the jobQueue.
 func (s *jobQueue) completeJob(jobID, workerID string) error {
 	if jobID == "" {
 		return errors.New("jobID cannot be empty")
@@ -122,6 +127,8 @@ func (s *jobQueue) completeJob(jobID, workerID string) error {
 	return nil
 }
 
+// clearExpiredLeases unassigns jobs whose leases have expired, making them
+// eligible for reassignment.
 func (s *jobQueue) clearExpiredLeases() {
 	now := time.Now()
 
@@ -148,10 +155,6 @@ type job struct {
 	spec jobSpec
 }
 
-func (a *job) less(b *job) bool {
-	return a.spec.commitRecTs.Before(b.spec.commitRecTs)
-}
-
 type jobSpec struct {
 	topic          string
 	partition      int32
@@ -162,11 +165,15 @@ type jobSpec struct {
 	lastBlockEndTs time.Time
 }
 
+func (a *jobSpec) less(b *jobSpec) bool {
+	return a.commitRecTs.Before(b.commitRecTs)
+}
+
 type jobHeap []*job
 
 // Implement the heap.Interface for jobHeap.
 func (h *jobHeap) Len() int           { return len(*h) }
-func (h *jobHeap) Less(i, j int) bool { return (*h)[i].less((*h)[j]) }
+func (h *jobHeap) Less(i, j int) bool { return (*h)[i].spec.less(&(*h)[j].spec) }
 func (h *jobHeap) Swap(i, j int)      { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
 func (h *jobHeap) Push(x interface{}) {
