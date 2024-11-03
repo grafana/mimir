@@ -106,7 +106,7 @@ func TestLease(t *testing.T) {
 }
 
 func TestMinHeap(t *testing.T) {
-	n := 140
+	n := 513
 	jobs := make([]*job, n)
 	order := make([]int, n)
 	for i := 0; i < n; i++ {
