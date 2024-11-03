@@ -120,17 +120,18 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
 			if l.Commit.At < o.Offset {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
+
 				// The job is uniquely identified by {topic, partition, consumption start offset}.
 				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
+				partState := blockbuilder.PartitionStateFromLag(s.logger, l, 0)
 				s.jobs.addOrUpdate(jobID, jobSpec{
-					topic:       o.Topic,
-					partition:   o.Partition,
-					startOffset: l.Commit.At,
-					endOffset:   l.End.Offset,
-					// TODO: populate these from the unmarshaled lag metadata.
-					commitRecTs:    time.Time{},
-					lastSeenOffset: 0,
-					lastBlockEndTs: time.Time{},
+					topic:          o.Topic,
+					partition:      o.Partition,
+					startOffset:    l.Commit.At,
+					endOffset:      l.End.Offset,
+					commitRecTs:    partState.CommitRecordTimestamp,
+					lastSeenOffset: partState.LastSeenOffset,
+					lastBlockEndTs: partState.LastBlockEnd,
 				})
 			}
 		}
