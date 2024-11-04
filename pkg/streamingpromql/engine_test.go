@@ -241,6 +241,30 @@ func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 	require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
 }
 
+func TestNewInstantQuery_Strings(t *testing.T) {
+	ctx := context.Background()
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	storage := promqltest.LoadedStorage(t, ``)
+
+	expr := `"thing"`
+	q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+	require.NoError(t, err)
+	mimir := q.Exec(context.Background())
+	q.Close()
+
+	q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+	require.NoError(t, err)
+	prometheus := q.Exec(context.Background())
+	q.Close()
+
+	testutils.RequireEqualResults(t, expr, prometheus, mimir)
+}
+
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
