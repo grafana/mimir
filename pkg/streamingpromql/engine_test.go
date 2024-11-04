@@ -253,10 +253,12 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 	require.NoError(t, err)
 	mimir := q.Exec(context.Background())
+	q.Close()
 
 	q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 	require.NoError(t, err)
 	prometheus := q.Exec(context.Background())
+	q.Close()
 
 	testutils.RequireEqualResults(t, expr, prometheus, mimir)
 }
