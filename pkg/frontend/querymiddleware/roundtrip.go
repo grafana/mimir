@@ -353,17 +353,20 @@ func newQueryMiddlewares(
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
-	experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
-	queryRangeMiddleware = append(
-		queryRangeMiddleware,
-		newInstrumentMiddleware("experimental_functions", metrics),
-		experimentalFunctionsMiddleware,
-	)
-	queryInstantMiddleware = append(
-		queryInstantMiddleware,
-		newInstrumentMiddleware("experimental_functions", metrics),
-		experimentalFunctionsMiddleware,
-	)
+	if parser.EnableExperimentalFunctions {
+		// We only need to check for tenant-specific settings if experimental functions are enabled globally.
+		experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("experimental_functions", metrics),
+			experimentalFunctionsMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("experimental_functions", metrics),
+			experimentalFunctionsMiddleware,
+		)
+	}
 
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(

@@ -33,12 +33,6 @@ func newExperimentalFunctionsMiddleware(limits Limits, logger log.Logger) Metric
 }
 
 func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	if !parser.EnableExperimentalFunctions {
-		// If experimental functions are disabled globally, we don't need to check for tenant-specific
-		// settings, and can skip this middleware and leave the checking to the rest of the flow.
-		return m.next.Do(ctx, req)
-	}
-
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
