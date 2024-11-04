@@ -232,27 +232,14 @@ type parallelStoragePusher struct {
 	batchSize      int
 	bytesPerTenant map[string]int
 
-	// queueCapacity controls how many batches can be enqueued for flushing.
-	// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
-	// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
-	// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
-	// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
-	queueCapacity int
-
-	// bytesPerSample is the estimated number of bytes per sample.
-	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
-	bytesPerSample int
-
-	// targetFlushes is the number of flushes we want to have per shard.
-	// There is some overhead in the parallelization. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization.
-	// the default of 80 was devised experimentally to keep the memory and CPU usage low ongoing consumption, while keeping replay speed high during cold replay.
-	targetFlushes int
-
+	queueCapacity   int
+	bytesPerSample  int
+	targetFlushes   int
 	numActiveShards int
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, maxShards int, batchSize int, queueCapacity int, BytesPerSample int, TargetFlushes int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
 		pushers:        make(map[string]PusherCloser),
@@ -262,8 +249,8 @@ func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, byte
 		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
 		batchSize:      batchSize,
 		queueCapacity:  queueCapacity,
-		bytesPerSample: BytesPerSample,
-		targetFlushes:  TargetFlushes,
+		bytesPerSample: bytesPerSample,
+		targetFlushes:  targetFlushes,
 		metrics:        metrics,
 	}
 }
@@ -302,7 +289,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
 
-	idealShards := c.IdealShardsFor(userID)
+	idealShards := c.idealShardsFor(userID)
 	var p PusherCloser
 	if idealShards <= 1 {
 		// If we're going to push only one shard, then we can use the sequential pusher.
@@ -318,8 +305,8 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	return p
 }
 
-// IdealShardsFor returns the number of shards that should be used for the given userID.
-func (c *parallelStoragePusher) IdealShardsFor(userID string) int {
+// idealShardsFor returns the number of shards that should be used for the given userID.
+func (c *parallelStoragePusher) idealShardsFor(userID string) int {
 	// First, determine the number of timeseries we expect to receive based on the bytes of WriteRequest's we received.
 	expectedTimeseries := c.bytesPerTenant[userID] / c.bytesPerSample
 
@@ -329,7 +316,8 @@ func (c *parallelStoragePusher) IdealShardsFor(userID string) int {
 	idealShards := expectedTimeseries / c.batchSize / c.targetFlushes
 
 	// Finally, use the lower of the two as a conservative estimate.
-	r := min(idealShards, c.maxShards)
+	// The max(1, ...) is to ensure that we always have at least one shard.
+	r := max(1, min(idealShards, c.maxShards))
 
 	c.numActiveShards += r
 	return r

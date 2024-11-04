@@ -882,6 +882,80 @@ func TestParallelStoragePusher(t *testing.T) {
 	}
 }
 
+func TestParallelStoragePusher_idealShardsFor(t *testing.T) {
+	testCases := map[string]struct {
+		bytesPerTenant int
+		bytesPerSample int
+		batchSize      int
+		targetFlushes  int
+		maxShards      int
+
+		expected int
+	}{
+		"with a low number of time series and target flushes, we expect a low number of shards": {
+			bytesPerTenant: 1000,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      1,
+
+			expected: 1,
+		},
+		"with a higher number of max shards, the ideal number of shards is returned": {
+			bytesPerTenant: 10000,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      15,
+
+			expected: 10,
+		},
+		"with a higher number of shards, we're capped by max shards ": {
+			bytesPerTenant: 100000,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      5,
+
+			expected: 5,
+		},
+		"with a small number of batches and a small number of flushes, we expect more shards": {
+			bytesPerTenant: 20000,
+			bytesPerSample: 200,
+			batchSize:      5,
+			targetFlushes:  2,
+			maxShards:      15,
+
+			expected: 10,
+		},
+		"when we expect less than 1 shard, it should still be 1": {
+			bytesPerTenant: 500,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      10,
+
+			expected: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			psp := &parallelStoragePusher{
+				bytesPerTenant: map[string]int{"tenant1": tc.bytesPerTenant},
+				bytesPerSample: tc.bytesPerSample,
+				batchSize:      tc.batchSize,
+				targetFlushes:  tc.targetFlushes,
+				maxShards:      tc.maxShards,
+				metrics:        newStoragePusherMetrics(prometheus.NewPedanticRegistry()),
+			}
+
+			idealShards := psp.idealShardsFor("tenant1")
+			require.Equal(t, tc.expected, idealShards, "Mismatch in ideal shards")
+		})
+	}
+}
+
 func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	capacity := 2
 	batchSize := 3

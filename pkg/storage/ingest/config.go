@@ -107,10 +107,23 @@ type KafkaConfig struct {
 	OngoingRecordsPerFetch            int  `yaml:"ongoing_records_per_fetch"`
 	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 
-	IngestionConcurrencyMax                     int `yaml:"ingestion_concurrency_max"`
-	IngestionConcurrencyBatchSize               int `yaml:"ingestion_concurrency_batch_size"`
-	IngestionConcurrencyQueueCapacity           int `yaml:"ingestion_concurrency_queue_capacity"`
-	IngestionConcurrencyTargetFlushesPerShard   int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
+	IngestionConcurrencyMax       int `yaml:"ingestion_concurrency_max"`
+	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
+
+	// IngestionConcurrencyQueueCapacity controls how many batches can be enqueued for flushing series to the TSDB HEAD.
+	// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
+	// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
+	// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
+	// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
+	IngestionConcurrencyQueueCapacity int `yaml:"ingestion_concurrency_queue_capacity"`
+
+	// IngestionConcurrencyTargetFlushesPerShard is the number of flushes we want to target per shard.
+	// There is some overhead in the parallelization. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization.
+	// the default of 80 was devised experimentally to keep the memory and CPU usage low ongoing consumption, while keeping replay speed high during cold replay.
+	IngestionConcurrencyTargetFlushesPerShard int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
+
+	// IngestionConcurrencyEstimatedBytesPerSample is the estimated number of bytes per sample.
+	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 }
 
