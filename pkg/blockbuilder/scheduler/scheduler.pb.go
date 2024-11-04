@@ -9,7 +9,6 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	httpgrpc "github.com/grafana/dskit/httpgrpc"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -34,6 +33,57 @@ var _ = time.Kitchen
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
+type JobKey struct {
+	Id    string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Epoch int64  `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+}
+
+func (m *JobKey) Reset()      { *m = JobKey{} }
+func (*JobKey) ProtoMessage() {}
+func (*JobKey) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2b3fc28395a6d9c5, []int{0}
+}
+func (m *JobKey) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *JobKey) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_JobKey.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *JobKey) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_JobKey.Merge(m, src)
+}
+func (m *JobKey) XXX_Size() int {
+	return m.Size()
+}
+func (m *JobKey) XXX_DiscardUnknown() {
+	xxx_messageInfo_JobKey.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_JobKey proto.InternalMessageInfo
+
+func (m *JobKey) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
+
+func (m *JobKey) GetEpoch() int64 {
+	if m != nil {
+		return m.Epoch
+	}
+	return 0
+}
+
 type JobSpec struct {
 	Topic          string    `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
 	Partition      int32     `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
@@ -47,7 +97,7 @@ type JobSpec struct {
 func (m *JobSpec) Reset()      { *m = JobSpec{} }
 func (*JobSpec) ProtoMessage() {}
 func (*JobSpec) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{0}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{1}
 }
 func (m *JobSpec) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -126,13 +176,13 @@ func (m *JobSpec) GetLastBlockEndTs() time.Time {
 }
 
 type AssignJobRequest struct {
-	WorkerId int64 `protobuf:"varint,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	WorkerId string `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 }
 
 func (m *AssignJobRequest) Reset()      { *m = AssignJobRequest{} }
 func (*AssignJobRequest) ProtoMessage() {}
 func (*AssignJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{1}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
 }
 func (m *AssignJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -161,22 +211,22 @@ func (m *AssignJobRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_AssignJobRequest proto.InternalMessageInfo
 
-func (m *AssignJobRequest) GetWorkerId() int64 {
+func (m *AssignJobRequest) GetWorkerId() string {
 	if m != nil {
 		return m.WorkerId
 	}
-	return 0
+	return ""
 }
 
 type AssignJobResponse struct {
-	JobId string   `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Spec  *JobSpec `protobuf:"bytes,2,opt,name=spec,proto3" json:"spec,omitempty"`
+	Key  *JobKey  `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Spec *JobSpec `protobuf:"bytes,2,opt,name=spec,proto3" json:"spec,omitempty"`
 }
 
 func (m *AssignJobResponse) Reset()      { *m = AssignJobResponse{} }
 func (*AssignJobResponse) ProtoMessage() {}
 func (*AssignJobResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
 }
 func (m *AssignJobResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -205,11 +255,11 @@ func (m *AssignJobResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_AssignJobResponse proto.InternalMessageInfo
 
-func (m *AssignJobResponse) GetJobId() string {
+func (m *AssignJobResponse) GetKey() *JobKey {
 	if m != nil {
-		return m.JobId
+		return m.Key
 	}
-	return ""
+	return nil
 }
 
 func (m *AssignJobResponse) GetSpec() *JobSpec {
@@ -220,7 +270,7 @@ func (m *AssignJobResponse) GetSpec() *JobSpec {
 }
 
 type UpdateJobRequest struct {
-	JobId    string   `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Key      *JobKey  `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	WorkerId string   `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 	Spec     *JobSpec `protobuf:"bytes,3,opt,name=spec,proto3" json:"spec,omitempty"`
 	Complete bool     `protobuf:"varint,4,opt,name=complete,proto3" json:"complete,omitempty"`
@@ -229,7 +279,7 @@ type UpdateJobRequest struct {
 func (m *UpdateJobRequest) Reset()      { *m = UpdateJobRequest{} }
 func (*UpdateJobRequest) ProtoMessage() {}
 func (*UpdateJobRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
 }
 func (m *UpdateJobRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -258,11 +308,11 @@ func (m *UpdateJobRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_UpdateJobRequest proto.InternalMessageInfo
 
-func (m *UpdateJobRequest) GetJobId() string {
+func (m *UpdateJobRequest) GetKey() *JobKey {
 	if m != nil {
-		return m.JobId
+		return m.Key
 	}
-	return ""
+	return nil
 }
 
 func (m *UpdateJobRequest) GetWorkerId() string {
@@ -286,53 +336,116 @@ func (m *UpdateJobRequest) GetComplete() bool {
 	return false
 }
 
+type UpdateJobResponse struct {
+}
+
+func (m *UpdateJobResponse) Reset()      { *m = UpdateJobResponse{} }
+func (*UpdateJobResponse) ProtoMessage() {}
+func (*UpdateJobResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
+}
+func (m *UpdateJobResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *UpdateJobResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_UpdateJobResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *UpdateJobResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_UpdateJobResponse.Merge(m, src)
+}
+func (m *UpdateJobResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *UpdateJobResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_UpdateJobResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_UpdateJobResponse proto.InternalMessageInfo
+
 func init() {
+	proto.RegisterType((*JobKey)(nil), "scheduler.JobKey")
 	proto.RegisterType((*JobSpec)(nil), "scheduler.JobSpec")
 	proto.RegisterType((*AssignJobRequest)(nil), "scheduler.AssignJobRequest")
 	proto.RegisterType((*AssignJobResponse)(nil), "scheduler.AssignJobResponse")
 	proto.RegisterType((*UpdateJobRequest)(nil), "scheduler.UpdateJobRequest")
+	proto.RegisterType((*UpdateJobResponse)(nil), "scheduler.UpdateJobResponse")
 }
 
 func init() { proto.RegisterFile("scheduler.proto", fileDescriptor_2b3fc28395a6d9c5) }
 
 var fileDescriptor_2b3fc28395a6d9c5 = []byte{
-	// 533 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x53, 0xcd, 0x6e, 0xd3, 0x4c,
-	0x14, 0xf5, 0x24, 0x4d, 0x1a, 0x4f, 0x3e, 0x7d, 0x94, 0x51, 0x8b, 0x2c, 0xb7, 0x4c, 0x42, 0x16,
-	0x55, 0x56, 0x36, 0x0a, 0x3c, 0x00, 0x44, 0xa2, 0xa2, 0x15, 0x12, 0x68, 0x12, 0xd6, 0x95, 0x7f,
-	0x26, 0xce, 0x34, 0xb6, 0x67, 0xf0, 0x4c, 0xc4, 0x96, 0x35, 0xab, 0xbe, 0x02, 0x3b, 0x5e, 0x82,
-	0x7d, 0x97, 0x59, 0x76, 0x05, 0xc4, 0xd9, 0xb0, 0xec, 0x23, 0x20, 0xc6, 0xb1, 0x9b, 0x46, 0x80,
-	0xc4, 0xce, 0xf7, 0xdc, 0x73, 0xcf, 0x3d, 0x73, 0x66, 0x0c, 0xef, 0xc9, 0x60, 0x4a, 0xc3, 0x79,
-	0x4c, 0x33, 0x47, 0x64, 0x5c, 0x71, 0x64, 0x56, 0x80, 0xbd, 0x1f, 0xf1, 0x88, 0x6b, 0xd4, 0xfd,
-	0xf5, 0x55, 0x10, 0xec, 0xc7, 0x11, 0x53, 0xd3, 0xb9, 0xef, 0x04, 0x3c, 0x71, 0xa3, 0xcc, 0x9b,
-	0x78, 0xa9, 0xe7, 0x86, 0x72, 0xc6, 0x94, 0x3b, 0x55, 0x4a, 0x44, 0x99, 0x08, 0xaa, 0x8f, 0xf5,
-	0x44, 0x27, 0xe2, 0x3c, 0x8a, 0xa9, 0xab, 0x2b, 0x7f, 0x3e, 0x71, 0x15, 0x4b, 0xa8, 0x54, 0x5e,
-	0x22, 0x0a, 0x42, 0xef, 0x4b, 0x0d, 0xee, 0x9e, 0x71, 0x7f, 0x24, 0x68, 0x80, 0xf6, 0x61, 0x43,
-	0x71, 0xc1, 0x02, 0x0b, 0x74, 0x41, 0xdf, 0x24, 0x45, 0x81, 0x8e, 0xa0, 0x29, 0xbc, 0x4c, 0x31,
-	0xc5, 0x78, 0x6a, 0xd5, 0xba, 0xa0, 0xdf, 0x20, 0xb7, 0x00, 0x7a, 0x04, 0xff, 0x93, 0xca, 0xcb,
-	0xd4, 0x39, 0x9f, 0x4c, 0x24, 0x55, 0x56, 0xbd, 0x0b, 0xfa, 0x75, 0xd2, 0xd6, 0xd8, 0x6b, 0x0d,
-	0xa1, 0x87, 0x10, 0xd2, 0x34, 0x2c, 0x09, 0x3b, 0x9a, 0x60, 0xd2, 0x34, 0x5c, 0xb7, 0x4f, 0x60,
-	0x3b, 0xe0, 0x49, 0xc2, 0x14, 0xa1, 0xc1, 0x58, 0x5a, 0x8d, 0x2e, 0xe8, 0xb7, 0x07, 0xb6, 0x53,
-	0x18, 0x77, 0x4a, 0xe3, 0xce, 0xb8, 0x34, 0x3e, 0x6c, 0x5d, 0x7d, 0xed, 0x18, 0x97, 0xdf, 0x3a,
-	0x80, 0x6c, 0x0e, 0xa2, 0x63, 0xf8, 0x7f, 0xec, 0x49, 0x35, 0xa2, 0x34, 0x2d, 0x94, 0xad, 0xa6,
-	0x5e, 0xb5, 0x85, 0xa2, 0x57, 0x05, 0x6f, 0x18, 0xf3, 0x60, 0xf6, 0x22, 0x0d, 0xc7, 0xd2, 0xda,
-	0xfd, 0x87, 0x95, 0x5b, 0xb3, 0x3d, 0x17, 0xee, 0x3d, 0x97, 0x92, 0x45, 0xe9, 0x19, 0xf7, 0x09,
-	0x7d, 0x37, 0xa7, 0x52, 0xa1, 0x43, 0x68, 0xbe, 0xe7, 0xd9, 0x8c, 0x66, 0xe7, 0x2c, 0xd4, 0x59,
-	0xd6, 0x49, 0xab, 0x00, 0x4e, 0xc3, 0x1e, 0x81, 0xf7, 0x37, 0x06, 0xa4, 0xe0, 0xa9, 0xa4, 0xe8,
-	0x00, 0x36, 0x2f, 0xb8, 0x5f, 0xd2, 0x4d, 0xd2, 0xb8, 0xe0, 0xfe, 0x69, 0x88, 0x8e, 0xe1, 0x8e,
-	0x14, 0x34, 0xd0, 0xa9, 0xb7, 0x07, 0xc8, 0xb9, 0x7d, 0x30, 0xeb, 0x2b, 0x23, 0xba, 0xdf, 0xfb,
-	0x08, 0xe0, 0xde, 0x5b, 0x11, 0x7a, 0x8a, 0x6e, 0xb8, 0xf8, 0x83, 0xe6, 0x1d, 0x73, 0x35, 0xdd,
-	0xa9, 0xcc, 0x55, 0x0b, 0xeb, 0x7f, 0x5f, 0x88, 0x6c, 0xd8, 0x0a, 0x78, 0x22, 0x62, 0xaa, 0xa8,
-	0xbe, 0xd0, 0x16, 0xa9, 0xea, 0xc1, 0x27, 0x00, 0x0f, 0x74, 0x40, 0xc3, 0x39, 0x8b, 0x43, 0x9a,
-	0x8d, 0x4a, 0x0d, 0x74, 0x02, 0xcd, 0xea, 0xe8, 0xe8, 0x70, 0x43, 0x7c, 0x3b, 0x41, 0xfb, 0xe8,
-	0xf7, 0xcd, 0x75, 0x5a, 0xcf, 0xa0, 0x59, 0x9d, 0xf6, 0x8e, 0xce, 0x76, 0x06, 0xf6, 0x03, 0xa7,
-	0xfa, 0x1f, 0x5e, 0x8e, 0xc7, 0x6f, 0x4a, 0x85, 0xe1, 0xd3, 0xc5, 0x12, 0x1b, 0xd7, 0x4b, 0x6c,
-	0xdc, 0x2c, 0x31, 0xf8, 0x90, 0x63, 0xf0, 0x39, 0xc7, 0xe0, 0x2a, 0xc7, 0x60, 0x91, 0x63, 0xf0,
-	0x3d, 0xc7, 0xe0, 0x47, 0x8e, 0x8d, 0x9b, 0x1c, 0x83, 0xcb, 0x15, 0x36, 0x16, 0x2b, 0x6c, 0x5c,
-	0xaf, 0xb0, 0xe1, 0x37, 0xf5, 0xcb, 0x78, 0xf2, 0x33, 0x00, 0x00, 0xff, 0xff, 0x63, 0x14, 0x3f,
-	0xc1, 0xb9, 0x03, 0x00, 0x00,
+	// 527 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x52, 0xc1, 0x8e, 0x12, 0x41,
+	0x10, 0x9d, 0x86, 0x5d, 0x96, 0x29, 0xcc, 0xba, 0xb4, 0x6b, 0x32, 0x61, 0xd7, 0x06, 0xc7, 0x64,
+	0xc3, 0x69, 0x48, 0xd0, 0x1f, 0x90, 0x44, 0x12, 0xd1, 0xc4, 0x64, 0xc0, 0xf3, 0x0a, 0x33, 0x05,
+	0x3b, 0x61, 0x98, 0x1e, 0xa7, 0x9b, 0x98, 0xbd, 0xf9, 0x09, 0x7b, 0xf4, 0x0f, 0xf4, 0x27, 0xbc,
+	0xef, 0x91, 0xe3, 0x9e, 0x54, 0x86, 0x8b, 0xc7, 0xfd, 0x04, 0x43, 0x37, 0xcc, 0x02, 0x1a, 0xa3,
+	0xb7, 0xae, 0x57, 0xaf, 0xea, 0x55, 0xd5, 0x6b, 0xb8, 0x2f, 0xbc, 0x0b, 0xf4, 0xa7, 0x21, 0x26,
+	0x4e, 0x9c, 0x70, 0xc9, 0xa9, 0x99, 0x01, 0x95, 0xe3, 0x11, 0x1f, 0x71, 0x85, 0x36, 0x96, 0x2f,
+	0x4d, 0xa8, 0x54, 0x47, 0x9c, 0x8f, 0x42, 0x6c, 0xa8, 0x68, 0x30, 0x1d, 0x36, 0x64, 0x30, 0x41,
+	0x21, 0xfb, 0x93, 0x58, 0x13, 0x6c, 0x07, 0x0a, 0x1d, 0x3e, 0x78, 0x85, 0x97, 0xf4, 0x10, 0x72,
+	0x81, 0x6f, 0x91, 0x1a, 0xa9, 0x9b, 0x6e, 0x2e, 0xf0, 0xe9, 0x31, 0xec, 0x63, 0xcc, 0xbd, 0x0b,
+	0x2b, 0x57, 0x23, 0xf5, 0xbc, 0xab, 0x03, 0xfb, 0x6b, 0x0e, 0x0e, 0x3a, 0x7c, 0xd0, 0x8d, 0xd1,
+	0x5b, 0x32, 0x24, 0x8f, 0x03, 0x6f, 0x55, 0xa4, 0x03, 0x7a, 0x0a, 0x66, 0xdc, 0x4f, 0x64, 0x20,
+	0x03, 0x1e, 0xa9, 0xda, 0x7d, 0xf7, 0x0e, 0xa0, 0x8f, 0xe1, 0x9e, 0x90, 0xfd, 0x44, 0x9e, 0xf3,
+	0xe1, 0x50, 0xa0, 0xb4, 0xf2, 0xaa, 0x79, 0x49, 0x61, 0x6f, 0x14, 0x44, 0x1f, 0x01, 0x60, 0xe4,
+	0xaf, 0x09, 0x7b, 0x8a, 0x60, 0x62, 0xe4, 0xaf, 0xd2, 0x6d, 0x28, 0x79, 0x7c, 0x32, 0x09, 0xa4,
+	0x8b, 0x5e, 0x4f, 0x58, 0xfb, 0x35, 0x52, 0x2f, 0x35, 0x2b, 0x8e, 0x5e, 0xd4, 0x59, 0x2f, 0xea,
+	0xf4, 0xd6, 0x8b, 0xb6, 0x8a, 0xd7, 0xdf, 0xaa, 0xc6, 0xd5, 0xf7, 0x2a, 0x71, 0x37, 0x0b, 0xe9,
+	0x19, 0x1c, 0x86, 0x7d, 0x21, 0xbb, 0x88, 0x91, 0xee, 0x6c, 0x15, 0x94, 0xd4, 0x0e, 0x4a, 0x5f,
+	0x6b, 0x5e, 0x2b, 0xe4, 0xde, 0xf8, 0x45, 0xe4, 0xf7, 0x84, 0x75, 0xf0, 0x1f, 0x92, 0x3b, 0xb5,
+	0x76, 0x03, 0x8e, 0x9e, 0x0b, 0x11, 0x8c, 0xa2, 0x0e, 0x1f, 0xb8, 0xf8, 0x7e, 0x8a, 0x42, 0xd2,
+	0x13, 0x30, 0x3f, 0xf0, 0x64, 0x8c, 0xc9, 0x79, 0x66, 0x40, 0x51, 0x03, 0x2f, 0x7d, 0xfb, 0x1d,
+	0x94, 0x37, 0x0a, 0x44, 0xcc, 0x23, 0x81, 0xf4, 0x09, 0xe4, 0xc7, 0x78, 0xa9, 0xb8, 0xa5, 0x66,
+	0xd9, 0xb9, 0xfb, 0x16, 0xda, 0x4b, 0x77, 0x99, 0xa5, 0x67, 0xb0, 0x27, 0x62, 0xf4, 0x94, 0x07,
+	0xa5, 0x26, 0xdd, 0x66, 0x2d, 0x0d, 0x74, 0x55, 0xde, 0xfe, 0x44, 0xe0, 0xe8, 0x6d, 0xec, 0xf7,
+	0x25, 0x6e, 0xcc, 0xf4, 0x4f, 0x0a, 0x5b, 0x83, 0xe7, 0xb6, 0x07, 0xcf, 0xe4, 0xf3, 0x7f, 0x97,
+	0xa7, 0x15, 0x28, 0x7a, 0x7c, 0x12, 0x87, 0x28, 0x51, 0x99, 0x5d, 0x74, 0xb3, 0xd8, 0x7e, 0x00,
+	0xe5, 0x8d, 0xc9, 0xf4, 0xf2, 0xcd, 0xcf, 0x04, 0x1e, 0xaa, 0x8b, 0xb6, 0xa6, 0x41, 0xe8, 0x63,
+	0xd2, 0x5d, 0x37, 0xa6, 0x6d, 0x30, 0xb3, 0x5b, 0xd1, 0x93, 0x0d, 0xc5, 0xdd, 0x93, 0x57, 0x4e,
+	0xff, 0x9c, 0x5c, 0x9d, 0xb7, 0x0d, 0x66, 0x26, 0xbb, 0xd5, 0x67, 0xf7, 0x4c, 0x5b, 0x7d, 0x7e,
+	0x9b, 0xb4, 0xf5, 0x6c, 0x36, 0x67, 0xc6, 0xcd, 0x9c, 0x19, 0xb7, 0x73, 0x46, 0x3e, 0xa6, 0x8c,
+	0x7c, 0x49, 0x19, 0xb9, 0x4e, 0x19, 0x99, 0xa5, 0x8c, 0xfc, 0x48, 0x19, 0xf9, 0x99, 0x32, 0xe3,
+	0x36, 0x65, 0xe4, 0x6a, 0xc1, 0x8c, 0xd9, 0x82, 0x19, 0x37, 0x0b, 0x66, 0x0c, 0x0a, 0xea, 0x43,
+	0x3d, 0xfd, 0x15, 0x00, 0x00, 0xff, 0xff, 0x04, 0x19, 0xbb, 0xac, 0xee, 0x03, 0x00, 0x00,
 }
 
+func (this *JobKey) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*JobKey)
+	if !ok {
+		that2, ok := that.(JobKey)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Id != that1.Id {
+		return false
+	}
+	if this.Epoch != that1.Epoch {
+		return false
+	}
+	return true
+}
 func (this *JobSpec) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -418,7 +531,7 @@ func (this *AssignJobResponse) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.JobId != that1.JobId {
+	if !this.Key.Equal(that1.Key) {
 		return false
 	}
 	if !this.Spec.Equal(that1.Spec) {
@@ -445,7 +558,7 @@ func (this *UpdateJobRequest) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.JobId != that1.JobId {
+	if !this.Key.Equal(that1.Key) {
 		return false
 	}
 	if this.WorkerId != that1.WorkerId {
@@ -458,6 +571,38 @@ func (this *UpdateJobRequest) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+func (this *UpdateJobResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*UpdateJobResponse)
+	if !ok {
+		that2, ok := that.(UpdateJobResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *JobKey) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&scheduler.JobKey{")
+	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
+	s = append(s, "Epoch: "+fmt.Sprintf("%#v", this.Epoch)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 func (this *JobSpec) GoString() string {
 	if this == nil {
@@ -491,7 +636,9 @@ func (this *AssignJobResponse) GoString() string {
 	}
 	s := make([]string, 0, 6)
 	s = append(s, "&scheduler.AssignJobResponse{")
-	s = append(s, "JobId: "+fmt.Sprintf("%#v", this.JobId)+",\n")
+	if this.Key != nil {
+		s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
+	}
 	if this.Spec != nil {
 		s = append(s, "Spec: "+fmt.Sprintf("%#v", this.Spec)+",\n")
 	}
@@ -504,12 +651,23 @@ func (this *UpdateJobRequest) GoString() string {
 	}
 	s := make([]string, 0, 8)
 	s = append(s, "&scheduler.UpdateJobRequest{")
-	s = append(s, "JobId: "+fmt.Sprintf("%#v", this.JobId)+",\n")
+	if this.Key != nil {
+		s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
+	}
 	s = append(s, "WorkerId: "+fmt.Sprintf("%#v", this.WorkerId)+",\n")
 	if this.Spec != nil {
 		s = append(s, "Spec: "+fmt.Sprintf("%#v", this.Spec)+",\n")
 	}
 	s = append(s, "Complete: "+fmt.Sprintf("%#v", this.Complete)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *UpdateJobResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&scheduler.UpdateJobResponse{")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -535,7 +693,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type BlockBuilderSchedulerClient interface {
 	AssignJob(ctx context.Context, in *AssignJobRequest, opts ...grpc.CallOption) (*AssignJobResponse, error)
-	UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
+	UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error)
 }
 
 type blockBuilderSchedulerClient struct {
@@ -555,8 +713,8 @@ func (c *blockBuilderSchedulerClient) AssignJob(ctx context.Context, in *AssignJ
 	return out, nil
 }
 
-func (c *blockBuilderSchedulerClient) UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-	out := new(httpgrpc.HTTPResponse)
+func (c *blockBuilderSchedulerClient) UpdateJob(ctx context.Context, in *UpdateJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error) {
+	out := new(UpdateJobResponse)
 	err := c.cc.Invoke(ctx, "/scheduler.BlockBuilderScheduler/UpdateJob", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -567,7 +725,7 @@ func (c *blockBuilderSchedulerClient) UpdateJob(ctx context.Context, in *UpdateJ
 // BlockBuilderSchedulerServer is the server API for BlockBuilderScheduler service.
 type BlockBuilderSchedulerServer interface {
 	AssignJob(context.Context, *AssignJobRequest) (*AssignJobResponse, error)
-	UpdateJob(context.Context, *UpdateJobRequest) (*httpgrpc.HTTPResponse, error)
+	UpdateJob(context.Context, *UpdateJobRequest) (*UpdateJobResponse, error)
 }
 
 // UnimplementedBlockBuilderSchedulerServer can be embedded to have forward compatible implementations.
@@ -577,7 +735,7 @@ type UnimplementedBlockBuilderSchedulerServer struct {
 func (*UnimplementedBlockBuilderSchedulerServer) AssignJob(ctx context.Context, req *AssignJobRequest) (*AssignJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignJob not implemented")
 }
-func (*UnimplementedBlockBuilderSchedulerServer) UpdateJob(ctx context.Context, req *UpdateJobRequest) (*httpgrpc.HTTPResponse, error) {
+func (*UnimplementedBlockBuilderSchedulerServer) UpdateJob(ctx context.Context, req *UpdateJobRequest) (*UpdateJobResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateJob not implemented")
 }
 
@@ -636,6 +794,41 @@ var _BlockBuilderScheduler_serviceDesc = grpc.ServiceDesc{
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "scheduler.proto",
+}
+
+func (m *JobKey) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *JobKey) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *JobKey) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Epoch != 0 {
+		i = encodeVarintScheduler(dAtA, i, uint64(m.Epoch))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Id) > 0 {
+		i -= len(m.Id)
+		copy(dAtA[i:], m.Id)
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.Id)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
 }
 
 func (m *JobSpec) Marshal() (dAtA []byte, err error) {
@@ -724,10 +917,12 @@ func (m *AssignJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.WorkerId != 0 {
-		i = encodeVarintScheduler(dAtA, i, uint64(m.WorkerId))
+	if len(m.WorkerId) > 0 {
+		i -= len(m.WorkerId)
+		copy(dAtA[i:], m.WorkerId)
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.WorkerId)))
 		i--
-		dAtA[i] = 0x8
+		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -764,10 +959,15 @@ func (m *AssignJobResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x12
 	}
-	if len(m.JobId) > 0 {
-		i -= len(m.JobId)
-		copy(dAtA[i:], m.JobId)
-		i = encodeVarintScheduler(dAtA, i, uint64(len(m.JobId)))
+	if m.Key != nil {
+		{
+			size, err := m.Key.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintScheduler(dAtA, i, uint64(size))
+		}
 		i--
 		dAtA[i] = 0xa
 	}
@@ -823,13 +1023,41 @@ func (m *UpdateJobRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x12
 	}
-	if len(m.JobId) > 0 {
-		i -= len(m.JobId)
-		copy(dAtA[i:], m.JobId)
-		i = encodeVarintScheduler(dAtA, i, uint64(len(m.JobId)))
+	if m.Key != nil {
+		{
+			size, err := m.Key.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintScheduler(dAtA, i, uint64(size))
+		}
 		i--
 		dAtA[i] = 0xa
 	}
+	return len(dAtA) - i, nil
+}
+
+func (m *UpdateJobResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *UpdateJobResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *UpdateJobResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
 	return len(dAtA) - i, nil
 }
 
@@ -844,6 +1072,22 @@ func encodeVarintScheduler(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+func (m *JobKey) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Id)
+	if l > 0 {
+		n += 1 + l + sovScheduler(uint64(l))
+	}
+	if m.Epoch != 0 {
+		n += 1 + sovScheduler(uint64(m.Epoch))
+	}
+	return n
+}
+
 func (m *JobSpec) Size() (n int) {
 	if m == nil {
 		return 0
@@ -879,8 +1123,9 @@ func (m *AssignJobRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.WorkerId != 0 {
-		n += 1 + sovScheduler(uint64(m.WorkerId))
+	l = len(m.WorkerId)
+	if l > 0 {
+		n += 1 + l + sovScheduler(uint64(l))
 	}
 	return n
 }
@@ -891,8 +1136,8 @@ func (m *AssignJobResponse) Size() (n int) {
 	}
 	var l int
 	_ = l
-	l = len(m.JobId)
-	if l > 0 {
+	if m.Key != nil {
+		l = m.Key.Size()
 		n += 1 + l + sovScheduler(uint64(l))
 	}
 	if m.Spec != nil {
@@ -908,8 +1153,8 @@ func (m *UpdateJobRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
-	l = len(m.JobId)
-	if l > 0 {
+	if m.Key != nil {
+		l = m.Key.Size()
 		n += 1 + l + sovScheduler(uint64(l))
 	}
 	l = len(m.WorkerId)
@@ -926,11 +1171,31 @@ func (m *UpdateJobRequest) Size() (n int) {
 	return n
 }
 
+func (m *UpdateJobResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
 func sovScheduler(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozScheduler(x uint64) (n int) {
 	return sovScheduler(uint64((x << 1) ^ uint64((int64(x) >> 63))))
+}
+func (this *JobKey) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&JobKey{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`Epoch:` + fmt.Sprintf("%v", this.Epoch) + `,`,
+		`}`,
+	}, "")
+	return s
 }
 func (this *JobSpec) String() string {
 	if this == nil {
@@ -963,7 +1228,7 @@ func (this *AssignJobResponse) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&AssignJobResponse{`,
-		`JobId:` + fmt.Sprintf("%v", this.JobId) + `,`,
+		`Key:` + strings.Replace(this.Key.String(), "JobKey", "JobKey", 1) + `,`,
 		`Spec:` + strings.Replace(this.Spec.String(), "JobSpec", "JobSpec", 1) + `,`,
 		`}`,
 	}, "")
@@ -974,10 +1239,19 @@ func (this *UpdateJobRequest) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&UpdateJobRequest{`,
-		`JobId:` + fmt.Sprintf("%v", this.JobId) + `,`,
+		`Key:` + strings.Replace(this.Key.String(), "JobKey", "JobKey", 1) + `,`,
 		`WorkerId:` + fmt.Sprintf("%v", this.WorkerId) + `,`,
 		`Spec:` + strings.Replace(this.Spec.String(), "JobSpec", "JobSpec", 1) + `,`,
 		`Complete:` + fmt.Sprintf("%v", this.Complete) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *UpdateJobResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&UpdateJobResponse{`,
 		`}`,
 	}, "")
 	return s
@@ -989,6 +1263,110 @@ func valueToStringScheduler(v interface{}) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
+}
+func (m *JobKey) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowScheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: JobKey: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: JobKey: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Id = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+			}
+			m.Epoch = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Epoch |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipScheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 func (m *JobSpec) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
@@ -1247,10 +1625,10 @@ func (m *AssignJobRequest) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 0 {
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field WorkerId", wireType)
 			}
-			m.WorkerId = 0
+			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowScheduler
@@ -1260,11 +1638,24 @@ func (m *AssignJobRequest) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.WorkerId |= int64(b&0x7F) << shift
+				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.WorkerId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipScheduler(dAtA[iNdEx:])
@@ -1320,9 +1711,9 @@ func (m *AssignJobResponse) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field JobId", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
 			}
-			var stringLen uint64
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowScheduler
@@ -1332,23 +1723,27 @@ func (m *AssignJobResponse) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
+			if msglen < 0 {
 				return ErrInvalidLengthScheduler
 			}
-			postIndex := iNdEx + intStringLen
+			postIndex := iNdEx + msglen
 			if postIndex < 0 {
 				return ErrInvalidLengthScheduler
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.JobId = string(dAtA[iNdEx:postIndex])
+			if m.Key == nil {
+				m.Key = &JobKey{}
+			}
+			if err := m.Key.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -1441,9 +1836,9 @@ func (m *UpdateJobRequest) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field JobId", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
 			}
-			var stringLen uint64
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowScheduler
@@ -1453,23 +1848,27 @@ func (m *UpdateJobRequest) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
+			if msglen < 0 {
 				return ErrInvalidLengthScheduler
 			}
-			postIndex := iNdEx + intStringLen
+			postIndex := iNdEx + msglen
 			if postIndex < 0 {
 				return ErrInvalidLengthScheduler
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.JobId = string(dAtA[iNdEx:postIndex])
+			if m.Key == nil {
+				m.Key = &JobKey{}
+			}
+			if err := m.Key.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -1559,6 +1958,59 @@ func (m *UpdateJobRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Complete = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipScheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *UpdateJobResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowScheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: UpdateJobResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: UpdateJobResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		default:
 			iNdEx = preIndex
 			skippy, err := skipScheduler(dAtA[iNdEx:])

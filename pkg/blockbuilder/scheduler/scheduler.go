@@ -238,6 +238,31 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, s.committed)
 }
 
+// AssignJob returns an assigned job for the given workerID.
+func (s *BlockBuilderScheduler) AssignJob(ctx context.Context, req *AssignJobRequest) (*AssignJobResponse, error) {
+	key, spec, err := s.jobs.assign(req.WorkerId)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: eliminate jobSpec duplication.
+	return &AssignJobResponse{
+		Key: &JobKey{
+			Id:    key.id,
+			Epoch: key.epoch,
+		},
+		Spec: &JobSpec{
+			Topic:          spec.topic,
+			Partition:      spec.partition,
+			StartOffset:    spec.startOffset,
+			EndOffset:      spec.endOffset,
+			CommitRecTs:    spec.commitRecTs,
+			LastSeenOffset: spec.lastSeenOffset,
+			LastBlockEndTs: spec.lastBlockEndTs,
+		},
+	}, err
+}
+
 // assignJob returns an assigned job for the given workerID.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, error) {
@@ -252,8 +277,29 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, err
 	return s.jobs.assign(workerID)
 }
 
-// updateJob takes a job update from the client and records it, if necessary.
-// (This is a temporary method for unit tests until we have RPCs.)
+// UpdateJob takes a job update from the client and records it, if necessary.
+func (s *BlockBuilderScheduler) UpdateJob(ctx context.Context, req *UpdateJobRequest) (*UpdateJobResponse, error) {
+	if err := s.updateJob(req.Key.key(), req.WorkerId, req.Complete, jobSpec{
+		topic:          req.Spec.Topic,
+		partition:      req.Spec.Partition,
+		startOffset:    req.Spec.StartOffset,
+		endOffset:      req.Spec.EndOffset,
+		commitRecTs:    req.Spec.CommitRecTs,
+		lastSeenOffset: req.Spec.LastSeenOffset,
+		lastBlockEndTs: req.Spec.LastBlockEndTs,
+	}); err != nil {
+		return nil, err
+	}
+	return &UpdateJobResponse{}, nil
+}
+
+func (rpcKey *JobKey) key() jobKey {
+	return jobKey{
+		id:    rpcKey.Id,
+		epoch: rpcKey.Epoch,
+	}
+}
+
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j jobSpec) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -360,3 +406,5 @@ type observation struct {
 	workerID string
 	complete bool
 }
+
+var _ BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
