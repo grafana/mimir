@@ -139,13 +139,40 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 }
 
 // assignJob returns an assigned job for the given workerID.
-// (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, error) {
-	return s.jobs.assign(workerID)
+func (s *BlockBuilderScheduler) AssignJob(ctx context.Context, req *AssignJobRequest) (*AssignJobResponse, error) {
+	id, spec, err := s.jobs.assign(req.WorkerId)
+
+	// TODO: eliminate jobSpec duplication.
+	return &AssignJobResponse{
+		JobId: id,
+		Spec: &JobSpec{
+			Topic:          spec.topic,
+			Partition:      spec.partition,
+			StartOffset:    spec.startOffset,
+			EndOffset:      spec.endOffset,
+			CommitRecTs:    spec.commitRecTs,
+			LastSeenOffset: spec.lastSeenOffset,
+			LastBlockEndTs: spec.lastBlockEndTs,
+		},
+	}, err
+}
+
+func (s *BlockBuilderScheduler) UpdateJob(ctx context.Context, req *UpdateJobRequest) (*UpdateJobResponse, error) {
+	if err := s.updateJob(req.JobId, req.WorkerId, req.Complete, jobSpec{
+		topic:          req.Spec.Topic,
+		partition:      req.Spec.Partition,
+		startOffset:    req.Spec.StartOffset,
+		endOffset:      req.Spec.EndOffset,
+		commitRecTs:    req.Spec.CommitRecTs,
+		lastSeenOffset: req.Spec.LastSeenOffset,
+		lastBlockEndTs: req.Spec.LastBlockEndTs,
+	}); err != nil {
+		return nil, err
+	}
+	return &UpdateJobResponse{}, nil
 }
 
 // updateJob takes a job update from the client and records it, if necessary.
-// (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,3 +201,5 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 	}
 	return nil
 }
+
+var _ BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)

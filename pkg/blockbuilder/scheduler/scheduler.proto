@@ -8,7 +8,6 @@ syntax = "proto3";
 package scheduler;
 
 import "gogoproto/gogo.proto";
-import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "google/protobuf/timestamp.proto";
 
 option (gogoproto.marshaler_all) = true;
@@ -26,11 +25,11 @@ message JobSpec {
 
 service BlockBuilderScheduler {
     rpc AssignJob(AssignJobRequest) returns (AssignJobResponse);
-    rpc UpdateJob(UpdateJobRequest) returns (httpgrpc.HTTPResponse);
+    rpc UpdateJob(UpdateJobRequest) returns (UpdateJobResponse);
 }
 
 message AssignJobRequest {
-    int64 worker_id = 1;
+    string worker_id = 1;
 }
 
 message AssignJobResponse {
@@ -44,3 +43,5 @@ message UpdateJobRequest {
     JobSpec spec = 3;
     bool complete = 4;
 }
+
+message UpdateJobResponse {}
