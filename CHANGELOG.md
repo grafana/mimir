@@ -64,7 +64,6 @@
 * [BUGFIX] Fix issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where the ruler could panic as it updates a running ruleset or shutdowns. #9726
 * [BUGFIX] Ingester: Fix race condition in per-tenant TSDB creation. #9708
 * [BUGFIX] Ingester: Fix race condition in exemplar adding. #9765
-* [BUGFIX] Ingester: Fix race condition in series adding. #9765
 * [BUGFIX] Ingester: Fix race condition in native histogram appending. #9765
 
 ### Mixin
