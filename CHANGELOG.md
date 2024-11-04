@@ -111,6 +111,12 @@
   * `--kafka-sasl-password`
 * [ENHANCEMENT] Updated `KubePersistentVolumeFillingUp` runbook, including a sample command to debug the distroless image. #9802
 
+## 2.14.1
+
+### Grafana Mimir
+
+* [BUGFIX] Update objstore library to resolve issues observed for some S3-compatible object stores, which respond to `StatObject` with `Range` incorrectly. #9625
+
 ## 2.14.0
 
 ### Grafana Mimir
