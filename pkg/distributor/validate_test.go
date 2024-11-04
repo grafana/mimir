@@ -181,13 +181,7 @@ func TestValidateLabels(t *testing.T) {
 			skipLabelCountValidation: false,
 			err: fmt.Errorf(
 				invalidLabelValueMsgFormat,
-				"label1", "abc\xfe\xfddef",
-				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
-						{Name: model.MetricNameLabel, Value: "foo"},
-						{Name: "label1", Value: "abc\xfe\xfddef"},
-					},
-				),
+				"label1", "abcdef", "foo",
 			),
 		},
 		{
