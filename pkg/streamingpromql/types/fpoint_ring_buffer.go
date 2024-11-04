@@ -286,18 +286,9 @@ func (b *FPointRingBuffer) ChangesAtOrBefore(maxT int64) (float64, bool) {
 		}
 	}
 
-	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
-	// and then continue to the tail.
-	if len(fHead) > 0 && len(fTail) > 0 {
-		// We don't need to compare the first point with itself, hence start from fHead[1:]
-		accumulate(fHead[1:])
-		accumulate(fTail)
-	}
+	accumulate(fHead)
+	accumulate(fTail)
 
-	if len(fHead) > 0 && len(fTail) == 0 {
-		// We don't need to compare the first point with itself, hence start from fHead[1:]
-		accumulate(fHead[1:])
-	}
 	return changes, true
 }
 
