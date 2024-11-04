@@ -97,6 +97,25 @@ func TestFPointRingBuffer_ChangesAtOrBefore(t *testing.T) {
 			wantHaveFloat: true,
 		},
 		{
+			name: "Changes on points that are not changing and its ring-buffer are wrapped around",
+			fields: fields{
+				firstIndex: 2,
+				size:       5,
+				points: []promql.FPoint{
+					{T: 7, F: 1},
+					{T: 9, F: 1},
+					{T: 1, F: 1},
+					{T: 3, F: 1},
+					{T: 5, F: 1},
+				},
+			},
+			args: args{
+				maxT: 7,
+			},
+			wantChanges:   0.0,
+			wantHaveFloat: true,
+		},
+		{
 			name: "Changes on points that are changing at the time and its ring-buffer are wrapped around",
 			fields: fields{
 				firstIndex: 2,
