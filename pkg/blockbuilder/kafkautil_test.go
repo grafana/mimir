@@ -77,7 +77,7 @@ func TestKafkaGetGroupLag(t *testing.T) {
 		// get the timestamp of the last produced record
 		rec := producedRecords[len(producedRecords)-1]
 		fallbackOffset := rec.Timestamp.Add(-time.Millisecond).UnixMilli()
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, fallbackOffset)
+		groupLag, err := GetGroupLag(ctx, admClient, testTopic, testGroup, fallbackOffset)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
@@ -89,7 +89,7 @@ func TestKafkaGetGroupLag(t *testing.T) {
 		// get the timestamp of third to last produced record (record before earliest in partition 1)
 		rec := producedRecords[len(producedRecords)-3]
 		fallbackOffset := rec.Timestamp.Add(-time.Millisecond).UnixMilli()
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, fallbackOffset)
+		groupLag, err := GetGroupLag(ctx, admClient, testTopic, testGroup, fallbackOffset)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
@@ -98,7 +98,7 @@ func TestKafkaGetGroupLag(t *testing.T) {
 	})
 
 	t.Run("fallbackOffset=0", func(t *testing.T) {
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, 0)
+		groupLag, err := GetGroupLag(ctx, admClient, testTopic, testGroup, 0)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
@@ -107,12 +107,12 @@ func TestKafkaGetGroupLag(t *testing.T) {
 	})
 
 	t.Run("fallbackOffset=wrong", func(t *testing.T) {
-		_, err := getGroupLag(ctx, admClient, testTopic, testGroup, -1)
+		_, err := GetGroupLag(ctx, admClient, testTopic, testGroup, -1)
 		require.Error(t, err)
 	})
 
 	t.Run("group=unknown", func(t *testing.T) {
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, "unknown", 0)
+		groupLag, err := GetGroupLag(ctx, admClient, testTopic, "unknown", 0)
 		require.NoError(t, err)
 
 		// This group doesn't have any commits, so it must calc its lag from the fallback.
