@@ -3506,6 +3506,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
 
+# (experimental) Enable experimental PromQL functions.
+# CLI flag: -query-frontend.promql-experimental-functions-enabled
+[promql_experimental_functions_enabled: <boolean> | default = false]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]

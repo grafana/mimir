@@ -4308,6 +4308,17 @@
         },
         {
           "kind": "field",
+          "name": "promql_experimental_functions_enabled",
+          "required": false,
+          "desc": "Enable experimental PromQL functions.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.promql-experimental-functions-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",

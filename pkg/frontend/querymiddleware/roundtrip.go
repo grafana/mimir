@@ -353,6 +353,18 @@ func newQueryMiddlewares(
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
+	rejectMiddleware := newRejectMiddleware(limits, log)
+	queryRangeMiddleware = append(
+		queryRangeMiddleware,
+		newInstrumentMiddleware("rejecting", metrics),
+		rejectMiddleware,
+	)
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("rejecting", metrics),
+		rejectMiddleware,
+	)
+
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
