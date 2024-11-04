@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/frontend/v1/frontendv1pb/frontend.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
+syntax = "proto3";
+
+// Protobuf package should not be changed when moving around go packages
+// in order to not break backward compatibility.
+package scheduler;
+
+import "gogoproto/gogo.proto";
+import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+service BlockBuilderScheduler {
+    rpc GetJob(GetJobRequest) returns (GetJobResponse);
+}
+
+message GetJobRequest {
+    int64 worker_id = 1;
+}
+
+message BlockBuilderJob {
+    topic string = 1;
+    partition int32 = 2;
+    start_offset int64 = 3;
+    end_offset int64 = 4;
+    /*
+    commitRecTs    time.Time
+	lastSeenOffset int64
+	lastBlockEndTs time.Time
+    */
+}
+
+message GetJobResponse {
+  BlockBuilderJob job = 1;
+}
+
