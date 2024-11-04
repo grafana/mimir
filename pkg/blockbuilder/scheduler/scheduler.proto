@@ -5,37 +5,42 @@
 
 syntax = "proto3";
 
-// Protobuf package should not be changed when moving around go packages
-// in order to not break backward compatibility.
 package scheduler;
 
 import "gogoproto/gogo.proto";
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
+import "google/protobuf/timestamp.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-service BlockBuilderScheduler {
-    rpc GetJob(GetJobRequest) returns (GetJobResponse);
+message JobSpec {
+    string topic = 1;
+    int32 partition = 2;
+    int64 start_offset = 3;
+    int64 end_offset = 4;
+    google.protobuf.Timestamp commitRecTs = 5  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+	int64 lastSeenOffset = 6;
+    google.protobuf.Timestamp lastBlockEndTs = 7  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
 }
 
-message GetJobRequest {
+service BlockBuilderScheduler {
+    rpc AssignJob(AssignJobRequest) returns (AssignJobResponse);
+    rpc UpdateJob(UpdateJobRequest) returns (httpgrpc.HTTPResponse);
+}
+
+message AssignJobRequest {
     int64 worker_id = 1;
 }
 
-message BlockBuilderJob {
-    topic string = 1;
-    partition int32 = 2;
-    start_offset int64 = 3;
-    end_offset int64 = 4;
-    /*
-    commitRecTs    time.Time
-	lastSeenOffset int64
-	lastBlockEndTs time.Time
-    */
+message AssignJobResponse {
+    string job_id = 1;
+    JobSpec spec = 2;
 }
 
-message GetJobResponse {
-  BlockBuilderJob job = 1;
+message UpdateJobRequest {
+    string job_id = 1;
+    string worker_id = 2;
+    JobSpec spec = 3;
+    bool complete = 4;
 }
-
