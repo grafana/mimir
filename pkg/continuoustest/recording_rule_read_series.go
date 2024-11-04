@@ -3,6 +3,7 @@ package continuoustest
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
@@ -79,11 +80,33 @@ func (t *RecordingRuleReadSeriesTest) RunInner(
 	//}
 
 	queryMetric := queryRecordingRule(recordingRuleMetricName, "5m")
-	vector, err := t.client.QueryInstantRangeVector(ctx, queryMetric, now, WithResultsCacheEnabled(false))
+	matrix, err := t.client.QueryInstantRangeVector(ctx, queryMetric, now, WithResultsCacheEnabled(false))
 	if err != nil {
 		level.Warn(t.logger).Log("msg", "Failed to execute instant query", "err", err)
 		errs.Add(errors.Wrap(err, "failed to execute instant query"))
 		return
 	}
-	t.logger.Log("msg", "Query executed successfully", "vector", vector)
+
+	if len(matrix) != 1 {
+		errs.Add(fmt.Errorf("expected 1 series in the result but got %d", len(matrix)))
+		return
+	}
+
+	samples := matrix[0].Values
+	if len(samples) == 0 {
+		errs.Add(errors.New("expected at least one sample in the result"))
+		return
+	}
+
+	latestSample := samples[len(samples)-1]
+	ts := time.UnixMilli(int64(latestSample.Timestamp)).UTC()
+
+	updatedNow := time.Now().UTC()
+	fmt.Println("updatedNow", updatedNow)
+	fmt.Println("latest sample", ts)
+	fmt.Println("difference", updatedNow.Sub(ts))
+	if now.Sub(ts) > 1*time.Minute {
+		errs.Add(fmt.Errorf("latest sample is too old: %s", ts))
+		return
+	}
 }
