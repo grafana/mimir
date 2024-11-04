@@ -35,6 +35,12 @@ func newRejectMiddleware(limits Limits, logger log.Logger) MetricsQueryMiddlewar
 func (rm *rejectMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	// log := spanlogger.FromContext(ctx, rm.logger)
 
+	if !parser.EnableExperimentalFunctions {
+		// If experimental functions are disabled globally, we don't need to check for tenant-specific
+		// settings, and can skip this middleware and leave the checking to the rest of the flow.
+		return rm.next.Do(ctx, req)
+	}
+
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -43,6 +49,8 @@ func (rm *rejectMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Re
 	experimentalFunctionsEnabled := validation.AllTrueBooleansPerTenant(tenantIDs, rm.limits.PromQLExperimentalFunctionsEnabled)
 
 	if experimentalFunctionsEnabled {
+		// If experimental functions are enabled for this tenant, we don't need to check the query
+		// for those functions and can skip this middleware.
 		return rm.next.Do(ctx, req)
 	}
 
@@ -56,6 +64,7 @@ func (rm *rejectMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Re
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
+	// If the query does not contain any experimental functions, we can continue.
 	return rm.next.Do(ctx, req)
 }
 
