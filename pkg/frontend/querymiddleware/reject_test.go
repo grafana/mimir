@@ -50,7 +50,7 @@ func TestContainsExperimentalFunction(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.query)
 			require.NoError(t, err)
-			result := containsExperimentalFunction(expr)
+			result, _ := containsExperimentalFunction(expr)
 			require.Equal(t, tc.expect, result)
 		})
 	}

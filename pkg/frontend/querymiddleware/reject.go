@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -50,35 +51,45 @@ func (rm *rejectMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Re
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
-	if containsExperimentalFunction(expr) {
-		return nil, apierror.New(apierror.TypeBadData, "query contains experimental functions that are not enabled for the active tenant")
+	if res, name := containsExperimentalFunction(expr); res {
+		err := fmt.Errorf("function %q is not enabled for the active tenant", name)
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	return rm.next.Do(ctx, req)
 }
 
 // containsExperimentalFunction checks if the query contains PromQL experimental functions.
-func containsExperimentalFunction(expr parser.Expr) bool {
+func containsExperimentalFunction(expr parser.Expr) (bool, string) {
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
 		return containsExperimentalFunction(e.VectorSelector)
 	case *parser.Call:
 		if parser.Functions[e.Func.Name].Experimental {
-			return true
+			return true, e.Func.Name
 		}
 		for _, arg := range e.Args {
-			if containsExperimentalFunction(arg) {
-				return true
+			if res, name := containsExperimentalFunction(arg); res {
+				return true, name
 			}
 		}
 	case *parser.BinaryExpr:
-		return containsExperimentalFunction(e.LHS) || containsExperimentalFunction(e.RHS)
-	case *parser.AggregateExpr:
-		if e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
-			return true
+		if res, name := containsExperimentalFunction(e.LHS); res {
+			return true, name
 		}
-		if e.Param != nil && containsExperimentalFunction(e.Param) {
-			return true
+		if res, name := containsExperimentalFunction(e.RHS); res {
+			return true, name
+		}
+		return false, ""
+	case *parser.AggregateExpr:
+		switch e.Op {
+		case parser.LIMITK:
+			return true, "limitk"
+		case parser.LIMIT_RATIO:
+			return true, "limit_ratio"
+		}
+		if res, name := containsExperimentalFunction(e.Param); res {
+			return true, name
 		}
 		return containsExperimentalFunction(e.Expr)
 	case *parser.SubqueryExpr:
@@ -90,9 +101,9 @@ func containsExperimentalFunction(expr parser.Expr) bool {
 	case *parser.StepInvariantExpr:
 		return containsExperimentalFunction(e.Expr)
 	case *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
-		return false
+		return false, ""
 	default:
-		return false
+		return false, ""
 	}
-	return false
+	return false, ""
 }
