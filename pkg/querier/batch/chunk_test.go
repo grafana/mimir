@@ -236,10 +236,7 @@ func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ int64, _ *ze
 }
 
 func (i *mockIterator) BatchFloats(_ int) chunk.Batch {
-	return chunk.Batch{
-		Length:    chunk.BatchSize,
-		ValueType: chunkenc.ValFloat,
-	}
+	return i.Batch(0, chunkenc.ValFloat, 0, nil, nil)
 }
 
 func (i *mockIterator) Err() error {

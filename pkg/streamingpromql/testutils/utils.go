@@ -44,6 +44,12 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 
 			require.Equal(t, expectedSample.Metric, actualSample.Metric)
 			require.Equal(t, expectedSample.T, actualSample.T)
+			if expectedSample.H != nil && actualSample.H != nil && (expectedSample.H.CounterResetHint == histogram.UnknownCounterReset || actualSample.H.CounterResetHint == histogram.UnknownCounterReset) {
+				// Differences in iterator usage can result in different counter reset
+				// hints. Unknown is always a valid value and not comparable.
+				expectedSample.H.CounterResetHint = histogram.UnknownCounterReset
+				actualSample.H.CounterResetHint = histogram.UnknownCounterReset
+			}
 			require.Equal(t, expectedSample.H, actualSample.H)
 			requireInEpsilonIfNotZero(t, expectedSample.F, actualSample.F)
 		}
