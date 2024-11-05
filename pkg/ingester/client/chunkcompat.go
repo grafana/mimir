@@ -197,6 +197,7 @@ func seriesChunksToMatrix(from, through model.Time, lbls labels.Labels, metric m
 // FromChunks converts []client.Chunk to []chunk.Chunk.
 func FromChunks(metric labels.Labels, in []Chunk) ([]chunk.Chunk, error) {
 	out := make([]chunk.Chunk, 0, len(in))
+	prevMaxTime := int64(0)
 	for _, i := range in {
 		o, err := chunk.NewForEncoding(chunk.Encoding(byte(i.Encoding)))
 		if err != nil {
@@ -210,7 +211,8 @@ func FromChunks(metric labels.Labels, in []Chunk) ([]chunk.Chunk, error) {
 		firstTime, lastTime := model.Time(i.StartTimestampMs), model.Time(i.EndTimestampMs)
 		// As the lifetime of this chunk is scopes to this request, we don't need
 		// to supply a fingerprint.
-		out = append(out, chunk.NewChunk(metric, o, firstTime, lastTime))
+		out = append(out, chunk.NewChunk(metric, o, firstTime, lastTime, prevMaxTime))
+		prevMaxTime = int64(lastTime)
 	}
 	return out, nil
 }

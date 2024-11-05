@@ -20,15 +20,18 @@ import (
 type GenericChunk struct {
 	MinTime int64
 	MaxTime int64
+	// The maximum time of the previous chunk from the same stream/array.
+	PrevMaxTime int64
 
 	iterator func(reuse chunk.Iterator) chunk.Iterator
 }
 
-func NewGenericChunk(minTime, maxTime int64, iterator func(reuse chunk.Iterator) chunk.Iterator) GenericChunk {
+func NewGenericChunk(minTime, maxTime, prevMaxTime int64, iterator func(reuse chunk.Iterator) chunk.Iterator) GenericChunk {
 	return GenericChunk{
-		MinTime:  minTime,
-		MaxTime:  maxTime,
-		iterator: iterator,
+		MinTime:     minTime,
+		MaxTime:     maxTime,
+		PrevMaxTime: prevMaxTime,
+		iterator:    iterator,
 	}
 }
 
@@ -62,7 +65,7 @@ type iterator interface {
 func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk) chunkenc.Iterator {
 	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {
-		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
+		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.PrevMaxTime, c.Data.NewIterator)
 	}
 
 	return NewGenericChunkMergeIterator(it, lbls, converted)

@@ -20,6 +20,7 @@ type chunkIterator struct {
 	chunk GenericChunk
 	it    chunk.Iterator
 	batch chunk.Batch
+	lastT int64
 
 	hPool  *zeropool.Pool[*histogram.Histogram]
 	fhPool *zeropool.Pool[*histogram.FloatHistogram]
@@ -71,13 +72,12 @@ func (i *chunkIterator) Next(size int) chunkenc.ValueType {
 		if typ == chunkenc.ValFloat {
 			i.batch = i.it.BatchFloats(size)
 		} else {
-			prevT := int64(0)
-			// Carry over the last timestamp of the previous batch,
-			// if it exists and is of the same type.
-			if i.batch.ValueType == typ && i.batch.Length > 0 {
-				prevT = i.batch.Timestamps[i.batch.Length-1]
+			if i.batch.Length == 0 {
+				i.batch = i.it.Batch(size, typ, i.chunk.PrevMaxTime, i.hPool, i.fhPool)
+			} else {
+				i.batch = i.it.Batch(size, typ, i.lastT, i.hPool, i.fhPool)
 			}
-			i.batch = i.it.Batch(size, typ, prevT, i.hPool, i.fhPool)
+			i.lastT = i.batch.Timestamps[i.batch.Length-1]
 		}
 		if i.batch.Length > 0 {
 			return typ

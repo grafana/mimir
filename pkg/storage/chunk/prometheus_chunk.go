@@ -243,7 +243,11 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 	return p.it.AtT()
 }
 
-func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, prevT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch {
+// Batch fills the batch with the next size samples from the iterator.
+// Only meant for histogram and float histogram values.
+// lastT is the last timestamp from the previous batch (or 0).
+// lastPrevT is the previous timestamp recorded for the last sample in the previous batch (or 0)
+func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, lastT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch {
 	var batch Batch
 	batch.ValueType = valueType
 	var populate func(j int)
@@ -266,8 +270,8 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, 
 			}
 			t, h = p.it.AtHistogram(h)
 			batch.Timestamps[j], batch.PointerValues[j] = t, unsafe.Pointer(h)
-			*(*int64)(unsafe.Pointer(&(batch.Values[j]))) = prevT
-			prevT = t
+			*(*int64)(unsafe.Pointer(&(batch.Values[j]))) = lastT
+			lastT = t
 		}
 	case chunkenc.ValFloatHistogram:
 		populate = func(j int) {
@@ -282,8 +286,8 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, 
 			}
 			t, fh = p.it.AtFloatHistogram(fh)
 			batch.Timestamps[j], batch.PointerValues[j] = t, unsafe.Pointer(fh)
-			*(*int64)(unsafe.Pointer(&(batch.Values[j]))) = prevT
-			prevT = t
+			*(*int64)(unsafe.Pointer(&(batch.Values[j]))) = lastT
+			lastT = t
 		}
 	default:
 		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))

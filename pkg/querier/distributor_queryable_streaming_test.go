@@ -138,7 +138,7 @@ func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {
 	_, err = promChunk.Add(model.SamplePair{Timestamp: model.Time(time), Value: model.SampleValue(value)})
 	require.NoError(t, err)
 
-	chunks, err := client.ToChunks([]chunk.Chunk{chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Latest)})
+	chunks, err := client.ToChunks([]chunk.Chunk{chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Latest, 0)})
 	require.NoError(t, err)
 
 	return chunks[0]

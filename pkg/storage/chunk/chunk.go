@@ -86,7 +86,7 @@ type Iterator interface {
 	// For example, when creating a batch of chunkenc.ValHistogram or chunkenc.ValFloatHistogram
 	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
 	// the hPool or fhPool pool will be used instead of creating new ones.
-	Batch(size int, valueType chunkenc.ValueType, prevT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
+	Batch(size int, valueType chunkenc.ValueType, lastT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
 	// BatchFloats is a specialized Batch funtion for chunkenc.ValFloat values.
 	BatchFloats(size int) Batch
 	// Returns the last error encountered. In general, an error signals data
@@ -105,8 +105,24 @@ type Batch struct {
 	Timestamps [BatchSize]int64
 	// Values meaning depends on the ValueType field.
 	// If ValueType is ValFloat then it stores float sample values.
-	// Otherwise, it stores the timestamp of the previous sample or
-	// zero if unknown - after Seek for example.
+	// Otherwise, it stores information for deciding what to do with the
+	// counter reset of histograms. 0 means reset the hint.
+	// Non zero values are the previous timestamp of the sample, except for
+	// when the merge consumes the last sample of the batch it will write
+	// the timestamp of the last sample from the merge.
+	// E.g.:
+	//   Batch A (timestamp, previous timestamp):  [(T1, 0), (T2, T1), (T3, T2)]
+	//   Batch B (timestamp, previous timestamp):  [(T1, 0)]
+	// After merge:
+	//   Batch A (timestamp, previous timestamp):  [(T1, 0), (T2, T1), (T3, T3)]
+	//   Batch B (timestamp, previous timestamp):  [(T1, T3)]
+	// When stream A is advanced, T3==T3, so we don't need to reset the counter.
+	// When stream B is advanced, we'll notice that T1!=T3, so we need to reset
+	// the counter, since stream B missed some values. Thus we'll write 0 into
+	// the next first samples previous time.
+	// After advancing both streams:
+	//   Batch A: [(T4, T3)]
+	//   Batch B: [(T4, 0)]
 	Values [BatchSize]float64
 	// PointerValues store pointers to non-float complex values like histograms,
 	// float histograms or future additions. Since Batch is expected to be passed
@@ -150,15 +166,30 @@ func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
 // PrevT returns the timestamp of the previous sample when
 // the value type is not ValFloat.
 func (b *Batch) PrevT() int64 {
-	if b.ValueType == chunkenc.ValFloat {
-		return 0
+	if b.ValueType == chunkenc.ValHistogram || b.ValueType == chunkenc.ValFloatHistogram {
+		return *(*int64)(unsafe.Pointer(&(b.Values[b.Index])))
 	}
-	return *(*int64)(unsafe.Pointer(&(b.Values[b.Index])))
+	return 0
+}
+
+// LastTimes returns the last timestamp and previous timestamp of the batch.
+// Only meant for non float batches.
+func (b *Batch) LastT() int64 {
+	if b.Length > 0 {
+		return b.Timestamps[b.Length-1]
+	}
+	return 0
 }
 
 func (b *Batch) SetPrevT(t int64) {
-	if b.ValueType != chunkenc.ValFloat {
+	if b.ValueType == chunkenc.ValHistogram || b.ValueType == chunkenc.ValFloatHistogram {
 		*(*int64)(unsafe.Pointer(&(b.Values[b.Index]))) = t
+	}
+}
+
+func (b *Batch) SetLastPrevT(t int64) {
+	if b.Length > 0 && (b.ValueType == chunkenc.ValHistogram || b.ValueType == chunkenc.ValFloatHistogram) {
+		*(*int64)(unsafe.Pointer(&(b.Values[b.Length-1]))) = t
 	}
 }
 
@@ -168,15 +199,19 @@ type Chunk struct {
 	Through model.Time    `json:"through"`
 	Metric  labels.Labels `json:"metric"`
 	Data    EncodedChunk  `json:"-"`
+	// PrevMaxTime is the maximum timestamp of the previous chunk,
+	// from the same source stream.
+	PrevMaxTime int64
 }
 
 // NewChunk creates a new chunk
-func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Chunk {
+func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time, prevMaxT int64) Chunk {
 	return Chunk{
-		From:    from,
-		Through: through,
-		Metric:  metric,
-		Data:    c,
+		From:        from,
+		Through:     through,
+		Metric:      metric,
+		Data:        c,
+		PrevMaxTime: prevMaxT,
 	}
 }
 

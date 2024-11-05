@@ -6,10 +6,12 @@
 package batch
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
@@ -82,7 +84,7 @@ func TestMergeIteratorSeek(t *testing.T) {
 			app.Append(ts, 1)
 		}
 
-		genericChunks = append(genericChunks, NewGenericChunk(samples[0], samples[len(samples)-1], func(reuse chunk.Iterator) chunk.Iterator {
+		genericChunks = append(genericChunks, NewGenericChunk(samples[0], samples[len(samples)-1], 0, func(reuse chunk.Iterator) chunk.Iterator {
 			chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 			require.NoError(t, err)
 			require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
@@ -106,4 +108,129 @@ func TestMergeIteratorSeek(t *testing.T) {
 	c3It.Seek(95)
 
 	require.Equal(t, int64(100), c3It.AtT())
+}
+
+func TestMergeIteratorCounterResets(t *testing.T) {
+	h40 := histogram.Histogram{
+		Count: 40,
+		Sum:   40,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+		},
+		PositiveBuckets: []int64{40},
+	}
+	h30 := histogram.Histogram{
+		Count: 30,
+		Sum:   30,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+		},
+		PositiveBuckets: []int64{30},
+	}
+	h20 := histogram.Histogram{
+		Count: 20,
+		Sum:   20,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+		},
+		PositiveBuckets: []int64{20},
+	}
+
+	type hSample struct {
+		t int64
+		h *histogram.Histogram
+	}
+
+	// Make chunks from samples and simulate that they came
+	// from the same source - the prevMaxT is set correctly.
+	sampleToChunks := func(samples []hSample) []chunk.Chunk {
+		chunks := []chunk.Chunk{}
+		pc, err := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)
+		require.NoError(t, err)
+		mint := samples[0].t
+		maxt := samples[0].t
+		prevMaxT := int64(0)
+		for _, s := range samples {
+			overFlow, err := pc.AddHistogram(s.t, s.h)
+			require.NoError(t, err)
+			if overFlow != nil {
+				chunks = append(chunks, chunk.NewChunk(nil, pc, model.Time(mint), model.Time(maxt), prevMaxT))
+				prevMaxT = maxt
+				mint = s.t
+				pc = overFlow
+			}
+			maxt = s.t
+		}
+		chunks = append(chunks, chunk.NewChunk(nil, pc, model.Time(mint), model.Time(maxt), prevMaxT))
+		return chunks
+	}
+
+	type tc struct {
+		chunks []chunk.Chunk
+		expect []histogram.CounterResetHint
+	}
+
+	testCases := map[string]tc{
+		"clear reset when streams end differently": {
+			chunks: append(sampleToChunks([]hSample{{1, &h40}, {3, &h30}}), sampleToChunks([]hSample{{1, &h40}, {2, &h20}})...),
+			expect: []histogram.CounterResetHint{
+				histogram.UnknownCounterReset,
+				histogram.CounterReset,
+				histogram.UnknownCounterReset,
+			},
+		},
+		"clear reset when stream differ in the middle": {
+			chunks: append(sampleToChunks([]hSample{{1, &h40}, {3, &h30}}), sampleToChunks([]hSample{{1, &h40}, {2, &h20}, {3, &h30}})...),
+			expect: []histogram.CounterResetHint{
+				histogram.UnknownCounterReset,
+				histogram.CounterReset,
+				histogram.UnknownCounterReset,
+			},
+		},
+		"keep reset when streams are the same": {
+			chunks: append(sampleToChunks([]hSample{{1, &h40}, {2, &h20}, {3, &h30}}), sampleToChunks([]hSample{{1, &h40}, {2, &h20}, {3, &h30}})...),
+			expect: []histogram.CounterResetHint{
+				histogram.UnknownCounterReset,
+				histogram.CounterReset,
+				histogram.NotCounterReset,
+			},
+		},
+	}
+
+	// Set up multiple test cases to test that time distance between chunks
+	// does not affect the counter reset hint. Merge works over batch reuse.
+	for i := 3; i <= chunk.BatchSize*2; i++ {
+		stream1 := []hSample{{1, &h40}, {int64(i), &h30}}
+		stream2 := []hSample{}
+		expect := []histogram.CounterResetHint{}
+		for j := 1; j <= i-2; j++ {
+			if j == 1 {
+				expect = append(expect, histogram.UnknownCounterReset)
+			} else {
+				expect = append(expect, histogram.NotCounterReset)
+			}
+			stream2 = append(stream2, hSample{int64(j), &h40})
+		}
+		stream2 = append(stream2, hSample{int64(i - 1), &h20})
+		expect = append(expect, histogram.CounterReset)
+		expect = append(expect, histogram.UnknownCounterReset)
+		testCases[fmt.Sprintf("distance between samples %d", i-1)] = tc{
+			chunks: append(sampleToChunks(stream1), sampleToChunks(stream2)...),
+			expect: expect,
+		}
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			iter := NewChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
+			i := 0
+			for iter.Next() != chunkenc.ValNone {
+				ts, h := iter.AtHistogram(nil)
+				require.Less(t, i, len(tc.expect))
+				require.Equal(t, tc.expect[i], h.CounterResetHint, ts)
+				i++
+			}
+			require.Equal(t, len(tc.expect), i)
+		})
+	}
 }

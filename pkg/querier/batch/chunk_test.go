@@ -74,12 +74,12 @@ func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Enc
 		ts = ts.Add(step)
 	}
 	ts = ts.Add(-step) // undo the add that we did just before exiting the loop
-	return chunk.NewChunk(metric, pc, from, ts)
+	return chunk.NewChunk(metric, pc, from, ts, 0)
 }
 
 func mkGenericChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) GenericChunk {
 	ck := mkChunk(t, from, points, encoding)
-	return NewGenericChunk(int64(ck.From), int64(ck.Through), ck.Data.NewIterator)
+	return NewGenericChunk(int64(ck.From), int64(ck.Through), 0, ck.Data.NewIterator)
 }
 
 func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
@@ -253,7 +253,7 @@ func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
 		app.Append(ts, float64(ts))
 	}
 
-	genericChunk := NewGenericChunk(chunkTimestamps[0], chunkTimestamps[len(chunkTimestamps)-1], func(reuse chunk.Iterator) chunk.Iterator {
+	genericChunk := NewGenericChunk(chunkTimestamps[0], chunkTimestamps[len(chunkTimestamps)-1], 0, func(reuse chunk.Iterator) chunk.Iterator {
 		chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 		require.NoError(t, err)
 		require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))

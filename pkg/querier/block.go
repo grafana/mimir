@@ -123,7 +123,7 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 	genericChunks := make([]batch.GenericChunk, 0, len(chunks))
 
 	for _, c := range chunks {
-		genericChunk := batch.NewGenericChunk(c.MinTime, c.MaxTime, func(reuse chunk.Iterator) chunk.Iterator {
+		genericChunk := batch.NewGenericChunk(c.MinTime, c.MaxTime, 0, func(reuse chunk.Iterator) chunk.Iterator {
 			encoding, ok := c.GetChunkEncoding()
 			if !ok {
 				return chunk.ErrorIterator(fmt.Sprintf("cannot create new chunk for series %s: unknown encoded raw data type %v", lbls, c.Raw.Type))

@@ -135,7 +135,7 @@ func TestDistributorQuerier_Select(t *testing.T) {
 	require.NoError(t, err)
 
 	clientChunks, err := client.ToChunks([]chunk.Chunk{
-		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest, 0),
 	})
 	require.NoError(t, err)
 
@@ -602,9 +602,9 @@ func TestDistributorQuerier_Select_FixedInflatedCounterResets(t *testing.T) {
 				case 1:
 					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
 				case 2:
-					require.Contains(t, []histogram.CounterResetHint{histogram.CounterReset, histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+					require.Contains(t, []histogram.CounterResetHint{histogram.CounterReset}, h.CounterResetHint, "time %d", ts)
 				case 3:
-					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset, histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
 				}
 			}
 			require.NoError(t, it.Err())
@@ -655,7 +655,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	require.Nil(b, overflowChunk)
 
 	clientChunks, err := client.ToChunks([]chunk.Chunk{
-		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest, 0),
 	})
 	require.NoError(b, err)
 
@@ -752,6 +752,7 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 		overflow chunk.EncodedChunk
 		enc      chunk.Encoding
 		ts       int64
+		prevMaxT int64
 		err      error
 	)
 
@@ -762,7 +763,8 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != reqEnc {
 			c, err := chunk.NewForEncoding(reqEnc)
 			require.NoError(t, err)
-			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(reqTs), model.Time(reqTs)))
+			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(reqTs), model.Time(reqTs), prevMaxT))
+			prevMaxT = reqTs
 		}
 	}
 
@@ -793,7 +795,8 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 		}
 		c, err := chunk.NewForEncoding(enc)
 		require.NoError(t, err)
-		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts)))
+		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts), prevMaxT))
+		prevMaxT = ts
 		chunks[len(chunks)-1].Data = overflow
 	}
 
