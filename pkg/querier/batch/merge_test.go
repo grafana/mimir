@@ -154,14 +154,14 @@ func TestMergeIteratorCounterResets(t *testing.T) {
 			overFlow, err := pc.AddHistogram(s.t, s.h)
 			require.NoError(t, err)
 			if overFlow != nil {
-				chunks = append(chunks, chunk.NewChunk(nil, pc, model.Time(mint), model.Time(maxt), prevMaxT))
+				chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), pc, model.Time(mint), model.Time(maxt), prevMaxT))
 				prevMaxT = maxt
 				mint = s.t
 				pc = overFlow
 			}
 			maxt = s.t
 		}
-		chunks = append(chunks, chunk.NewChunk(nil, pc, model.Time(mint), model.Time(maxt), prevMaxT))
+		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), pc, model.Time(mint), model.Time(maxt), prevMaxT))
 		return chunks
 	}
 
