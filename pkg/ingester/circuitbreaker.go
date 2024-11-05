@@ -95,7 +95,7 @@ func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	f.UintVar(&cfg.FailureExecutionThreshold, prefix+"failure-execution-threshold", 100, "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures")
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+"thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
 	f.DurationVar(&cfg.CooldownPeriod, prefix+"cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
-	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.")
+	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long after an initial request an activated circuit breaker should wait before becoming effectively active. During this time neither failures nor successes will not be counted.")
 	f.DurationVar(&cfg.RequestTimeout, prefix+"request-timeout", defaultRequestDuration, "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
 }
 
@@ -107,6 +107,7 @@ type circuitBreaker struct {
 	logger      log.Logger
 	metrics     *circuitBreakerMetrics
 	active      atomic.Bool
+	activating  atomic.Bool
 	cb          circuitbreaker.CircuitBreaker[any]
 
 	// testRequestDelay is needed for testing purposes to simulate long-lasting requests
@@ -187,27 +188,29 @@ func (cb *circuitBreaker) isActive() bool {
 	return cb != nil && cb.active.Load()
 }
 
+func (cb *circuitBreaker) isActivating() bool {
+	return cb != nil && cb.activating.Load()
+}
+
 func (cb *circuitBreaker) activate() {
-	if cb == nil || cb.active.Load() {
+	if cb == nil || cb.active.Load() || cb.cfg.InitialDelay > 0 {
 		return
 	}
-	if cb.cfg.InitialDelay == 0 {
-		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
-		cb.active.Store(true)
-		return
-	}
-	time.AfterFunc(cb.cfg.InitialDelay, func() {
-		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
-		cb.active.Store(true)
-	})
+	level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
+	cb.active.Store(true)
 }
 
 func (cb *circuitBreaker) deactivate() {
 	if cb == nil || !cb.active.Load() {
+		// cancel delayed activation if it was scheduled
+		if !cb.activating.CompareAndSwap(true, false) {
+			level.Info(cb.logger).Log("msg", "cancelling delayed circuit breaker activation", "requestType", cb.requestType)
+		}
 		return
 	}
 	level.Info(cb.logger).Log("msg", "deactivating circuit breaker", "requestType", cb.requestType)
 	cb.active.Store(false)
+	cb.activating.Store(false)
 }
 
 func (cb *circuitBreaker) isOpen() bool {
@@ -222,6 +225,17 @@ func (cb *circuitBreaker) isOpen() bool {
 // If it was not possible, the causing error is returned.
 func (cb *circuitBreaker) tryAcquirePermit() (func(time.Duration, error), error) {
 	if !cb.isActive() {
+		// We only want one request to schedule the delayed activation of the circuit breaker.
+		if cb.cfg.InitialDelay > 0 && cb.activating.CompareAndSwap(false, true) {
+			level.Info(cb.logger).Log("msg", "scheduling delayed circuit breaker activation", "requestType", cb.requestType, "delay", cb.cfg.InitialDelay)
+			time.AfterFunc(cb.cfg.InitialDelay, func() {
+				// Don't activate the circuit breaker if it was deactivated during the delay.
+				if cb.activating.Load() {
+					level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
+					cb.active.Store(true)
+				}
+			})
+		}
 		return func(time.Duration, error) {}, nil
 	}
 
