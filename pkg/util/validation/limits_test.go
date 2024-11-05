@@ -1429,7 +1429,7 @@ func TestIntStringJSONAMLAlertmanagerSizeLimits(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			limitsJSON := Limits{}
 			err := json.Unmarshal([]byte(tc.inputJSON), &limitsJSON)
-			require.NoError(t, err, "expected to be able to unmarshal from YAML")
+			require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
 			ov, err := NewOverrides(limitsJSON, nil)
 			require.NoError(t, err)
