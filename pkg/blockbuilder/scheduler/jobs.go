@@ -38,6 +38,12 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 	}
 }
 
+func (s *jobQueue) setEpoch(epoch uint) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch = epoch
+}
+
 // assign assigns the highest-priority unassigned job to the given worker.
 func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
 	if workerID == "" {
@@ -75,14 +81,18 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 
 	j, ok := s.jobs[key.id]
 	if ok {
-		if j.assignee != workerID {
-			return errJobNotAssigned
-		} else if key.epoch < j.key.epoch {
+		if key.epoch < j.key.epoch {
 			return errBadEpoch
+		} else if key.epoch == j.key.epoch {
+			if j.assignee != workerID {
+				return errJobNotAssigned
+			}
+		} else {
+			// Otherwise, this caller is the new authority, so we accept the update.
+			j.assignee = workerID
+			j.key = key
+			j.spec = spec
 		}
-		// Otherwise we're going to update the job.
-		j.key = key
-		j.spec = spec
 	} else {
 		j = &job{
 			key:         key,
@@ -92,7 +102,6 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 			spec:        spec,
 		}
 		s.jobs[key.id] = j
-		heap.Push(&s.unassigned, j)
 	}
 	return nil
 }

@@ -125,6 +125,25 @@ func TestLease(t *testing.T) {
 	})
 }
 
+// TestImportJob tests the importJob method - the method that is called to learn
+// about jobs in-flight from a previous scheduler instance.
+func TestImportJob(t *testing.T) {
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
+	spec := jobSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
+	require.NoError(t, s.importJob(jobKey{"job1", 122}, "w0", spec))
+	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
+	require.ErrorIs(t, errBadEpoch, s.importJob(jobKey{"job1", 122}, "w0", spec))
+	require.ErrorIs(t, errBadEpoch, s.importJob(jobKey{"job1", 60}, "w98", spec))
+	require.ErrorIs(t, errJobNotAssigned, s.importJob(jobKey{"job1", 123}, "w512", spec))
+	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
+
+	j, ok := s.jobs["job1"]
+	require.True(t, ok)
+	require.Equal(t, jobKey{"job1", 123}, j.key)
+	require.Equal(t, spec, j.spec)
+	require.Equal(t, "w2", j.assignee)
+}
+
 func TestMinHeap(t *testing.T) {
 	n := 513
 	jobs := make([]*job, n)

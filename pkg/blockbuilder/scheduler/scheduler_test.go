@@ -48,7 +48,7 @@ func TestClientInterface(t *testing.T) {
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
 	sched.adminClient = kadm.NewClient(cli)
 	require.NoError(t, err)
-	sched.observationComplete.Store(true)
+	sched.observationComplete = true
 
 	now := time.Now()
 
@@ -140,7 +140,13 @@ func TestStartup(t *testing.T) {
 	sched.adminClient = kadm.NewClient(cli)
 	require.NoError(t, err)
 
-	sched.observationComplete.Store(false)
+	// (observation period not complete)
+
+	{
+		_, _, err := sched.assignJob("w0")
+		require.ErrorContains(t, err, "observation period not complete")
+	}
+
 	now := time.Now()
 
 	// Some jobs that ostensibly exist, but scheduler doesn't know about.
@@ -163,8 +169,8 @@ func TestStartup(t *testing.T) {
 		},
 		spec: jobSpec{
 			topic:       "ingest",
-			partition:   64,
-			startOffset: 1000,
+			partition:   65,
+			startOffset: 256,
 			commitRecTs: now.Add(-2 * time.Hour),
 		},
 	}
@@ -192,7 +198,7 @@ func TestStartup(t *testing.T) {
 	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec))
 	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
 
-	sched.observationComplete.Store(true)
+	sched.completeRecovery()
 
 	// Now that we're out of observation mode, we should know about all the jobs.
 
@@ -203,10 +209,18 @@ func TestStartup(t *testing.T) {
 
 	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
 
+	_, ok := sched.jobs.jobs[j1.key.id]
+	require.True(t, ok)
+
 	// And eventually they'll all complete.
 	require.NoError(t, sched.updateJob(j1.key, "w0", true, j1.spec))
 	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec))
 	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
+
+	{
+		_, _, err := sched.assignJob("w0")
+		require.ErrorIs(t, err, errNoJobAvailable)
+	}
 }
 
 func TestMonitor(t *testing.T) {
@@ -227,7 +241,6 @@ func TestMonitor(t *testing.T) {
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
 	sched.adminClient = kadm.NewClient(cli)
 	require.NoError(t, err)
-	sched.observationComplete.Store(true)
 
 	// Partition i gets i records.
 	for i := int32(0); i < 4; i++ {

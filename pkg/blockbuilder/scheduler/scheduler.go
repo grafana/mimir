@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/blockbuilder"
@@ -25,17 +24,18 @@ import (
 type BlockBuilderScheduler struct {
 	services.Service
 
-	adminClient         *kadm.Client
-	jobs                *jobQueue
-	cfg                 Config
-	logger              log.Logger
-	register            prometheus.Registerer
-	metrics             schedulerMetrics
-	observationComplete *atomic.Bool
+	adminClient *kadm.Client
+	jobs        *jobQueue
+	cfg         Config
+	logger      log.Logger
+	register    prometheus.Registerer
+	metrics     schedulerMetrics
 
-	mu        sync.Mutex
-	committed kadm.Offsets
-	dirty     bool
+	mu                  sync.Mutex
+	committed           kadm.Offsets
+	dirty               bool
+	recovered           map[string]*recoveredJob
+	observationComplete bool
 }
 
 func New(
@@ -44,13 +44,14 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:                newJobQueue(cfg.JobLeaseTime, logger),
-		cfg:                 cfg,
-		logger:              logger,
-		register:            reg,
-		metrics:             newSchedulerMetrics(reg),
-		observationComplete: atomic.NewBool(false),
-		committed:           make(kadm.Offsets),
+		jobs:     newJobQueue(cfg.JobLeaseTime, logger),
+		cfg:      cfg,
+		logger:   logger,
+		register: reg,
+		metrics:  newSchedulerMetrics(reg),
+
+		committed: make(kadm.Offsets),
+		recovered: make(map[string]*recoveredJob),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -93,7 +94,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}()
 	wg.Wait()
 
-	s.observationComplete.Store(true)
+	s.completeRecovery()
 
 	// Now that that's done, we can start the main loop.
 
@@ -167,7 +168,11 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 // assignJob returns an assigned job for the given workerID.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, error) {
-	if !s.observationComplete.Load() {
+	s.mu.Lock()
+	c := s.observationComplete
+	s.mu.Unlock()
+
+	if !c {
 		return jobKey{}, jobSpec{}, status.Error(codes.Unavailable, "observation period not complete")
 	}
 
@@ -177,21 +182,22 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, err
 // updateJob takes a job update from the client and records it, if necessary.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j jobSpec) error {
-	if !s.observationComplete.Load() {
-		// We're in observation mode, so learning about a job should trigger its
-		// creation in the queue.
-
-		if err := s.jobs.importJob(key, workerID, j); err != nil {
-			return fmt.Errorf("import job: %w", err)
-		}
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if !s.observationComplete {
+		if err := s.recordUpdate(key, workerID, complete, j); err != nil {
+			return err
+		}
+
+		s.logger.Log("msg", "recovered job", "key", key, "worker", workerID)
+		return nil
+	}
 
 	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
 		if j.startOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
+			s.logger.Log("msg", "ignored historical job", "key", key, "worker", workerID)
 			return nil
 		}
 	}
@@ -205,11 +211,71 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 		}
 		s.committed.AddOffset(s.cfg.Kafka.Topic, j.partition, j.endOffset, -1)
 		s.dirty = true
+		s.logger.Log("msg", "completed job", "key", key, "worker", workerID)
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
+		s.logger.Log("msg", "renewed lease", "key", key, "worker", workerID)
 	}
 	return nil
+}
+
+type recoveredJob struct {
+	key      jobKey
+	spec     jobSpec
+	workerID string
+	complete bool
+}
+
+func (s *BlockBuilderScheduler) recordUpdate(key jobKey, workerID string, complete bool, j jobSpec) error {
+	rj, ok := s.recovered[key.id]
+	if !ok {
+		s.recovered[key.id] = &recoveredJob{
+			key:      key,
+			spec:     j,
+			workerID: workerID,
+			complete: complete,
+		}
+		return nil
+	}
+
+	// Otherwise, it exists. Higher epochs win, and cause earlier ones to fail.
+
+	if key.epoch < rj.key.epoch {
+		return errBadEpoch
+	}
+
+	rj.key = key
+	rj.spec = j
+	rj.workerID = workerID
+	rj.complete = complete
+	return nil
+}
+
+func (s *BlockBuilderScheduler) completeRecovery() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	committed := make(map[int32]int64)
+	var highEpoch uint
+
+	for _, rj := range s.recovered {
+		highEpoch = max(highEpoch, rj.key.epoch)
+
+		if rj.complete {
+			if o, ok := committed[rj.spec.partition]; !ok || o < rj.spec.endOffset {
+				committed[rj.spec.partition] = rj.spec.endOffset
+			}
+		} else {
+			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
+				level.Warn(s.logger).Log("msg", "failed to recover job", "err", err)
+			}
+		}
+	}
+
+	s.jobs.setEpoch(highEpoch + 1)
+	s.observationComplete = true
+	s.recovered = nil
 }
