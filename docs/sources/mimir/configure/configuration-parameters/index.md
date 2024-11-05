@@ -1295,9 +1295,9 @@ push_circuit_breaker:
   # CLI flag: -ingester.push-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between an
-  # activation request and becoming effectively active. During that time both
-  # failures and successes will not be counted.
+  # (experimental) How long after an initial request an activated circuit
+  # breaker should wait before becoming effectively active. During this time
+  # neither failures nor successes will not be counted.
   # CLI flag: -ingester.push-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
@@ -1332,9 +1332,9 @@ read_circuit_breaker:
   # CLI flag: -ingester.read-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between an
-  # activation request and becoming effectively active. During that time both
-  # failures and successes will not be counted.
+  # (experimental) How long after an initial request an activated circuit
+  # breaker should wait before becoming effectively active. During this time
+  # neither failures nor successes will not be counted.
   # CLI flag: -ingester.read-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
