@@ -93,6 +93,10 @@ type iteratorAdapter struct {
 	curr       chunk.Batch
 	underlying iterator
 	labels     labels.Labels
+	// To indicate that we need to reset the counter reset hint after Seek.
+	// We cannot do this at the point of the Seek to not overwrite the input.
+	// So we defer this to the next At* call to be acted on the copied histogram.
+	afterSeek bool
 }
 
 func newIteratorAdapter(it *iteratorAdapter, underlying iterator, lbls labels.Labels) chunkenc.Iterator {
@@ -117,12 +121,18 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
+			if a.curr.ValueType != chunkenc.ValFloat {
+				a.afterSeek = true
+			}
 			return a.curr.ValueType
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
 			//the seek. Let's find it.
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
 				a.curr.Index++
+			}
+			if a.curr.ValueType != chunkenc.ValFloat {
+				a.afterSeek = true
 			}
 			return a.curr.ValueType
 		}
@@ -133,6 +143,9 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 	if typ := a.underlying.Seek(t, a.batchSize); typ != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
 		if a.curr.Index < a.curr.Length {
+			if typ != chunkenc.ValFloat {
+				a.afterSeek = true
+			}
 			return typ
 		}
 	}
@@ -176,6 +189,13 @@ func (a *iteratorAdapter) AtHistogram(h *histogram.Histogram) (int64, *histogram
 	}
 	fromH := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
 	fromH.CopyTo(h)
+	if a.afterSeek {
+		if h.CounterResetHint != histogram.GaugeType {
+			h.CounterResetHint = histogram.UnknownCounterReset
+		}
+		a.afterSeek = false
+	}
+
 	return a.curr.Timestamps[a.curr.Index], h
 }
 
@@ -191,11 +211,23 @@ func (a *iteratorAdapter) AtFloatHistogram(fh *histogram.FloatHistogram) (int64,
 	if a.curr.ValueType == chunkenc.ValFloatHistogram {
 		fromFH := (*histogram.FloatHistogram)(a.curr.PointerValues[a.curr.Index])
 		fromFH.CopyTo(fh)
+		if a.afterSeek {
+			if fh.CounterResetHint != histogram.GaugeType {
+				fh.CounterResetHint = histogram.UnknownCounterReset
+			}
+			a.afterSeek = false
+		}
 		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	if a.curr.ValueType == chunkenc.ValHistogram {
 		fromH := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
 		fromH.ToFloat(fh)
+		if a.afterSeek {
+			if fh.CounterResetHint != histogram.GaugeType {
+				fh.CounterResetHint = histogram.UnknownCounterReset
+			}
+			a.afterSeek = false
+		}
 		return a.curr.Timestamps[a.curr.Index], fh
 	}
 	panic(fmt.Sprintf("Cannot read floathistogram from batch %v", a.curr.ValueType))

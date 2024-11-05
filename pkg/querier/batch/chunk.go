@@ -48,6 +48,9 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 			i.batch.Index++
 		}
 		if i.batch.Index+size < i.batch.Length {
+			// Set the previous timestamp to 0 (unknown) to be consistent with the
+			// non-fast path Seek below.
+			i.batch.SetPrevT(0)
 			return i.batch.ValueType
 		}
 	}

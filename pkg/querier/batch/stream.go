@@ -149,14 +149,16 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
 			prevT := batch.PrevT()
-			if prevT == 0 && (*histogram.Histogram)(b.PointerValues[b.Index]).CounterResetHint != histogram.GaugeType {
+			if prevT == 0 && (*histogram.Histogram)(b.PointerValues[b.Index]).CounterResetHint != histogram.GaugeType &&
+				(*histogram.Histogram)(b.PointerValues[b.Index]).CounterResetHint != histogram.UnknownCounterReset {
 				(*histogram.Histogram)(b.PointerValues[b.Index]).CounterResetHint = histogram.UnknownCounterReset
 			}
 			b.SetPrevT(prevT)
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
 			prevT := batch.PrevT()
-			if prevT == 0 && (*histogram.FloatHistogram)(b.PointerValues[b.Index]).CounterResetHint != histogram.GaugeType {
+			if prevT == 0 && (*histogram.FloatHistogram)(b.PointerValues[b.Index]).CounterResetHint != histogram.GaugeType &&
+				(*histogram.FloatHistogram)(b.PointerValues[b.Index]).CounterResetHint != histogram.UnknownCounterReset {
 				(*histogram.FloatHistogram)(b.PointerValues[b.Index]).CounterResetHint = histogram.UnknownCounterReset
 			}
 			b.SetPrevT(prevT)
@@ -177,6 +179,12 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 				batch.SetPrevT(0)
 			}
 		}
+		if lt != chunkenc.ValFloat && bs.lastTimeStamp < t1 {
+			// This histogram sample falls after the last sample in the merge.
+			if prevT := bs.curr().PrevT(); prevT != 0 && prevT < bs.lastTimeStamp {
+				bs.curr().SetPrevT(0)
+			}
+		}
 
 		if t1 < t2 {
 			populate(bs.curr(), lt)
@@ -192,11 +200,6 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		// We have samples at the same time.
 		// Happy case is that they are of the same type.
 		if lt == rt {
-			// Reset the hint if there's disagreement on what the previous sample was
-			// or if both sides wanted to reset the hint.
-			if lt != chunkenc.ValFloat && (bs.curr().PrevT() != batch.PrevT() || batch.PrevT() == 0) {
-				bs.curr().SetPrevT(0)
-			}
 			populate(bs.curr(), lt)
 			// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
 			if rt == chunkenc.ValHistogram && bs.hPool != nil {
@@ -243,6 +246,12 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 	}
 
 	for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
+		if t != chunkenc.ValFloat {
+			// This histogram sample falls after the last sample in the merge.
+			if prevT := bs.curr().PrevT(); prevT != 0 && prevT < bs.lastTimeStamp {
+				bs.curr().SetPrevT(0)
+			}
+		}
 		populate(bs.curr(), t)
 		bs.next()
 	}

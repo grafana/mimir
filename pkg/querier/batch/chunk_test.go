@@ -35,11 +35,19 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	chunk := mkGenericChunk(t, 0, 100, encoding)
 	iter := &chunkIterator{}
 
-	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
+	expectReset := func(ts model.Time, atSeek bool) histogram.CounterResetHint {
+		if ts == 0 || atSeek {
+			return histogram.UnknownCounterReset
+		} else {
+			return histogram.NotCounterReset
+		}
+	}
 
 	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
+	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding, expectReset)
+
+	iter.reset(chunk)
+	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding, expectReset)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -82,7 +90,21 @@ func mkGenericChunk(t require.TestingT, from model.Time, points int, encoding ch
 	return NewGenericChunk(int64(ck.From), int64(ck.Through), 0, ck.Data.NewIterator)
 }
 
-func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
+func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, expectReset func(ts model.Time, atSeek bool) histogram.CounterResetHint) {
+	if expectReset == nil {
+		expectReset = func(ts model.Time, atSeek bool) histogram.CounterResetHint {
+			if atSeek {
+				return histogram.UnknownCounterReset
+			}
+			if ts == 0 || ts == 1000 {
+				// This test is usually used for samples after merge, where
+				// samples at 0 and 1 have a 0 previous sample time, which means reset.
+				return histogram.UnknownCounterReset
+			} else {
+				return histogram.NotCounterReset
+			}
+		}
+	}
 	nextExpectedTS := model.TimeFromUnix(0)
 	var assertPoint func(i int)
 	switch encoding {
@@ -100,10 +122,8 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			expH := test.GenerateTestHistogram(int(nextExpectedTS))
-			if nextExpectedTS > 0 {
-				expH.CounterResetHint = histogram.NotCounterReset
-			}
-			test.RequireHistogramEqual(t, expH, h, strconv.Itoa(i))
+			expH.CounterResetHint = expectReset(nextExpectedTS, false)
+			test.RequireHistogramEqual(t, expH, h, strconv.Itoa(int(nextExpectedTS)))
 			nextExpectedTS = nextExpectedTS.Add(step)
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -112,9 +132,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			expFH := test.GenerateTestFloatHistogram(int(nextExpectedTS))
-			if nextExpectedTS > 0 {
-				expFH.CounterResetHint = histogram.NotCounterReset
-			}
+			expFH.CounterResetHint = expectReset(nextExpectedTS, false)
 			test.RequireFloatHistogramEqual(t, expFH, fh, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
 		}
@@ -127,11 +145,25 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	require.Equal(t, chunkenc.ValNone, iter.Next())
 }
 
-func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
-	var assertPoint func(expectedTS int64, valType chunkenc.ValueType)
+func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, expectReset func(ts model.Time, atSeek bool) histogram.CounterResetHint) {
+	if expectReset == nil {
+		expectReset = func(ts model.Time, atSeek bool) histogram.CounterResetHint {
+			if atSeek {
+				return histogram.UnknownCounterReset
+			}
+			if ts == 0 || ts == 1000 {
+				// This test is usually used for samples after merge, where
+				// samples at 0 and 1 have a 0 previous sample time, which means reset.
+				return histogram.UnknownCounterReset
+			} else {
+				return histogram.NotCounterReset
+			}
+		}
+	}
+	var assertPoint func(expectedTS int64, valType chunkenc.ValueType, atSeek bool)
 	switch encoding {
 	case chunk.PrometheusXorChunk:
-		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
+		assertPoint = func(expectedTS int64, valType chunkenc.ValueType, _ bool) {
 			require.Equal(t, chunkenc.ValFloat, valType)
 			ts, v := iter.At()
 			require.EqualValues(t, expectedTS, ts)
@@ -139,26 +171,22 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.NoError(t, iter.Err())
 		}
 	case chunk.PrometheusHistogramChunk:
-		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
+		assertPoint = func(expectedTS int64, valType chunkenc.ValueType, atSeek bool) {
 			require.Equal(t, chunkenc.ValHistogram, valType)
 			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			expH := test.GenerateTestHistogram(int(expectedTS))
-			if expectedTS > 0 {
-				expH.CounterResetHint = histogram.NotCounterReset
-			}
-			test.RequireHistogramEqual(t, expH, h)
+			expH.CounterResetHint = expectReset(model.Time(expectedTS), atSeek)
+			test.RequireHistogramEqual(t, expH, h, expectedTS)
 			require.NoError(t, iter.Err())
 		}
 	case chunk.PrometheusFloatHistogramChunk:
-		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
+		assertPoint = func(expectedTS int64, valType chunkenc.ValueType, atSeek bool) {
 			require.Equal(t, chunkenc.ValFloatHistogram, valType)
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			expFH := test.GenerateTestFloatHistogram(int(expectedTS))
-			if expectedTS > 0 {
-				expFH.CounterResetHint = histogram.NotCounterReset
-			}
+			expFH.CounterResetHint = expectReset(model.Time(expectedTS), atSeek)
 			test.RequireFloatHistogramEqual(t, expFH, fh)
 			require.NoError(t, iter.Err())
 		}
@@ -168,11 +196,11 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 
 	for i := 0; i < points; i += points / 10 {
 		expectedTS := int64(i * int(step/time.Millisecond))
-		assertPoint(expectedTS, iter.Seek(expectedTS))
+		assertPoint(expectedTS, iter.Seek(expectedTS), true)
 
 		for j := i + 1; j < i+points/10 && j < points; j++ {
 			expectedTS := int64(j * int(step/time.Millisecond))
-			assertPoint(expectedTS, iter.Next())
+			assertPoint(expectedTS, iter.Next(), false)
 		}
 	}
 }

@@ -29,15 +29,15 @@ func TestMergeIter(t *testing.T) {
 			chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, enc)
 
 			iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testIter(t, 200, iter, enc)
+			testIter(t, 200, iter, enc, nil)
 			iter = NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testSeek(t, 200, iter, enc)
+			testSeek(t, 200, iter, enc, nil)
 
 			// Re-use iterator.
 			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testIter(t, 200, iter, enc)
+			testIter(t, 200, iter, enc, nil)
 			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testSeek(t, 200, iter, enc)
+			testSeek(t, 200, iter, enc, nil)
 		})
 	}
 }
@@ -58,10 +58,10 @@ func TestMergeHarder(t *testing.T) {
 				from = from.Add(time.Duration(offset) * time.Second)
 			}
 			iter := newMergeIterator(nil, chunks)
-			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
+			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, nil)
 
 			iter = newMergeIterator(nil, chunks)
-			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
+			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, nil)
 		})
 	}
 }
@@ -179,12 +179,12 @@ func TestMergeIteratorCounterResets(t *testing.T) {
 				histogram.UnknownCounterReset,
 			},
 		},
-		"clear reset when stream differ in the middle": {
+		"keep correct reset when stream differ in the middle": {
 			chunks: append(sampleToChunks([]hSample{{1, &h40}, {3, &h30}}), sampleToChunks([]hSample{{1, &h40}, {2, &h20}, {3, &h30}})...),
 			expect: []histogram.CounterResetHint{
 				histogram.UnknownCounterReset,
 				histogram.CounterReset,
-				histogram.UnknownCounterReset,
+				histogram.NotCounterReset,
 			},
 		},
 		"keep reset when streams are the same": {
@@ -192,6 +192,14 @@ func TestMergeIteratorCounterResets(t *testing.T) {
 			expect: []histogram.CounterResetHint{
 				histogram.UnknownCounterReset,
 				histogram.CounterReset,
+				histogram.NotCounterReset,
+			},
+		},
+		"start a stream later": {
+			chunks: append(sampleToChunks([]hSample{{1, &h20}, {2, &h30}, {3, &h40}}), sampleToChunks([]hSample{{3, &h40}})...),
+			expect: []histogram.CounterResetHint{
+				histogram.UnknownCounterReset,
+				histogram.NotCounterReset,
 				histogram.NotCounterReset,
 			},
 		},
