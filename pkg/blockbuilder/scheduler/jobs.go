@@ -15,13 +15,16 @@ var (
 	errNoJobAvailable = errors.New("no job available")
 	errJobNotFound    = errors.New("job not found")
 	errJobNotAssigned = errors.New("job not assigned to worker")
+	errBadEpoch       = errors.New("bad epoch")
 )
 
 type jobQueue struct {
 	leaseTime time.Duration
 	logger    log.Logger
 
-	mu         sync.Mutex
+	mu sync.Mutex
+
+	epoch      uint
 	jobs       map[string]*job
 	unassigned jobHeap
 }
@@ -36,22 +39,62 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 }
 
 // assign assigns the highest-priority unassigned job to the given worker.
-func (s *jobQueue) assign(workerID string) (string, jobSpec, error) {
+func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
 	if workerID == "" {
-		return "", jobSpec{}, errors.New("workerID cannot not be empty")
+		return jobKey{}, jobSpec{}, errors.New("workerID cannot not be empty")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.unassigned.Len() == 0 {
-		return "", jobSpec{}, errNoJobAvailable
+		return jobKey{}, jobSpec{}, errNoJobAvailable
 	}
 
 	j := heap.Pop(&s.unassigned).(*job)
+	j.key.epoch = s.epoch
+	s.epoch++
 	j.assignee = workerID
 	j.leaseExpiry = time.Now().Add(s.leaseTime)
-	return j.id, j.spec, nil
+	return j.key, j.spec, nil
+}
+
+// importJob imports a job with the given ID and spec into the jobQueue. This is
+// meant to be used during recovery, when we're reconstructing the jobQueue from
+// worker updates.
+func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
+	if key.id == "" {
+		return errors.New("jobID cannot be empty")
+	}
+	if workerID == "" {
+		return errors.New("workerID cannot be empty")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	j, ok := s.jobs[key.id]
+	if ok {
+		if j.assignee != workerID {
+			return errJobNotAssigned
+		} else if key.epoch < j.key.epoch {
+			return errBadEpoch
+		}
+		// Otherwise we're going to update the job.
+		j.key = key
+		j.spec = spec
+	} else {
+		j = &job{
+			key:         key,
+			assignee:    workerID,
+			leaseExpiry: time.Now().Add(s.leaseTime),
+			failCount:   0,
+			spec:        spec,
+		}
+		s.jobs[key.id] = j
+		heap.Push(&s.unassigned, j)
+	}
+	return nil
 }
 
 // addOrUpdate adds a new job or updates an existing job with the given spec.
@@ -66,7 +109,10 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 		}
 	} else {
 		j = &job{
-			id:          id,
+			key: jobKey{
+				id:    id,
+				epoch: 0,
+			},
 			assignee:    "",
 			leaseExpiry: time.Now().Add(s.leaseTime),
 			failCount:   0,
@@ -79,8 +125,8 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 
 // renewLease renews the lease of the job with the given ID for the given
 // worker.
-func (s *jobQueue) renewLease(jobID, workerID string) error {
-	if jobID == "" {
+func (s *jobQueue) renewLease(key jobKey, workerID string) error {
+	if key.id == "" {
 		return errors.New("jobID cannot be empty")
 	}
 	if workerID == "" {
@@ -90,12 +136,15 @@ func (s *jobQueue) renewLease(jobID, workerID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	j, ok := s.jobs[jobID]
+	j, ok := s.jobs[key.id]
 	if !ok {
 		return errJobNotFound
 	}
 	if j.assignee != workerID {
 		return errJobNotAssigned
+	}
+	if j.key.epoch != key.epoch {
+		return errBadEpoch
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseTime)
@@ -104,8 +153,8 @@ func (s *jobQueue) renewLease(jobID, workerID string) error {
 
 // completeJob completes the job with the given ID for the given worker,
 // removing it from the jobQueue.
-func (s *jobQueue) completeJob(jobID, workerID string) error {
-	if jobID == "" {
+func (s *jobQueue) completeJob(key jobKey, workerID string) error {
+	if key.id == "" {
 		return errors.New("jobID cannot be empty")
 	}
 	if workerID == "" {
@@ -115,15 +164,18 @@ func (s *jobQueue) completeJob(jobID, workerID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	j, ok := s.jobs[jobID]
+	j, ok := s.jobs[key.id]
 	if !ok {
 		return errJobNotFound
 	}
 	if j.assignee != workerID {
 		return errJobNotAssigned
 	}
+	if j.key.epoch != key.epoch {
+		return errBadEpoch
+	}
 
-	delete(s.jobs, jobID)
+	delete(s.jobs, key.id)
 	return nil
 }
 
@@ -145,7 +197,7 @@ func (s *jobQueue) clearExpiredLeases() {
 }
 
 type job struct {
-	id string
+	key jobKey
 
 	assignee    string
 	leaseExpiry time.Time
@@ -153,6 +205,13 @@ type job struct {
 
 	// job payload details. We can make this generic later for reuse.
 	spec jobSpec
+}
+
+type jobKey struct {
+	id string
+	// The assignment epoch. This is used to break ties when multiple workers
+	// have knowledge of the same job.
+	epoch uint
 }
 
 type jobSpec struct {

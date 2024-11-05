@@ -11,9 +11,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -22,12 +25,13 @@ import (
 type BlockBuilderScheduler struct {
 	services.Service
 
-	adminClient *kadm.Client
-	jobs        *jobQueue
-	cfg         Config
-	logger      log.Logger
-	register    prometheus.Registerer
-	metrics     schedulerMetrics
+	adminClient         *kadm.Client
+	jobs                *jobQueue
+	cfg                 Config
+	logger              log.Logger
+	register            prometheus.Registerer
+	metrics             schedulerMetrics
+	observationComplete *atomic.Bool
 
 	mu        sync.Mutex
 	committed kadm.Offsets
@@ -40,12 +44,13 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:      newJobQueue(cfg.JobLeaseTime, logger),
-		cfg:       cfg,
-		logger:    logger,
-		register:  reg,
-		metrics:   newSchedulerMetrics(reg),
-		committed: make(kadm.Offsets),
+		jobs:                newJobQueue(cfg.JobLeaseTime, logger),
+		cfg:                 cfg,
+		logger:              logger,
+		register:            reg,
+		metrics:             newSchedulerMetrics(reg),
+		observationComplete: atomic.NewBool(false),
+		committed:           make(kadm.Offsets),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -71,6 +76,27 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
+	// The first thing we do when starting up is to complete the startup process
+	//  where we allow both of these to complete:
+	// 1. perform an initial update of the schedule
+	// 2. listen to worker updates for a while to learn the state of the world
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		s.updateSchedule(ctx)
+		wg.Done()
+	}()
+	go func() {
+		time.Sleep(s.cfg.StartupObserveTime)
+		wg.Done()
+	}()
+	wg.Wait()
+
+	s.observationComplete.Store(true)
+
+	// Now that that's done, we can start the main loop.
+
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
 	for {
@@ -140,13 +166,26 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 // assignJob returns an assigned job for the given workerID.
 // (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, error) {
+func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, error) {
+	if !s.observationComplete.Load() {
+		return jobKey{}, jobSpec{}, status.Error(codes.Unavailable, "observation period not complete")
+	}
+
 	return s.jobs.assign(workerID)
 }
 
 // updateJob takes a job update from the client and records it, if necessary.
 // (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
+func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j jobSpec) error {
+	if !s.observationComplete.Load() {
+		// We're in observation mode, so learning about a job should trigger its
+		// creation in the queue.
+
+		if err := s.jobs.importJob(key, workerID, j); err != nil {
+			return fmt.Errorf("import job: %w", err)
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -158,7 +197,7 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 	}
 
 	if complete {
-		if err := s.jobs.completeJob(jobID, workerID); err != nil {
+		if err := s.jobs.completeJob(key, workerID); err != nil {
 			// job not found is fine, as clients will be re-informing us.
 			if !errors.Is(err, errJobNotFound) {
 				return fmt.Errorf("complete job: %w", err)
@@ -168,7 +207,7 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 		s.dirty = true
 	} else {
 		// It's an in-progress job whose lease we need to renew.
-		if err := s.jobs.renewLease(jobID, workerID); err != nil {
+		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
 	}
