@@ -153,10 +153,12 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		r.consumedOffsetWatcher.Notify(lastConsumedOffset)
 	}
 
-	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startOffset))
+	// Create a Kafka client without configuring any partition to consume (it will be done later).
+	r.client, err = NewKafkaReaderClient(r.kafkaCfg, r.metrics.kprom, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
+
 	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client), r.partitionID, r.consumerGroup, r.logger, r.reg)
 
 	offsetsClient := newPartitionOffsetClient(r.client, r.kafkaCfg.Topic, r.reg, r.logger)
@@ -185,12 +187,25 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	}
 
 	if r.kafkaCfg.StartupFetchConcurrency > 0 {
+		// TODO explain
+		r.client.PauseFetchPartitions(map[string][]int32{
+			r.kafkaCfg.Topic: {r.partitionID},
+		})
+		r.client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(startOffset)},
+		})
+
 		f, err := newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.StartupFetchConcurrency, r.kafkaCfg.StartupRecordsPerFetch, r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
 		r.fetcher = f
 	} else {
+		// TODO explain
+		r.client.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(startOffset)},
+		})
+
 		r.fetcher = r
 	}
 
@@ -275,12 +290,20 @@ func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 			// We haven't consumed any records yet with the other fetcher.
 			// The franz-go client is initialized to start consuming from the same place as the other fetcher.
 			// We can just use the client.
+			// TODO explain
+			r.client.ResumeFetchPartitions(map[string][]int32{
+				r.kafkaCfg.Topic: {r.partitionID},
+			})
 			return
 		}
 
 		// The client might have some buffered records already while we were using the other fetcher.
 		// Remove the buffered records.
 		r.client.RemoveConsumePartitions(map[string][]int32{
+			r.kafkaCfg.Topic: {r.partitionID},
+		})
+		// TODO explain
+		r.client.ResumeFetchPartitions(map[string][]int32{
 			r.kafkaCfg.Topic: {r.partitionID},
 		})
 		// Resume from the next unconsumed offset.
@@ -598,13 +621,13 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, delayObserve
 	r.metrics.recordsPerFetch.Observe(float64(numRecords))
 }
 
-func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
-	return NewKafkaReaderClient(r.kafkaCfg, r.metrics.kprom, r.logger,
-		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			r.kafkaCfg.Topic: {r.partitionID: at},
-		}),
-	)
-}
+//func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
+//	return NewKafkaReaderClient(r.kafkaCfg, r.metrics.kprom, r.logger,
+//		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+//			r.kafkaCfg.Topic: {r.partitionID: at},
+//		}),
+//	)
+//}
 
 func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
 	switch r.kafkaCfg.ConsumeFromPositionAtStartup {

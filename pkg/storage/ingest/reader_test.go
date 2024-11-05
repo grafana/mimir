@@ -56,19 +56,18 @@ func TestPartitionReader(t *testing.T) {
 
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
-	content := []byte("special content")
 	consumer := newTestConsumer(2)
 
 	createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	writeClient := newKafkaProduceClient(t, clusterAddr)
 
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 1"))
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 2"))
 
 	records, err := consumer.waitRecords(2, 5*time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content, content}, records)
+	assert.Equal(t, [][]byte{[]byte("record 1"), []byte("record 2")}, records)
 }
 
 func TestPartitionReader_logFetchErrors(t *testing.T) {
@@ -694,6 +693,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 	})
 
+	// TODO run the same test but with concurrent ongoing fetch too. actually all these tests should in all 3 variants: no concurrency, only startup concurrency, both start and ongoing concurrency
 	t.Run("should consume partition from end if position=end, and skip honoring target / max lag", func(t *testing.T) {
 		t.Parallel()
 
