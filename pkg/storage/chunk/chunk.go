@@ -87,7 +87,7 @@ type Iterator interface {
 	// objects, the histogram.Histogram or histogram.FloatHistograms objects already present in
 	// the hPool or fhPool pool will be used instead of creating new ones.
 	Batch(size int, valueType chunkenc.ValueType, lastT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch
-	// BatchFloats is a specialized Batch funtion for chunkenc.ValFloat values.
+	// BatchFloats is a specialized Batch function for chunkenc.ValFloat values.
 	BatchFloats(size int) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.

@@ -523,7 +523,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 
 func TestDistributorQuerier_Select_FixedInflatedCounterResets(t *testing.T) {
 	var (
-		queryStart int64 = 0
+		queryStart int64
 		queryEnd   int64 = 1000
 	)
 
