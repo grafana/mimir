@@ -342,6 +342,7 @@ func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected 
 	} else {
 		require.Equal(t, expected, combinedPoints)
 		require.True(t, view.Any())
+		require.NotEmpty(t, head, "head slice should not be empty for non-empty view")
 	}
 
 	require.Equal(t, len(expected), view.Count())

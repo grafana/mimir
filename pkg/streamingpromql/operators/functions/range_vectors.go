@@ -78,15 +78,8 @@ func maxOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotati
 		return 0, false, nil, nil
 	}
 
-	var maxSoFar float64
-
-	if len(head) > 0 {
-		maxSoFar = head[0].F
-		head = head[1:]
-	} else {
-		maxSoFar = tail[0].F
-		tail = tail[1:]
-	}
+	maxSoFar := head[0].F
+	head = head[1:]
 
 	for _, p := range head {
 		if p.F > maxSoFar || math.IsNaN(maxSoFar) {
@@ -115,15 +108,8 @@ func minOverTime(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotati
 		return 0, false, nil, nil
 	}
 
-	var minSoFar float64
-
-	if len(head) > 0 {
-		minSoFar = head[0].F
-		head = head[1:]
-	} else {
-		minSoFar = tail[0].F
-		tail = tail[1:]
-	}
+	minSoFar := head[0].F
+	head = head[1:]
 
 	for _, p := range head {
 		if p.F < minSoFar || math.IsNaN(minSoFar) {
@@ -185,18 +171,8 @@ func sumFloats(head, tail []promql.FPoint) float64 {
 }
 
 func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
-	var sum *histogram.FloatHistogram
-
-	if len(head) > 0 {
-		sum = head[0].H
-		head = head[1:]
-	} else {
-		sum = tail[0].H
-		tail = tail[1:]
-	}
-
-	// We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
-	sum = sum.Copy()
+	sum := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	head = head[1:]
 
 	for _, p := range head {
 		if _, err := sum.Add(p.H); err != nil {
@@ -306,19 +282,9 @@ func avgFloats(head, tail []promql.FPoint) float64 {
 }
 
 func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error) {
-	var avgSoFar *histogram.FloatHistogram
+	avgSoFar := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	head = head[1:]
 	count := 1.0
-
-	if len(head) > 0 {
-		avgSoFar = head[0].H
-		head = head[1:]
-	} else {
-		avgSoFar = tail[0].H
-		tail = tail[1:]
-	}
-
-	// We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
-	avgSoFar = avgSoFar.Copy()
 
 	// Reuse these instances if we need them, to avoid allocating two FloatHistograms for every remaining histogram in the range.
 	var contributionByP *histogram.FloatHistogram

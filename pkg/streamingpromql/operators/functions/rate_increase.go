@@ -46,7 +46,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 		}
 
 		if fCount >= 2 {
-			val := floatRate(isRate, fCount, step.Floats, step, fHead, fTail, rangeSeconds)
+			val := floatRate(isRate, fCount, step, fHead, fTail, rangeSeconds)
 			return val, true, nil, nil
 		}
 
@@ -64,14 +64,8 @@ func rate(isRate bool) RangeVectorStepFunction {
 }
 
 func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
-	var firstPoint promql.HPoint
-	if len(hHead) > 0 {
-		firstPoint = hHead[0]
-		hHead = hHead[1:]
-	} else {
-		firstPoint = hTail[0]
-		hTail = hTail[1:]
-	}
+	firstPoint := hHead[0]
+	hHead = hHead[1:]
 
 	var lastPoint promql.HPoint
 	if len(hTail) > 0 {
@@ -146,8 +140,9 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 	return val, err
 }
 
-func floatRate(isRate bool, fCount int, floatBuffer *types.FPointRingBufferView, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
-	firstPoint := floatBuffer.First()
+func floatRate(isRate bool, fCount int, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
+	firstPoint := fHead[0]
+	fHead = fHead[1:]
 
 	var lastPoint promql.FPoint
 	if len(fTail) > 0 {
