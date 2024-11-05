@@ -38,9 +38,8 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	expectReset := func(ts model.Time, atSeek bool) histogram.CounterResetHint {
 		if ts == 0 || atSeek {
 			return histogram.UnknownCounterReset
-		} else {
-			return histogram.NotCounterReset
 		}
+		return histogram.NotCounterReset
 	}
 
 	iter.reset(chunk)
@@ -100,9 +99,8 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 				// This test is usually used for samples after merge, where
 				// samples at 0 and 1 have a 0 previous sample time, which means reset.
 				return histogram.UnknownCounterReset
-			} else {
-				return histogram.NotCounterReset
 			}
+			return histogram.NotCounterReset
 		}
 	}
 	nextExpectedTS := model.TimeFromUnix(0)
@@ -155,9 +153,8 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 				// This test is usually used for samples after merge, where
 				// samples at 0 and 1 have a 0 previous sample time, which means reset.
 				return histogram.UnknownCounterReset
-			} else {
-				return histogram.NotCounterReset
 			}
+			return histogram.NotCounterReset
 		}
 	}
 	var assertPoint func(expectedTS int64, valType chunkenc.ValueType, atSeek bool)

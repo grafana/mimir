@@ -182,6 +182,9 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		if lt != chunkenc.ValFloat && bs.lastTimeStamp < t1 {
 			// This histogram sample falls after the last sample in the merge.
 			if prevT := bs.curr().PrevT(); prevT != 0 && prevT < bs.lastTimeStamp {
+				// There are now samples in the merge that are newer than the previous
+				// sample in the merge stream, meaning that it was missing samples,
+				// we cannot trust its counter reset hint.
 				bs.curr().SetPrevT(0)
 			}
 		}
@@ -249,6 +252,9 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		if t != chunkenc.ValFloat {
 			// This histogram sample falls after the last sample in the merge.
 			if prevT := bs.curr().PrevT(); prevT != 0 && prevT < bs.lastTimeStamp {
+				// There are now samples in the merge that are newer than the previous
+				// sample in the merge stream, meaning that it was missing samples,
+				// we cannot trust its counter reset hint.
 				bs.curr().SetPrevT(0)
 			}
 		}
