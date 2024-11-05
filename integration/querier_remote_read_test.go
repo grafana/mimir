@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -348,13 +349,21 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 							require.Equalf(t, expectedHistograms[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
 
 							expected := expectedHistograms[sampleIdx].ToIntHistogram()
-							test.RequireHistogramEqual(t, expected, h)
+							// Same size histograms result in regular size chunks and thus resets.
+							if sampleIdx%120 != 0 {
+								expected.CounterResetHint = histogram.NotCounterReset
+							}
+							test.RequireHistogramEqual(t, expected, h, "index: ", sampleIdx)
 						case chunkenc.ValFloatHistogram:
 							ts, fh := chkItr.AtFloatHistogram(nil)
 							require.Equalf(t, expectedFloatHistograms[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
 
 							expected := expectedFloatHistograms[sampleIdx].ToFloatHistogram()
-							test.RequireFloatHistogramEqual(t, expected, fh)
+							// Same size histograms result in regular size chunks and thus resets.
+							if sampleIdx%120 != 0 {
+								expected.CounterResetHint = histogram.NotCounterReset
+							}
+							test.RequireFloatHistogramEqual(t, expected, fh, "index: ", sampleIdx)
 						default:
 							require.Fail(t, "unrecognized value type")
 						}

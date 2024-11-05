@@ -681,7 +681,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			}
 			var actualPushErrs []error
 			for _, req := range tc.requests {
-				err := shardingP.ShardWriteRequest(context.Background(), req)
+				err := shardingP.PushToStorage(context.Background(), req)
 				actualPushErrs = append(actualPushErrs, err)
 			}
 
@@ -697,8 +697,13 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 				require.Equalf(t, tc.expectedErrsCount, receivedErrs, "received %d errors instead of %d: %v", receivedErrs, tc.expectedErrsCount, actualPushErrs)
 			}
 
-			closeErr := shardingP.Stop()
-			require.ErrorIs(t, closeErr, tc.expectedCloseErr)
+			closeErr := shardingP.Close()
+			if tc.expectedCloseErr != nil {
+				require.Len(t, closeErr, 1)
+				require.ErrorIs(t, closeErr[0], tc.expectedCloseErr)
+			} else {
+				require.Empty(t, closeErr)
+			}
 			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
 			pusher.AssertExpectations(t)
 
@@ -850,8 +855,13 @@ func TestParallelStoragePusher(t *testing.T) {
 				receivedPushes[tenantID][req.Source]++
 			}).Return(nil)
 
+			samplesPerTenant := make(map[string]int)
+			for _, req := range tc.requests {
+				samplesPerTenant[req.tenantID] += len(req.Timeseries)
+			}
+
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, 0, 1, 1, logger)
+			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, 80, logger)
 
 			// Process requests
 			for _, req := range tc.requests {
@@ -868,6 +878,80 @@ func TestParallelStoragePusher(t *testing.T) {
 			assert.Equal(t, tc.expectedUpstreamPushes, receivedPushes, "Mismatch in upstream pushes")
 
 			pusher.AssertExpectations(t)
+		})
+	}
+}
+
+func TestParallelStoragePusher_idealShardsFor(t *testing.T) {
+	testCases := map[string]struct {
+		bytesPerTenant int
+		bytesPerSample int
+		batchSize      int
+		targetFlushes  int
+		maxShards      int
+
+		expected int
+	}{
+		"with a low number of time series and target flushes, we expect a low number of shards": {
+			bytesPerTenant: 1000,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      1,
+
+			expected: 1,
+		},
+		"with a higher number of max shards, the ideal number of shards is returned": {
+			bytesPerTenant: 10000,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      15,
+
+			expected: 10,
+		},
+		"with a higher number of shards, we're capped by max shards ": {
+			bytesPerTenant: 100000,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      5,
+
+			expected: 5,
+		},
+		"with a small number of batches and a small number of flushes, we expect more shards": {
+			bytesPerTenant: 20000,
+			bytesPerSample: 200,
+			batchSize:      5,
+			targetFlushes:  2,
+			maxShards:      15,
+
+			expected: 10,
+		},
+		"when we expect less than 1 shard, it should still be 1": {
+			bytesPerTenant: 500,
+			bytesPerSample: 100,
+			batchSize:      10,
+			targetFlushes:  1,
+			maxShards:      10,
+
+			expected: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			psp := &parallelStoragePusher{
+				bytesPerTenant: map[string]int{"tenant1": tc.bytesPerTenant},
+				bytesPerSample: tc.bytesPerSample,
+				batchSize:      tc.batchSize,
+				targetFlushes:  tc.targetFlushes,
+				maxShards:      tc.maxShards,
+				metrics:        newStoragePusherMetrics(prometheus.NewPedanticRegistry()),
+			}
+
+			idealShards := psp.idealShardsFor("tenant1")
+			require.Equal(t, tc.expected, idealShards, "Mismatch in ideal shards")
 		})
 	}
 }

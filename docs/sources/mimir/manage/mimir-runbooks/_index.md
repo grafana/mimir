@@ -1393,9 +1393,15 @@ How to **investigate** and **fix** it:
 - Check if disk utilization unbalance is caused by shuffle sharding
 
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+
     ```
-    kubectl --context $CLUSTER --namespace $CELL exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+    # If you're running the alpine image:
+    kubectl --context $CLUSTER --namespace $NAMESPACE exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+
+    # If you're running the distroless image:
+    kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
     ```
+
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
@@ -1610,6 +1616,47 @@ How to **fix**:
      ```
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
+
+### MimirBlockBuilderNoCycleProcessing
+
+This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
+
+How it **works**:
+
+- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-builder calls these periods "cycles".
+- If the block-builder doesn't process any cycles for an extended period of time, this could indicate that a block-builder instance is stuck and cannot complete cycle processing.
+
+How to **investigate**:
+
+- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
+
+### MimirBlockBuilderLagging
+
+This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
+
+How it **works**:
+
+- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog. This number is tracked in the `cortex_blockbuilder_consumer_lag_records` metric.
+- The block-builder must consume and process these records into TSDB blocks.
+- At the end of the processing, the block-builder commits the offset of the last fully processed record into Kafka.
+- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit Kafka record.
+
+How to **investigate**:
+
+- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Explore the block-builder logs for any errors reported while it processed the partition.
+
+### MimirBlockBuilderCompactAndUploadFailed
+
+How it **works**:
+
+- The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
+- It compacts and uploads the produced TSDB blocks to object storage.
+- If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+
+How to **investigate**:
+
+- Explore the block-builder logs to check what errors are there.
 
 ## Errors catalog
 

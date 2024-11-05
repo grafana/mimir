@@ -33,7 +33,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
         {{- if .Values.alertmanager.persistentVolume.annotations }}
         annotations:

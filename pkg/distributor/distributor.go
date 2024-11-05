@@ -1388,7 +1388,6 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
-		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 

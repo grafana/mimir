@@ -34,6 +34,8 @@ var (
 	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
+	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
+	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 )
@@ -105,8 +107,24 @@ type KafkaConfig struct {
 	OngoingRecordsPerFetch            int  `yaml:"ongoing_records_per_fetch"`
 	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 
-	IngestionConcurrency          int `yaml:"ingestion_concurrency"`
+	IngestionConcurrencyMax       int `yaml:"ingestion_concurrency_max"`
 	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
+
+	// IngestionConcurrencyQueueCapacity controls how many batches can be enqueued for flushing series to the TSDB HEAD.
+	// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
+	// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
+	// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
+	// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
+	IngestionConcurrencyQueueCapacity int `yaml:"ingestion_concurrency_queue_capacity"`
+
+	// IngestionConcurrencyTargetFlushesPerShard is the number of flushes we want to target per shard.
+	// There is some overhead in the parallelization. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization.
+	// the default of 80 was devised experimentally to keep the memory and CPU usage low ongoing consumption, while keeping replay speed high during cold replay.
+	IngestionConcurrencyTargetFlushesPerShard int `yaml:"ingestion_concurrency_target_flushes_per_shard"`
+
+	// IngestionConcurrencyEstimatedBytesPerSample is the estimated number of bytes per sample.
+	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
+	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -151,8 +169,11 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.OngoingRecordsPerFetch, prefix+".ongoing-records-per-fetch", 30, "The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on "+prefix+".ongoing-fetch-concurrency being greater than 0.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 
-	f.IntVar(&cfg.IngestionConcurrency, prefix+".ingestion-concurrency", 0, "The number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
-	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+".ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting into TSDB. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyMax, prefix+".ingestion-concurrency-max", 0, "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
+	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+".ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+".ingestion-concurrency-queue-capacity", 5, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+".ingestion-concurrency-target-flushes-per-shard", 80, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+".ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
@@ -202,6 +223,16 @@ func (cfg *KafkaConfig) Validate() error {
 
 	if (cfg.SASLUsername == "") != (cfg.SASLPassword.String() == "") {
 		return ErrInconsistentSASLCredentials
+	}
+
+	if cfg.IngestionConcurrencyMax < 0 {
+		return ErrInvalidIngestionConcurrencyMax
+	}
+
+	if cfg.IngestionConcurrencyMax >= 1 {
+		if cfg.IngestionConcurrencyBatchSize <= 0 || cfg.IngestionConcurrencyQueueCapacity <= 0 || cfg.IngestionConcurrencyEstimatedBytesPerSample <= 0 || cfg.IngestionConcurrencyTargetFlushesPerShard <= 0 {
+			return ErrInvalidIngestionConcurrencyParams
+		}
 	}
 
 	return nil

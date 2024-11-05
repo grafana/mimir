@@ -319,6 +319,18 @@ func genTestFloatHistogram(timestamp int64, value int) mimirpb.Histogram {
 	return mimirpb.FromFloatHistogramToHistogramProto(timestamp, test.GenerateTestFloatHistogram(value))
 }
 
+func genExpectedHistogram(timestamp int64, value int, resetHint mimirpb.Histogram_ResetHint) mimirpb.Histogram {
+	h := mimirpb.FromHistogramToHistogramProto(timestamp, test.GenerateTestHistogram(value))
+	h.ResetHint = resetHint
+	return h
+}
+
+func genExpectedFloatHistogram(timestamp int64, value int, resetHint mimirpb.Histogram_ResetHint) mimirpb.Histogram {
+	fh := mimirpb.FromFloatHistogramToHistogramProto(timestamp, test.GenerateTestFloatHistogram(value))
+	fh.ResetHint = resetHint
+	return fh
+}
+
 func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) {
 	const (
 		mint = 0
@@ -332,6 +344,16 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		genTestFloatHistogram(4000, 4),
 		genTestHistogram(5000, 5),
 	}
+	// When s1 is encoded to chunks, the counter reset hint is set by the chunk
+	// appender.
+	expectS1 := []mimirpb.Histogram{
+		genExpectedHistogram(1000, 1, mimirpb.Histogram_UNKNOWN),
+		genExpectedHistogram(2000, 2, mimirpb.Histogram_NO),
+		genExpectedHistogram(3000, 3, mimirpb.Histogram_NO),
+		genExpectedFloatHistogram(4000, 4, mimirpb.Histogram_UNKNOWN),
+		genExpectedHistogram(5000, 5, mimirpb.Histogram_UNKNOWN),
+	}
+
 	s2 := []mimirpb.Histogram{
 		genTestHistogram(1000, 1),
 		genTestFloatHistogram(2500, 25),
@@ -385,7 +407,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(s1))
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(expectS1))
 
 	require.True(t, seriesSet.Next())
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), histogramsToInterface(s1))
@@ -413,6 +435,13 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		genTestFloatHistogram(5500, 55),
 		genTestFloatHistogram(6000, 60),
 		genTestFloatHistogram(8000, 80),
+	}
+	// When h1 is encoded to chunks, the counter reset hint is set by the chunk
+	// appender.
+	expectH1 := []mimirpb.Histogram{
+		genExpectedFloatHistogram(5500, 55, mimirpb.Histogram_UNKNOWN),
+		genExpectedFloatHistogram(6000, 60, mimirpb.Histogram_NO),
+		genExpectedFloatHistogram(8000, 80, mimirpb.Histogram_NO),
 	}
 	s2 := []mimirpb.Sample{
 		{Value: 1, TimestampMs: 1000},
@@ -479,7 +508,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), append(samplesToInterface(s1), histogramsToInterface(h1)...))
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), append(samplesToInterface(s1), histogramsToInterface(expectH1)...))
 
 	require.True(t, seriesSet.Next())
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), append(samplesToInterface(s1), histogramsToInterface(h1)...))

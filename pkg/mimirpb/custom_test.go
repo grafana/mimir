@@ -11,9 +11,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/encoding"
-	"google.golang.org/grpc/encoding/proto"
-	"google.golang.org/grpc/mem"
 )
 
 func TestWriteRequest_MinTimestamp(t *testing.T) {
@@ -161,26 +158,4 @@ func TestIsFloatHistogram(t *testing.T) {
 			require.Equal(t, testData.expected, res)
 		})
 	}
-}
-
-func TestCodecV2_Unmarshal(t *testing.T) {
-	c := codecV2{codec: fakeCodecV2{}}
-
-	var origReq WriteRequest
-	data, err := c.Marshal(&origReq)
-	require.NoError(t, err)
-
-	var req WriteRequest
-	require.NoError(t, c.Unmarshal(data, &req))
-
-	require.NotNil(t, req.buffer)
-	req.FreeBuffer()
-}
-
-type fakeCodecV2 struct {
-	encoding.CodecV2
-}
-
-func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
-	return encoding.GetCodecV2(proto.Name).Marshal(v)
 }

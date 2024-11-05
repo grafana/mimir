@@ -73,7 +73,7 @@ var (
 		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
-	invalidLabelValueMsgFormat = globalerror.SeriesInvalidLabelValue.Message("received a series with invalid value in label '%.200s': '%.200s' series: '%.200s'")
+	invalidLabelValueMsgFormat = globalerror.SeriesInvalidLabelValue.Message("received a series with invalid value in label '%.200s': '%.200s' metric: '%.200s'")
 	duplicateLabelMsgFormat    = globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
 	tooManyLabelsMsgFormat     = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
 		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
@@ -417,7 +417,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
+			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, strings.ToValidUTF8(l.Value, ""), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()

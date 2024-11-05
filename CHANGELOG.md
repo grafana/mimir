@@ -48,6 +48,12 @@
 * [ENHANCEMENT] Query-scheduler: Remove the experimental `query-scheduler.prioritize-query-components` flag. Request queues always prioritize query component dequeuing above tenant fairness. #9703
 * [ENHANCEMENT] Ingester: Emit traces for block syncing, to join up block-upload traces. #9656
 * [ENHANCEMENT] Querier: Enable the optional querying of additional storage queryables. #9712
+* [ENHANCEMENT] Ingester: Disable the push circuit breaker when ingester is in read-only mode. #9760
+* [ENHANCEMENT] Ingester: Reduced lock contention in the `PostingsForMatchers` cache. #9773
+* [ENHANCEMENT] Storage: Allow HTTP client settings to be tuned for GCS and Azure backends via an `http` block or corresponding CLI flags. This was already supported by the S3 backend. #9778
+* [ENHANCEMENT] Ruler: Support `group_limit` and `group_next_token` parameters in the `<prometheus-http-prefix>/api/v1/rules` endpoint. #9563
+* [ENHANCEMENT] Ingester: improved lock contention affecting read and write latencies during TSDB head compaction. #9822
+* [ENHANCEMENT] Distributor: when a label value fails validation due to invalid UTF-8 characters, don't include the invalid characters in the returned error. #9828
 * [BUGFIX] Fix issue where functions such as `rate()` over native histograms could return incorrect values if a float stale marker was present in the selected range. #9508
 * [BUGFIX] Fix issue where negation of native histograms (eg. `-some_native_histogram_series`) did nothing. #9508
 * [BUGFIX] Fix issue where `metric might not be a counter, name does not end in _total/_sum/_count/_bucket` annotation would be emitted even if `rate` or `increase` did not have enough samples to compute a result. #9508
@@ -56,13 +62,18 @@
 * [BUGFIX] Fix issue where active series requests error when encountering a stale posting. #9580
 * [BUGFIX] Fix pooling buffer reuse logic when `-distributor.max-request-pool-buffer-size` is set. #9666
 * [BUGFIX] Fix issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where the ruler could panic as it updates a running ruleset or shutdowns. #9726
+* [BUGFIX] Ingester: Fix race condition in per-tenant TSDB creation. #9708
+* [BUGFIX] Ingester: Fix race condition in exemplar adding. #9765
+* [BUGFIX] Ingester: Fix race condition in native histogram appending. #9765
 
 ### Mixin
 
-* [CHANGE] Remove backwards compatibility for `thanos_memcached_` prefixed metrics in dashboards and alerts removed in 2.12. #9674
+* [CHANGE] Remove backwards compatibility for `thanos_memcached_` prefixed metrics in dashboards and alerts removed in 2.12. #9674 #9758
 * [ENHANCEMENT] Unify ingester autoscaling panels on 'Mimir / Writes' dashboard to work for both ingest-storage and non-ingest-storage autoscaling. #9617
+* [ENHANCEMENT] Alerts: Enable configuring job prefix for alerts to prevent clashes with metrics from Loki/Tempo. #9659
 * [ENHANCEMENT] Dashboards: visualize the age of source blocks in the "Mimir / Compactor" dashboard. #9697
 * [ENHANCEMENT] Dashboards: Include block compaction level on queried blocks in 'Mimir / Queries' dashboard. #9706
+
 * [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412 #9450 #9432
 * [BUGFIX] Alerts: Fix autoscaling metrics joins in `MimirAutoscalerNotActive` when series churn. #9412
 * [BUGFIX] Alerts: Exclude failed cache "add" operations from alerting since failures are expected in normal operation. #9658
@@ -93,11 +104,18 @@
 
 ### Tools
 
-* [FEATURE] `splitblocks`: add new tool to split blocks larger than a specified duration into multiple blocks. #9517
+* [FEATURE] `splitblocks`: add new tool to split blocks larger than a specified duration into multiple blocks. #9517, #9779
 * [ENHANCEMENT] `copyblocks`: Added `--skip-no-compact-block-duration-check`, which defaults to `false`, to simplify targeting blocks that are not awaiting compaction. #9439
 * [ENHANCEMENT] `kafkatool`: add SASL plain authentication support. The following new CLI flags have been added: #9584
   * `--kafka-sasl-username`
   * `--kafka-sasl-password`
+* [ENHANCEMENT] Updated `KubePersistentVolumeFillingUp` runbook, including a sample command to debug the distroless image. #9802
+
+## 2.14.1
+
+### Grafana Mimir
+
+* [BUGFIX] Update objstore library to resolve issues observed for some S3-compatible object stores, which respond to `StatObject` with `Range` incorrectly. #9625
 
 ## 2.14.0
 

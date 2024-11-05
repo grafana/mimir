@@ -10,8 +10,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.1
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/dustin/go-humanize v1.0.1
-	github.com/edsrzf/mmap-go v1.1.0
-	github.com/failsafe-go/failsafe-go v0.6.8
+	github.com/edsrzf/mmap-go v1.2.0
+	github.com/failsafe-go/failsafe-go v0.6.9
 	github.com/felixge/fgprof v0.9.5
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.23.0
@@ -22,11 +22,11 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20241021153333-9018c0eb8c52
+	github.com/grafana/dskit v0.0.0-20241024204126-a4a4dca2b2e6
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
-	github.com/minio/minio-go/v7 v7.0.78
+	github.com/minio/minio-go/v7 v7.0.79
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.0.0-20240724223109-9dec25a38fa8
@@ -49,7 +49,7 @@ require (
 	golang.org/x/net v0.30.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/time v0.6.0
-	google.golang.org/grpc v1.66.2
+	google.golang.org/grpc v1.67.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -74,7 +74,7 @@ require (
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.9
-	github.com/thanos-io/objstore v0.0.0-20241015070247-5f04b8b0b52a
+	github.com/thanos-io/objstore v0.0.0-20241028150459-cfdd0e50390d
 	github.com/twmb/franz-go v1.17.1
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20241015013301-cea7aa5d8037
@@ -166,7 +166,7 @@ require (
 	github.com/aws/smithy-go v1.11.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.13.0 // indirect
+	github.com/bits-and-blooms/bitset v1.14.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/coreos/go-semver v0.3.0 // indirect
@@ -275,14 +275,14 @@ require (
 	golang.org/x/tools v0.26.0 // indirect
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240827150818-7e3bb234dfed // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241015192408-796eee8c2d53
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241023201215-e8c852a65765
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241104175756-dea6247a158f
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -316,3 +316,7 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // - https://github.com/grafana/franz-go/pull/3
 // - https://github.com/grafana/franz-go/pull/4
 replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
+
+// Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
+// Following https://github.com/grafana/dskit/pull/581
+replace google.golang.org/grpc => google.golang.org/grpc v1.65.0

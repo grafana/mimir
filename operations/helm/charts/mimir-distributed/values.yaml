@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r313-a39dc42
+  tag: r314-97a7589
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -140,7 +140,7 @@ mimir:
         s3:
           access_key_id: {{ .Values.minio.rootUser }}
           bucket_name: enterprise-metrics-admin
-          endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+          endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
           insecure: true
           secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
@@ -171,7 +171,7 @@ mimir:
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
     {{- end }}
@@ -219,7 +219,7 @@ mimir:
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
@@ -374,7 +374,7 @@ mimir:
       {{- if .Values.minio.enabled }}
       backend: s3
       s3:
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
         access_key_id: {{ .Values.minio.rootUser }}
         secret_access_key: {{ .Values.minio.rootPassword }}
@@ -543,6 +543,17 @@ alertmanager:
 
   statefulSet:
     enabled: true
+
+  # -- Dedicated service account for alertmanager pods.
+  # If not set, the default service account defined at the begining of this file will be used.
+  # This service account can be used even if the default one is not set.
+  serviceAccount:
+    create: false
+    # -- Alertmanager specific service account name. If not set and create is set to true, the default
+    # name will be the default mimir service account's name with the "-alertmanager" suffix.
+    name: ""
+    annotations: {}
+    labels: {}
 
   service:
     annotations: {}
@@ -2318,7 +2329,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.31-alpine
+    tag: 1.6.32-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -3905,7 +3916,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r313-d75d1d4f
+    tag: r314-308bed85
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics

@@ -21,7 +21,7 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v2.54.1
+    image: prom/prometheus:v2.55.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -32,7 +32,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:10.4.10
+    image: grafana/grafana:10.4.11
     ports:
       - 3000:3000
     volumes:
@@ -111,7 +111,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.110.0
+    image: otel/opentelemetry-collector-contrib:0.112.0
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -126,7 +126,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.110.0
+    image: otel/opentelemetry-collector-contrib:0.112.0
     profiles:
       - otel-collector-otlp-push
     volumes:
