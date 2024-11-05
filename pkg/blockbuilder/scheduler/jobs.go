@@ -14,7 +14,7 @@ import (
 var (
 	errNoJobAvailable = errors.New("no job available")
 	errJobNotFound    = errors.New("job not found")
-	errJobNotAssigned = errors.New("job not assigned to worker")
+	errJobNotAssigned = errors.New("job not assigned to given worker")
 	errBadEpoch       = errors.New("bad epoch")
 )
 
