@@ -246,7 +246,6 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 // Batch fills the batch with the next size samples from the iterator.
 // Only meant for histogram and float histogram values.
 // lastT is the last timestamp from the previous batch (or 0).
-// lastPrevT is the previous timestamp recorded for the last sample in the previous batch (or 0)
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType, lastT int64, hPool *zeropool.Pool[*histogram.Histogram], fhPool *zeropool.Pool[*histogram.FloatHistogram]) Batch {
 	var batch Batch
 	batch.ValueType = valueType
