@@ -28,7 +28,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder-scheduler.consume-interval", 1*time.Hour, "Interval between consumption cycles.")
 	f.DurationVar(&cfg.StartupObserveTime, "block-builder-scheduler.startup-observe-time", 25*time.Second, "How long to observe worker state before scheduling jobs.")
 	f.DurationVar(&cfg.JobLeaseTime, "block-builder-scheduler.job-lease-time", 2*time.Minute, "How long a job lease will live for before expiring.")
-	f.DurationVar(&cfg.UpdateJobInterval, "block-builder-scheduler.update-job-interval", 30*time.Second, "How often clients should send job updates.")
+	f.DurationVar(&cfg.UpdateJobInterval, "block-builder-scheduler.update-job-interval", 8*time.Second, "How often clients should send job updates.")
 }
 
 func (cfg *Config) Validate() error {
