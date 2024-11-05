@@ -160,24 +160,9 @@ func (b *Batch) PrevT() int64 {
 	return 0
 }
 
-// LastTimes returns the last timestamp and previous timestamp of the batch.
-// Only meant for non float batches.
-func (b *Batch) LastT() int64 {
-	if b.Length > 0 {
-		return b.Timestamps[b.Length-1]
-	}
-	return 0
-}
-
 func (b *Batch) SetPrevT(t int64) {
 	if b.ValueType == chunkenc.ValHistogram || b.ValueType == chunkenc.ValFloatHistogram {
 		*(*int64)(unsafe.Pointer(&(b.Values[b.Index]))) = t
-	}
-}
-
-func (b *Batch) SetLastPrevT(t int64) {
-	if b.Length > 0 && (b.ValueType == chunkenc.ValHistogram || b.ValueType == chunkenc.ValFloatHistogram) {
-		*(*int64)(unsafe.Pointer(&(b.Values[b.Length-1]))) = t
 	}
 }
 
