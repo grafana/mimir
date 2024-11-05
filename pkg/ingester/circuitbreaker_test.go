@@ -79,21 +79,84 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 
 	require.False(t, cb.isActive())
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
+	cfg := CircuitBreakerConfig{Enabled: true}
 	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	// Inactive by default
+	require.False(t, cb.isActive())
+
 	cb.activate()
 
-	// When InitialDelay is set, circuit breaker is not immediately active.
-	require.False(t, cb.isActive())
+	// Should be active immediately
+	require.True(t, cb.isActive())
 
-	// After InitialDelay passed, circuit breaker becomes active.
-	require.Eventually(t, func() bool {
-		return cb.isActive()
-	}, time.Second, 10*time.Millisecond)
-
-	// deactivate() makes the circuit breaker inactive again.
 	cb.deactivate()
+
+	// Should be inactive immediately
 	require.False(t, cb.isActive())
+}
+
+func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	// Inactive by default
+	require.False(t, cb.isActive())
+
+	cb.activate()
+
+	// When InitialDelay is set, circuit breaker is not immediately activated
+	require.False(t, cb.isActive())
+	require.False(t, cb.isActivating())
+
+	// InitalDelay starts when we first get a request, not when we activate the circuit breaker
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// Once we get a request, circuit breaker becomes active after InitialDelay passes
+	require.False(t, cb.isActive())
+	require.True(t, cb.isActivating())
+	require.Eventually(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+
+	cb.deactivate()
+
+	// Should be inactive immediately
+	require.False(t, cb.isActive())
+	require.False(t, cb.isActivating())
+}
+
+func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	// Inactive by default
+	require.False(t, cb.isActive())
+
+	cb.activate()
+
+	// When InitialDelay is set, circuit breaker is not immediately activated
+	require.False(t, cb.isActive())
+	require.False(t, cb.isActivating())
+
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// Once we get a request, circuit breaker starts to activate
+	require.False(t, cb.isActive())
+	require.True(t, cb.isActivating())
+
+	cb.deactivate()
+
+	// Should be inactive immediately, and cancel any pending activation
+	require.False(t, cb.isActive())
+	require.False(t, cb.isActivating())
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
 }
 
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
