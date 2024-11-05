@@ -725,7 +725,6 @@ differentuser:
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-
 			t.Cleanup(func() {
 				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 			})
@@ -1353,6 +1352,90 @@ func TestIsLimitError(t *testing.T) {
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
+		})
+	}
+}
+
+func TestIntStringYAMLAlertmanagerSizeLimits(t *testing.T) {
+	for name, tc := range map[string]struct {
+		inputYAML          string
+		expectedConfigSize int
+		expectedStateSize  int
+	}{
+		"when using integers": {
+			inputYAML: `
+alertmanager_max_grafana_config_size_bytes: 4096000
+alertmanager_max_grafana_state_size_bytes: 2048000
+`,
+			expectedConfigSize: 4096000,
+			expectedStateSize:  2048000,
+		},
+		"when using strings": {
+			inputYAML: `
+alertmanager_max_grafana_config_size_bytes: "4096000"
+alertmanager_max_grafana_state_size_bytes: "2048000"
+`,
+			expectedConfigSize: 4096000,
+			expectedStateSize:  2048000,
+		},
+		"when nothing is given, defaults to 0": {
+			inputYAML:          "",
+			expectedConfigSize: 0,
+			expectedStateSize:  0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limitsYAML := Limits{}
+			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
+			require.NoError(t, err, "expected to be able to unmarshal from YAML")
+
+			ov, err := NewOverrides(limitsYAML, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
+			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
+		})
+	}
+}
+
+func TestIntStringJSONAMLAlertmanagerSizeLimits(t *testing.T) {
+	for name, tc := range map[string]struct {
+		inputJSON          string
+		expectedConfigSize int
+		expectedStateSize  int
+	}{
+		"when using integers": {
+			inputJSON: `{
+"alertmanager_max_grafana_config_size_bytes": 4096000,
+"alertmanager_max_grafana_state_size_bytes": 2048000
+			}`,
+			expectedConfigSize: 4096000,
+			expectedStateSize:  2048000,
+		},
+		"when using strings": {
+			inputJSON: `{
+"alertmanager_max_grafana_config_size_bytes": "4096000",
+"alertmanager_max_grafana_state_size_bytes": "2048000"
+			}`,
+			expectedConfigSize: 4096000,
+			expectedStateSize:  2048000,
+		},
+		"when nothing is given, defaults to 0": {
+			inputJSON:          "{}",
+			expectedConfigSize: 0,
+			expectedStateSize:  0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limitsJSON := Limits{}
+			err := json.Unmarshal([]byte(tc.inputJSON), &limitsJSON)
+			require.NoError(t, err, "expected to be able to unmarshal from YAML")
+
+			ov, err := NewOverrides(limitsJSON, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
+			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
 		})
 	}
 }
