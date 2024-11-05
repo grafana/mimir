@@ -103,7 +103,7 @@
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
-      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*mimir-)?%s' % regexp else regexp,
+      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*mimir-(distributed-)?)?%s' % regexp else regexp,
       // Wrap the regexp to match any prefix if the deployment type is "baremetal".
       local baremetalCompatibleMatcher = function(regexp) if $._config.deployment_type == 'baremetal' then '.*%s' % regexp else regexp,
       local instanceMatcher = function(regexp) baremetalCompatibleMatcher(helmCompatibleMatcher('%s.*' % regexp)),
