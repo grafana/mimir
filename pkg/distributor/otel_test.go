@@ -294,7 +294,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode: http.StatusUnsupportedMediaType,
 			errMessage:   "\"gzip\", \"lz4\" or no compression supported",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. \"gzip\", \"lz4\" or no compression supported" insight=true`},
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. \"gzip\", \"lz4\", or no compression supported" insight=true`},
 		},
 		{
 			name:        "Write samples. With gzip compression, request too big",
