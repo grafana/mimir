@@ -179,15 +179,11 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		}
 
 		if t1 < t2 {
-			// We have a definite next sample in the left stream.
-			// Reset the counter hint if the previous sample was unknown.
 			populate(bs.curr(), lt)
 			bs.next()
 			continue
 		}
 		if t2 < t1 {
-			// We have a definite next sample in the right stream.
-			// Reset the counter hint if the previous sample was unknown.
 			populate(batch, rt)
 			batch.Next()
 			continue

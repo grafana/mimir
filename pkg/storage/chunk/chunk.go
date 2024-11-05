@@ -103,26 +103,14 @@ const BatchSize = 12
 // Batch is intended to be small, and passed by value!
 type Batch struct {
 	Timestamps [BatchSize]int64
-	// Values meaning depends on the ValueType field.
+	// Values meaning depends on the ValueType field, to save memory
+	// we reuse the values between different types of samples.
 	// If ValueType is ValFloat then it stores float sample values.
 	// Otherwise, it stores information for deciding what to do with the
 	// counter reset of histograms. 0 means reset the hint.
-	// Non zero values are the previous timestamp of the sample, except for
-	// when the merge consumes the last sample of the batch it will write
-	// the timestamp of the last sample from the merge.
-	// E.g.:
-	//   Batch A (timestamp, previous timestamp):  [(T1, 0), (T2, T1), (T3, T2)]
-	//   Batch B (timestamp, previous timestamp):  [(T1, 0)]
-	// After merge:
-	//   Batch A (timestamp, previous timestamp):  [(T1, 0), (T2, T1), (T3, T3)]
-	//   Batch B (timestamp, previous timestamp):  [(T1, T3)]
-	// When stream A is advanced, T3==T3, so we don't need to reset the counter.
-	// When stream B is advanced, we'll notice that T1!=T3, so we need to reset
-	// the counter, since stream B missed some values. Thus we'll write 0 into
-	// the next first samples previous time.
-	// After advancing both streams:
-	//   Batch A: [(T4, T3)]
-	//   Batch B: [(T4, 0)]
+	// Non zero values are the previous timestamp of the sample in
+	// the same stream. It is up to the code that creates the Batches to
+	// keep the continuity of the stream.
 	Values [BatchSize]float64
 	// PointerValues store pointers to non-float complex values like histograms,
 	// float histograms or future additions. Since Batch is expected to be passed
