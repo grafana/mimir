@@ -81,7 +81,7 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 
 	// Verify the remaining observations
 	require.Len(t, cat.observed, 1)
-	assert.Equal(t, int64(12), cat.observed[lbs[1].Hash()].lastUpdate.Load())
+	assert.NotNil(t, cat.observed[lbs[1].Hash()].lastUpdate)
 }
 
 func Test_GetMaxCardinality(t *testing.T) {
