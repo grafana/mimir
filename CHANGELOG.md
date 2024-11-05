@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.13.1 (unreleased)
+
+### Grafana Mimir
+
+* [BUGFIX] Query-frontend: Do not break scheduler connection on malformed queries. #9832
+
 ## 2.13.0
 
 ### Grafana Mimir
