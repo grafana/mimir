@@ -49,7 +49,7 @@ type ActiveSeries struct {
 	// configMutex protects matchers and lastMatchersUpdate. it used by both matchers and cat
 	configMutex      sync.RWMutex
 	matchers         *asmodel.Matchers
-	cat              costattribution.Tracker
+	cat              *costattribution.Tracker
 	lastConfigUpdate time.Time
 
 	// The duration after which series become inactive.
@@ -67,7 +67,7 @@ type seriesStripe struct {
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs                        atomic.Int64
-	cat                                  costattribution.Tracker
+	cat                                  *costattribution.Tracker
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
@@ -91,7 +91,7 @@ type seriesEntry struct {
 func NewActiveSeries(
 	asm *asmodel.Matchers,
 	timeout time.Duration,
-	cat costattribution.Tracker,
+	cat *costattribution.Tracker,
 ) *ActiveSeries {
 	c := &ActiveSeries{
 		matchers: asm, timeout: timeout, cat: cat,
@@ -112,24 +112,25 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 }
 
 // Function to compare two Tracker instances
-func areTrackersEqual(t1, t2 costattribution.Tracker) bool {
-	if t1 == t2 {
-		// If both trackers are the same pointer (including nil), they are equal
-		return true
+func areTrackersEqual(t1, t2 *costattribution.Tracker) bool {
+	cal1 := t1.GetCALabels()
+	cal2 := t2.GetCALabels()
+	if len(cal1) != len(cal2) {
+		return false
 	}
-
-	// Use type assertion to check if both are NoopTracker
-	_, isNoop1 := t1.(*costattribution.NoopTracker)
-	_, isNoop2 := t2.(*costattribution.NoopTracker)
-
-	// If both are NoopTracker instances, treat them as equal
-	return isNoop1 && isNoop2
+	for i := range cal1 {
+		if cal1[i] != cal2[i] {
+			return false
+		}
+	}
+	return true
 }
 
-func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg costattribution.Tracker) bool {
+func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.Tracker) bool {
 	if ctCfg.String() != c.CurrentConfig().String() {
 		return true
 	}
+
 	return !areTrackersEqual(caCfg, c.CurrentCostAttributionTracker())
 }
 
@@ -150,7 +151,7 @@ func (c *ActiveSeries) CurrentConfig() asmodel.CustomTrackersConfig {
 	return c.matchers.Config()
 }
 
-func (c *ActiveSeries) CurrentCostAttributionTracker() costattribution.Tracker {
+func (c *ActiveSeries) CurrentCostAttributionTracker() *costattribution.Tracker {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
 	return c.cat
@@ -458,7 +459,7 @@ func (s *seriesStripe) clear() {
 func (s *seriesStripe) reinitialize(
 	asm *asmodel.Matchers,
 	deleted *deletedSeries,
-	cat costattribution.Tracker,
+	cat *costattribution.Tracker,
 ) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

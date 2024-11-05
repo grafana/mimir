@@ -712,7 +712,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	cat := getCATrackerForUser(userID, d.costAttributionMgr)
+	cat := d.costAttributionMgr.TrackerForUser(userID)
 	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
 		return err
 	}
@@ -854,7 +854,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 			if errors.As(err, &tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				getCATrackerForUser(userID, d.costAttributionMgr).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, now)
+				d.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, now)
 			}
 
 			return err
@@ -1111,7 +1111,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 			if len(req.Timeseries) > 0 {
-				getCATrackerForUser(userID, d.costAttributionMgr).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(validatedSamples), reasonRateLimited, now)
+				d.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(validatedSamples), reasonRateLimited, now)
 			}
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
@@ -1676,7 +1676,7 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
-		getCATrackerForUser(userID, d.costAttributionMgr).IncrementReceivedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(receivedSamples), mtime.Now())
+		d.costAttributionMgr.TrackerForUser(userID).IncrementReceivedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(receivedSamples), mtime.Now())
 	}
 	receivedMetadata = len(req.Metadata)
 

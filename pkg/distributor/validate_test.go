@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -199,7 +198,7 @@ func TestValidateLabels(t *testing.T) {
 			err:                      nil,
 		},
 	} {
-		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation, costattribution.NewNoopTracker(), ts)
+		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation, nil, ts)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -399,11 +398,10 @@ func TestValidateLabelDuplication(t *testing.T) {
 	cfg.maxLabelValueLength = 10
 
 	userID := "testUser"
-
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false, false, costattribution.NewNoopTracker(), ts)
+	}, false, false, nil, ts)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -420,7 +418,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false, false, costattribution.NewNoopTracker(), ts)
+	}, false, false, nil, ts)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -571,7 +569,6 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 
 	registry := prometheus.NewRegistry()
 	metrics := newSampleValidationMetrics(registry)
-
 	for _, limit := range []int{0, 1, 2} {
 		for name, h := range testCases {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
@@ -579,7 +576,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 				cfg.maxNativeHistogramBuckets = limit
 				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
-				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h, costattribution.NewNoopTracker())
+				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h, nil)
 
 				if limit == 1 {
 					require.Error(t, err)
@@ -626,7 +623,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			hist.Schema = testCase.schema
-			_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist, costattribution.NewNoopTracker())
+			_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist, nil)
 			require.Equal(t, testCase.expectedError, err)
 		})
 	}

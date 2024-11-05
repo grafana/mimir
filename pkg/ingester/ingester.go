@@ -774,15 +774,6 @@ func (i *Ingester) replaceMatchers(asm *asmodel.Matchers, userDB *userTSDB, now 
 	userDB.activeSeries.ReloadMatchers(asm, now)
 }
 
-// getCATrackerForUser returns the cost attribution tracker for the user.
-// If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns a noop tracker.
-func getCATrackerForUser(userID string, cam *costattribution.Manager) costattribution.Tracker {
-	if cam == nil {
-		return costattribution.NewNoopTracker()
-	}
-	return cam.TrackerForUser(userID)
-}
-
 func (i *Ingester) updateActiveSeries(now time.Time) {
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
@@ -791,7 +782,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		}
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
-		newCostAttributionTracker := getCATrackerForUser(userID, i.costAttributionMgr)
+		newCostAttributionTracker := i.costAttributionMgr.TrackerForUser(userID)
 		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionTracker) {
 			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
 		}
@@ -1303,9 +1294,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
-	// get the cost attribution value for the series
-	cat := getCATrackerForUser(userID, i.costAttributionMgr)
-
 	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
 		stats.failedSamplesCount++
 
@@ -1315,7 +1303,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// we actually ingested all samples which haven't failed.
 		switch {
 		case errors.Is(err, storage.ErrOutOfBounds):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfBounds, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfBounds, startAppend)
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
 				return newSampleTimestampTooOldError(model.Time(timestamp), labels)
@@ -1323,7 +1311,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, storage.ErrOutOfOrderSample):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfOrder, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleOutOfOrder, startAppend)
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
 				return newSampleOutOfOrderError(model.Time(timestamp), labels)
@@ -1331,7 +1319,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, storage.ErrTooOldSample):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooOld, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooOld, startAppend)
 			stats.sampleTooOldCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
 				return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
@@ -1339,7 +1327,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, globalerror.SampleTooFarInFuture):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooFarInFuture, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonSampleTooFarInFuture, startAppend)
 			stats.sampleTooFarInFutureCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
 				return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
@@ -1347,7 +1335,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonNewValueForTimestamp, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonNewValueForTimestamp, startAppend)
 			stats.newValueForTimestampCount++
 			updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
 				return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
@@ -1355,7 +1343,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, globalerror.MaxSeriesPerUser):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerUserSeriesLimit, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerUserSeriesLimit, startAppend)
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() softError {
 				return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
@@ -1363,7 +1351,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			return true
 
 		case errors.Is(err, globalerror.MaxSeriesPerMetric):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerMetricSeriesLimit, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonPerMetricSeriesLimit, startAppend)
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
@@ -1378,35 +1366,35 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramCountMismatch):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
 			})
 			return true
 		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
-			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
+			i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(labels), 1, reasonInvalidNativeHistogram, startAppend)
 			stats.invalidNativeHistogramCount++
 			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 				return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
@@ -1449,7 +1437,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
 				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), reasonSampleOutOfBounds, startAppend)
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), reasonSampleOutOfBounds, startAppend)
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
 					firstTimestamp = ts.Samples[0].TimestampMs
@@ -1470,7 +1458,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				stats.failedSamplesCount += len(ts.Samples)
 				stats.sampleOutOfBoundsCount += len(ts.Samples)
-				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)), reasonSampleOutOfBounds, startAppend)
+				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)), reasonSampleOutOfBounds, startAppend)
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
@@ -2689,7 +2677,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		activeSeries: activeseries.NewActiveSeries(
 			asmodel.NewMatchers(matchersConfig),
 			i.cfg.ActiveSeriesMetrics.IdleTimeout,
-			getCATrackerForUser(userID, i.costAttributionMgr),
+			i.costAttributionMgr.TrackerForUser(userID),
 		),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

@@ -69,7 +69,7 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 	cat.IncrementDiscardedSamples(lbs[1], 2, "out-of-window-sample", time.Unix(12, 0))
 
 	// Check the observations
-	require.Len(t, cat.(*TrackerImp).observed, 2)
+	require.Len(t, cat.observed, 2)
 
 	// Purge the observations older than 10 seconds, we should have 1 observation left
 	purged := cat.PurgeInactiveObservations(10)
@@ -80,9 +80,8 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 	assert.Equal(t, []string{"foo", "user1", "invalid-metrics-name"}, purged[0].lvalues)
 
 	// Verify the remaining observations
-	obs := cat.(*TrackerImp).observed
-	require.Len(t, obs, 1)
-	assert.Equal(t, int64(12), obs[lbs[1].Hash()].lastUpdate.Load())
+	require.Len(t, cat.observed, 1)
+	assert.Equal(t, int64(12), cat.observed[lbs[1].Hash()].lastUpdate.Load())
 }
 
 func Test_GetMaxCardinality(t *testing.T) {

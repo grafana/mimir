@@ -12,44 +12,45 @@ import (
 	"go.uber.org/atomic"
 )
 
-type Tracker interface {
-	IncrementActiveSeries(labels.Labels, time.Time)
-	IncrementDiscardedSamples(labels.Labels, float64, string, time.Time)
-	IncrementReceivedSamples(labels.Labels, float64, time.Time)
-	DecrementActiveSeries(labels.Labels, time.Time)
-	PurgeInactiveObservations(int64) []*Observation
-	UpdateMaxCardinality(int)
-	GetMaxCardinality() int
-	GetCALabels() []string
-}
-
 type Observation struct {
 	lvalues    []string
 	lastUpdate *atomic.Int64
 }
 
-func (t *TrackerImp) GetCALabels() []string {
+func (t *Tracker) GetCALabels() []string {
+	if t == nil {
+		return nil
+	}
 	return t.caLabels
 }
 
-func (t *TrackerImp) GetMaxCardinality() int {
+func (t *Tracker) GetMaxCardinality() int {
+	if t == nil {
+		return 0
+	}
 	return t.maxCardinality
 }
 
-func (t *TrackerImp) cleanupTrackerAttribution(vals []string) {
+func (t *Tracker) cleanupTrackerAttribution(vals []string) {
+	if t == nil {
+		return
+	}
 	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
 	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
 	t.discardedSampleAttribution.DeleteLabelValues(vals...)
 }
 
-func (t *TrackerImp) cleanupTracker(userID string) {
+func (t *Tracker) cleanupTracker(userID string) {
+	if t == nil {
+		return
+	}
 	filter := prometheus.Labels{"user": userID}
 	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
 	t.receivedSamplesAttribution.DeletePartialMatch(filter)
 	t.discardedSampleAttribution.DeletePartialMatch(filter)
 }
 
-type TrackerImp struct {
+type Tracker struct {
 	userID                         string
 	caLabels                       []string
 	maxCardinality                 int
@@ -65,23 +66,35 @@ type TrackerImp struct {
 	overflowHash uint64
 }
 
-func (t *TrackerImp) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
+func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
+	if t == nil {
+		return
+	}
 	vals := t.getKeyValues(lbs, now.Unix(), nil)
 	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
 }
 
-func (t *TrackerImp) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
+func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
+	if t == nil {
+		return
+	}
 	vals := t.getKeyValues(lbs, now.Unix(), &reason)
 	t.discardedSampleAttribution.WithLabelValues(vals...).Add(value)
 }
 
-func (t *TrackerImp) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
+func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
+	if t == nil {
+		return
+	}
 	vals := t.getKeyValues(lbs, now.Unix(), nil)
 	t.receivedSamplesAttribution.WithLabelValues(vals...).Add(value)
 }
 
 // TODO: bug here, we can update values in the overflow, the reason is that when overflow, we need to change also the values for the overflow hash
-func (t *TrackerImp) getKeyValues(lbls labels.Labels, ts int64, reason *string) []string {
+func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []string {
+	if t == nil {
+		return nil
+	}
 	values := make([]string, len(t.caLabels)+2)
 	for i, l := range t.caLabels {
 		values[i] = lbls.Get(l)
@@ -108,7 +121,10 @@ func (t *TrackerImp) getKeyValues(lbls labels.Labels, ts int64, reason *string) 
 	return values
 }
 
-func (t *TrackerImp) overflow(stream uint64, values []string, ts int64) bool {
+func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
+	if t == nil {
+		return false
+	}
 	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
 	// the origin labels ovserved time is not updated, but the overflow hash is updated.
 	isOverflow := false
@@ -131,17 +147,20 @@ func (t *TrackerImp) overflow(stream uint64, values []string, ts int64) bool {
 
 // we need the time stamp, since active series could have entered active stripe long time ago, and already evicted
 // from the observed map but still in the active Stripe
-func (t *TrackerImp) DecrementActiveSeries(lbs labels.Labels, ts time.Time) {
+func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, ts time.Time) {
+	if t == nil {
+		return
+	}
 	vals := t.getKeyValues(lbs, ts.Unix(), nil)
 	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
 }
 
-func newTracker(userID string, trackedLabels []string, limit int) (*TrackerImp, error) {
+func newTracker(userID string, trackedLabels []string, limit int) (*Tracker, error) {
 	// keep tracked labels sorted for consistent metric labels
 	sort.Slice(trackedLabels, func(i, j int) bool {
 		return trackedLabels[i] < trackedLabels[j]
 	})
-	m := &TrackerImp{
+	m := &Tracker{
 		userID:         userID,
 		caLabels:       trackedLabels,
 		maxCardinality: limit,
@@ -168,7 +187,10 @@ func newTracker(userID string, trackedLabels []string, limit int) (*TrackerImp, 
 	return m, nil
 }
 
-func (t *TrackerImp) updateOverFlowHash() {
+func (t *Tracker) updateOverFlowHash() {
+	if t == nil {
+		return
+	}
 	b := labels.NewScratchBuilder(len(t.caLabels))
 	for _, lb := range t.caLabels {
 		b.Add(lb, overflowValue)
@@ -177,21 +199,31 @@ func (t *TrackerImp) updateOverFlowHash() {
 	t.overflowHash = b.Labels().Hash()
 }
 
-func (t *TrackerImp) Collect(out chan<- prometheus.Metric) {
+func (t *Tracker) Collect(out chan<- prometheus.Metric) {
+	if t == nil {
+		return
+	}
 	t.activeSeriesPerUserAttribution.Collect(out)
 	t.receivedSamplesAttribution.Collect(out)
 	t.discardedSampleAttribution.Collect(out)
 }
 
 // Describe implements prometheus.Collector.
-func (t *TrackerImp) Describe(chan<- *prometheus.Desc) {
+func (t *Tracker) Describe(chan<- *prometheus.Desc) {
+	// this is an unchecked collector
+	if t == nil {
+		return
+	}
 }
 
 // resetObservedIfNeeded checks if the overflow hash is in the observed map and if it is, when dealine is 0, means that
 // we just need to clean up the observed map and metrics without checking the deadline.
 // Otherwise, we need to check if the last update time of the overflow hash is less than or equal to the deadline.
 // return true if the observed map is cleaned up, otherwise false.
-func (t *TrackerImp) resetObservedIfNeeded(deadline int64) bool {
+func (t *Tracker) resetObservedIfNeeded(deadline int64) bool {
+	if t == nil {
+		return false
+	}
 	t.obseveredMtx.Lock()
 	defer t.obseveredMtx.Unlock()
 	if ob, ok := t.observed[t.overflowHash]; ok {
@@ -204,7 +236,10 @@ func (t *TrackerImp) resetObservedIfNeeded(deadline int64) bool {
 	return false
 }
 
-func (t *TrackerImp) PurgeInactiveObservations(deadline int64) []*Observation {
+func (t *Tracker) PurgeInactiveObservations(deadline int64) []*Observation {
+	if t == nil {
+		return nil
+	}
 	// if overflow is in the observed map and it is reached dealine, we need to clean up the observed map and metrics
 	isReset := t.resetObservedIfNeeded(deadline)
 	if isReset {
@@ -244,7 +279,10 @@ func (t *TrackerImp) PurgeInactiveObservations(deadline int64) []*Observation {
 	return res[:len(invalidKeys)]
 }
 
-func (t *TrackerImp) UpdateMaxCardinality(limit int) {
+func (t *Tracker) UpdateMaxCardinality(limit int) {
+	if t == nil {
+		return
+	}
 	// if we are reducing limit, we can just set it, if it hits the limit, we can't do much about it.
 	if t.maxCardinality >= limit {
 		t.maxCardinality = limit
@@ -255,17 +293,3 @@ func (t *TrackerImp) UpdateMaxCardinality(limit int) {
 	t.resetObservedIfNeeded(0)
 	t.maxCardinality = limit
 }
-
-type NoopTracker struct{}
-
-func NewNoopTracker() *NoopTracker {
-	return &NoopTracker{}
-}
-func (*NoopTracker) IncrementActiveSeries(labels.Labels, time.Time)                      {}
-func (*NoopTracker) IncrementDiscardedSamples(labels.Labels, float64, string, time.Time) {}
-func (*NoopTracker) IncrementReceivedSamples(labels.Labels, float64, time.Time)          {}
-func (*NoopTracker) DecrementActiveSeries(labels.Labels, time.Time)                      {}
-func (*NoopTracker) PurgeInactiveObservations(int64) []*Observation                      { return nil }
-func (*NoopTracker) UpdateMaxCardinality(int)                                            {}
-func (*NoopTracker) GetMaxCardinality() int                                              { return 0 }
-func (*NoopTracker) GetCALabels() []string                                               { return nil }

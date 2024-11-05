@@ -85,24 +85,24 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		assert.Equal(t, []string{"team"}, manager.TrackerForUser("user1").GetCALabels())
 		assert.Equal(t, 5, manager.TrackerForUser("user1").GetMaxCardinality())
 
-		// user2 is not enabled for cost attribution, so tracker would be a NoopTracker
-		tr2, ok := manager.TrackerForUser("user2").(*NoopTracker)
-		assert.True(t, ok)
+		// user2 is not enabled for cost attribution, so tracker would be nil
+		tr2 := manager.TrackerForUser("user2")
+		assert.Nil(t, tr2)
 		assert.Equal(t, []string(nil), tr2.GetCALabels())
 
 		assert.Equal(t, []string{"department", "service"}, manager.TrackerForUser("user3").GetCALabels())
 		assert.Equal(t, 2, manager.TrackerForUser("user3").GetMaxCardinality())
 
-		// user4 tenant config doesn't exist, so tracker would be a NoopTracker
-		tr4, ok := manager.TrackerForUser("user4").(*NoopTracker)
-		assert.True(t, ok)
+		// user4 tenant config doesn't exist, so tracker would be nil
+		tr4 := manager.TrackerForUser("user4")
+		assert.Nil(t, tr4)
 		assert.Equal(t, []string(nil), tr4.GetCALabels())
 
 		assert.Equal(t, 2, len(manager.trackersByUserID))
 	})
 
 	t.Run("Track metrics for enabled user", func(t *testing.T) {
-		// since user2 is not enabled for cost attribution, tracker would be a NoopTracker, no metrics would be tracked
+		// since user2 is not enabled for cost attribution, tracker would be nil, no metrics would be tracked
 		manager.TrackerForUser("user2").IncrementReceivedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, time.Unix(0, 0))
 
 		// user1 and user3 is enabled for cost attribution, so metrics would be tracked

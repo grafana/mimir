@@ -28,14 +28,14 @@ type Manager struct {
 
 	// mu protects the trackersByUserID map
 	mtx              sync.RWMutex
-	trackersByUserID map[string]*TrackerImp
+	trackersByUserID map[string]*Tracker
 }
 
 // NewManager creates a new cost attribution manager. which is responsible for managing the cost attribution of series.
 // It will clean up inactive series and update the cost attribution of series every 3 minutes.
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides) *Manager {
 	s := &Manager{
-		trackersByUserID: make(map[string]*TrackerImp),
+		trackersByUserID: make(map[string]*Tracker),
 		limits:           limits,
 		mtx:              sync.RWMutex{},
 		inactiveTimeout:  inactiveTimeout,
@@ -47,6 +47,9 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 }
 
 func (m *Manager) iteration(_ context.Context) error {
+	if m == nil {
+		return nil
+	}
 	currentTime := time.Now()
 	m.purgeInactiveAttributionsUntil(currentTime.Add(-m.inactiveTimeout).Unix())
 	return nil
@@ -54,14 +57,18 @@ func (m *Manager) iteration(_ context.Context) error {
 
 // EnabledForUser returns true if the cost attribution is enabled for the user
 func (m *Manager) EnabledForUser(userID string) bool {
+	if m == nil {
+		return false
+	}
 	return len(m.limits.CostAttributionLabels(userID)) > 0
 }
 
-func (m *Manager) TrackerForUser(userID string) Tracker {
-	// if cost attribution is not enabled, return nil
-	if !m.EnabledForUser(userID) {
-		return NewNoopTracker()
+func (m *Manager) TrackerForUser(userID string) *Tracker {
+	// if manager is not initialized or cost attribution is not enabled, return nil
+	if m == nil || !m.EnabledForUser(userID) {
+		return nil
 	}
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -73,6 +80,9 @@ func (m *Manager) TrackerForUser(userID string) Tracker {
 }
 
 func (m *Manager) Collect(out chan<- prometheus.Metric) {
+	if m == nil {
+		return
+	}
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 	for _, tracker := range m.trackersByUserID {
@@ -87,6 +97,9 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 
 // deleteUserTracer is delete user tracker since the user is disabled for cost attribution
 func (m *Manager) deleteUserTracer(userID string) {
+	if m == nil {
+		return
+	}
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	if _, exists := m.trackersByUserID[userID]; !exists {
@@ -98,6 +111,9 @@ func (m *Manager) deleteUserTracer(userID string) {
 }
 
 func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
+	if m == nil {
+		return
+	}
 	// Get all userIDs from the map
 	m.mtx.RLock()
 	userIDs := make([]string, 0, len(m.trackersByUserID))
@@ -135,9 +151,12 @@ func compareStringSlice(a, b []string) bool {
 }
 
 func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64) []*Observation {
+	if m == nil {
+		return nil
+	}
+
 	cat := m.TrackerForUser(userID)
-	if _, ok := cat.(*NoopTracker); ok {
-		// It's a noop implementation
+	if cat == nil {
 		return nil
 	}
 

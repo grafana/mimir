@@ -222,7 +222,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 // validateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat costattribution.Tracker) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.Tracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonTooFarInFuture, now.Time())
@@ -243,7 +243,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat costattribution.Tracker) (bool, error) {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.Tracker) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonTooFarInFuture, now.Time())
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
@@ -380,18 +380,9 @@ func removeNonASCIIChars(in string) (out string) {
 	return out
 }
 
-// getCATrackerForUser returns the cost attribution tracker for the user.
-// If the cost attribution manager is nil or the user is not enabled for cost attribution, it returns a noop tracker.
-func getCATrackerForUser(userID string, cam *costattribution.Manager) costattribution.Tracker {
-	if cam == nil {
-		return costattribution.NewNoopTracker()
-	}
-	return cam.TrackerForUser(userID)
-}
-
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat costattribution.Tracker, ts time.Time) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.Tracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonMissingMetricName, ts)

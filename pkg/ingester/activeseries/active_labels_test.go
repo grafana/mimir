@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/costattribution"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
@@ -42,7 +41,7 @@ func TestIsLabelValueActive(t *testing.T) {
 		labels.FromStrings("a", "5"),
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), costattribution.NewNoopTracker())
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
 
 	memPostings := index.NewMemPostings()
 	for i, l := range series {
