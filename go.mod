@@ -10,7 +10,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.1
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/dustin/go-humanize v1.0.1
-	github.com/edsrzf/mmap-go v1.1.0
+	github.com/edsrzf/mmap-go v1.2.0
 	github.com/failsafe-go/failsafe-go v0.6.9
 	github.com/felixge/fgprof v0.9.5
 	github.com/go-kit/log v0.2.1

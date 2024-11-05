@@ -332,7 +332,7 @@ github.com/ebitengine/purego
 github.com/ebitengine/purego/internal/cgo
 github.com/ebitengine/purego/internal/fakecgo
 github.com/ebitengine/purego/internal/strings
-# github.com/edsrzf/mmap-go v1.1.0
+# github.com/edsrzf/mmap-go v1.2.0
 ## explicit; go 1.17
 github.com/edsrzf/mmap-go
 # github.com/efficientgo/core v1.0.0-rc.0.0.20221201130417-ba593f67d2a4
