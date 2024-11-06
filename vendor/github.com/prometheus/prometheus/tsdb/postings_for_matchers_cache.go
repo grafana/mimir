@@ -43,10 +43,6 @@ type IndexPostingsReader interface {
 	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
-
-	// PostingsForAllLabelValues returns a sorted iterator over all postings having a label with the given name.
-	// If no postings are found with the label in question, an empty iterator is returned.
-	PostingsForAllLabelValues(ctx context.Context, name string) index.Postings
 }
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.

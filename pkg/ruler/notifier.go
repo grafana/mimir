@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var errRulerNotifierStopped = cancellation.NewErrorf("rulerNotifier stopped")
@@ -58,10 +59,11 @@ func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, erro
 	if err != nil {
 		return nil, err
 	}
+	sl := util_log.SlogFromGoKit(l)
 	return &rulerNotifier{
-		notifier:  notifier.NewManager(o, l),
+		notifier:  notifier.NewManager(o, sl),
 		sdCancel:  sdCancel,
-		sdManager: discovery.NewManager(sdCtx, l, o.Registerer, sdMetrics),
+		sdManager: discovery.NewManager(sdCtx, sl, o.Registerer, sdMetrics),
 		logger:    l,
 	}, nil
 }

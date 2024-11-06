@@ -456,10 +456,6 @@ func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context
 	return index.ErrPostings(errors.New("not supported"))
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
-	return index.ErrPostings(errors.New("not supported"))
-}
-
 func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
 	// This will already be sorted from the Postings() call above.
 	return p

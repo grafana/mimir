@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
@@ -1047,6 +1048,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`},
 		{fn: "sgn"},
 		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
+		{fn: "double_exponential_smoothing", args: []string{"0.5", "0.7"}, rangeQuery: true},
+		// holt_winters is a backwards compatible alias for double_exponential_smoothing.
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
@@ -1510,7 +1513,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	var (
 		engine        = newEngine()
 		engineTimeout = promql.NewEngine(promql.EngineOpts{
-			Logger:               log.NewNopLogger(),
+			Logger:               promslog.NewNopLogger(),
 			Reg:                  nil,
 			MaxSamples:           10e6,
 			Timeout:              50 * time.Millisecond,
@@ -1523,7 +1526,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			},
 		})
 		engineSampleLimit = promql.NewEngine(promql.EngineOpts{
-			Logger:               log.NewNopLogger(),
+			Logger:               promslog.NewNopLogger(),
 			Reg:                  nil,
 			MaxSamples:           1,
 			Timeout:              time.Hour,
@@ -1937,7 +1940,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 			time.Millisecond / 10,
 		} {
 			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:               log.NewNopLogger(),
+				Logger:               promslog.NewNopLogger(),
 				Reg:                  nil,
 				MaxSamples:           100000000,
 				Timeout:              time.Minute,
@@ -2505,7 +2508,7 @@ func (i *seriesIteratorMock) Warnings() annotations.Annotations {
 // newEngine creates and return a new promql.Engine used for testing.
 func newEngine() *promql.Engine {
 	return promql.NewEngine(promql.EngineOpts{
-		Logger:               log.NewNopLogger(),
+		Logger:               promslog.NewNopLogger(),
 		Reg:                  nil,
 		MaxSamples:           10e6,
 		Timeout:              1 * time.Hour,

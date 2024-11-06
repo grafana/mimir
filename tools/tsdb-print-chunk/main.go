@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -30,7 +32,7 @@ func main() {
 }
 
 func printChunks(blockDir string, chunkRefs []string) {
-	b, err := tsdb.OpenBlock(logger, blockDir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", blockDir, "due to error:", err)
 		os.Exit(1)

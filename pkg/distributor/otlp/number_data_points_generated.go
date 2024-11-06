@@ -20,10 +20,9 @@ package otlp
 
 import (
 	"context"
+	"log/slog"
 	"math"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -50,9 +49,9 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 			model.MetricNameLabel,
 			name,
 		)
-		timestamp := convertTimeStamp(pt.Timestamp())
 		sample := &mimirpb.Sample{
-			TimestampMs: timestamp,
+			// convert ns to ms
+			TimestampMs: convertTimeStamp(pt.Timestamp()),
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -70,7 +69,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger log.Logger) error {
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -88,8 +87,8 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			model.MetricNameLabel,
 			name,
 		)
-
 		sample := &mimirpb.Sample{
+			// convert ns to ms
 			TimestampMs: timestamp,
 		}
 		switch pt.ValueType() {
@@ -130,7 +129,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			}
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
-		level.Debug(logger).Log("labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
+		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
 	return nil
