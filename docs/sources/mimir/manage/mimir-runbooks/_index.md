@@ -42,14 +42,14 @@ If nothing obvious from the above, check for increased load:
 ### MimirIngesterReachingSeriesLimit
 
 This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit.
-The threshold is set at 80%, to give some chance to react before the limit is reached.
-Once the limit is reached, writes to the ingester will fail for new series. Appending samples to existing ones will continue to succeed.
+The threshold is set at 80% to give the chance to react before the limit is reached.
+After the limit is reached, writes to the ingester fail for new series. Appending samples to existing ones continue to succeed.
 
 Note that the error responses sent back to the sender are classed as "server error" (5xx), which should result in a retry by the sender.
-While this situation continues, these retries will stall the flow of data, and newer data will queue up on the sender.
+While this situation continues, these retries stall the flow of data, and newer data queues up on the sender.
 If the condition is cleared in a short time, service can be restored with no data loss.
 
-This is different to what happens when the `max_global_series_per_user` is exceeded, which is considered a "client error" (4xx) where excess data is discarded.
+This is different to what happens when the `max_global_series_per_user` limit is exceeded, which is considered a "client error" (4xx). In this case, excess data is discarded.
 
 In case of **emergency**:
 
