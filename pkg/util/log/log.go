@@ -54,21 +54,49 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	return logger
 }
 
+type logLevel int
+
+const (
+	debugLevel logLevel = iota
+	infoLevel
+	warnLevel
+	errorLevel
+)
+
+type leveledLogger interface {
+	level() logLevel
+}
+
+var _ leveledLogger = levelFilter{}
+
 // Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.
 type levelFilter struct {
 	log.Logger
-	debugEnabled bool
+	lvl dslog.Level
 }
 
 func newFilter(logger log.Logger, lvl dslog.Level) log.Logger {
 	return &levelFilter{
-		Logger:       level.NewFilter(logger, lvl.Option),
-		debugEnabled: lvl.String() == "debug", // Using inside knowledge about the hierarchy of possible options.
+		Logger: level.NewFilter(logger, lvl.Option),
+		lvl:    lvl,
+	}
+}
+
+func (f levelFilter) level() logLevel {
+	switch f.lvl.String() {
+	case "info":
+		return infoLevel
+	case "warn":
+		return warnLevel
+	case "error":
+		return errorLevel
+	default:
+		return debugLevel
 	}
 }
 
 func (f *levelFilter) DebugEnabled() bool {
-	return f.debugEnabled
+	return f.level() <= debugLevel
 }
 
 func getWriter(buffered bool) io.Writer {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
+	util_log "github.com/grafana/mimir/pkg/util/log"    //lint:ignore faillint log is fine
 )
 
 // Config holds the PromQL engine config exposed by Mimir.
@@ -58,7 +59,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // to indicate whether the experimental PromQL functions should be enabled.
 func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, streamingpromql.EngineOpts, bool) {
 	commonOpts := promql.EngineOpts{
-		Logger:               logger,
+		Logger:               util_log.SlogFromGoKit(logger),
 		Reg:                  reg,
 		ActiveQueryTracker:   newQueryTracker(activityTracker),
 		MaxSamples:           cfg.MaxSamples,
