@@ -58,47 +58,28 @@ func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQue
 
 // containsExperimentalFunction checks if the query contains PromQL experimental functions.
 func containsExperimentalFunction(expr parser.Expr) (bool, string) {
-	switch e := expr.(type) {
-	case *parser.MatrixSelector:
-		return containsExperimentalFunction(e.VectorSelector)
-	case *parser.Call:
-		if parser.Functions[e.Func.Name].Experimental {
-			return true, e.Func.Name
+	expFuncNames := make([]string, 0)
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		call, ok := node.(*parser.Call)
+		if ok {
+			if parser.Functions[call.Func.Name].Experimental {
+				expFuncNames = append(expFuncNames, call.Func.Name)
+			}
+			return nil
 		}
-		for _, arg := range e.Args {
-			if res, name := containsExperimentalFunction(arg); res {
-				return true, name
+		agg, ok := node.(*parser.AggregateExpr)
+		if ok {
+			// Note that unlike most PromQL functions, the experimental nature of the aggregation functions are manually
+			// defined and enforced, so they have to be hardcoded here and updated along with changes in Prometheus.
+			switch agg.Op {
+			case parser.LIMITK, parser.LIMIT_RATIO:
+				expFuncNames = append(expFuncNames, agg.Op.String())
 			}
 		}
-	case *parser.BinaryExpr:
-		if res, name := containsExperimentalFunction(e.LHS); res {
-			return true, name
-		}
-		if res, name := containsExperimentalFunction(e.RHS); res {
-			return true, name
-		}
-		return false, ""
-	case *parser.AggregateExpr:
-		// Note that unlike most PromQL functions, the experimental nature of the aggregation functions are manually
-		// defined and enforced, so they have to be hardcoded here and updated along with changes in Prometheus.
-		switch e.Op {
-		case parser.LIMITK, parser.LIMIT_RATIO:
-			return true, e.Op.String()
-		}
-		if res, name := containsExperimentalFunction(e.Param); res {
-			return true, name
-		}
-		return containsExperimentalFunction(e.Expr)
-	case *parser.SubqueryExpr:
-		return containsExperimentalFunction(e.Expr)
-	case *parser.ParenExpr:
-		return containsExperimentalFunction(e.Expr)
-	case *parser.UnaryExpr:
-		return containsExperimentalFunction(e.Expr)
-	case *parser.StepInvariantExpr:
-		return containsExperimentalFunction(e.Expr)
-	case *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
-		return false, ""
+		return nil
+	})
+	if len(expFuncNames) > 0 {
+		return true, expFuncNames[0]
 	}
 	return false, ""
 }
