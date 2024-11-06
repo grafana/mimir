@@ -202,7 +202,7 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 
 	if endOfHeadSegment > len(v.buffer.points) {
 		// Need to wrap around.
-		endOfTailSegment := endOfHeadSegment % len(v.buffer.points)
+		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
 		endOfHeadSegment = len(v.buffer.points)
 		return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
 	}
