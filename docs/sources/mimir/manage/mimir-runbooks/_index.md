@@ -41,11 +41,11 @@ If nothing obvious from the above, check for increased load:
 
 ### MimirIngesterReachingSeriesLimit
 
-This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit.
+This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is close to reaching the limit.
 The threshold is set at 80% to give the chance to react before the limit is reached.
-After the limit is reached, writes to the ingester fail for new series. Appending samples to existing ones continue to succeed.
+After the limit is reached, write requests to the ingester fail for new series. Appending samples to existing ones continue to succeed.
 
-Note that the error responses sent back to the sender are classed as "server error" (5xx), which should result in a retry by the sender.
+Note that the error responses sent back to the sender are classified as "server errors" (5xx), which should result in a retry by the sender.
 While this situation continues, these retries stall the flow of data, and newer data queues up on the sender.
 If the condition is cleared in a short time, service can be restored with no data loss.
 
@@ -131,7 +131,7 @@ How to **fix** it:
 
 ### MimirIngesterReachingTenantsLimit
 
-This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
+This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, write requests to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
 The per-tenant memory utilisation in ingesters includes the overhead of allocations for TSDB stripes and chunk writer buffers. If the tenant number is high, this may contribute significantly to the total ingester memory utilization. The size of these allocations is controlled by `-blocks-storage.tsdb.stripe-size` (default 16KiB) and `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes` (default 4MiB), respectively.
 
