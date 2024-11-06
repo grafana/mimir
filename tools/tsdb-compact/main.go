@@ -15,6 +15,8 @@ import (
 	golog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/tsdb"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 func main() {
@@ -55,7 +57,7 @@ func main() {
 
 		blockDirs = append(blockDirs, d)
 
-		b, err := tsdb.OpenBlock(logger, d, nil)
+		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), d, nil)
 		if err != nil {
 			log.Fatalln("failed to open block:", d, err)
 		}
@@ -86,7 +88,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	c, err := tsdb.NewLeveledCompactorWithChunkSize(ctx, nil, logger, []int64{0}, nil, segmentSizeMB*1024*1024, nil)
+	c, err := tsdb.NewLeveledCompactorWithChunkSize(ctx, nil, util_log.SlogFromGoKit(logger), []int64{0}, nil, segmentSizeMB*1024*1024, nil)
 	if err != nil {
 		log.Fatalln("creating compator", err)
 	}

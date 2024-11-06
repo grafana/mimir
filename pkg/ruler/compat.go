@@ -50,6 +50,9 @@ type PusherAppender struct {
 	userID          string
 }
 
+func (a *PusherAppender) SetOptions(*storage.AppendOptions) {
+}
+
 func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
 	a.samples = append(a.samples, mimirpb.Sample{
@@ -80,6 +83,10 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 }
 
 func (a *PusherAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("CT zero samples are unsupported")
+}
+
+func (a *PusherAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, errors.New("CT zero samples are unsupported")
 }
 
@@ -143,6 +150,9 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 
 type NoopAppender struct{}
 
+func (a *NoopAppender) SetOptions(*storage.AppendOptions) {
+}
+
 func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
 	return 0, nil
 }
@@ -160,6 +170,10 @@ func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ i
 }
 
 func (a *NoopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("CT zero samples are unsupported")
+}
+
+func (a *NoopAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, errors.New("CT zero samples are unsupported")
 }
 
@@ -375,7 +389,7 @@ func DefaultTenantManagerFactory(
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
-			Logger:                     log.With(logger, "component", "ruler", "insight", true, "user", userID),
+			Logger:                     util_log.SlogFromGoKit(log.With(logger, "component", "ruler", "insight", true, "user", userID)),
 			Registerer:                 reg,
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,

@@ -18,6 +18,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -213,7 +215,7 @@ func main() {
 func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, matchers []*labels.Matcher) (blockGapStats, error) {
 	var blockStats blockGapStats
 	blockStats.BlockID = blockDir
-	b, err := tsdb.OpenBlock(logger, blockDir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil)
 	if err != nil {
 		return blockStats, fmt.Errorf("failed to open block: %w", err)
 	}

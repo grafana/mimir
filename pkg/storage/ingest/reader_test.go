@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -316,7 +315,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
-		
+
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
 					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
@@ -366,7 +365,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
-		
+
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
 					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
@@ -419,7 +418,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
-		
+
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
 					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
@@ -456,7 +455,7 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
 					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
-		
+
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
 					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
@@ -2172,7 +2171,7 @@ func TestPartitionCommitter(t *testing.T) {
 			return res, nil, true
 		})
 
-		logger := testutil.NewLogger(t)
+		logger := mimirtest.NewTestingLogger(t)
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
 		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
 		require.NoError(t, err)
@@ -2313,7 +2312,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs),
-		kgo.WithLogger(NewKafkaLogger(testutil.NewLogger(t))),
+		kgo.WithLogger(NewKafkaLogger(mimirtest.NewTestingLogger(t))),
 		// We will choose the partition of each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)
