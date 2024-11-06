@@ -17,6 +17,10 @@ spec:
       {{- end }}
   maxReplicaCount: {{ .Values.distributor.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.distributor.kedaAutoscaling.minReplicaCount }}
+  {{- with .Values.distributor.kedaAutoscaling.fallback }}
+  fallback:
+    {{ .toYaml . | nindent 4 }}
+  {{- end }}
   pollingInterval: {{ .Values.kedaAutoscaling.pollingInterval }}
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
