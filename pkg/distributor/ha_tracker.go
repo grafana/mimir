@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/kv/memberlist"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
@@ -49,6 +51,84 @@ func ProtoReplicaDescFactory() proto.Message {
 // NewReplicaDesc returns an empty *distributor.ReplicaDesc.
 func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
+}
+
+// Do we need localCas , when we have always at least 1 value ?
+func (r *ReplicaDesc) Merge(other memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {
+	if other == nil {
+		return nil, nil
+	}
+
+	otherReplicaDesc, ok := other.(*ReplicaDesc)
+	if !ok {
+		return nil, fmt.Errorf("expected *distributor.ReplicaDesc, got %T", other)
+	}
+
+	if otherReplicaDesc == nil {
+		return nil, nil
+	}
+
+	thisReplicaDesc := *r
+
+	// Track whether any changes were made
+	var changed bool
+
+	if otherReplicaDesc.DeletedAt > thisReplicaDesc.DeletedAt {
+		thisReplicaDesc.DeletedAt = otherReplicaDesc.DeletedAt
+		changed = true
+	}
+	if otherReplicaDesc.ReceivedAt > thisReplicaDesc.ReceivedAt {
+		thisReplicaDesc.ReceivedAt = otherReplicaDesc.ReceivedAt
+		changed = true
+	}
+	if otherReplicaDesc.ElectedAt > thisReplicaDesc.ElectedAt {
+		thisReplicaDesc.ElectedAt = otherReplicaDesc.ElectedAt
+		changed = true
+	}
+	if otherReplicaDesc.ElectedChanges != thisReplicaDesc.ElectedChanges {
+		thisReplicaDesc.ElectedChanges = otherReplicaDesc.ElectedChanges
+		changed = true
+	}
+	if otherReplicaDesc.Replica != thisReplicaDesc.Replica {
+		thisReplicaDesc.Replica = otherReplicaDesc.Replica
+		changed = true
+	}
+
+	if !changed {
+		return nil, nil
+	}
+
+	out := NewReplicaDesc()
+	out.Replica = thisReplicaDesc.Replica
+	out.ReceivedAt = thisReplicaDesc.ReceivedAt
+	out.DeletedAt = thisReplicaDesc.DeletedAt
+	out.ElectedChanges = thisReplicaDesc.ElectedChanges
+
+	return out, nil
+}
+
+func (r *ReplicaDesc) Clone() memberlist.Mergeable {
+	return proto.Clone(r).(*ReplicaDesc)
+}
+
+// Given that we merge one record per time does it make sense to have this ?
+func (r *ReplicaDesc) MergeContent() []string {
+	return []string{r.Replica}
+}
+
+// Given that we merge one record per time does it make sense ?
+// Followed approach from ring/model.go
+func (r *ReplicaDesc) RemoveTombstones(limit time.Time) (total, removed int) {
+	total = 1
+	removed = 0
+	if r.DeletedAt > 0 {
+		if limit.IsZero() || time.Unix(r.DeletedAt, 0).Before(limit) {
+			removed = 1
+		} else {
+			total++
+		}
+	}
+	return
 }
 
 // HATrackerConfig contains the configuration required to
@@ -94,9 +174,10 @@ func (cfg *HATrackerConfig) Validate() error {
 		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
 	}
 
-	if cfg.KVStore.Store == "memberlist" {
-		return errMemberlistUnsupported
-	}
+	// In order to not throw an error during distributor initialization
+	//if cfg.KVStore.Store == "memberlist" {
+	//	return errMemberlistUnsupported
+	//}
 
 	return nil
 }

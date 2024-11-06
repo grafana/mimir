@@ -8,10 +8,16 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
@@ -32,6 +38,37 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
+
+var (
+// logger = log.With(log.NewLogfmtLogger(os.Stdout), level.AllowDebug())
+)
+
+var addrsOnce sync.Once
+var localhostIP string
+
+func getLocalhostAddrs() []string {
+	addrsOnce.Do(func() {
+		ip, err := net.ResolveIPAddr("ip4", "localhost")
+		if err != nil {
+			localhostIP = "127.0.0.1" // this is the most common answer, try it
+		}
+		localhostIP = ip.String()
+	})
+	return []string{localhostIP}
+}
+
+type dnsProviderMock struct {
+	resolved []string
+}
+
+func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
+	p.resolved = addrs
+	return nil
+}
+
+func (p dnsProviderMock) Addresses() []string {
+	return p.resolved
+}
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time, elected time.Time) {
 	t.Helper()
@@ -120,16 +157,16 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if KV backend is set to memberlist": {
-			cfg: func() HATrackerConfig {
-				cfg := HATrackerConfig{}
-				flagext.DefaultValues(&cfg)
-				cfg.KVStore.Store = "memberlist"
-
-				return cfg
-			}(),
-			expectedErr: errMemberlistUnsupported,
-		},
+		//"should fail if KV backend is set to memberlist": {
+		//	cfg: func() HATrackerConfig {
+		//		cfg := HATrackerConfig{}
+		//		flagext.DefaultValues(&cfg)
+		//		cfg.KVStore.Store = "memberlist"
+		//
+		//		return cfg
+		//	}(),
+		//	expectedErr: errMemberlistUnsupported,
+		//},
 	}
 
 	for testName, testData := range tests {
@@ -137,6 +174,93 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
 		})
 	}
+}
+
+func TestHaTrackerWithMemberList(t *testing.T) {
+	var config memberlist.KVConfig
+	cluster := "cluster"
+	replica := "r1"
+	flagext.DefaultValues(&config)
+	ctx := context.Background()
+
+	config.TCPTransport = memberlist.TCPTransportConfig{
+		BindAddrs: getLocalhostAddrs(),
+		BindPort:  0, // randomize
+	}
+
+	config.Codecs = []codec.Codec{
+		GetReplicaDescCodec(),
+	}
+
+	memberListSvc := memberlist.NewKVInitService(
+		&config,
+		log.NewNopLogger(),
+		//log.With(logger, "component", "memberlist"),
+		&dnsProviderMock{},
+		prometheus.NewPedanticRegistry(),
+	)
+
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
+	})
+
+	c, err := newHATracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
+			MemberlistKV: memberListSvc.GetMemberlistKV,
+		}},
+		UpdateTimeout:          time.Millisecond,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+	})
+	now := time.Now()
+
+	// check replica r1
+	err = c.checkReplica(context.Background(), "user", cluster, replica, now)
+	assert.NoError(t, err)
+
+	mkv1, err := memberListSvc.GetMemberlistKV()
+	require.NoError(t, err)
+	config.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
+
+	memberListSvc2 := memberlist.NewKVInitService(
+		&config,
+		log.NewNopLogger(),
+		//log.With(logger, "component", "memberlist"),
+		&dnsProviderMock{},
+		prometheus.NewPedanticRegistry(),
+	)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc2))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc2))
+	})
+
+	c2, err := newHATracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
+			MemberlistKV: memberListSvc2.GetMemberlistKV,
+		}},
+		UpdateTimeout:          time.Millisecond,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c2))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, c2))
+	})
+
+	time.Sleep(time.Second * 10)
+	now = time.Now()
+	replica2 := "r2"
+	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)
+	assert.NoError(t, err)
+
 }
 
 // Test that values are set in the HATracker after WatchPrefix has found it in the KVStore.
