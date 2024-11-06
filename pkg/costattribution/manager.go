@@ -138,7 +138,8 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 }
 
 // compare two sorted string slices
-func compareStringSlice(a, b []string) bool {
+// true if they are equal, otherwise false
+func CompareCALabels(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -164,14 +165,15 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 	sort.Slice(newTrackedLabels, func(i, j int) bool {
 		return newTrackedLabels[i] < newTrackedLabels[j]
 	})
+
 	// if they are different, we need to update the tracker, we don't mind, just reinitialized the tracker
-	if !compareStringSlice(cat.GetCALabels(), newTrackedLabels) {
+	if !CompareCALabels(cat.CALabels(), newTrackedLabels) {
 		m.mtx.Lock()
 		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
 		// update the tracker with the new tracker
 		cat = m.trackersByUserID[userID]
 		m.mtx.Unlock()
-	} else if maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID); cat.GetMaxCardinality() != maxCardinality {
+	} else if maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID); cat.MaxCardinality() != maxCardinality {
 		// if the maxCardinality is different, update the tracker
 		cat.UpdateMaxCardinality(maxCardinality)
 	}

@@ -17,14 +17,19 @@ type Observation struct {
 	lastUpdate *atomic.Int64
 }
 
-func (t *Tracker) GetCALabels() []string {
+const (
+	TrackerLabel = "tracker"
+	TenantLabel  = "tenant"
+)
+
+func (t *Tracker) CALabels() []string {
 	if t == nil {
 		return nil
 	}
 	return t.caLabels
 }
 
-func (t *Tracker) GetMaxCardinality() int {
+func (t *Tracker) MaxCardinality() int {
 	if t == nil {
 		return 0
 	}
@@ -44,7 +49,7 @@ func (t *Tracker) cleanupTracker(userID string) {
 	if t == nil {
 		return
 	}
-	filter := prometheus.Labels{"user": userID}
+	filter := prometheus.Labels{TenantLabel: userID}
 	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
 	t.receivedSamplesAttribution.DeletePartialMatch(filter)
 	t.discardedSampleAttribution.DeletePartialMatch(filter)
@@ -90,7 +95,6 @@ func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now
 	t.receivedSamplesAttribution.WithLabelValues(vals...).Add(value)
 }
 
-// TODO: bug here, we can update values in the overflow, the reason is that when overflow, we need to change also the values for the overflow hash
 func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []string {
 	if t == nil {
 		return nil
@@ -168,19 +172,22 @@ func newTracker(userID string, trackedLabels []string, limit int) (*Tracker, err
 		observed:       map[uint64]*Observation{},
 		//lint:ignore faillint the metrics are registered in the mimir package
 		discardedSampleAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_discarded_attributed_samples_total",
-			Help: "The total number of samples that were discarded per attribution.",
-		}, append(trackedLabels, "user", "reason")),
+			Name:        "cortex_discarded_attributed_samples_total",
+			Help:        "The total number of samples that were discarded per attribution.",
+			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
+		}, append(trackedLabels, TenantLabel, "reason")),
 		//lint:ignore faillint the metrics are registered in the mimir package
 		receivedSamplesAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_received_attributed_samples_total",
-			Help: "The total number of samples that were received per attribution.",
-		}, append(trackedLabels, "user")),
+			Name:        "cortex_received_attributed_samples_total",
+			Help:        "The total number of samples that were received per attribution.",
+			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
+		}, append(trackedLabels, TenantLabel)),
 		//lint:ignore faillint the metrics are registered in the mimir package
 		activeSeriesPerUserAttribution: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_attributed_active_series",
-			Help: "The total number of active series per user and attribution.",
-		}, append(trackedLabels, "user")),
+			Name:        "cortex_ingester_attributed_active_series",
+			Help:        "The total number of active series per user and attribution.",
+			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
+		}, append(trackedLabels, TenantLabel)),
 		hashBuffer: make([]byte, 0, 1024),
 	}
 	m.updateOverFlowHash()

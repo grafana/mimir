@@ -81,22 +81,22 @@ func Test_CreateDeleteTracker(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("Get tracker for user", func(t *testing.T) {
-		assert.NotNil(t, manager.TrackerForUser("user1").GetCALabels())
-		assert.Equal(t, []string{"team"}, manager.TrackerForUser("user1").GetCALabels())
-		assert.Equal(t, 5, manager.TrackerForUser("user1").GetMaxCardinality())
+		assert.NotNil(t, manager.TrackerForUser("user1").CALabels())
+		assert.Equal(t, []string{"team"}, manager.TrackerForUser("user1").CALabels())
+		assert.Equal(t, 5, manager.TrackerForUser("user1").MaxCardinality())
 
 		// user2 is not enabled for cost attribution, so tracker would be nil
 		tr2 := manager.TrackerForUser("user2")
 		assert.Nil(t, tr2)
-		assert.Equal(t, []string(nil), tr2.GetCALabels())
+		assert.Equal(t, []string(nil), tr2.CALabels())
 
-		assert.Equal(t, []string{"department", "service"}, manager.TrackerForUser("user3").GetCALabels())
-		assert.Equal(t, 2, manager.TrackerForUser("user3").GetMaxCardinality())
+		assert.Equal(t, []string{"department", "service"}, manager.TrackerForUser("user3").CALabels())
+		assert.Equal(t, 2, manager.TrackerForUser("user3").MaxCardinality())
 
 		// user4 tenant config doesn't exist, so tracker would be nil
 		tr4 := manager.TrackerForUser("user4")
 		assert.Nil(t, tr4)
-		assert.Equal(t, []string(nil), tr4.GetCALabels())
+		assert.Equal(t, []string(nil), tr4.CALabels())
 
 		assert.Equal(t, 2, len(manager.trackersByUserID))
 	})
@@ -114,13 +114,13 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 1
-		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="__missing__",user="user3"} 1
+		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="custom_attribution"} 1
+		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="__missing__",tenant="user3",tracker="custom_attribution"} 1
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_received_attributed_samples_total counter
-		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",user="user3"} 1
-        cortex_received_attributed_samples_total{department="foo",service="bar",user="user3"} 1
-		cortex_received_attributed_samples_total{department="foo",service="dodo",user="user3"} 1
+		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",tenant="user3",tracker="custom_attribution"} 1
+        cortex_received_attributed_samples_total{department="foo",service="bar",tenant="user3",tracker="custom_attribution"} 1
+		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="custom_attribution"} 1
 		`
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",
@@ -136,12 +136,12 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
         # TYPE cortex_discarded_attributed_samples_total counter
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 1
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="custom_attribution"} 1
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_received_attributed_samples_total counter
-		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",user="user3"} 1
-        cortex_received_attributed_samples_total{department="foo",service="bar",user="user3"} 1
-		cortex_received_attributed_samples_total{department="foo",service="dodo",user="user3"} 1
+		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",tenant="user3",tracker="custom_attribution"} 1
+        cortex_received_attributed_samples_total{department="foo",service="bar",tenant="user3",tracker="custom_attribution"} 1
+		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="custom_attribution"} 1
 		`
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",
@@ -160,9 +160,9 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_received_attributed_samples_total counter
-		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",user="user3"} 1
-        cortex_received_attributed_samples_total{department="foo",service="bar",user="user3"} 1
-		cortex_received_attributed_samples_total{department="foo",service="dodo",user="user3"} 1
+		cortex_received_attributed_samples_total{department="__overflow__",service="__overflow__",tenant="user3",tracker="custom_attribution"} 1
+        cortex_received_attributed_samples_total{department="foo",service="bar",tenant="user3",tracker="custom_attribution"} 1
+		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="custom_attribution"} 1
 		`
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",
@@ -182,13 +182,13 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
         # TYPE cortex_discarded_attributed_samples_total counter
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 1
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="custom_attribution"} 1
 		`
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",
 			"cortex_received_attributed_samples_total",
 		}
-		assert.Equal(t, 3, manager.TrackerForUser("user3").GetMaxCardinality())
+		assert.Equal(t, 3, manager.TrackerForUser("user3").MaxCardinality())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 	})
 
@@ -202,7 +202,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
         # TYPE cortex_discarded_attributed_samples_total counter
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",user="user1"} 2
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="custom_attribution"} 2
 		`
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",

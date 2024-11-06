@@ -36,13 +36,13 @@ func Test_NewTracker(t *testing.T) {
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
     # TYPE cortex_discarded_attributed_samples_total counter
-    cortex_discarded_attributed_samples_total{platform="foo",reason="out-of-window", user="user1"} 2
+    cortex_discarded_attributed_samples_total{platform="foo",reason="out-of-window", tenant="user1",tracker="custom_attribution"} 2
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{platform="foo",user="user1"} 1
+    cortex_ingester_attributed_active_series{platform="foo",tenant="user1",tracker="custom_attribution"} 1
     # HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
     # TYPE cortex_received_attributed_samples_total counter
-    cortex_received_attributed_samples_total{platform="foo",user="user1"} 5
+    cortex_received_attributed_samples_total{platform="foo",tenant="user1",tracker="custom_attribution"} 5
 	`
 
 	metricNames := []string{
@@ -89,7 +89,7 @@ func Test_GetMaxCardinality(t *testing.T) {
 	cat := newTestManager().TrackerForUser("user1")
 
 	// Verify the max cardinality
-	assert.Equal(t, 5, cat.GetMaxCardinality())
+	assert.Equal(t, 5, cat.MaxCardinality())
 }
 
 func Test_GetCALabels(t *testing.T) {
@@ -97,7 +97,7 @@ func Test_GetCALabels(t *testing.T) {
 	cat := newTestManager().TrackerForUser("user1")
 
 	// Verify the CA labels
-	assert.Equal(t, []string{"team"}, cat.GetCALabels())
+	assert.Equal(t, []string{"team"}, cat.CALabels())
 }
 
 func Test_UpdateMaxCardinality(t *testing.T) {
@@ -108,5 +108,5 @@ func Test_UpdateMaxCardinality(t *testing.T) {
 	cat.UpdateMaxCardinality(20)
 
 	// Verify the max cardinality
-	assert.Equal(t, 20, cat.GetMaxCardinality())
+	assert.Equal(t, 20, cat.MaxCardinality())
 }

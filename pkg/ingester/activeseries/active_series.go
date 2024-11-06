@@ -111,27 +111,9 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.matchers.MatcherNames()
 }
 
-// Function to compare two Tracker instances
-func areTrackersEqual(t1, t2 *costattribution.Tracker) bool {
-	cal1 := t1.GetCALabels()
-	cal2 := t2.GetCALabels()
-	if len(cal1) != len(cal2) {
-		return false
-	}
-	for i := range cal1 {
-		if cal1[i] != cal2[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.Tracker) bool {
-	if ctCfg.String() != c.CurrentConfig().String() {
-		return true
-	}
-
-	return !areTrackersEqual(caCfg, c.CurrentCostAttributionTracker())
+	currentCTC, currentCAT := c.CurrentConfig()
+	return ctCfg.String() != currentCTC.String() || !costattribution.CompareCALabels(caCfg.CALabels(), currentCAT.CALabels())
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
@@ -145,16 +127,10 @@ func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	c.lastConfigUpdate = now
 }
 
-func (c *ActiveSeries) CurrentConfig() asmodel.CustomTrackersConfig {
+func (c *ActiveSeries) CurrentConfig() (asmodel.CustomTrackersConfig, *costattribution.Tracker) {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
-	return c.matchers.Config()
-}
-
-func (c *ActiveSeries) CurrentCostAttributionTracker() *costattribution.Tracker {
-	c.configMutex.RLock()
-	defer c.configMutex.RUnlock()
-	return c.cat
+	return c.matchers.Config(), c.cat
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
