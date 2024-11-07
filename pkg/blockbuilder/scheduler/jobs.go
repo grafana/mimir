@@ -156,13 +156,22 @@ type job struct {
 }
 
 type jobSpec struct {
-	topic          string
-	partition      int32
-	startOffset    int64
-	endOffset      int64
-	commitRecTs    time.Time
+	topic     string
+	partition int32
+
+	// Start and end offsets of the scan window, inclusive. (i.e., the offsets we'll Fetch.)
+	startOffset int64
+	endOffset   int64
+
+	// commitRecTs is the timestamp of the record which was committed (and not the commit time).
+	commitRecTs time.Time
+
 	lastSeenOffset int64
+
 	lastBlockEndTs time.Time
+
+	// currBlockEndTs is the timestamp
+	currBlockEndTs time.Time
 }
 
 func (a *jobSpec) less(b *jobSpec) bool {

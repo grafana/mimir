@@ -84,13 +84,13 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 }
 
+const minMinute = 15
+
 func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	startTime := time.Now()
 	defer func() {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
-
-	// TODO: Commit the offsets back to Kafka if dirty.
 
 	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, 0)
 	if err != nil {
@@ -107,35 +107,47 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		}
 	}
 
-	oldTime := time.Now().Add(-s.cfg.ConsumeInterval)
-	oldOffsets, err := s.adminClient.ListOffsetsAfterMilli(ctx, oldTime.UnixMilli(), s.cfg.Kafka.Topic)
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to obtain old offsets", "err", err)
+	// This is an interim solution to avoid scheduling jobs in the first 15 minutes of the hour.
+	if time.Now().Minute() < minMinute {
 		return
 	}
 
-	// See if the group-committed offset per partition is behind our "old" offsets.
+	// TODO: s.committed will be *at least* what is returned as committed from Kafka.
+	// We'll want to adjust the returned Kafka committed offsets to be the max of what we've seen.
 
-	oldOffsets.Each(func(o kadm.ListedOffset) {
-		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
-			if l.Commit.At < o.Offset {
-				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
+	parts, ok := lag[s.cfg.Kafka.Topic]
+	if !ok {
+		level.Warn(s.logger).Log("msg", "no partitions found for topic")
+		return
+	}
 
-				// The job is uniquely identified by {topic, partition, consumption start offset}.
-				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
-				partState := blockbuilder.PartitionStateFromLag(s.logger, l, 0)
-				s.jobs.addOrUpdate(jobID, jobSpec{
-					topic:          o.Topic,
-					partition:      o.Partition,
-					startOffset:    l.Commit.At,
-					endOffset:      l.End.Offset,
-					commitRecTs:    partState.CommitRecordTimestamp,
-					lastSeenOffset: partState.LastSeenOffset,
-					lastBlockEndTs: partState.LastBlockEnd,
-				})
-			}
+	for p, lag := range parts {
+		if lag.Lag <= 0 {
+			level.Info(s.logger).Log(
+				"msg", "nothing to consume in partition",
+				"partition", p,
+				"commit_offset", lag.Commit.At,
+				"start_offset", lag.Start.Offset,
+				"end_offset", lag.End.Offset,
+				"lag", lag.Lag,
+			)
+			continue
 		}
-	})
+
+		// The job is uniquely identified by {topic, partition, consumption start offset}.
+		jobID := fmt.Sprintf("%s/%d/%d", s.cfg.Kafka.Topic, p, lag.Commit.At)
+		partState := blockbuilder.PartitionStateFromLag(s.logger, lag, 0)
+		s.jobs.addOrUpdate(jobID, jobSpec{
+			topic:          s.cfg.Kafka.Topic,
+			partition:      p,
+			startOffset:    lag.Commit.At,
+			endOffset:      lag.End.Offset,                  // scan window offset
+			commitRecTs:    partState.CommitRecordTimestamp, // On commit, this comes from worker as the last consumeds to disk offset ts.
+			lastSeenOffset: partState.LastSeenOffset,        // endOffset from n-1 iteration
+			lastBlockEndTs: partState.LastBlockEnd,          // Use the BB code.
+			currBlockEndTs: time.Now().Truncate(s.cfg.ConsumeInterval),
+		})
+	}
 }
 
 // assignJob returns an assigned job for the given workerID.
@@ -147,6 +159,29 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, err
 // updateJob takes a job update from the client and records it, if necessary.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
+
+	/*
+		Today worker computes a whole bunch of stuff at the end of consumption
+		and commits that directly to Kafka.  Instead, we need to have the worker
+		send that to the scheduler, which will then (eventually) commit it to
+		Kafka.
+
+		It'll be all of this info:
+
+		commit := kadm.Offset{
+			Topic:       commitRec.Topic,
+			Partition:   commitRec.Partition,
+			At:          commitRec.Offset + 1, // offset+1 means everything up to (including) the offset was processed
+			LeaderEpoch: commitRec.LeaderEpoch,
+			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastSeenOffset, lastBlockEnd.UnixMilli()),
+		}
+		newState := PartitionState{
+			Commit:                commit,
+			CommitRecordTimestamp: commitRec.Timestamp,
+			LastSeenOffset:        lastSeenOffset,
+			LastBlockEnd:          lastBlockEnd,
+		}
+	*/
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -164,8 +199,7 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 				return fmt.Errorf("complete job: %w", err)
 			}
 		}
-		s.committed.AddOffset(s.cfg.Kafka.Topic, j.partition, j.endOffset, -1)
-		s.dirty = true
+		// TODO: Move forward P's offset info in s.committed.
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(jobID, workerID); err != nil {

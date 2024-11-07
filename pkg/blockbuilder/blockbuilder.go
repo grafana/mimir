@@ -425,10 +425,11 @@ consumerLoop:
 				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
 			}
 			if !allSamplesProcessed {
-				if lastRec == nil {
+				isFirstRecord := lastRec == nil
+				if isFirstRecord {
 					// The first record was not fully processed, meaning the record before this is the commit point.
-					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
-					// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
+					// We hand-craft the commitRec from the data in the state to re-commit it. On commit, the commit's meta is updated
+					// with the new value of LastSeenOffset. This is so the next cycle handles the partially processed record properly.
 					commitRec = &kgo.Record{
 						Topic:     state.Commit.Topic,
 						Partition: state.Commit.Partition,
