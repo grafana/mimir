@@ -99,6 +99,15 @@ func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	f.DurationVar(&cfg.RequestTimeout, prefix+"request-timeout", defaultRequestDuration, "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
 }
 
+type ActivatingState int
+
+const (
+	// tri-state activating values
+	activationIdle ActivatingState = iota
+	activationPending
+	activationQueued
+)
+
 // circuitBreaker abstracts the ingester's server-side circuit breaker functionality.
 // A nil *circuitBreaker is a valid noop implementation.
 type circuitBreaker struct {
@@ -107,7 +116,7 @@ type circuitBreaker struct {
 	logger      log.Logger
 	metrics     *circuitBreakerMetrics
 	active      atomic.Bool
-	activating  atomic.Bool
+	activating  atomic.Value
 	cb          circuitbreaker.CircuitBreaker[any]
 
 	// testRequestDelay is needed for testing purposes to simulate long-lasting requests
@@ -125,6 +134,7 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 		logger:      logger,
 		active:      *active,
 	}
+	cb.activating.Store(activationIdle)
 
 	circuitBreakerTransitionsCounter := func(metrics *circuitBreakerMetrics, state circuitbreaker.State) prometheus.Counter {
 		return metrics.circuitBreakerTransitions.WithLabelValues(state.String())
@@ -188,16 +198,28 @@ func (cb *circuitBreaker) isActive() bool {
 	return cb != nil && cb.active.Load()
 }
 
-func (cb *circuitBreaker) isActivating() bool {
-	return cb != nil && cb.activating.Load()
+func (cb *circuitBreaker) isActivationIdle() bool {
+	return cb != nil && (cb.activating.Load() == activationIdle)
+}
+
+func (cb *circuitBreaker) isActivationPending() bool {
+	return cb != nil && (cb.activating.Load() == activationPending)
+}
+
+func (cb *circuitBreaker) isActivationQueued() bool {
+	return cb != nil && (cb.activating.Load() == activationQueued)
 }
 
 func (cb *circuitBreaker) activate() {
-	if cb == nil || cb.active.Load() || cb.cfg.InitialDelay > 0 {
+	if cb == nil || cb.active.Load() {
 		return
 	}
-	level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
-	cb.active.Store(true)
+	if cb.cfg.InitialDelay > 0 {
+		cb.activating.CompareAndSwap(activationIdle, activationPending)
+	} else {
+		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
+		cb.active.Store(true)
+	}
 }
 
 func (cb *circuitBreaker) deactivate() {
@@ -206,14 +228,14 @@ func (cb *circuitBreaker) deactivate() {
 	}
 	if !cb.active.Load() {
 		// cancel delayed activation if it was scheduled
-		if cb.activating.CompareAndSwap(true, false) {
+		if old := cb.activating.Swap(activationIdle); old != activationIdle {
 			level.Info(cb.logger).Log("msg", "canceled delayed circuit breaker activation", "requestType", cb.requestType)
 		}
 		return
 	}
 	level.Info(cb.logger).Log("msg", "deactivating circuit breaker", "requestType", cb.requestType)
+	cb.activating.Store(activationIdle)
 	cb.active.Store(false)
-	cb.activating.Store(false)
 }
 
 func (cb *circuitBreaker) isOpen() bool {
@@ -229,11 +251,11 @@ func (cb *circuitBreaker) isOpen() bool {
 func (cb *circuitBreaker) tryAcquirePermit() (func(time.Duration, error), error) {
 	if !cb.isActive() {
 		// We only want one request to schedule the delayed activation of the circuit breaker.
-		if cb != nil && cb.cfg.InitialDelay > 0 && cb.activating.CompareAndSwap(false, true) {
+		if cb != nil && cb.cfg.InitialDelay > 0 && cb.activating.CompareAndSwap(activationPending, activationQueued) {
 			level.Info(cb.logger).Log("msg", "scheduling delayed circuit breaker activation", "requestType", cb.requestType, "delay", cb.cfg.InitialDelay)
 			time.AfterFunc(cb.cfg.InitialDelay, func() {
 				// Don't activate the circuit breaker if it was deactivated during the delay.
-				if cb.activating.Load() {
+				if cb.activating.CompareAndSwap(activationQueued, activationIdle) {
 					level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
 					cb.active.Store(true)
 				}
