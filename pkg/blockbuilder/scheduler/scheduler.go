@@ -169,10 +169,10 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, error) {
 	s.mu.Lock()
-	c := s.observationComplete
+	doneObserving := s.observationComplete
 	s.mu.Unlock()
 
-	if !c {
+	if !doneObserving {
 		return jobKey{}, jobSpec{}, status.Error(codes.Unavailable, "observation period not complete")
 	}
 
