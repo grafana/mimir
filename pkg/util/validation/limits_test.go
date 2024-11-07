@@ -1356,7 +1356,7 @@ func TestIsLimitError(t *testing.T) {
 	}
 }
 
-func TestIntStringYAMLAlertmanagerSizeLimits(t *testing.T) {
+func TestAlertmanagerSizeLimitsUnmarshal(t *testing.T) {
 	for name, tc := range map[string]struct {
 		inputYAML          string
 		expectedConfigSize int
