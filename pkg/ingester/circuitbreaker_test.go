@@ -104,12 +104,13 @@ func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
 
 	// Inactive by default
 	require.False(t, cb.isActive())
+	require.True(t, cb.isActivationIdle())
 
 	cb.activate()
 
-	// When InitialDelay is set, circuit breaker is not immediately activated
+	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
 	require.False(t, cb.isActive())
-	require.False(t, cb.isActivating())
+	require.True(t, cb.isActivationPending())
 
 	// InitalDelay starts when we first get a request, not when we activate the circuit breaker
 	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
@@ -119,14 +120,22 @@ func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
 
 	// Once we get a request, circuit breaker becomes active after InitialDelay passes
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivating())
+	require.True(t, cb.isActivationQueued())
 	require.Eventually(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+	require.True(t, cb.isActivationIdle())
 
 	cb.deactivate()
 
 	// Should be inactive immediately
 	require.False(t, cb.isActive())
-	require.False(t, cb.isActivating())
+	require.True(t, cb.isActivationIdle())
+
+	_, err = cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// A request while deactivated shouldn't queue an activation
+	require.True(t, cb.isActivationIdle())
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
 }
 
 func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
@@ -137,25 +146,39 @@ func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
 
 	// Inactive by default
 	require.False(t, cb.isActive())
+	require.True(t, cb.isActivationIdle())
 
 	cb.activate()
 
-	// When InitialDelay is set, circuit breaker is not immediately activated
+	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
 	require.False(t, cb.isActive())
-	require.False(t, cb.isActivating())
-
-	_, err := cb.tryAcquirePermit()
-	require.NoError(t, err)
-
-	// Once we get a request, circuit breaker starts to activate
-	require.False(t, cb.isActive())
-	require.True(t, cb.isActivating())
+	require.True(t, cb.isActivationPending())
 
 	cb.deactivate()
 
 	// Should be inactive immediately, and cancel any pending activation
 	require.False(t, cb.isActive())
-	require.False(t, cb.isActivating())
+	require.True(t, cb.isActivationIdle())
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+
+	cb.activate()
+
+	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
+	require.False(t, cb.isActive())
+	require.True(t, cb.isActivationPending())
+
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// Once we get a request, circuit breaker queues the activation
+	require.False(t, cb.isActive())
+	require.True(t, cb.isActivationQueued())
+
+	cb.deactivate()
+
+	// Should be inactive immediately, and cancel any queued activation
+	require.False(t, cb.isActive())
+	require.True(t, cb.isActivationIdle())
 	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
 }
 
