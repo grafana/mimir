@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -28,10 +27,6 @@ type BlockBuilderScheduler struct {
 	logger      log.Logger
 	register    prometheus.Registerer
 	metrics     schedulerMetrics
-
-	mu        sync.Mutex
-	committed kadm.Offsets
-	dirty     bool
 }
 
 func New(
@@ -40,12 +35,11 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:      newJobQueue(cfg.JobLeaseTime, logger),
-		cfg:       cfg,
-		logger:    logger,
-		register:  reg,
-		metrics:   newSchedulerMetrics(reg),
-		committed: make(kadm.Offsets),
+		jobs:     newJobQueue(cfg.JobLeaseTime, logger),
+		cfg:      cfg,
+		logger:   logger,
+		register: reg,
+		metrics:  newSchedulerMetrics(reg),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -147,15 +141,8 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, err
 // updateJob takes a job update from the client and records it, if necessary.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
-		if j.startOffset <= c.At {
-			// Update of a completed/committed job. Ignore.
-			return nil
-		}
-	}
+	// TODO: Right here we should ignore thr update if the job isn't beyond
+	// what's in our local snapshot of committed offsets.
 
 	if complete {
 		if err := s.jobs.completeJob(jobID, workerID); err != nil {
@@ -164,8 +151,8 @@ func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool,
 				return fmt.Errorf("complete job: %w", err)
 			}
 		}
-		s.committed.AddOffset(s.cfg.Kafka.Topic, j.partition, j.endOffset, -1)
-		s.dirty = true
+
+		// TODO: Move forward our local snapshot of committed offsets.
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(jobID, workerID); err != nil {
