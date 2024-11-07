@@ -95,7 +95,7 @@ func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	f.UintVar(&cfg.FailureExecutionThreshold, prefix+"failure-execution-threshold", 100, "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures")
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+"thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
 	f.DurationVar(&cfg.CooldownPeriod, prefix+"cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
-	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long after an initial request an activated circuit breaker should wait before becoming effectively active. During this time neither failures nor successes will not be counted.")
+	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "Duration, in seconds, after an initial request that an activated circuit breaker should wait before becoming effectively active. During this time, neither failures nor successes are counted.")
 	f.DurationVar(&cfg.RequestTimeout, prefix+"request-timeout", defaultRequestDuration, "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
 }
 
