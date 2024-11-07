@@ -632,14 +632,6 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, delayObserve
 	r.metrics.recordsPerFetch.Observe(float64(numRecords))
 }
 
-//func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
-//	return NewKafkaReaderClient(r.kafkaCfg, r.metrics.kprom, r.logger,
-//		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-//			r.kafkaCfg.Topic: {r.partitionID: at},
-//		}),
-//	)
-//}
-
 func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
 	switch r.kafkaCfg.ConsumeFromPositionAtStartup {
 	case consumeFromStart:
