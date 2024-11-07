@@ -172,9 +172,9 @@ func (a *jobSpec) less(b *jobSpec) bool {
 type jobHeap []*job
 
 // Implement the heap.Interface for jobHeap.
-func (h *jobHeap) Len() int           { return len(*h) }
-func (h *jobHeap) Less(i, j int) bool { return (*h)[i].spec.less(&(*h)[j].spec) }
-func (h *jobHeap) Swap(i, j int)      { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
+func (h jobHeap) Len() int           { return len(h) }
+func (h jobHeap) Less(i, j int) bool { return h[i].spec.less(&h[j].spec) }
+func (h jobHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *jobHeap) Push(x interface{}) {
 	*h = append(*h, x.(*job))
