@@ -543,78 +543,86 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
     {
+      local statefulset_rollout_stuck(for_duration, severity) = {
+        alert: $.alertName('RolloutStuck'),
+        expr: |||
+          (
+            max without (revision) (
+              %(kube_statefulset_status_current_revision)s
+                unless
+              %(kube_statefulset_status_update_revision)s
+            )
+              *
+            (
+              %(kube_statefulset_replicas)s
+                !=
+              %(kube_statefulset_status_replicas_updated)s
+            )
+          ) and (
+            changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
+              ==
+            0
+          )
+          * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_current_revision'),
+          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
+          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
+          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+          range_interval: '15m:' + $.alertRangeInterval(1),
+        },
+        'for': for_duration,
+        labels: {
+          severity: severity,
+          workload_type: 'statefulset',
+        },
+        annotations: {
+          message: |||
+            The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
+          ||| % $._config,
+        },
+      },
+
+      local deployment_rollout_stuck(for_duration, severity) = {
+        alert: $.alertName('RolloutStuck'),
+        expr: |||
+          (
+            %(kube_deployment_spec_replicas)s
+              !=
+            %(kube_deployment_status_replicas_updated)s
+          ) and (
+            changes(%(kube_deployment_status_replicas_updated)s[%(range_interval)s])
+              ==
+            0
+          )
+          * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
+          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+          range_interval: '15m:' + $.alertRangeInterval(1),
+        },
+        'for': for_duration,
+        labels: {
+          severity: severity,
+          workload_type: 'deployment',
+        },
+        annotations: {
+          message: |||
+            The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
+          ||| % $._config,
+        },
+      },
+
+
       name: 'mimir-rollout-alerts',
       rules: [
-        {
-          alert: $.alertName('RolloutStuck'),
-          expr: |||
-            (
-              max without (revision) (
-                %(kube_statefulset_status_current_revision)s
-                  unless
-                %(kube_statefulset_status_update_revision)s
-              )
-                *
-              (
-                %(kube_statefulset_replicas)s
-                  !=
-                %(kube_statefulset_status_replicas_updated)s
-              )
-            ) and (
-              changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
-                ==
-              0
-            )
-            * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_current_revision'),
-            kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
-            kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
-            kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
-            range_interval: '15m:' + $.alertRangeInterval(1),
-          },
-          'for': '30m',
-          labels: {
-            severity: 'warning',
-            workload_type: 'statefulset',
-          },
-          annotations: {
-            message: |||
-              The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('RolloutStuck'),
-          expr: |||
-            (
-              %(kube_deployment_spec_replicas)s
-                !=
-              %(kube_deployment_status_replicas_updated)s
-            ) and (
-              changes(%(kube_deployment_status_replicas_updated)s[%(range_interval)s])
-                ==
-              0
-            )
-            * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
-            kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
-            range_interval: '15m:' + $.alertRangeInterval(1),
-          },
-          'for': '30m',
-          labels: {
-            severity: 'warning',
-            workload_type: 'deployment',
-          },
-          annotations: {
-            message: |||
-              The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
-            ||| % $._config,
-          },
-        },
+        statefulset_rollout_stuck('30m', 'warning'),
+        statefulset_rollout_stuck('24h', 'critical'),
+        deployment_rollout_stuck('30m', 'warning'),
+        deployment_rollout_stuck('24h', 'critical'),
+
         {
           alert: 'RolloutOperatorNotReconciling',
           expr: |||
