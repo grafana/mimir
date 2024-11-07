@@ -201,10 +201,13 @@ func (cb *circuitBreaker) activate() {
 }
 
 func (cb *circuitBreaker) deactivate() {
-	if cb == nil || !cb.active.Load() {
+	if cb == nil {
+		return
+	}
+	if !cb.active.Load() {
 		// cancel delayed activation if it was scheduled
-		if !cb.activating.CompareAndSwap(true, false) {
-			level.Info(cb.logger).Log("msg", "cancelling delayed circuit breaker activation", "requestType", cb.requestType)
+		if cb.activating.CompareAndSwap(true, false) {
+			level.Info(cb.logger).Log("msg", "canceled delayed circuit breaker activation", "requestType", cb.requestType)
 		}
 		return
 	}
@@ -226,7 +229,7 @@ func (cb *circuitBreaker) isOpen() bool {
 func (cb *circuitBreaker) tryAcquirePermit() (func(time.Duration, error), error) {
 	if !cb.isActive() {
 		// We only want one request to schedule the delayed activation of the circuit breaker.
-		if cb.cfg.InitialDelay > 0 && cb.activating.CompareAndSwap(false, true) {
+		if cb != nil && cb.cfg.InitialDelay > 0 && cb.activating.CompareAndSwap(false, true) {
 			level.Info(cb.logger).Log("msg", "scheduling delayed circuit breaker activation", "requestType", cb.requestType, "delay", cb.cfg.InitialDelay)
 			time.AfterFunc(cb.cfg.InitialDelay, func() {
 				// Don't activate the circuit breaker if it was deactivated during the delay.
