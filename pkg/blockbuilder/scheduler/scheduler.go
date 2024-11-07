@@ -34,7 +34,7 @@ type BlockBuilderScheduler struct {
 	mu                  sync.Mutex
 	committed           kadm.Offsets
 	dirty               bool
-	recovered           map[string]*recoveredJob
+	observations        map[string]*observation
 	observationComplete bool
 }
 
@@ -50,8 +50,8 @@ func New(
 		register: reg,
 		metrics:  newSchedulerMetrics(reg),
 
-		committed: make(kadm.Offsets),
-		recovered: make(map[string]*recoveredJob),
+		committed:    make(kadm.Offsets),
+		observations: make(map[string]*observation),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -82,19 +82,8 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	// 1. perform an initial update of the schedule
 	// 2. listen to worker updates for a while to learn the state of the world
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		s.updateSchedule(ctx)
-		wg.Done()
-	}()
-	go func() {
-		time.Sleep(s.cfg.StartupObserveTime)
-		wg.Done()
-	}()
-	wg.Wait()
-
-	s.completeRecovery()
+	time.Sleep(s.cfg.StartupObserveTime)
+	s.completeObservationMode()
 
 	// Now that that's done, we can start the main loop.
 
@@ -109,6 +98,13 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+func (s *BlockBuilderScheduler) completeObservationMode() {
+	s.mu.Lock()
+	s.committed, s.jobs = s.computeStateFromObservations(s.observations, s.committed)
+	s.observationComplete = true
+	s.mu.Unlock()
 }
 
 func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
@@ -186,7 +182,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	defer s.mu.Unlock()
 
 	if !s.observationComplete {
-		if err := s.recordUpdate(key, workerID, complete, j); err != nil {
+		if err := s.observeUpdate(key, workerID, complete, j); err != nil {
 			return err
 		}
 
@@ -222,17 +218,17 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	return nil
 }
 
-type recoveredJob struct {
+type observation struct {
 	key      jobKey
 	spec     jobSpec
 	workerID string
 	complete bool
 }
 
-func (s *BlockBuilderScheduler) recordUpdate(key jobKey, workerID string, complete bool, j jobSpec) error {
-	rj, ok := s.recovered[key.id]
+func (s *BlockBuilderScheduler) observeUpdate(key jobKey, workerID string, complete bool, j jobSpec) error {
+	rj, ok := s.observations[key.id]
 	if !ok {
-		s.recovered[key.id] = &recoveredJob{
+		s.observations[key.id] = &observation{
 			key:      key,
 			spec:     j,
 			workerID: workerID,
@@ -241,7 +237,7 @@ func (s *BlockBuilderScheduler) recordUpdate(key jobKey, workerID string, comple
 		return nil
 	}
 
-	// Otherwise, it exists. Higher epochs win, and cause earlier ones to fail.
+	// Otherwise, we've seen it before. Higher epochs win, and cause earlier ones to fail.
 
 	if key.epoch < rj.key.epoch {
 		return errBadEpoch
@@ -254,28 +250,44 @@ func (s *BlockBuilderScheduler) recordUpdate(key jobKey, workerID string, comple
 	return nil
 }
 
-func (s *BlockBuilderScheduler) completeRecovery() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// completeObservationMode considers the observations and offsets from Kafka, rectifying them into
+// the starting state of the scheduler's normal operation.
+func (s *BlockBuilderScheduler) computeStateFromObservations(observations map[string]*observation, kafkaOffsets kadm.Offsets) (kadm.Offsets, *jobQueue) {
+	/*
+		Inputs:
+			- the observations
+			- the offsets we've learned from Kafka
+
+			Note that the observations for in-progress jobs should be strictly less than whatever
+			we've learned from Kafka.
+			Some of the completed job observations can exceed the offsets from Kafka, and should move them forward.
+		The output from this is:
+			- Updated Kafka committed offsets.
+			- a jobQueue that's ready for action.
+	*/
 
 	committed := make(map[int32]int64)
-	var highEpoch uint
+	jobs := newJobQueue(s.cfg.JobLeaseTime, s.logger)
 
-	for _, rj := range s.recovered {
-		highEpoch = max(highEpoch, rj.key.epoch)
-
+	for _, rj := range observations {
 		if rj.complete {
 			if o, ok := committed[rj.spec.partition]; !ok || o < rj.spec.endOffset {
 				committed[rj.spec.partition] = rj.spec.endOffset
 			}
 		} else {
-			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
+			// In progress.
+			if err := jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to recover job", "err", err)
 			}
 		}
 	}
 
-	s.jobs.setEpoch(highEpoch + 1)
-	s.observationComplete = true
-	s.recovered = nil
+	c := make(kadm.Offsets)
+
+	// Now we go back through the committed offsets and rig up the K offsets.
+	for part, off := range committed {
+		c.AddOffset(s.cfg.Kafka.Topic, part, off, -1)
+	}
+
+	return c, jobs
 }

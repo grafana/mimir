@@ -38,12 +38,6 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 	}
 }
 
-func (s *jobQueue) setEpoch(epoch uint) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.epoch = epoch
-}
-
 // assign assigns the highest-priority unassigned job to the given worker.
 func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
 	if workerID == "" {
@@ -79,6 +73,10 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// When we start assigning new jobs, the epochs need to be compatible with
+	// these "imported" jobs.
+	s.epoch = max(s.epoch, key.epoch+1)
+
 	j, ok := s.jobs[key.id]
 	if ok {
 		if key.epoch < j.key.epoch {
@@ -94,14 +92,13 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 			j.spec = spec
 		}
 	} else {
-		j = &job{
+		s.jobs[key.id] = &job{
 			key:         key,
 			assignee:    workerID,
 			leaseExpiry: time.Now().Add(s.leaseTime),
 			failCount:   0,
 			spec:        spec,
 		}
-		s.jobs[key.id] = j
 	}
 	return nil
 }

@@ -33,10 +33,8 @@ func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
 	return writeClient
 }
 
-func TestClientInterface(t *testing.T) {
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
-	cli := mustKafkaClient(t, kafkaAddr)
-
+func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderScheduler, *kgo.Client) {
+	cli := mustKafkaClient(t, addr)
 	cfg := Config{
 		Kafka: ingest.KafkaConfig{
 			Topic: "ingest",
@@ -48,8 +46,17 @@ func TestClientInterface(t *testing.T) {
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
 	sched.adminClient = kadm.NewClient(cli)
 	require.NoError(t, err)
-	sched.observationComplete = true
+	return sched, cli
+}
 
+func mustScheduler(t *testing.T) (*BlockBuilderScheduler, *kgo.Client) {
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
+	return mustSchedulerWithKafkaAddr(t, kafkaAddr)
+}
+
+func TestClientInterface(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.completeObservationMode()
 	now := time.Now()
 
 	// Set up some jobs in the queue.
@@ -125,22 +132,8 @@ func TestClientInterface(t *testing.T) {
 }
 
 func TestStartup(t *testing.T) {
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
-	cli := mustKafkaClient(t, kafkaAddr)
-
-	cfg := Config{
-		Kafka: ingest.KafkaConfig{
-			Topic: "ingest",
-		},
-		BuilderConsumerGroup: "test-builder",
-		SchedulingInterval:   1000000 * time.Hour,
-	}
-	reg := prometheus.NewPedanticRegistry()
-	sched, err := New(cfg, test.NewTestingLogger(t), reg)
-	sched.adminClient = kadm.NewClient(cli)
-	require.NoError(t, err)
-
-	// (observation period not complete)
+	sched, _ := mustScheduler(t)
+	// (a new scheduler starts in observation mode.)
 
 	{
 		_, _, err := sched.assignJob("w0")
@@ -198,7 +191,8 @@ func TestStartup(t *testing.T) {
 	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec))
 	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
 
-	sched.completeRecovery()
+	// Convert the observations to actual jobs.
+	sched.completeObservationMode()
 
 	// Now that we're out of observation mode, we should know about all the jobs.
 
@@ -221,6 +215,8 @@ func TestStartup(t *testing.T) {
 		_, _, err := sched.assignJob("w0")
 		require.ErrorIs(t, err, errNoJobAvailable)
 	}
+
+	// And we can resume normal operation.
 }
 
 func TestMonitor(t *testing.T) {
@@ -228,19 +224,8 @@ func TestMonitor(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
-	cli := mustKafkaClient(t, kafkaAddr)
-
-	cfg := Config{
-		Kafka: ingest.KafkaConfig{
-			Topic: "ingest",
-		},
-		BuilderConsumerGroup: "test-builder",
-		SchedulingInterval:   1000000 * time.Hour,
-	}
-	reg := prometheus.NewPedanticRegistry()
-	sched, err := New(cfg, test.NewTestingLogger(t), reg)
-	sched.adminClient = kadm.NewClient(cli)
-	require.NoError(t, err)
+	sched, cli := mustSchedulerWithKafkaAddr(t, kafkaAddr)
+	reg := sched.register.(*prometheus.Registry)
 
 	// Partition i gets i records.
 	for i := int32(0); i < 4; i++ {
