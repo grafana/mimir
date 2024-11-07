@@ -22,39 +22,6 @@ const (
 	TenantLabel  = "tenant"
 )
 
-func (t *Tracker) CALabels() []string {
-	if t == nil {
-		return nil
-	}
-	return t.caLabels
-}
-
-func (t *Tracker) MaxCardinality() int {
-	if t == nil {
-		return 0
-	}
-	return t.maxCardinality
-}
-
-func (t *Tracker) cleanupTrackerAttribution(vals []string) {
-	if t == nil {
-		return
-	}
-	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
-	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
-	t.discardedSampleAttribution.DeleteLabelValues(vals...)
-}
-
-func (t *Tracker) cleanupTracker(userID string) {
-	if t == nil {
-		return
-	}
-	filter := prometheus.Labels{TenantLabel: userID}
-	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
-	t.receivedSamplesAttribution.DeletePartialMatch(filter)
-	t.discardedSampleAttribution.DeletePartialMatch(filter)
-}
-
 type Tracker struct {
 	userID                         string
 	caLabels                       []string
@@ -71,98 +38,6 @@ type Tracker struct {
 	isOverflow       bool
 	cooldownUntil    *atomic.Int64
 	cooldownDuration int64
-}
-
-func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
-	if t == nil {
-		return
-	}
-	vals := t.getKeyValues(lbs, now.Unix(), nil)
-	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
-}
-
-func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
-	if t == nil {
-		return
-	}
-	vals := t.getKeyValues(lbs, now.Unix(), &reason)
-	t.discardedSampleAttribution.WithLabelValues(vals...).Add(value)
-}
-
-func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
-	if t == nil {
-		return
-	}
-	vals := t.getKeyValues(lbs, now.Unix(), nil)
-	t.receivedSamplesAttribution.WithLabelValues(vals...).Add(value)
-}
-
-func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []string {
-	if t == nil {
-		return nil
-	}
-	values := make([]string, len(t.caLabels)+2)
-	for i, l := range t.caLabels {
-		values[i] = lbls.Get(l)
-		if values[i] == "" {
-			values[i] = missingValue
-		}
-	}
-	values[len(values)-2] = t.userID
-	if reason != nil {
-		values[len(values)-1] = *reason
-	}
-	var stream uint64
-	stream, t.hashBuffer = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
-	if t.overflow(stream, values, ts) {
-		// Omit last label.
-		for i := range values[:len(values)-2] {
-			values[i] = overflowValue
-		}
-	}
-
-	if reason == nil {
-		return values[:len(values)-1]
-	}
-	return values
-}
-
-func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
-	if t == nil {
-		return false
-	}
-	// if the tracker is already in overflow state, we don't need to check the cardinality
-	if t.isOverflow {
-		return true
-	}
-	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
-	// the origin labels ovserved time is not updated, but the overflow hash is updated.
-	if len(t.observed) > t.maxCardinality {
-		t.isOverflow = true
-		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
-		return true
-	}
-
-	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
-		o.lastUpdate.Store(ts)
-	} else {
-		t.observed[stream] = &Observation{
-			lvalues:    values,
-			lastUpdate: atomic.NewInt64(ts),
-		}
-	}
-
-	return false
-}
-
-// we need the time stamp, since active series could have entered active stripe long time ago, and already evicted
-// from the observed map but still in the active Stripe
-func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, ts time.Time) {
-	if t == nil {
-		return
-	}
-	vals := t.getKeyValues(lbs, ts.Unix(), nil)
-	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
 }
 
 func newTracker(userID string, trackedLabels []string, limit int) (*Tracker, error) {
@@ -200,6 +75,71 @@ func newTracker(userID string, trackedLabels []string, limit int) (*Tracker, err
 	return m, nil
 }
 
+func (t *Tracker) CALabels() []string {
+	if t == nil {
+		return nil
+	}
+	return t.caLabels
+}
+
+func (t *Tracker) MaxCardinality() int {
+	if t == nil {
+		return 0
+	}
+	return t.maxCardinality
+}
+
+func (t *Tracker) cleanupTrackerAttribution(vals []string) {
+	if t == nil {
+		return
+	}
+	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
+	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
+	t.discardedSampleAttribution.DeleteLabelValues(vals...)
+}
+
+func (t *Tracker) cleanupTracker(userID string) {
+	if t == nil {
+		return
+	}
+	filter := prometheus.Labels{TenantLabel: userID}
+	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
+	t.receivedSamplesAttribution.DeletePartialMatch(filter)
+	t.discardedSampleAttribution.DeletePartialMatch(filter)
+}
+
+func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
+	if t == nil {
+		return
+	}
+	vals := t.getKeyValues(lbs, now.Unix(), nil)
+	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
+}
+
+func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
+	if t == nil {
+		return
+	}
+	vals := t.getKeyValues(lbs, now.Unix(), nil)
+	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
+}
+
+func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
+	if t == nil {
+		return
+	}
+	vals := t.getKeyValues(lbs, now.Unix(), &reason)
+	t.discardedSampleAttribution.WithLabelValues(vals...).Add(value)
+}
+
+func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
+	if t == nil {
+		return
+	}
+	vals := t.getKeyValues(lbs, now.Unix(), nil)
+	t.receivedSamplesAttribution.WithLabelValues(vals...).Add(value)
+}
+
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 	if t == nil {
 		return
@@ -215,6 +155,62 @@ func (t *Tracker) Describe(chan<- *prometheus.Desc) {
 	if t == nil {
 		return
 	}
+}
+
+func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []string {
+	if t == nil {
+		return nil
+	}
+	values := make([]string, len(t.caLabels)+2)
+	for i, l := range t.caLabels {
+		values[i] = lbls.Get(l)
+		if values[i] == "" {
+			values[i] = missingValue
+		}
+	}
+	values[len(values)-2] = t.userID
+	if reason != nil {
+		values[len(values)-1] = *reason
+	}
+	var stream uint64
+	stream, t.hashBuffer = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
+	if t.overflow(stream, values, ts) {
+		// Omit last label.
+		for i := range values[:len(values)-2] {
+			values[i] = overflowValue
+		}
+	}
+
+	if reason == nil {
+		return values[:len(values)-1]
+	}
+	return values
+}
+
+func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
+	if t == nil {
+		return false
+	}
+
+	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
+	// the origin labels ovserved time is not updated, but the overflow hash is updated.
+	if len(t.observed) > t.maxCardinality {
+		t.isOverflow = true
+		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
+	}
+
+	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
+		o.lastUpdate.Store(ts)
+	} else {
+		if !t.isOverflow {
+			t.observed[stream] = &Observation{
+				lvalues:    values,
+				lastUpdate: atomic.NewInt64(ts),
+			}
+		}
+	}
+
+	return t.isOverflow
 }
 
 func (t *Tracker) PurgeInactiveObservations(deadline int64) []*Observation {
@@ -259,12 +255,5 @@ func (t *Tracker) UpdateMaxCardinality(limit int) {
 	if t == nil {
 		return
 	}
-	// if we are reducing limit, we can just set it, if it hits the limit, we can't do much about it.
-	if t.maxCardinality >= limit {
-		t.maxCardinality = limit
-		return
-	}
-	// if we have hit the limit, we need to clear the observed map. The way to tell that we have hit the limit is
-	// by checking if the overflow hash is in the observed map. This is handled in the resetObservedIfNeeded function. 0 here means no deadline check is needed.
 	t.maxCardinality = limit
 }
