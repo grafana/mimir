@@ -67,8 +67,10 @@ type Tracker struct {
 	obseveredMtx sync.RWMutex
 	observed     map[uint64]*Observation
 
-	hashBuffer   []byte
-	overflowHash uint64
+	hashBuffer       []byte
+	isOverflow       bool
+	cooldownUntil    *atomic.Int64
+	cooldownDuration int64
 }
 
 func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
@@ -129,12 +131,16 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 	if t == nil {
 		return false
 	}
+	// if the tracker is already in overflow state, we don't need to check the cardinality
+	if t.isOverflow {
+		return true
+	}
 	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
 	// the origin labels ovserved time is not updated, but the overflow hash is updated.
-	isOverflow := false
 	if len(t.observed) > t.maxCardinality {
-		isOverflow = true
-		stream = t.overflowHash
+		t.isOverflow = true
+		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
+		return true
 	}
 
 	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
@@ -146,7 +152,7 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 		}
 	}
 
-	return isOverflow
+	return false
 }
 
 // we need the time stamp, since active series could have entered active stripe long time ago, and already evicted
@@ -188,22 +194,10 @@ func newTracker(userID string, trackedLabels []string, limit int) (*Tracker, err
 			Help:        "The total number of active series per user and attribution.",
 			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
 		}, append(trackedLabels, TenantLabel)),
-		hashBuffer: make([]byte, 0, 1024),
+		hashBuffer:       make([]byte, 0, 1024),
+		cooldownDuration: int64((time.Minute * 20).Seconds()),
 	}
-	m.updateOverFlowHash()
 	return m, nil
-}
-
-func (t *Tracker) updateOverFlowHash() {
-	if t == nil {
-		return
-	}
-	b := labels.NewScratchBuilder(len(t.caLabels))
-	for _, lb := range t.caLabels {
-		b.Add(lb, overflowValue)
-	}
-	b.Sort()
-	t.overflowHash = b.Labels().Hash()
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
@@ -223,34 +217,9 @@ func (t *Tracker) Describe(chan<- *prometheus.Desc) {
 	}
 }
 
-// resetObservedIfNeeded checks if the overflow hash is in the observed map and if it is, when dealine is 0, means that
-// we just need to clean up the observed map and metrics without checking the deadline.
-// Otherwise, we need to check if the last update time of the overflow hash is less than or equal to the deadline.
-// return true if the observed map is cleaned up, otherwise false.
-func (t *Tracker) resetObservedIfNeeded(deadline int64) bool {
-	if t == nil {
-		return false
-	}
-	t.obseveredMtx.Lock()
-	defer t.obseveredMtx.Unlock()
-	if ob, ok := t.observed[t.overflowHash]; ok {
-		if deadline == 0 || (ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline) {
-			t.observed = map[uint64]*Observation{}
-			t.cleanupTracker(t.userID)
-			return true
-		}
-	}
-	return false
-}
-
 func (t *Tracker) PurgeInactiveObservations(deadline int64) []*Observation {
 	if t == nil {
 		return nil
-	}
-	// if overflow is in the observed map and it is reached dealine, we need to clean up the observed map and metrics
-	isReset := t.resetObservedIfNeeded(deadline)
-	if isReset {
-		return []*Observation{}
 	}
 
 	// otherwise, we need to check all observations and clean up the ones that are inactive
@@ -297,6 +266,5 @@ func (t *Tracker) UpdateMaxCardinality(limit int) {
 	}
 	// if we have hit the limit, we need to clear the observed map. The way to tell that we have hit the limit is
 	// by checking if the overflow hash is in the observed map. This is handled in the resetObservedIfNeeded function. 0 here means no deadline check is needed.
-	t.resetObservedIfNeeded(0)
 	t.maxCardinality = limit
 }

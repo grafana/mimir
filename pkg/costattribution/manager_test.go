@@ -111,6 +111,12 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings([]string{"department", "foo", "service", "dodo"}...), 1, time.Unix(20, 0))
 		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings([]string{"department", "foo", "service", "bar"}...), 1, time.Unix(30, 0))
 		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings([]string{"department", "foo", "service", "far"}...), 1, time.Unix(30, 0))
+
+		cat := manager.TrackerForUser("user3")
+		assert.True(t, cat.isOverflow)
+		// this number is the timestamp of when overflow was set + 20 minutes in seconds. 20 * 60 + 30 = 1230
+		assert.Equal(t, int64(1230), cat.cooldownUntil.Load())
+
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
@@ -157,6 +163,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 
 		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
 		assert.Equal(t, 1, len(manager.trackersByUserID))
+
 		expectedMetrics := `
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_received_attributed_samples_total counter
@@ -171,13 +178,13 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 	})
 
-	t.Run("Increase user cost attribution max cardinality, since current state is overflow, we clean up the counter", func(t *testing.T) {
+	t.Run("Increase user cost attribution max cardinality, since current state is overflow and cooldown is passed, we recreate tracker", func(t *testing.T) {
 		// user3 has cost attribution labels department and service, we change it to team and feature. user1 should not be affected
 		manager.limits, err = getMockLimits(3)
 		assert.NoError(t, err)
-		manager.TrackerForUser("user1").IncrementDiscardedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, "invalid-metrics-name", time.Unix(12, 0))
-		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
-		assert.Equal(t, 2, len(manager.trackersByUserID))
+		manager.TrackerForUser("user1").IncrementDiscardedSamples(labels.FromStrings([]string{"team", "foo"}...), 1, "invalid-metrics-name", time.Unix(1251, 0))
+		manager.purgeInactiveAttributionsUntil(1250)
+		assert.Equal(t, 1, len(manager.trackersByUserID))
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.

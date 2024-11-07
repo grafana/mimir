@@ -113,7 +113,8 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 
 func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.Tracker) bool {
 	currentCTC, currentCAT := c.CurrentConfig()
-	return ctCfg.String() != currentCTC.String() || !costattribution.CompareCALabels(caCfg.CALabels(), currentCAT.CALabels())
+	// TODO: I think here to check the pointer is not equal is already enough, if we recreate tracker, it is for a good reason, otherwise, nothing changed
+	return ctCfg.String() != currentCTC.String() || caCfg != currentCAT //|| !costattribution.CompareCALabels(caCfg.CALabels(), currentCAT.CALabels())
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {

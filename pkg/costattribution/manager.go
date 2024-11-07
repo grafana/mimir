@@ -129,10 +129,24 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 			m.deleteUserTracer(userID)
 			continue
 		}
+
 		// get all inactive attributions for the user and clean up the tracker
 		inactiveObs := m.purgeInactiveObservationsForUser(userID, deadline)
 		for _, ob := range inactiveObs {
 			m.trackersByUserID[userID].cleanupTrackerAttribution(ob.lvalues)
+		}
+
+		// if the tracker is no longer overflowed, and it is currently in overflow state, check the cooldown and create new tracker
+		cat := m.TrackerForUser(userID)
+		if cat != nil && cat.isOverflow {
+			if len(cat.observed) < cat.MaxCardinality() {
+				if cat.cooldownUntil.Load() < deadline {
+					m.deleteUserTracer(userID)
+					continue
+				}
+			} else {
+				cat.cooldownUntil.Store(deadline + cat.cooldownDuration)
+			}
 		}
 	}
 }
