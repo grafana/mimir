@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,6 +63,9 @@ func main() {
 	case "analyze":
 		dir := os.Args[2]
 		analyseRuleGroups(readRuleGroups(dir))
+	case "analyze-exprs":
+		dir := os.Args[2]
+		analyzeStaticExpressions(readRuleGroups(dir), dir)
 	}
 }
 
@@ -72,6 +76,10 @@ func readRuleGroups(dir string) []*Group {
 	noErr(err)
 
 	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			fmt.Printf("Ignoring non rule file %s\n", entry.Name())
+			continue
+		}
 		groupsFile, err := os.Open(filepath.Join(dir, entry.Name()))
 		noErr(err)
 
@@ -153,6 +161,80 @@ func printAnalysisResultsCSV(groups []*Group) {
 	}, ","))
 }
 
+func analyzeStaticExpressions(groups []*Group, outDir string) {
+
+	file := filepath.Join(outDir, "exprs.csv")
+	err := os.Remove(file)
+	if errors.Is(err, os.ErrNotExist) {
+		err = nil
+	} else {
+		noErr(err)
+	}
+	//noErr(os.WriteFile(filepath.Join(desitnation, namespace, fmt.Sprintf("%s.json", tenant)), respBody, 0600))
+	f, err := os.Create(file)
+	noErr(err)
+	defer f.Close()
+
+	f.WriteString(`"Rule Group","Record","Expr","HasDependents"`)
+	f.WriteString("\n")
+	for _, group := range groups {
+		// Cast the rules slice to the Prometheus Rule.
+		promRules := make([]rules.Rule, 0, len(group.Rules))
+		for _, rule := range group.Rules {
+			promRules = append(promRules, rule)
+		}
+
+		rules.AnalyseRulesDependencies(promRules)
+
+		for _, rule := range promRules {
+			query := rule.Query().String()
+
+			// Warn us if we detect any anomalous SLO rule groups
+
+			// Warn if we see meta:objective or meta:window_size_days used in a context that's unexpected (normally they are never used)
+			if strings.Contains(query, "sailpoint_slo:meta:objective") {
+				fmt.Println("sailpoint_slo:meta:objective was used in group " + group.Name)
+			}
+			if strings.Contains(query, "sailpoint_slo:meta:window_size_days") {
+				fmt.Println("sailpoint_slo:meta:window_size_days was used in group " + group.Name)
+			}
+
+			// Warn if we see meta:error_budget being used anywhere outside of burn rate rules
+			if strings.Contains(query, "sailpoint_slo:meta:error_budget") {
+				if !(rule.Name() == "sailpoint_slo:meta:current_burn_rate" || rule.Name() == "sailpoint_slo:meta:period_burn_rate") {
+					fmt.Println("sailpoint_slo:meta:error_budget was used in an atypical query! " + group.Name)
+				}
+			}
+
+			// Warn if we see any burn rate rules that use error_budget, that don't also combine it with one of the error_ratio series
+			if strings.Contains(query, "sailpoint_slo:meta:error_budget") {
+				if strings.Contains(query, "sailpoint_slo:sli:error_ratio:") {
+					// The rule queried error_budget, but sadly combined it with error_ratio -- nothing can be improved.
+				} else {
+					fmt.Println("A rule queried error_budget and not error_ratio! " + group.Name)
+				}
+			}
+
+			// Uncomment to exclude all SLO and SLO-test rules.
+			/*if strings.HasPrefix(rule.Name(), "sailpoint_slo:meta:") {
+				continue
+			}
+			if strings.HasPrefix(rule.Name(), "sailpoint_slo:sli:error_ratio:") {
+				continue
+			}*/
+
+			f.WriteString(strings.Join([]string{
+				group.Name,
+				rule.Name(),
+				// CSV-escape PromQL
+				`"` + strings.Replace(query, "\"", "\"\"", -1) + `"`,
+				fmt.Sprintf("%t", !rule.NoDependentRules()),
+			}, ","))
+			f.WriteString("\n")
+		}
+	}
+}
+
 func strongConsistencyRulesCount(groups []*Group) (count int) {
 	for _, group := range groups {
 		count += group.rulesStrongConsistencyCount
@@ -168,7 +250,9 @@ func noErr(err error) {
 
 func downloadRules(destination string) {
 	// The mapping should be <namespace>: <cluster>.
-	namespaces := map[string]string{}
+	namespaces := map[string]string{
+		"mimir-dedicated-42": "prod-us-east-0",
+	}
 
 	for namespace, cluster := range namespaces {
 		defer fmt.Println("done", namespace)
