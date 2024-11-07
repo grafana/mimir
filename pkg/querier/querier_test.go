@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
@@ -150,6 +151,11 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(nil), point.H)
 			},
 		},
@@ -164,6 +170,11 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
@@ -178,6 +189,11 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
@@ -205,13 +221,18 @@ func TestQuerier(t *testing.T) {
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.True(t, ts > int64(secondChunkStart))
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
 	}
 
-	for _, q := range queries {
-		t.Run(q.query, func(t *testing.T) {
+	for qName, q := range queries {
+		t.Run(qName, func(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 			dbQueryable := TimeRangeQueryable{

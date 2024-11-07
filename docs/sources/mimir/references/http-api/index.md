@@ -864,6 +864,8 @@ The `file`, `rule_group` and `rule_name` parameters are optional, and can accept
 
 The `exclude_alerts` parameter is optional. If set, it only returns rules and excludes active alerts.
 
+The `group_limit` and `group_next_token` parameters are optional. If `group_limit` is set, it will limit the number of rule groups returned in a single response. If the total number of rule groups exceeds this value, the response will contain a `groupNextToken`.
+This can be passed into subsequent requests via `group_next_token` to paginate over the remaining groups. The final response will not contain a token.
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
 Requires [authentication](#authentication).

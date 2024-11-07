@@ -80,9 +80,23 @@ Create the name of the ruler service account
 {{- define "mimir.ruler.serviceAccountName" -}}
 {{- if and .Values.ruler.serviceAccount.create (eq .Values.ruler.serviceAccount.name "") -}}
 {{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
-{{- printf "%s-%s" $sa "ruler" }}
+{{- printf "%s-ruler" $sa }}
 {{- else if and .Values.ruler.serviceAccount.create (not (eq .Values.ruler.serviceAccount.name "")) -}}
 {{- .Values.ruler.serviceAccount.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the alertmanager service account
+*/}}
+{{- define "mimir.alertmanager.serviceAccountName" -}}
+{{- if and .Values.alertmanager.serviceAccount.create (eq .Values.alertmanager.serviceAccount.name "") -}}
+{{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-alertmanager" $sa }}
+{{- else if and .Values.alertmanager.serviceAccount.create (not (eq .Values.alertmanager.serviceAccount.name "")) -}}
+{{- .Values.alertmanager.serviceAccount.name -}}
 {{- else -}}
 {{- include "mimir.serviceAccountName" . -}}
 {{- end -}}

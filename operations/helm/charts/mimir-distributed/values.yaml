@@ -140,7 +140,7 @@ mimir:
         s3:
           access_key_id: {{ .Values.minio.rootUser }}
           bucket_name: enterprise-metrics-admin
-          endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+          endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
           insecure: true
           secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
@@ -171,7 +171,7 @@ mimir:
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
     {{- end }}
@@ -219,7 +219,7 @@ mimir:
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
@@ -374,7 +374,7 @@ mimir:
       {{- if .Values.minio.enabled }}
       backend: s3
       s3:
-        endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
         access_key_id: {{ .Values.minio.rootUser }}
         secret_access_key: {{ .Values.minio.rootPassword }}
@@ -543,6 +543,17 @@ alertmanager:
 
   statefulSet:
     enabled: true
+
+  # -- Dedicated service account for alertmanager pods.
+  # If not set, the default service account defined at the begining of this file will be used.
+  # This service account can be used even if the default one is not set.
+  serviceAccount:
+    create: false
+    # -- Alertmanager specific service account name. If not set and create is set to true, the default
+    # name will be the default mimir service account's name with the "-alertmanager" suffix.
+    name: ""
+    annotations: {}
+    labels: {}
 
   service:
     annotations: {}

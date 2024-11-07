@@ -1390,7 +1390,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	// Pre-condition check: the tenant should have 2 rule groups.
 	test.Poll(t, time.Second, 2, func() interface{} {
-		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
+		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		return len(actualRuleGroups)
 	})
@@ -1408,7 +1408,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	// Ensure the rule group has been deleted.
 	test.Poll(t, time.Second, 1, func() interface{} {
-		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
+		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		return len(actualRuleGroups)
 	})

@@ -413,10 +413,16 @@ Usage of ./cmd/mimir/mimir:
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
   -ingest-storage.kafka.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -ingest-storage.kafka.ingestion-concurrency int
-    	The number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
-    	The number of timeseries to batch together before ingesting into TSDB. This is only used when -ingest-storage.kafka.ingestion-concurrency is greater than 0. (default 150)
+    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
+  -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
+    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
+  -ingest-storage.kafka.ingestion-concurrency-max int
+    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
+  -ingest-storage.kafka.ingestion-concurrency-queue-capacity int
+    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
+  -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard int
+    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
   -ingest-storage.kafka.last-produced-offset-poll-interval duration
     	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
   -ingest-storage.kafka.last-produced-offset-retry-timeout duration

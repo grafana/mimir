@@ -25,13 +25,13 @@ type stats interface {
 // The default number of buckets to aggregate time-based stats into.
 const defaultBucketCount = 10
 
-// A stats implementation that counts execution results using a BitSet.
+// countingStats is a stats implementation that counts execution results using a BitSet.
 type countingStats struct {
 	bitSet *bitset.BitSet
 	size   uint
 
 	// Index to write next entry to
-	currentIndex uint
+	head         uint
 	occupiedBits uint
 	successes    uint
 	failures     uint
@@ -61,15 +61,15 @@ func (c *countingStats) setNext(value bool) int {
 	if c.occupiedBits < c.size {
 		c.occupiedBits++
 	} else {
-		if c.bitSet.Test(c.currentIndex) {
+		if c.bitSet.Test(c.head) {
 			previousValue = 1
 		} else {
 			previousValue = 0
 		}
 	}
 
-	c.bitSet.SetTo(c.currentIndex, value)
-	c.currentIndex = c.indexAfter(c.currentIndex)
+	c.bitSet.SetTo(c.head, value)
+	c.head = (c.head + 1) % c.size
 
 	if value {
 		if previousValue != 1 {
@@ -88,13 +88,6 @@ func (c *countingStats) setNext(value bool) int {
 	}
 
 	return previousValue
-}
-
-func (c *countingStats) indexAfter(index uint) uint {
-	if index == c.size-1 {
-		return 0
-	}
-	return index + 1
 }
 
 func (c *countingStats) executionCount() uint {
@@ -133,22 +126,22 @@ func (c *countingStats) recordSuccess() {
 
 func (c *countingStats) reset() {
 	c.bitSet.ClearAll()
-	c.currentIndex = 0
+	c.head = 0
 	c.occupiedBits = 0
 	c.successes = 0
 	c.failures = 0
 }
 
-// A stats implementation that counts execution results within a time period, and buckets results to minimize overhead.
+// timedStats is a stats implementation that counts execution results within a time period, and buckets results to minimize overhead.
 type timedStats struct {
-	clock      util.Clock
-	bucketSize int64
+	clock       util.Clock
+	bucketCount int64
+	bucketNanos int64
 
 	// Mutable state
-	buckets                []stat
-	summary                stat
-	currentIndex           int
-	currentBucketStartTime int64
+	buckets []stat
+	summary stat
+	head    int64
 }
 
 type stat struct {
@@ -171,40 +164,29 @@ func newTimedStats(bucketCount int, thresholdingPeriod time.Duration, clock util
 	for i := 0; i < bucketCount; i++ {
 		buckets[i] = stat{}
 	}
-	bucketSize := (thresholdingPeriod / time.Duration(bucketCount)).Nanoseconds()
-	result := &timedStats{
-		buckets:                buckets,
-		bucketSize:             bucketSize,
-		clock:                  clock,
-		summary:                stat{},
-		currentBucketStartTime: util.RoundDown(clock.CurrentUnixNano(), bucketSize),
+	return &timedStats{
+		clock:       clock,
+		bucketCount: int64(bucketCount),
+		bucketNanos: (thresholdingPeriod / time.Duration(bucketCount)).Nanoseconds(),
+		buckets:     buckets,
+		summary:     stat{},
 	}
-	return result
 }
 
-func (s *timedStats) getCurrentBucket() *stat {
-	currentBucket := &s.buckets[s.currentIndex]
-	now := s.clock.CurrentUnixNano()
-	timeDiff := now - s.currentBucketStartTime
-	bucketsToMove := int(timeDiff / s.bucketSize)
+func (s *timedStats) currentBucket() *stat {
+	newHead := s.clock.CurrentUnixNano() / s.bucketNanos
 
-	if bucketsToMove > len(s.buckets) {
-		// Reset all buckets
-		s.reset()
-	} else {
-		// Reset some buckets
-		for i := 0; i < bucketsToMove; i++ {
-			s.currentIndex = (s.currentIndex + 1) % len(s.buckets)
-			currentBucket = &s.buckets[s.currentIndex]
+	if newHead > s.head {
+		bucketsToMove := min(s.bucketCount, newHead-s.head)
+		for i := int64(0); i < bucketsToMove; i++ {
+			currentBucket := &s.buckets[(s.head+i+1)%s.bucketCount]
 			s.summary.remove(currentBucket)
 			currentBucket.reset()
 		}
+		s.head = newHead
 	}
 
-	if bucketsToMove > 0 {
-		s.currentBucketStartTime = util.RoundDown(now, s.bucketSize)
-	}
-	return currentBucket
+	return &s.buckets[s.head%s.bucketCount]
 }
 
 func (s *timedStats) executionCount() uint {
@@ -236,20 +218,19 @@ func (s *timedStats) successRate() uint {
 }
 
 func (s *timedStats) recordFailure() {
-	s.getCurrentBucket().failures++
+	s.currentBucket().failures++
 	s.summary.failures++
 }
 
 func (s *timedStats) recordSuccess() {
-	s.getCurrentBucket().successes++
+	s.currentBucket().successes++
 	s.summary.successes++
 }
 
 func (s *timedStats) reset() {
 	for i := range s.buckets {
-		bucket := &s.buckets[i]
-		bucket.reset()
+		(&s.buckets[i]).reset()
 	}
 	s.summary.reset()
-	s.currentIndex = 0
+	s.head = 0
 }

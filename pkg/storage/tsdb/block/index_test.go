@@ -63,7 +63,7 @@ func TestRewrite(t *testing.T) {
 
 	totalChunks := 0
 	ignoredChunks := 0
-	require.NoError(t, rewrite(ctx, log.NewNopLogger(), ir, cr, iw, cw, m, []ignoreFnType{func(_, _ int64, _ *chunks.Meta, curr *chunks.Meta) (bool, error) {
+	require.NoError(t, rewrite(ctx, log.NewNopLogger(), ir, cr, iw, cw, m, false, []ignoreFnType{func(_, _ int64, _ *chunks.Meta, curr *chunks.Meta) (bool, error) {
 		totalChunks++
 		if curr.OverlapsClosedInterval(excludeTime, excludeTime) {
 			// Ignores all chunks that overlap with the excludeTime. excludeTime was randomly selected inside the block.

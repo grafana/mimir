@@ -3924,16 +3924,36 @@ kafka:
   # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
 
-  # The number of concurrent ingestion streams to the TSDB head. Every tenant
-  # has their own set of streams. 0 to disable.
-  # CLI flag: -ingest-storage.kafka.ingestion-concurrency
-  [ingestion_concurrency: <int> | default = 0]
+  # The maximum number of concurrent ingestion streams to the TSDB head. Every
+  # tenant has their own set of streams. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
+  [ingestion_concurrency_max: <int> | default = 0]
 
-  # The number of timeseries to batch together before ingesting into TSDB. This
-  # is only used when -ingest-storage.kafka.ingestion-concurrency is greater
-  # than 0.
+  # The number of timeseries to batch together before ingesting to the TSDB
+  # head. Only use this setting when
+  # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-batch-size
   [ingestion_concurrency_batch_size: <int> | default = 150]
+
+  # The number of batches to prepare and queue to ingest to the TSDB head. Only
+  # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
+  # greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
+  [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+  # The expected number of times to ingest timeseries to the TSDB head after
+  # batching. With fewer flushes, the overhead of splitting up the work is
+  # higher than the benefit of parallelization. Only use this setting when
+  # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
+  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+  # The estimated number of bytes a sample has at time of ingestion. This value
+  # is used to estimate the timeseries without decompressing them. Only use this
+  # setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than
+  # 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
+  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to
@@ -5197,56 +5217,57 @@ sse:
   [kms_encryption_context: <string> | default = ""]
 
 http:
-  # (advanced) The time an idle connection will remain idle before closing.
+  # (advanced) The time an idle connection remains idle before closing.
   # CLI flag: -<prefix>.s3.http.idle-conn-timeout
   [idle_conn_timeout: <duration> | default = 1m30s]
 
-  # (advanced) The amount of time the client will wait for a servers response
+  # (advanced) The amount of time the client waits for a server's response
   # headers.
   # CLI flag: -<prefix>.s3.http.response-header-timeout
   [response_header_timeout: <duration> | default = 2m]
 
-  # (advanced) If the client connects to S3 via HTTPS and this option is
-  # enabled, the client will accept any certificate and hostname.
+  # (advanced) If the client connects to object storage via HTTPS and this
+  # option is enabled, the client accepts any certificate and hostname.
   # CLI flag: -<prefix>.s3.http.insecure-skip-verify
   [insecure_skip_verify: <boolean> | default = false]
 
-  # (advanced) Maximum time to wait for a TLS handshake. 0 means no limit.
+  # (advanced) Maximum time to wait for a TLS handshake. Set to 0 for no limit.
   # CLI flag: -<prefix>.s3.tls-handshake-timeout
   [tls_handshake_timeout: <duration> | default = 10s]
 
   # (advanced) The time to wait for a server's first response headers after
-  # fully writing the request headers if the request has an Expect header. 0 to
-  # send the request body immediately.
+  # fully writing the request headers if the request has an Expect header. Set
+  # to 0 to send the request body immediately.
   # CLI flag: -<prefix>.s3.expect-continue-timeout
   [expect_continue_timeout: <duration> | default = 1s]
 
   # (advanced) Maximum number of idle (keep-alive) connections across all hosts.
-  # 0 means no limit.
+  # Set to 0 for no limit.
   # CLI flag: -<prefix>.s3.max-idle-connections
   [max_idle_connections: <int> | default = 100]
 
   # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
-  # If 0, a built-in default value is used.
+  # Set to 0 to use a built-in default value of 2.
   # CLI flag: -<prefix>.s3.max-idle-connections-per-host
   [max_idle_connections_per_host: <int> | default = 100]
 
-  # (advanced) Maximum number of connections per host. 0 means no limit.
+  # (advanced) Maximum number of connections per host. Set to 0 for no limit.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
+  # (advanced) Path to the Certificate Authority (CA) certificates to validate
+  # the server certificate. If not set, the host's root CA certificates are
+  # used.
   # CLI flag: -<prefix>.s3.http.tls-ca-path
   [tls_ca_path: <string> | default = ""]
 
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
+  # (advanced) Path to the client certificate, which is used for authenticating
+  # with the server. This setting also requires you to configure the key path.
   # CLI flag: -<prefix>.s3.http.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. This setting also
+  # requires you to configure the client certificate.
   # CLI flag: -<prefix>.s3.http.tls-key-path
   [tls_key_path: <string> | default = ""]
 
@@ -5290,6 +5311,65 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # 3. On Google Compute Engine it fetches credentials from the metadata server.
 # CLI flag: -<prefix>.gcs.service-account
 [service_account: <string> | default = ""]
+
+http:
+  # (advanced) The time an idle connection remains idle before closing.
+  # CLI flag: -<prefix>.gcs.http.idle-conn-timeout
+  [idle_conn_timeout: <duration> | default = 1m30s]
+
+  # (advanced) The amount of time the client waits for a server's response
+  # headers.
+  # CLI flag: -<prefix>.gcs.http.response-header-timeout
+  [response_header_timeout: <duration> | default = 2m]
+
+  # (advanced) If the client connects to object storage via HTTPS and this
+  # option is enabled, the client accepts any certificate and hostname.
+  # CLI flag: -<prefix>.gcs.http.insecure-skip-verify
+  [insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Maximum time to wait for a TLS handshake. Set to 0 for no limit.
+  # CLI flag: -<prefix>.gcs.tls-handshake-timeout
+  [tls_handshake_timeout: <duration> | default = 10s]
+
+  # (advanced) The time to wait for a server's first response headers after
+  # fully writing the request headers if the request has an Expect header. Set
+  # to 0 to send the request body immediately.
+  # CLI flag: -<prefix>.gcs.expect-continue-timeout
+  [expect_continue_timeout: <duration> | default = 1s]
+
+  # (advanced) Maximum number of idle (keep-alive) connections across all hosts.
+  # Set to 0 for no limit.
+  # CLI flag: -<prefix>.gcs.max-idle-connections
+  [max_idle_connections: <int> | default = 100]
+
+  # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
+  # Set to 0 to use a built-in default value of 2.
+  # CLI flag: -<prefix>.gcs.max-idle-connections-per-host
+  [max_idle_connections_per_host: <int> | default = 100]
+
+  # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # CLI flag: -<prefix>.gcs.max-connections-per-host
+  [max_connections_per_host: <int> | default = 0]
+
+  # (advanced) Path to the Certificate Authority (CA) certificates to validate
+  # the server certificate. If not set, the host's root CA certificates are
+  # used.
+  # CLI flag: -<prefix>.gcs.http.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Path to the client certificate, which is used for authenticating
+  # with the server. This setting also requires you to configure the key path.
+  # CLI flag: -<prefix>.gcs.http.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. This setting also
+  # requires you to configure the client certificate.
+  # CLI flag: -<prefix>.gcs.http.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -<prefix>.gcs.http.tls-server-name
+  [tls_server_name: <string> | default = ""]
 ```
 
 ### azure_storage_backend
@@ -5337,6 +5417,65 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # identity is used.
 # CLI flag: -<prefix>.azure.user-assigned-id
 [user_assigned_id: <string> | default = ""]
+
+http:
+  # (advanced) The time an idle connection remains idle before closing.
+  # CLI flag: -<prefix>.azure.http.idle-conn-timeout
+  [idle_conn_timeout: <duration> | default = 1m30s]
+
+  # (advanced) The amount of time the client waits for a server's response
+  # headers.
+  # CLI flag: -<prefix>.azure.http.response-header-timeout
+  [response_header_timeout: <duration> | default = 2m]
+
+  # (advanced) If the client connects to object storage via HTTPS and this
+  # option is enabled, the client accepts any certificate and hostname.
+  # CLI flag: -<prefix>.azure.http.insecure-skip-verify
+  [insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Maximum time to wait for a TLS handshake. Set to 0 for no limit.
+  # CLI flag: -<prefix>.azure.tls-handshake-timeout
+  [tls_handshake_timeout: <duration> | default = 10s]
+
+  # (advanced) The time to wait for a server's first response headers after
+  # fully writing the request headers if the request has an Expect header. Set
+  # to 0 to send the request body immediately.
+  # CLI flag: -<prefix>.azure.expect-continue-timeout
+  [expect_continue_timeout: <duration> | default = 1s]
+
+  # (advanced) Maximum number of idle (keep-alive) connections across all hosts.
+  # Set to 0 for no limit.
+  # CLI flag: -<prefix>.azure.max-idle-connections
+  [max_idle_connections: <int> | default = 100]
+
+  # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
+  # Set to 0 to use a built-in default value of 2.
+  # CLI flag: -<prefix>.azure.max-idle-connections-per-host
+  [max_idle_connections_per_host: <int> | default = 100]
+
+  # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # CLI flag: -<prefix>.azure.max-connections-per-host
+  [max_connections_per_host: <int> | default = 0]
+
+  # (advanced) Path to the Certificate Authority (CA) certificates to validate
+  # the server certificate. If not set, the host's root CA certificates are
+  # used.
+  # CLI flag: -<prefix>.azure.http.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Path to the client certificate, which is used for authenticating
+  # with the server. This setting also requires you to configure the key path.
+  # CLI flag: -<prefix>.azure.http.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. This setting also
+  # requires you to configure the client certificate.
+  # CLI flag: -<prefix>.azure.http.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -<prefix>.azure.http.tls-server-name
+  [tls_server_name: <string> | default = ""]
 ```
 
 ### swift_storage_backend
