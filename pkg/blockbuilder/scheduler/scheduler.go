@@ -140,7 +140,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, err
 
 // updateJob takes a job update from the client and records it, if necessary.
 // (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, j jobSpec) error {
+func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, _ jobSpec) error {
 	// TODO: Right here we should ignore thr update if the job isn't beyond
 	// what's in our local snapshot of committed offsets.
 
