@@ -111,9 +111,10 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 
 	// We want to run this test with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                  {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":             {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency": {withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
+		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
+		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
 	}
 
 	for concurrencyName, concurrencyVariant := range concurrencyVariants {
@@ -166,9 +167,10 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 	// We want to run this test with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                  {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":             {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency": {withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
+		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
+		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
 	}
 
 	for concurrencyName, concurrencyVariant := range concurrencyVariants {
@@ -513,9 +515,10 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 	// We want to run all these tests with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                  {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":             {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency": {withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
+		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
+		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
 	}
 
 	t.Run("should immediately switch to Running state if partition is empty", func(t *testing.T) {

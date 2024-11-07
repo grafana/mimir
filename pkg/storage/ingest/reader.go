@@ -268,6 +268,8 @@ func (r *PartitionReader) run(ctx context.Context) error {
 	return nil
 }
 
+// switchToOngoingFetcher switches to the configured ongoing fetcher. This function could be
+// called multiple times.
 func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 	if r.kafkaCfg.StartupFetchConcurrency == r.kafkaCfg.OngoingFetchConcurrency && r.kafkaCfg.StartupRecordsPerFetch == r.kafkaCfg.OngoingRecordsPerFetch {
 		// we're already using the same settings, no need to switch
@@ -281,15 +283,15 @@ func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 	}
 
 	if r.kafkaCfg.StartupFetchConcurrency > 0 && r.kafkaCfg.OngoingFetchConcurrency == 0 {
-		// Stop the current fetcher before replacing it.
-		r.fetcher.Stop()
-
 		if r.fetcher == r {
 			// This method has been called before, no need to switch the fetcher.
 			return
 		}
 
 		level.Info(r.logger).Log("msg", "partition reader is switching to non-concurrent fetcher")
+
+		// Stop the current fetcher before replacing it.
+		r.fetcher.Stop()
 
 		// We need to switch to franz-go for ongoing fetches.
 		// If we've already fetched some records, we should discard them from franz-go and start from the last consumed offset.
