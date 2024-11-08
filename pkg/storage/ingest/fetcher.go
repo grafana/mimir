@@ -48,6 +48,9 @@ type fetcher interface {
 
 	// Stop stops the fetcher.
 	Stop()
+
+	// BufferedRecords returns the number of records that have been fetched but not yet consumed.
+	BufferedRecords() float64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -226,14 +229,8 @@ type concurrentFetchers struct {
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
 	trackCompressedBytes bool
-}
 
-// Stop implements fetcher
-func (r *concurrentFetchers) Stop() {
-	close(r.done)
-
-	r.wg.Wait()
-	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
+	bufferedFetchedRecords *atomic.Int64
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -267,18 +264,19 @@ func newConcurrentFetchers(
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
 	f := &concurrentFetchers{
-		client:               client,
-		logger:               logger,
-		topicName:            topic,
-		partitionID:          partition,
-		metrics:              metrics,
-		minBytesWaitTime:     minBytesWaitTime,
-		lastReturnedRecord:   startOffset - 1,
-		startOffsets:         startOffsetsReader,
-		trackCompressedBytes: trackCompressedBytes,
-		tracer:               recordsTracer(),
-		orderedFetches:       make(chan fetchResult),
-		done:                 make(chan struct{}),
+		bufferedFetchedRecords: atomic.NewInt64(0),
+		client:                 client,
+		logger:                 logger,
+		topicName:              topic,
+		partitionID:            partition,
+		metrics:                metrics,
+		minBytesWaitTime:       minBytesWaitTime,
+		lastReturnedRecord:     startOffset - 1,
+		startOffsets:           startOffsetsReader,
+		trackCompressedBytes:   trackCompressedBytes,
+		tracer:                 recordsTracer(),
+		orderedFetches:         make(chan fetchResult),
+		done:                   make(chan struct{}),
 	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
@@ -299,6 +297,20 @@ func newConcurrentFetchers(
 	return f, nil
 }
 
+// BufferedRecords implements fetcher.
+func (r *concurrentFetchers) BufferedRecords() float64 {
+	return float64(r.bufferedFetchedRecords.Load())
+}
+
+// Stop implements fetcher.
+func (r *concurrentFetchers) Stop() {
+	close(r.done)
+
+	r.wg.Wait()
+
+	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
+}
+
 // Update implements fetcher
 func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records int) {
 	r.Stop()
@@ -315,6 +327,10 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 	case <-ctx.Done():
 		return kgo.Fetches{}, ctx
 	case f := <-r.orderedFetches:
+		// At this point, we're guaranteed that the records are not going to be with us anymore.
+		tr := r.bufferedFetchedRecords.Sub(int64(len(f.FetchPartition.Records)))
+		level.Debug(r.logger).Log("msg", "remove buffered fetched records", "num_records", len(f.FetchPartition.Records), "total_records", tr)
+
 		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
@@ -445,6 +461,9 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	if !r.trackCompressedBytes {
 		fetchedBytes = sumRecordLengths(partition.Records)
 	}
+
+	nv := r.bufferedFetchedRecords.Add(int64(len(partition.Records)))
+	level.Info(r.logger).Log("msg", "buffered fetched records", "num_records", len(partition.Records), "total_records", nv)
 
 	return fetchResult{
 		ctx:            ctx,
