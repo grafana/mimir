@@ -635,10 +635,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 	}
 
-	i.circuitBreaker.read.activate()
+	i.circuitBreaker.read.enable()
 	if ro, _ := i.lifecycler.GetReadOnlyState(); !ro {
-		// If the ingester is not read-only, activate the push circuit breaker.
-		i.circuitBreaker.push.activate()
+		// If the ingester is not read-only, enable the push circuit breaker.
+		i.circuitBreaker.push.enable()
 	}
 	return nil
 }

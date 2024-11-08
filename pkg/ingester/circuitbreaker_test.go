@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,104 +83,163 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 	cfg := CircuitBreakerConfig{Enabled: true}
 	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	// Inactive by default
+	// Disabled and not active by default
+	require.True(t, cb.isDisabled())
+	require.False(t, cb.isActive())
+
+	cb.enable()
+	// Enabled, but not active after enabling
+	require.True(t, cb.isEnabled())
 	require.False(t, cb.isActive())
 
 	cb.activate()
-
-	// Should be active immediately
+	// Immediately active after activating without initial delay
 	require.True(t, cb.isActive())
 
-	cb.deactivate()
-
-	// Should be inactive immediately
+	cb.disable()
+	// Disabled and not active immediately after disabling
+	require.True(t, cb.isDisabled())
 	require.False(t, cb.isActive())
 }
 
 func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
 	var cb *circuitBreaker
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
 	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	// Inactive by default
+	// Disabled and not active by default
+	require.True(t, cb.isDisabled())
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationIdle())
 
+	cb.enable()
+	// Enabled, but not active after enabling
+	require.True(t, cb.isEnabled())
+	require.False(t, cb.isActive())
+
+	// InitalDelay starts when we first get a request, not when we enable the circuit breaker
+	require.Never(t, cb.isActive, 20*time.Millisecond, 1*time.Millisecond)
+
+	// Once we get an activation request, circuit breaker becomes active after InitialDelay passes
 	cb.activate()
-
-	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationPending())
+	require.True(t, cb.isPending())
+	require.Eventually(t, cb.isActive, 20*time.Millisecond, 1*time.Millisecond)
+	require.True(t, cb.isActive())
 
-	// InitalDelay starts when we first get a request, not when we activate the circuit breaker
-	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
-
-	_, err := cb.tryAcquirePermit()
-	require.NoError(t, err)
-
-	// Once we get a request, circuit breaker becomes active after InitialDelay passes
+	cb.disable()
+	// Disabled and not active immediately after disabling
+	require.True(t, cb.isDisabled())
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationQueued())
-	require.Eventually(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
-	require.True(t, cb.isActivationIdle())
 
-	cb.deactivate()
-
-	// Should be inactive immediately
-	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationIdle())
-
-	_, err = cb.tryAcquirePermit()
-	require.NoError(t, err)
-
-	// A request while deactivated shouldn't queue an activation
-	require.True(t, cb.isActivationIdle())
+	// An activation request while deactivated shouldn't queue an activation
+	cb.activate()
+	require.True(t, cb.isDisabled())
 	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
 }
 
-func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
+func TestCircuitBreaker_IsActiveWithDelay_DisableAfterActivation(t *testing.T) {
 	var cb *circuitBreaker
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
 	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	// Inactive by default
+	// Disabled and not active by default
+	require.True(t, cb.isDisabled())
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationIdle())
 
-	cb.activate()
+	cb.enable()
+	// Enabled, but not active after enabling
+	require.True(t, cb.isEnabled())
+	require.False(t, cb.isActive())
+
+	cb.disable()
+	// Disabled and not active immediately after disabling
+	require.True(t, cb.isDisabled())
+	require.False(t, cb.isActive())
+
+	cb.enable()
+	// Enabled, but not active after enabling
+	require.True(t, cb.isEnabled())
+	require.False(t, cb.isActive())
 
 	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
-	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationPending())
-
-	cb.deactivate()
-
-	// Should be inactive immediately, and cancel any pending activation
-	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationIdle())
-	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
-
 	cb.activate()
-
-	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationPending())
+	require.True(t, cb.isPending())
 
-	_, err := cb.tryAcquirePermit()
-	require.NoError(t, err)
-
-	// Once we get a request, circuit breaker queues the activation
-	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationQueued())
-
-	cb.deactivate()
-
+	cb.disable()
 	// Should be inactive immediately, and cancel any queued activation
 	require.False(t, cb.isActive())
-	require.True(t, cb.isActivationIdle())
+	require.False(t, cb.isPending())
+	require.True(t, cb.isDisabled())
 	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+}
+
+func TestCircuitBreaker_IsActiveWithDelay_ActivateAfterDisabling(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 20 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	// Disabled and not active by default
+	require.True(t, cb.isDisabled())
+	require.False(t, cb.isActive())
+
+	cb.enable()
+	// Enabled, but not active after enabling
+	require.True(t, cb.isEnabled())
+	require.False(t, cb.isActive())
+
+	var (
+		start time.Time
+		wg    sync.WaitGroup
+	)
+
+	wg.Add(4)
+
+	// We activate the circuit breaker with InitialDelay of 20ms
+	go func() {
+		// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
+		start = time.Now()
+		cb.activate()
+		require.False(t, cb.isActive())
+		require.True(t, cb.isPending())
+		wg.Done()
+	}()
+
+	go func() {
+		for {
+			if cb.isActive() {
+				require.Greater(t, time.Since(start), 30*time.Millisecond)
+				break
+			}
+		}
+		wg.Done()
+	}()
+
+	// We wait for 5ms, and then disable the circuit breaker
+	time.Sleep(5 * time.Millisecond)
+	go func() {
+		// Should be inactive immediately, and cancel any queued activation
+		cb.disable()
+		require.False(t, cb.isActive())
+		require.False(t, cb.isPending())
+		require.True(t, cb.isDisabled())
+		wg.Done()
+	}()
+
+	// We wait for additional 5ms, and then enable and activate the circuit breaker
+	time.Sleep(5 * time.Millisecond)
+	go func() {
+		cb.enable()
+		cb.activate()
+		require.False(t, cb.isActive())
+		require.True(t, cb.isPending())
+		wg.Done()
+	}()
+
+	wg.Wait()
 }
 
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
@@ -197,20 +257,20 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		"if circuit breaker is not active, finish function and no error are returned": {
 			initialDelay: 1 * time.Minute,
 			circuitBreakerSetup: func(cb *circuitBreaker) {
-				cb.deactivate()
+				cb.disable()
 			},
 			expectedCircuitBreakerError: false,
 		},
 		"if circuit breaker closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb *circuitBreaker) {
-				cb.activate()
+				cb.enable()
 				cb.cb.Close()
 			},
 			expectedCircuitBreakerError: false,
 		},
 		"if circuit breaker open, no finish function and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup: func(cb *circuitBreaker) {
-				cb.activate()
+				cb.enable()
 				cb.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
@@ -234,7 +294,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		},
 		"if circuit breaker half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb *circuitBreaker) {
-				cb.activate()
+				cb.enable()
 				cb.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: false,
@@ -336,6 +396,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 			cb := newCircuitBreaker(cfg, registry, "test-request-type", log.NewNopLogger())
+			cb.enable()
 			cb.activate()
 			err := cb.recordResult(testCase.errs...)
 			require.Equal(t, testCase.expectedErr, err)
@@ -476,7 +537,10 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				RequestTimeout: 2 * time.Second,
 			}
 			cb := newCircuitBreaker(cfg, registry, "test-request-type", log.NewNopLogger())
-			cb.active.Store(testCase.isActive)
+			cb.enable()
+			if testCase.isActive {
+				cb.activate()
+			}
 			err := cb.finishRequest(testCase.requestDuration, maxRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
 				require.NoError(t, err)
@@ -845,6 +909,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				return i.lifecycler.HealthyInstancesCount()
 			})
 
+			i.circuitBreaker.push.state.Store(cbActive)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
 			st := &pushRequestState{
@@ -1119,7 +1184,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 	}{
 		"if push circuit breaker is not active, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.push.deactivate()
+				cb.push.disable()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1142,7 +1207,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 		},
 		"if push circuit breaker is closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.push.activate()
+				cb.push.enable()
 				cb.push.cb.Close()
 			},
 			expectedCircuitBreakerError: false,
@@ -1166,7 +1231,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 		},
 		"if push circuit breaker is open, no finish function and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.push.activate()
+				cb.push.enable()
 				cb.push.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
@@ -1190,7 +1255,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 		},
 		"if push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.push.activate()
+				cb.push.enable()
 				cb.push.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: false,
@@ -1272,10 +1337,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		expectedCircuitBreakerError bool
 		expectedMetrics             string
 	}{
-		"if read circuit breaker is not active and push circuit breaker is not active, finish function and no error are returned": {
+		"if read circuit breaker is disabled and push circuit breaker is disabled, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.deactivate()
-				cb.push.deactivate()
+				cb.read.disable()
+				cb.push.disable()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1305,9 +1370,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
-		"if read circuit breaker is not active and push circuit breaker is closed, finish function and no error are returned": {
+		"if read circuit breaker is disabled and push circuit breaker is closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.deactivate()
+				cb.read.disable()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Close()
 			},
@@ -1339,9 +1405,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
-		"if read circuit breaker is not active and push circuit breaker is open, finish function and no error are returned": {
+		"if read circuit breaker is disabled and push circuit breaker is open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.deactivate()
+				cb.read.disable()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
@@ -1373,9 +1440,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
-		"if read circuit breaker is not active and push circuit breaker is half-open, finish function and no error are returned": {
+		"if read circuit breaker is disabled and push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.deactivate()
+				cb.read.disable()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.HalfOpen()
 			},
@@ -1407,11 +1475,12 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
-		"if read circuit breaker is closed and push circuit breaker is is not active, finish function and no error are returned": {
+		"if read circuit breaker is closed and push circuit breaker is disabled, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Close()
-				cb.push.deactivate()
+				cb.push.disable()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1443,8 +1512,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is closed and push circuit breaker is closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Close()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Close()
 			},
@@ -1478,8 +1549,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is closed and push circuit breaker is open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Close()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
@@ -1513,8 +1586,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is closed and push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Close()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.HalfOpen()
 			},
@@ -1546,11 +1621,12 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
-		"if read circuit breaker is open and push circuit breaker is not active, no finish function and a circuitBreakerErrorOpen are returned": {
+		"if read circuit breaker is open and push circuit breaker is disabled, no finish function and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Open()
-				cb.push.deactivate()
+				cb.push.disable()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1582,8 +1658,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is open and push circuit breaker is closed, no finish function and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Open()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Close()
 			},
@@ -1617,8 +1695,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is open and push circuit breaker is open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Open()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
@@ -1652,8 +1732,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is open and push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.Open()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.HalfOpen()
 			},
@@ -1685,11 +1767,12 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 1
 			`,
 		},
-		"if read circuit breaker is half-open and push circuit breaker is not active, finish function and no error are returned": {
+		"if read circuit breaker is half-open and push circuit breaker is disabled, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.HalfOpen()
-				cb.push.deactivate()
+				cb.push.disable()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1721,8 +1804,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is half-open and push circuit breaker is closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.HalfOpen()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Close()
 			},
@@ -1756,8 +1841,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is half-open and push circuit breaker is open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.HalfOpen()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
@@ -1791,8 +1878,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is half-open and push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
+				cb.read.enable()
 				cb.read.activate()
 				cb.read.cb.HalfOpen()
+				cb.push.enable()
 				cb.push.activate()
 				cb.push.cb.HalfOpen()
 			},

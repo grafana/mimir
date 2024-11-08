@@ -311,7 +311,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 		},
 		"do not fail if read circuit breaker is not active, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
-				failingIng.circuitBreaker.read.deactivate()
+				failingIng.circuitBreaker.read.disable()
 			},
 			expectedAcquiredPermitCount: 0,
 		},
