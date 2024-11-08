@@ -41,8 +41,8 @@ func TestClientInterface(t *testing.T) {
 		Kafka: ingest.KafkaConfig{
 			Topic: "ingest",
 		},
-		BuilderConsumerGroup: "test-builder",
-		SchedulingInterval:   1000000 * time.Hour,
+		ConsumerGroup:      "test-builder",
+		SchedulingInterval: 1000000 * time.Hour,
 	}
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
@@ -138,8 +138,8 @@ func TestMonitor(t *testing.T) {
 		Kafka: ingest.KafkaConfig{
 			Topic: "ingest",
 		},
-		BuilderConsumerGroup: "test-builder",
-		SchedulingInterval:   1000000 * time.Hour,
+		ConsumerGroup:      "test-builder",
+		SchedulingInterval: 1000000 * time.Hour,
 	}
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)

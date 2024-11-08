@@ -86,7 +86,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 	// TODO: Commit the offsets back to Kafka if dirty.
 
-	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, 0)
+	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
 		return
