@@ -6,7 +6,7 @@ metadata:
   name: metamonitoring-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: metamonitoring-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: metamonitoring-values
       annotations:
-        checksum/secrets: e24157698bdd5ff3d9fb73ed3c2bb2fdc169c9690916dc0950c8e6ae61361c62
-        checksum/config: ecfbd42658d285789cd470c0bde1f56d3773105e4991b46aea3ccb65367457ee
+        checksum/secrets: b6e91041b9afb6dfa914c2864ecd312c1d5d5ccd5ba1a0c396596aeeb844c8fc
+        checksum/config: 718387d47362e2d71767b0fc1e9d802e1b397e66ce2041ec9fc040cf995feab7
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:
