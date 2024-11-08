@@ -110,14 +110,13 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		partitionID:                           partitionID,
 		newConsumer:                           consumer,
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
-		metrics:                               newReaderMetrics(partitionID, reg),
 		consumedOffsetWatcher:                 newPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: defaultMinBytesMaxWaitTime,
 		logger:                                log.With(logger, "partition", partitionID),
 		reg:                                   reg,
 	}
 
-	r.metrics.RegisterBuffedRecordsMetric(func() float64 { return r.BufferedRecords() })
+	r.metrics = newReaderMetrics(partitionID, reg, func() float64 { return r.BufferedRecords() })
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -968,7 +967,7 @@ type readerMetrics struct {
 	kprom                            *kprom.Metrics
 }
 
-func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetrics {
+func newReaderMetrics(partitionID int32, reg prometheus.Registerer, bufferedRecordsCollector func() float64) readerMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -991,7 +990,10 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 	lastConsumedOffset.Set(-1)
 
 	return readerMetrics{
-		reg:                      reg,
+		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingest_storage_reader_buffered_fetched_records",
+			Help: "The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.",
+		}, bufferedRecordsCollector),
 		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
 		receiveDelayWhenRunning:  receiveDelay.WithLabelValues("running"),
 		recordsPerFetch: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -1025,13 +1027,6 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 		lastConsumedOffset:               lastConsumedOffset,
 		kprom:                            NewKafkaReaderClientMetrics(component, reg),
 	}
-}
-
-func (r readerMetrics) RegisterBuffedRecordsMetric(collector func() float64) {
-	r.bufferedFetchedRecords = promauto.With(r.reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_ingest_storage_reader_buffered_fetched_records",
-		Help: "The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.",
-	}, collector)
 }
 
 type StrongReadConsistencyInstrumentation[T any] struct {

@@ -960,7 +960,7 @@ func TestConcurrentFetchers(t *testing.T) {
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newReaderMetrics(partition, reg)
+	metrics := newReaderMetrics(partition, reg, func() float64 { return 1 })
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
