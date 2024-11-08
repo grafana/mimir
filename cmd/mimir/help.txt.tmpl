@@ -89,9 +89,9 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
-  -alertmanager.max-grafana-config-size-bytes int
+  -alertmanager.max-grafana-config-size-bytes value
     	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
-  -alertmanager.max-grafana-state-size-bytes int
+  -alertmanager.max-grafana-state-size-bytes value
     	Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
   -alertmanager.max-silence-size-bytes int
     	Maximum silence size in bytes. 0 = no limit.
