@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -79,8 +80,10 @@ type PartitionReader struct {
 	consumerGroup                         string
 	concurrentFetchersMinBytesMaxWaitTime time.Duration
 
-	client  *kgo.Client
-	fetcher fetcher
+	client *kgo.Client
+
+	fetcherMtx sync.Mutex
+	fetcher    fetcher
 
 	newConsumer consumerFactory
 	metrics     readerMetrics
@@ -133,6 +136,8 @@ func (r *PartitionReader) Update(_ context.Context, _, _ int) {
 }
 
 func (r *PartitionReader) BufferedRecords() float64 {
+	r.fetcherMtx.Lock()
+	defer r.fetcherMtx.Unlock()
 	var fcount, ccount float64
 	if r.fetcher != nil && r.fetcher != r {
 		fcount = r.fetcher.BufferedRecords()
@@ -219,7 +224,9 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
+		r.fetcherMtx.Lock()
 		r.fetcher = f
+		r.fetcherMtx.Unlock()
 	} else {
 		// When concurrent fetch is disabled we read records directly from the Kafka client, so we want it
 		// to consume the partition.
@@ -227,7 +234,9 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(startOffset)},
 		})
 
+		r.fetcherMtx.Lock()
 		r.fetcher = r
+		r.fetcherMtx.Unlock()
 	}
 
 	// Enforce the max consumer lag (if enabled).
@@ -285,6 +294,9 @@ func (r *PartitionReader) run(ctx context.Context) error {
 // switchToOngoingFetcher switches to the configured ongoing fetcher. This function could be
 // called multiple times.
 func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
+	r.fetcherMtx.Lock()
+	defer r.fetcherMtx.Unlock()
+
 	if r.kafkaCfg.StartupFetchConcurrency == r.kafkaCfg.OngoingFetchConcurrency && r.kafkaCfg.StartupRecordsPerFetch == r.kafkaCfg.OngoingRecordsPerFetch {
 		// we're already using the same settings, no need to switch
 		return
