@@ -94,8 +94,8 @@ func (s *Subquery) NextStepSamples() (types.RangeVectorStepData, error) {
 	s.histograms.DiscardPointsBefore(rangeStart)
 
 	s.nextStepT += s.ParentQueryTimeRange.IntervalMilliseconds
-	s.floatView = s.floats.ViewUntil(rangeEnd, true, s.floatView)
-	s.histogramView = s.histograms.ViewUntil(rangeEnd, true, s.histogramView)
+	s.floatView = s.floats.ViewUntilSearchingForwards(rangeEnd, s.floatView)
+	s.histogramView = s.histograms.ViewUntilSearchingForwards(rangeEnd, s.histogramView)
 
 	return types.RangeVectorStepData{
 		Floats:     s.floatView,

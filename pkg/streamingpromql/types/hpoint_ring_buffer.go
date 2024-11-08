@@ -55,37 +55,41 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 	return nil
 }
 
-// ViewUntil returns a view into this buffer, including only points with timestamps less than or equal to maxT.
-// searchForwards is a hint used to optimise the search for points satisfying the maxT condition, ViewUntil will return the
-// same result regardless of teh value.
-// Set searchForwards to true if it is expected that there are many points with timestamp greater than maxT, and few points with
+// ViewUntilSearchingForwards returns a view into this buffer, including only points with timestamps less than or equal to maxT.
+// ViewUntilSearchingForwards examines the points in the buffer starting from the front of the buffer, so is preferred over
+// ViewUntilSearchingBackwards if it is expected that there are many points with timestamp greater than maxT, and few points with
 // earlier timestamps.
-// Set searchForwards to false if it is expected that only a few of the points will have timestamp greater than maxT.
 // existing is an existing view instance for this buffer that is reused if provided. It can be nil.
 // The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
-func (b *HPointRingBuffer) ViewUntil(maxT int64, searchForwards bool, existing *HPointRingBufferView) *HPointRingBufferView {
+func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
 		existing = &HPointRingBufferView{buffer: b}
 	}
 
-	if searchForwards {
-		size := 0
+	size := 0
 
-		for size < b.size && b.pointAt(size).T <= maxT {
-			size++
-		}
-
-		existing.size = size
-		return existing
-	}
-
-	size := b.size
-
-	for size > 0 && b.pointAt(size-1).T > maxT {
-		size--
+	for size < b.size && b.pointAt(size).T <= maxT {
+		size++
 	}
 
 	existing.size = size
+	return existing
+}
+
+// ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
+// is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
+func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
+	if existing == nil {
+		existing = &HPointRingBufferView{buffer: b}
+	}
+
+	nextPositionToCheck := b.size - 1
+
+	for nextPositionToCheck >= 0 && b.pointAt(nextPositionToCheck).T > maxT {
+		nextPositionToCheck--
+	}
+
+	existing.size = nextPositionToCheck + 1
 	return existing
 }
 
