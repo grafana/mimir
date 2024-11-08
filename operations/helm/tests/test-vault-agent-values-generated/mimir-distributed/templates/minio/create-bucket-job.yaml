@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-vault-agent-values-mimir-make-minio-buckets-5.2.0
+  name: test-vault-agent-values-mimir-make-minio-buckets-5.3.0
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
