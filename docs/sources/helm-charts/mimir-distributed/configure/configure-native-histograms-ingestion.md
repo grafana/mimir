@@ -22,7 +22,7 @@ mimir:
 ```
 
 {{% admonition type="note" %}}
-Native histograms is an experimental feature of Grafana Mimir.
+Native histograms are an experimental feature of Grafana Mimir.
 {{% /admonition %}}
 
 To configure bucket limits for native histograms, refer to [Configure native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-native-histograms-ingestion/).
