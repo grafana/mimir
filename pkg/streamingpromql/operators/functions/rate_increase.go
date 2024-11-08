@@ -46,12 +46,12 @@ func rate(isRate bool) RangeVectorStepFunction {
 		}
 
 		if fCount >= 2 {
-			val := floatRate(isRate, fCount, step, fHead, fTail, rangeSeconds)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
 			return val, true, nil, nil
 		}
 
 		if hCount >= 2 {
-			val, err := histogramRate(isRate, step, hHead, hTail, rangeSeconds, hCount, emitAnnotation)
+			val, err := histogramRate(isRate, hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
 			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return 0, false, nil, err
@@ -63,7 +63,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 	}
 }
 
-func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := hHead[0]
 	hHead = hHead[1:]
 
@@ -136,11 +136,11 @@ func histogramRate(isRate bool, step types.RangeVectorStepData, hHead []promql.H
 		delta = delta.CopyToSchema(desiredSchema)
 	}
 
-	val := calculateHistogramRate(isRate, step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
 	return val, err
 }
 
-func floatRate(isRate bool, fCount int, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
+func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
 	firstPoint := fHead[0]
 	fHead = fHead[1:]
 
@@ -168,7 +168,7 @@ func floatRate(isRate bool, fCount int, step types.RangeVectorStepData, fHead []
 	accumulate(fHead)
 	accumulate(fTail)
 
-	val := calculateFloatRate(isRate, step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+	val := calculateFloatRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
 	return val
 }
 
