@@ -6,7 +6,7 @@ metadata:
   name: test-requests-and-limits-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: test-requests-and-limits-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: test-requests-and-limits-values
       annotations:
-        checksum/secrets: a539951d6f896787f4af980bd2cef5ad463aaab1616c10aff82f4ee0eb8a8b2d
-        checksum/config: 7e9c8454c47d42db8c2c7f18be09ccc8f2625fef6d029eb1a780c8927c0c7ac6
+        checksum/secrets: ec0dee744d6d964a238110805b6ed440f3c86cae60842c5fd3f2002c0c417686
+        checksum/config: b6b4c3d189f3e60c49d3594969025441bf459b6a748ceec22fb1ba58fd2c6ac1
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

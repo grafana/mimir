@@ -6,7 +6,7 @@ metadata:
   name: test-oss-logical-multizone-values-minio-post-job
   labels:
     app: minio-post-job
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: test-oss-logical-multizone-values
     heritage: Helm
   annotations:

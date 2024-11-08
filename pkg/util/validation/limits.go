@@ -224,16 +224,16 @@ type Limits struct {
 	NotificationRateLimit               float64            `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
 	NotificationRateLimitPerIntegration LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
-	AlertmanagerMaxGrafanaConfigSizeBytes      int `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
-	AlertmanagerMaxConfigSizeBytes             int `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
-	AlertmanagerMaxGrafanaStateSizeBytes       int `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
-	AlertmanagerMaxSilencesCount               int `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
-	AlertmanagerMaxSilenceSizeBytes            int `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
-	AlertmanagerMaxTemplatesCount              int `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
-	AlertmanagerMaxTemplateSizeBytes           int `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
-	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
-	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
-	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
+	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
+	AlertmanagerMaxConfigSizeBytes             int           `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
+	AlertmanagerMaxGrafanaStateSizeBytes       flagext.Bytes `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
+	AlertmanagerMaxSilencesCount               int           `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
+	AlertmanagerMaxSilenceSizeBytes            int           `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
+	AlertmanagerMaxTemplatesCount              int           `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
+	AlertmanagerMaxTemplateSizeBytes           int           `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
+	AlertmanagerMaxDispatcherAggregationGroups int           `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
+	AlertmanagerMaxAlertsCount                 int           `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
+	AlertmanagerMaxAlertsSizeBytes             int           `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	// OpenTelemetry
 	OTelMetricSuffixesEnabled                bool `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
@@ -375,9 +375,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
-	f.IntVar(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, 0, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
+	_ = l.AlertmanagerMaxGrafanaConfigSizeBytes.Set("0")
+	f.Var(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.")
-	f.IntVar(&l.AlertmanagerMaxGrafanaStateSizeBytes, AlertmanagerMaxGrafanaStateSizeFlag, 0, "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.")
+	_ = l.AlertmanagerMaxGrafanaStateSizeBytes.Set("0")
+	f.Var(&l.AlertmanagerMaxGrafanaStateSizeBytes, AlertmanagerMaxGrafanaStateSizeFlag, "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilencesCount, "alertmanager.max-silences-count", 0, "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilenceSizeBytes, "alertmanager.max-silence-size-bytes", 0, "Maximum silence size in bytes. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxTemplatesCount, "alertmanager.max-templates-count", 0, "Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.")
@@ -1018,11 +1020,11 @@ func (o *Overrides) NotificationBurstSize(user string, integration string) int {
 }
 
 func (o *Overrides) AlertmanagerMaxGrafanaStateSize(userID string) int {
-	return o.getOverridesForUser(userID).AlertmanagerMaxGrafanaStateSizeBytes
+	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaStateSizeBytes)
 }
 
 func (o *Overrides) AlertmanagerMaxGrafanaConfigSize(userID string) int {
-	return o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes
+	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes)
 }
 
 func (o *Overrides) AlertmanagerMaxConfigSize(userID string) int {
