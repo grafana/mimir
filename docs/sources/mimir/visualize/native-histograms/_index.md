@@ -33,7 +33,7 @@ Use the Prometheus Query Language (PromQL) to query native histogram metrics. Th
 
 For more information about PromQL, refer to [Querying Prometheus](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 
-The following examples show describe common ways to derive floating point data type from native histograms data for visualizations and also how to convert existing queries using classic histograms into queries using native histograms.
+The following examples show common ways to derive floating point data type from native histograms data for visualizations and also how to convert existing queries using classic histograms into queries using native histograms.
 
 Note that the native histogram queries do not include the `_bucket`, `_sum` and `_count` suffixes of classic histograms.
 
@@ -125,7 +125,7 @@ For all other panel types, for example [Timeseries](/docs/grafana/latest/panels-
 
 ## Grafana classic explore
 
-In [Explore](https://grafana.com/docs/grafana/latest/explore/), use one of the histogram functions above in [Prometheus Query Language](#prometheus-query-language) to visualize a derived float time series.
+In [Explore](https://grafana.com/docs/grafana/latest/explore/), use one of the histogram functions in [Prometheus Query Language](#prometheus-query-language) to visualize a derived float time series.
 
 {{% admonition type="note" %}}
 Visualizing native histogram data type directly without the histogram functions in the **Explore** view is not supported at this time.
