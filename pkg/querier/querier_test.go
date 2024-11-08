@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -50,6 +51,7 @@ const (
 	chunkLength     = 3 * time.Hour
 	sampleRate      = 15 * time.Second
 	samplesPerChunk = chunkLength / sampleRate
+	epsilon         = 0.000001 // Relative error allowed for sample values.
 )
 
 type query struct {
@@ -82,10 +84,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts + int64((sampleRate*4)/time.Millisecond),
-					F: 1000.0,
-				}, point)
+				require.Equal(t, ts+int64((sampleRate*4)/time.Millisecond), point.T)
+				require.True(t, almost.Equal(1000.0, point.F, epsilon))
 			},
 		},
 
@@ -100,10 +100,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts,
-					F: float64(ts),
-				}, point)
+				require.Equal(t, ts, point.T)
+				require.True(t, almost.Equal(float64(ts), point.F, epsilon))
 			},
 		},
 
@@ -117,10 +115,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts + int64((sampleRate*4)/time.Millisecond)*10,
-					F: 1000.0,
-				}, point)
+				require.Equal(t, ts+int64((sampleRate*4)/time.Millisecond)*10, point.T)
+				require.True(t, almost.Equal(1000.0, point.F, epsilon))
 			},
 		},
 
@@ -134,10 +130,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts,
-					F: float64(ts),
-				}, point)
+				require.Equal(t, ts, point.T)
+				require.True(t, almost.Equal(float64(ts), point.F, epsilon))
 			},
 		},
 
@@ -213,10 +207,8 @@ func TestQuerier(t *testing.T) {
 			},
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
 				require.True(t, ts <= int64(secondChunkStart))
-				require.Equal(t, promql.FPoint{
-					T: ts,
-					F: float64(ts),
-				}, point)
+				require.Equal(t, ts, point.T)
+				require.True(t, almost.Equal(float64(ts), point.F, epsilon))
 			},
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.True(t, ts > int64(secondChunkStart))
