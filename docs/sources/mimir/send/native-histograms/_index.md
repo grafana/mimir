@@ -98,17 +98,17 @@ The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will pro
 
 ## Scrape and send native histograms with Prometheus
 
-Use the latest version of Prometheus or at least version 2.47.
+Use Prometheus version 2.47 or later.
 
-1. To enable scraping native histograms from the application, you need to enable native histograms feature via a feature flag on the command line:
+1. To enable scraping native histograms from the application, you need to enable the native histograms feature via a feature flag on the command line:
 
    ```bash
    prometheus --enable-feature=native-histograms
    ```
 
-1. The above flag makes Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not affected. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
+1. This flag makes Prometheus detect and scrape native histograms but ignores the classic histogram version of those metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
 
-For example, to get both classic and native histograms, use the following configuration.
+   For example, to get both classic and native histograms, use the following configuration:
 
    ```yaml
    scrape_configs:
@@ -119,20 +119,20 @@ For example, to get both classic and native histograms, use the following config
    {{< admonition type="note" >}}
    <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
 
-   Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Prometheus negotiates a Protobuf protocol transfer in this case.
+   Native histograms don't have a textual presentation on the application's `/metrics` endpoint. Therefore, Prometheus negotiates a Protobuf protocol transfer in these cases.
    {{< /admonition >}}
 
    {{< admonition type="note" >}}
-   In certain situations, the protobuf parsing changes the number formatting of
+   In certain situations, the Protobuf parsing changes the number formatting of
    the `le` labels of conventional histograms and the `quantile` labels of
    summaries. Typically, this happens if the scraped target is instrumented with
    [client_golang](https://github.com/prometheus/client_golang), provided that
    [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
    is set to `false`. In such cases, integer label values are represented
    as `quantile="1"` or `le="2"` omitting the zero fractional.
-   However, the protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
+   However, the Protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
    specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus, which changes the identity of the metric from what was originally ingested.
+   ingestion into Prometheus. This changes the identity of the metric from what was originally ingested.
 
    For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
    {{< /admonition >}}
@@ -159,16 +159,16 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
 
    {{< admonition type="note" >}}
-   In certain situations, the protobuf parsing changes the number formatting of
+   In certain situations, the Protobuf parsing changes the number formatting of
    the `le` labels of conventional histograms and the `quantile` labels of
    summaries. Typically, this happens if the scraped target is instrumented with
    [client_golang](https://github.com/prometheus/client_golang), provided that
    [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
    is set to `false`. In such cases, integer label values are represented
    as `quantile="1"` or `le="2"` omitting the zero fractional.
-   However, the protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
+   However, the Protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
    specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus, which changes the identity of the metric from what was originally ingested.
+   ingestion into Prometheus. This changes the identity of the metric from what was originally ingested.
 
    For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
    {{< /admonition >}}
