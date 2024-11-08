@@ -60,21 +60,23 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	defer s.mu.Unlock()
 
 	if j, ok := s.jobs[id]; ok {
-		// We can only update an unassigned job.
 		if j.assignee == "" {
+			// We can only update an unassigned job.
 			j.spec = spec
 		}
-	} else {
-		j = &job{
-			id:          id,
-			assignee:    "",
-			leaseExpiry: time.Now().Add(s.leaseTime),
-			failCount:   0,
-			spec:        spec,
-		}
-		s.jobs[id] = j
-		heap.Push(&s.unassigned, j)
+		return
 	}
+
+	// Otherwise, add a new job.
+	j := &job{
+		id:          id,
+		assignee:    "",
+		leaseExpiry: time.Now().Add(s.leaseTime),
+		failCount:   0,
+		spec:        spec,
+	}
+	s.jobs[id] = j
+	heap.Push(&s.unassigned, j)
 }
 
 // renewLease renews the lease of the job with the given ID for the given
