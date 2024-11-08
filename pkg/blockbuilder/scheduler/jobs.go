@@ -22,8 +22,7 @@ type jobQueue struct {
 	leaseTime time.Duration
 	logger    log.Logger
 
-	mu sync.Mutex
-
+	mu         sync.Mutex
 	epoch      uint
 	jobs       map[string]*job
 	unassigned jobHeap
@@ -113,20 +112,22 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 		if j.assignee == "" {
 			j.spec = spec
 		}
-	} else {
-		j = &job{
-			key: jobKey{
-				id:    id,
-				epoch: 0,
-			},
-			assignee:    "",
-			leaseExpiry: time.Now().Add(s.leaseTime),
-			failCount:   0,
-			spec:        spec,
-		}
-		s.jobs[id] = j
-		heap.Push(&s.unassigned, j)
+		return
 	}
+
+	// Otherwise, add a new job.
+	j := &job{
+		key: jobKey{
+			id:    id,
+			epoch: 0,
+		},
+		assignee:    "",
+		leaseExpiry: time.Now().Add(s.leaseTime),
+		failCount:   0,
+		spec:        spec,
+	}
+	s.jobs[id] = j
+	heap.Push(&s.unassigned, j)
 }
 
 // renewLease renews the lease of the job with the given ID for the given
@@ -237,9 +238,9 @@ func (a *jobSpec) less(b *jobSpec) bool {
 type jobHeap []*job
 
 // Implement the heap.Interface for jobHeap.
-func (h *jobHeap) Len() int           { return len(*h) }
-func (h *jobHeap) Less(i, j int) bool { return (*h)[i].spec.less(&(*h)[j].spec) }
-func (h *jobHeap) Swap(i, j int)      { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
+func (h jobHeap) Len() int           { return len(h) }
+func (h jobHeap) Less(i, j int) bool { return h[i].spec.less(&h[j].spec) }
+func (h jobHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *jobHeap) Push(x interface{}) {
 	*h = append(*h, x.(*job))

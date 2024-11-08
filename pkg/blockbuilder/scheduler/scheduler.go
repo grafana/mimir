@@ -44,7 +44,7 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:     newJobQueue(cfg.JobLeaseTime, logger),
+		jobs:     newJobQueue(cfg.JobLeaseExpiry, logger),
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
@@ -115,7 +115,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 	// TODO: Commit the offsets back to Kafka if dirty.
 
-	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.BuilderConsumerGroup, 0)
+	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
 		return
@@ -267,7 +267,7 @@ func (s *BlockBuilderScheduler) computeStateFromObservations(observations map[st
 	*/
 
 	committed := make(map[int32]int64)
-	jobs := newJobQueue(s.cfg.JobLeaseTime, s.logger)
+	jobs := newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
 
 	for _, rj := range observations {
 		if rj.complete {
