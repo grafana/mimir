@@ -951,8 +951,6 @@ func (r *partitionCommitter) stop(error) error {
 }
 
 type readerMetrics struct {
-	reg prometheus.Registerer
-
 	bufferedFetchedRecords           prometheus.GaugeFunc
 	receiveDelayWhenStarting         prometheus.Observer
 	receiveDelayWhenRunning          prometheus.Observer
