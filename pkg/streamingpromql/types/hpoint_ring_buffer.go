@@ -198,6 +198,10 @@ type HPointRingBufferView struct {
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
 func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promql.HPoint) {
+	if v.size == 0 {
+		return nil, nil
+	}
+
 	endOfHeadSegment := v.buffer.firstIndex + v.size
 
 	if endOfHeadSegment > len(v.buffer.points) {
