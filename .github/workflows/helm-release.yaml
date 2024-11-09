@@ -5,14 +5,165 @@ on:
     branches:
       - main
       - "mimir-distributed-release-[0-9]+.[0-9]+"
+      - "vldmr/gh-action-helm-push-oci"
+  workflow_dispatch: # for manual testing
+
+env:
+  CR_TOOL_PATH: ${{ github.workspace }}/.cr
+  CR_PACKAGE_PATH: "${{ github.workspace }}/.cr-release-packages"
+  CR_CONFIGFILE: "${{ github.workspace }}/source/operations/helm/cr.yaml"
+  CT_CONFIGFILE: "${{ github.workspace }}/source/operations/helm/ct.yaml"
 
 jobs:
-  call-update-helm-repo:
-    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
-    with:
-      charts_dir: operations/helm/charts
-      cr_configfile: operations/helm/cr.yaml
-      ct_configfile: operations/helm/ct.yaml
-    secrets:
-      github_app_id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
-      github_app_pem: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to push chart release, create release, and push tags to github
+      packages: write # to push package to ghcr
+    steps:
+      - name: Create a GitHub App installation access token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
+          private-key: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            mimir
+            helm-charts
+
+      - name: Set the correct token (Github App or PAT)
+        run: |
+          echo "AUTHTOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV
+
+      - name: Check token permissions
+        run: |
+          curl -v --http1.1 -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/user/packages?package_type=container
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: source
+
+      - name: Checkout helm-charts
+        # The cr tool only works if the target repository is already checked out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          repository: grafana/helm-charts
+          path: helm-charts
+          token: ${{ env.AUTHTOKEN  }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.1.0
+
+      - name: Install CR tool
+        run: |
+          mkdir -p "${CR_TOOL_PATH}"
+          curl -sSLo cr.tar.gz "https://github.com/helm/chart-releaser/releases/download/v1.6.1/chart-releaser_1.6.1_linux_amd64.tar.gz"
+          tar -xzf cr.tar.gz -C "${CR_TOOL_PATH}"
+          rm -f cr.tar.gz
+
+      - name: List changed charts
+        id: list-changed
+        run: |
+          cd source
+
+          latest_tag=$( if ! git describe --tags --abbrev=0 2> /dev/null ; then git rev-list --max-parents=0 --first-parent HEAD ; fi )
+
+          echo "Running: ct list-changed --config ${CT_CONFIGFILE} --since ${latest_tag} --target-branch ${{ github.ref_name }}"
+          changed=$(ct list-changed --config "${CT_CONFIGFILE}" --since "${latest_tag}" --target-branch "${{ github.ref_name }}")
+          echo "${changed}"
+          num_changed=$(wc -l <<< ${changed})
+          if [[ "${num_changed}" -gt "1" ]] ; then
+            echo "More than one chart changed, exiting"
+            exit 1
+          fi
+          if [[ -n "${changed}" ]]; then
+            name=$(yq ".name" < ${changed}/Chart.yaml)
+            version=$(yq ".version" < ${changed}/Chart.yaml)
+
+            if [ $(git tag -l "${name}-${version}") ]; then
+              echo "Tag '${tagname}' already exists, skipping release"
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "chartpath=${changed}" >> $GITHUB_OUTPUT
+            else
+              echo "Releasing ${changed}"
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "chartpath=${changed}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No charts have changed, skipping release"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "chartpath=operations/helm/charts" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Parse Chart.yaml
+        id: parse-chart
+        run: |
+          cd source
+          changed="${{ steps.list-changed.outputs.chartpath }}"
+          description=$(yq ".description" < ${changed}/Chart.yaml)
+          name=$(yq ".name" < ${changed}/Chart.yaml)
+          version=$(yq ".version" < ${changed}/Chart.yaml)
+          echo "chartpath=${changed}" >> $GITHUB_OUTPUT
+          echo "desc=${description}" >> $GITHUB_OUTPUT
+          if [[ -n "${HELM_TAG_PREFIX}" ]]; then
+            echo "tagname=${HELM_TAG_PREFIX}-${name}-${version}" >> $GITHUB_OUTPUT
+          else
+            echo "tagname=${name}-${version}" >> $GITHUB_OUTPUT
+          fi
+          echo "packagename=${name}-${version}" >> $GITHUB_OUTPUT
+
+      - name: Add dependency chart repos
+        run: |
+          cd source
+          # Skip the header line and make sure that tabs are expanded into spaces
+          deps=$(helm dependency list "${{ steps.parse-chart.outputs.chartpath }}" | tail +2 | expand)
+          while read -r row; do
+            IFS=' ' read -ra parts <<< "$row"
+            name="${parts[0]}"
+            repo="${parts[2]}"
+            case "$repo" in
+              "https://"*) helm repo add "$name" "$repo" ;;
+              *) echo >&2 "Skipping dependency $name: unsupported schema for \"$repo\"" ;;
+            esac
+          done <<< "$deps"
+
+      - name: Create helm package
+        run: |
+          cd source
+          "${CR_TOOL_PATH}/cr" package "${{ steps.parse-chart.outputs.chartpath }}" --config "${CR_CONFIGFILE}" --package-path "${CR_PACKAGE_PATH}"
+          echo "Result of chart package:"
+          ls -l "${CR_PACKAGE_PATH}"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ env.AUTHTOKEN }}
+          # password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push charts to GHCR
+        run: |
+          helm push "${{ env.CR_PACKAGE_PATH }}/${{ steps.parse-chart.outputs.packagename }}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/helm-charts"
+
+  # call-update-helm-repo:
+  #   uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+  #   with:
+  #     charts_dir: operations/helm/charts
+  #     cr_configfile: operations/helm/cr.yaml
+  #     ct_configfile: operations/helm/ct.yaml
+  #   secrets:
+  #     github_app_id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
+  #     github_app_pem: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}
