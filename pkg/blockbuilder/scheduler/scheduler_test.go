@@ -216,7 +216,113 @@ func TestStartup(t *testing.T) {
 		require.ErrorIs(t, err, errNoJobAvailable)
 	}
 
-	// And we can resume normal operation.
+	// And we can resume normal operation:
+	sched.jobs.addOrUpdate("ingest/65/256", jobSpec{
+		topic:       "ingest",
+		partition:   65,
+		startOffset: 256,
+		endOffset:   9111,
+		commitRecTs: now.Add(-1 * time.Hour),
+	})
+
+	a1key, a1spec, err := sched.assignJob("w0")
+	require.NoError(t, err)
+	require.NotZero(t, a1spec)
+	require.Equal(t, "ingest/65/256", a1key.id)
+}
+
+func TestObserve(t *testing.T) {
+	m := make(obsMap)
+
+	require.NoError(t,
+		m.update(
+			jobKey{id: "ingest/64/1000", epoch: 10},
+			"w0",
+			true,
+			jobSpec{topic: "ingest", commitRecTs: time.Unix(5, 0)},
+		),
+	)
+	require.NoError(t,
+		m.update(
+			jobKey{id: "ingest/64/1000", epoch: 10},
+			"w0",
+			true,
+			jobSpec{topic: "ingest", commitRecTs: time.Unix(5, 0)},
+		),
+	)
+	require.NoError(t,
+		m.update(
+			jobKey{id: "ingest/64/99999999", epoch: 84},
+			"w0",
+			true,
+			jobSpec{topic: "ingest", commitRecTs: time.Unix(99, 0)},
+		),
+	)
+	require.Len(t, m, 2)
+
+	require.ErrorIs(t,
+		m.update(
+			jobKey{id: "ingest/64/1000", epoch: 9},
+			"w9",
+			false,
+			jobSpec{topic: "ingest", commitRecTs: time.Unix(2, 0)},
+		),
+		errBadEpoch,
+	)
+}
+
+func TestStateFromObservations(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	m := make(obsMap)
+	require.NoError(t,
+		m.update(
+			jobKey{id: "ingest/63/5524", epoch: 10},
+			"w0",
+			false,
+			jobSpec{topic: "ingest", partition: 63, commitRecTs: time.Unix(2, 0), endOffset: 6000},
+		),
+	)
+	require.NoError(t,
+		m.update(
+			jobKey{id: "ingest/64/1000", epoch: 11},
+			"w0",
+			true,
+			jobSpec{topic: "ingest", partition: 64, commitRecTs: time.Unix(5, 0), endOffset: 2000},
+		),
+	)
+
+	offs, q := sched.computeStateFromObservations(
+		m, kadm.Offsets{
+			"ingest": {
+				63: kadm.Offset{
+					Partition: 63,
+					At:        5000,
+				},
+				64: kadm.Offset{
+					Partition: 64,
+					At:        800,
+				},
+				65: kadm.Offset{
+					Partition: 65,
+					At:        974,
+				},
+			},
+		},
+	)
+
+	requireOffset(t, offs, "ingest", 63, 5000, "ingest/65 is in progress, so we should not move the offset")
+	requireOffset(t, offs, "ingest", 64, 2000)
+	requireOffset(t, offs, "ingest", 65, 974, "ingest/65 should be unchanged - not among observations")
+
+	require.Len(t, q.jobs, 1)
+	require.Equal(t, 11, int(q.epoch))
+}
+
+func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int32, expected int64, msgAndArgs ...interface{}) {
+	t.Helper()
+	o, ok := offs.Lookup(topic, partition)
+	require.True(t, ok, msgAndArgs...)
+	require.Equal(t, expected, o.At, msgAndArgs...)
 }
 
 func TestMonitor(t *testing.T) {

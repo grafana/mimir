@@ -34,7 +34,7 @@ type BlockBuilderScheduler struct {
 	mu                  sync.Mutex
 	committed           kadm.Offsets
 	dirty               bool
-	observations        map[string]*observation
+	observations        obsMap
 	observationComplete bool
 }
 
@@ -51,7 +51,7 @@ func New(
 		metrics:  newSchedulerMetrics(reg),
 
 		committed:    make(kadm.Offsets),
-		observations: make(map[string]*observation),
+		observations: make(obsMap),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -182,7 +182,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	defer s.mu.Unlock()
 
 	if !s.observationComplete {
-		if err := s.observeUpdate(key, workerID, complete, j); err != nil {
+		if err := s.observations.update(key, workerID, complete, j); err != nil {
 			return err
 		}
 
@@ -218,6 +218,8 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	return nil
 }
 
+type obsMap map[string]*observation
+
 type observation struct {
 	key      jobKey
 	spec     jobSpec
@@ -225,10 +227,11 @@ type observation struct {
 	complete bool
 }
 
-func (s *BlockBuilderScheduler) observeUpdate(key jobKey, workerID string, complete bool, j jobSpec) error {
-	rj, ok := s.observations[key.id]
+// update records an observation of a job update.
+func (m obsMap) update(key jobKey, workerID string, complete bool, j jobSpec) error {
+	rj, ok := m[key.id]
 	if !ok {
-		s.observations[key.id] = &observation{
+		m[key.id] = &observation{
 			key:      key,
 			spec:     j,
 			workerID: workerID,
@@ -252,7 +255,7 @@ func (s *BlockBuilderScheduler) observeUpdate(key jobKey, workerID string, compl
 
 // completeObservationMode considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
-func (s *BlockBuilderScheduler) computeStateFromObservations(observations map[string]*observation, kafkaOffsets kadm.Offsets) (kadm.Offsets, *jobQueue) {
+func (s *BlockBuilderScheduler) computeStateFromObservations(observations obsMap, kafkaOffsets kadm.Offsets) (kadm.Offsets, *jobQueue) {
 	/*
 		Inputs:
 			- the observations
@@ -264,9 +267,17 @@ func (s *BlockBuilderScheduler) computeStateFromObservations(observations map[st
 		The output from this is:
 			- Updated Kafka committed offsets.
 			- a jobQueue that's ready for action.
+
+
+		TODO:
+		* Needs to include the serialized metadata for the consumption job.
 	*/
 
 	committed := make(map[int32]int64)
+	kafkaOffsets.Each(func(o kadm.Offset) {
+		committed[o.Partition] = o.At
+	})
+
 	jobs := newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
 
 	for _, rj := range observations {
