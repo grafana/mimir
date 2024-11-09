@@ -4308,13 +4308,13 @@
         },
         {
           "kind": "field",
-          "name": "promql_experimental_functions_enabled",
+          "name": "enabled_promql_experimental_functions",
           "required": false,
-          "desc": "Enable experimental PromQL functions, which are subject to being changed or removed at any time.",
+          "desc": "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.promql-experimental-functions-enabled",
-          "fieldType": "boolean",
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
