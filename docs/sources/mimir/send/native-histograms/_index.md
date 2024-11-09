@@ -106,7 +106,13 @@ Use Prometheus version 2.47 or later.
    prometheus --enable-feature=native-histograms
    ```
 
-1. This flag makes Prometheus detect and scrape native histograms but ignores the classic histogram version of those metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
+   This flag makes Prometheus detect and scrape native histograms and ignore the classic histogram version of metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected.
+
+1. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
+
+   {{< admonition type="note" >}}
+   In Prometheus versions earlier than 3.0, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
+   {{< /admonition >}}
 
    For example, to get both classic and native histograms, use the following configuration:
 
@@ -149,13 +155,23 @@ Use Prometheus version 2.47 or later.
 
 Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>).
 
-1. To scrape native histograms, you need to set the `scrape_protocols` argument in the `prometheus.scrape` component to specify `PrometheusProto` as the first protocol to negotiate and `always_scrape_classic_histograms = true` in order to scrape both classic and native histograms.
+1. To scrape native histograms, set the `scrape_protocols` argument in the `prometheus.scrape` component to specify `PrometheusProto` as the first protocol to negotiate.
 
    ```
     scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
-    always_scrape_classic_histograms = true
    ```
 
+1. To scrape classic histograms in addition to native histograms, set `always_scrape_classic_histograms` to `true`.
+
+   {{< admonition type="note" >}}
+   In Prometheus versions earlier than 3.0, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
+   {{< /admonition >}}
+
+   ```
+   scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
+   always_scrape_classic_histograms = true
+   ```
+   
    For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
 
    {{< admonition type="note" >}}
