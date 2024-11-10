@@ -3,6 +3,8 @@
 package types
 
 import (
+	"fmt"
+
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -18,6 +20,7 @@ import (
 type HPointRingBuffer struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	points                   []promql.HPoint
+	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 }
@@ -95,7 +98,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 
 // pointAt returns the point at index 'position'.
 func (b *HPointRingBuffer) pointAt(position int) promql.HPoint {
-	return b.points[(b.firstIndex+position)%len(b.points)]
+	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
 }
 
 // NextPoint gets the next point in this buffer, expanding it if required.
@@ -118,6 +121,11 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 			return nil, err
 		}
 
+		if !isPowerOfTwo(cap(newSlice)) {
+			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
+			panic(fmt.Sprintf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize))
+		}
+
 		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
@@ -131,9 +139,10 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
+		b.pointsIndexMask = cap(newSlice) - 1
 	}
 
-	nextIndex := (b.firstIndex + b.size) % len(b.points)
+	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 	b.size++
 	return &b.points[nextIndex], nil
 }
@@ -173,12 +182,19 @@ func (b *HPointRingBuffer) Release() {
 // s will be modified in place when the buffer is modified, and callers should not modify s after passing it off to the ring buffer via Use.
 // s will be returned to the pool when Close is called, Use is called again, or the buffer needs to expand, so callers
 // should not return s to the pool themselves.
+// s must have a capacity that is a power of two.
 func (b *HPointRingBuffer) Use(s []promql.HPoint) {
+	if !isPowerOfTwo(cap(s)) {
+		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
+		panic(fmt.Sprintf("slice capacity must be a power of two, but is %v", cap(s)))
+	}
+
 	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 
-	b.points = s
+	b.points = s[:cap(s)]
 	b.firstIndex = 0
 	b.size = len(s)
+	b.pointsIndexMask = cap(s) - 1
 }
 
 // Close releases any resources associated with this buffer.

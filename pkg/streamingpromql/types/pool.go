@@ -10,7 +10,7 @@ import (
 
 const (
 	maxExpectedSeriesPerResult  = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
-	seriesPerResultBucketFactor = 2.0
+	seriesPerResultBucketFactor = 2
 )
 
 var (

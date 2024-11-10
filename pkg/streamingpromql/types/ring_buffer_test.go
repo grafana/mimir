@@ -117,7 +117,9 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	require.NoError(t, buf.Append(points[8]))
 	shouldHavePoints(t, buf, points[8])
 
-	buf.Use(points)
+	pointsWithPowerOfTwoCapacity := make([]T, 0, 16) // Use must be passed a slice with a capacity that is equal to a power of 2.
+	pointsWithPowerOfTwoCapacity = append(pointsWithPowerOfTwoCapacity, points...)
+	buf.Use(pointsWithPowerOfTwoCapacity)
 	shouldHavePoints(t, buf, points...)
 
 	buf.DiscardPointsBefore(5)
@@ -126,7 +128,9 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	buf.Release()
 	shouldHaveNoPoints(t, buf)
 
-	buf.Use(points[4:])
+	subsliceWithPowerOfTwoCapacity := make([]T, 0, 8) // Use must be passed a slice with a capacity that is equal to a power of 2.
+	subsliceWithPowerOfTwoCapacity = append(subsliceWithPowerOfTwoCapacity, points[4:]...)
+	buf.Use(subsliceWithPowerOfTwoCapacity)
 	shouldHavePoints(t, buf, points[4:]...)
 }
 
