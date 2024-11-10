@@ -441,53 +441,49 @@ func deriv(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc
 		return 0, false, nil, nil
 	}
 
+	slope, _ := linearRegression(append(head, tail...), head[0].T)
+
+	return slope, true, nil, nil
+}
+
+func linearRegression(points []promql.FPoint, interceptTime int64) (slope, intercept float64) {
 	var (
 		n          float64
 		sumX, cX   float64
 		sumY, cY   float64
 		sumXY, cXY float64
 		sumX2, cX2 float64
-		initY      float64
-		constY     bool
 	)
+	initY := points[0].F
+	constY := true
 
-	initY = head[0].F
-	constY = true
-
-	linearRegression := func(points []promql.FPoint, interceptTime int64) (slope, intercept float64) {
-		for i, sample := range points {
-			// Set constY to false if any new y values are encountered.
-			if constY && i > 0 && sample.F != initY {
-				constY = false
-			}
-			n += 1.0
-			x := float64(sample.T-interceptTime) / 1e3
-			sumX, cX = floats.KahanSumInc(x, sumX, cX)
-			sumY, cY = floats.KahanSumInc(sample.F, sumY, cY)
-			sumXY, cXY = floats.KahanSumInc(x*sample.F, sumXY, cXY)
-			sumX2, cX2 = floats.KahanSumInc(x*x, sumX2, cX2)
+	for i, sample := range points {
+		// Set constY to false if any new y values are encountered.
+		if constY && i > 0 && sample.F != initY {
+			constY = false
 		}
-		if constY {
-			if math.IsInf(initY, 0) {
-				return math.NaN(), math.NaN()
-			}
-			return 0, initY
-		}
-		sumX += cX
-		sumY += cY
-		sumXY += cXY
-		sumX2 += cX2
-
-		covXY := sumXY - sumX*sumY/n
-		varX := sumX2 - sumX*sumX/n
-
-		slope = covXY / varX
-		intercept = sumY/n - slope*sumX/n
-		return slope, intercept
+		n += 1.0
+		x := float64(sample.T-interceptTime) / 1e3
+		sumX, cX = floats.KahanSumInc(x, sumX, cX)
+		sumY, cY = floats.KahanSumInc(sample.F, sumY, cY)
+		sumXY, cXY = floats.KahanSumInc(x*sample.F, sumXY, cXY)
+		sumX2, cX2 = floats.KahanSumInc(x*x, sumX2, cX2)
 	}
+	if constY {
+		if math.IsInf(initY, 0) {
+			return math.NaN(), math.NaN()
+		}
+		return 0, initY
+	}
+	sumX += cX
+	sumY += cY
+	sumXY += cXY
+	sumX2 += cX2
 
-	points := append(head, tail...)
-	slope, _ := linearRegression(points, head[0].T)
+	covXY := sumXY - sumX*sumY/n
+	varX := sumX2 - sumX*sumX/n
 
-	return slope, true, nil, nil
+	slope = covXY / varX
+	intercept = sumY/n - slope*sumX/n
+	return slope, intercept
 }
