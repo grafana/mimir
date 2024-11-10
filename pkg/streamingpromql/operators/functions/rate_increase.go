@@ -35,8 +35,11 @@ var Delta = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-// isCounter and isRate are used to determine if the rate should be calculated
-// as `rate`, `increase` or `delta.
+// rate is utility function for rate/increase/delta.
+// It calculates the rate (allowing for counter resets if isCounter is true for rate and increase),
+// extrapolates if the first/last sample is close to the boundary, and returns
+// the result as either per-second (if isRate is true) or overall (this is increase function).
+// If isCounter and isRate are both false, this function will calculate the delta.
 func rate(isCounter, isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
@@ -71,6 +74,11 @@ func rate(isCounter, isRate bool) RangeVectorStepFunction {
 	}
 }
 
+// histogramRate is utility function for rate/increase/delta.
+// It calculates the rate (allowing for counter resets if isCounter is true for rate and increase),
+// extrapolates if the first/last sample is close to the boundary, and returns
+// the result as either per-second (if isRate is true) or overall (this is increase function).
+// If isCounter and isRate are both false, this function will calculate the delta.
 func histogramRate(isCounter, isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := hHead[0]
 	hHead = hHead[1:]
