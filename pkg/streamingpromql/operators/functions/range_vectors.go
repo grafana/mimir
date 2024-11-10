@@ -357,30 +357,21 @@ func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 	}
 
 	changes := 0.0
+	prev := fHead[0].F
 
 	// Comparing the point with the point before it.
-	accumulate := func(points []promql.FPoint, prev *float64) {
+	accumulate := func(points []promql.FPoint) {
 		for _, sample := range points {
 			current := sample.F
-			if current != *prev && !(math.IsNaN(current) && math.IsNaN(*prev)) {
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
 				changes++
 			}
-			*prev = current
+			prev = current
 		}
 	}
 
-	prev := fHead[0].F
-	pPrev := &prev
+	accumulate(fHead)
+	accumulate(fTail)
 
-	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
-	// and then continue to the tail.
-	if len(fHead) > 0 && len(fTail) > 0 {
-		accumulate(fHead[1:], pPrev)
-		accumulate(fTail, pPrev)
-	}
-
-	if len(fHead) > 0 && len(fTail) == 0 {
-		accumulate(fHead[1:], pPrev)
-	}
 	return changes, true, nil, nil
 }
