@@ -226,11 +226,15 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	}
 
 	if compression == Gzip {
-		var err error
-		reader, err = gzip.NewReader(reader)
+		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
 			return nil, errors.Wrap(err, "create gzip reader")
 		}
+
+		defer func() {
+			_ = gzReader.Close()
+		}()
+		reader = gzReader
 	}
 
 	// Limit at maxSize+1 so we can tell when the size is exceeded
