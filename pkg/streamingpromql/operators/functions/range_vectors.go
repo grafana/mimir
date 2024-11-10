@@ -370,7 +370,7 @@ func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 		}
 	}
 
-	accumulate(fHead)
+	accumulate(fHead[1:])
 	accumulate(fTail)
 
 	return changes, true, nil, nil
