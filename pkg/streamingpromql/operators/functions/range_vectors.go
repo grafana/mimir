@@ -342,6 +342,45 @@ var Changes = FunctionOverRangeVectorDefinition{
 }
 
 func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	changes, haveFloats := step.Floats.ChangesAtOrBefore(step.RangeEnd)
-	return changes, haveFloats, nil, nil
+	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+
+	if !haveFloats {
+		// Prometheus' engine doesn't support histogram for `changes` function yet,
+		// therefore we won't add that yet too.
+		return 0, false, nil, nil
+	}
+
+	if len(fHead) == 0 && len(fTail) == 0 {
+		return 0, true, nil, nil
+	}
+
+	changes := 0.0
+
+	// Comparing the point with the point before it.
+	accumulate := func(points []promql.FPoint, prev *float64) {
+		for _, sample := range points {
+			current := sample.F
+			if current != *prev && !(math.IsNaN(current) && math.IsNaN(*prev)) {
+				changes++
+			}
+			*prev = current
+		}
+	}
+
+	prev := fHead[0].F
+	pPrev := &prev
+
+	// The points buffer is wrapped around, therefore we need to check changes starting from the buffer's head
+	// and then continue to the tail.
+	if len(fHead) > 0 && len(fTail) > 0 {
+		accumulate(fHead[1:], pPrev)
+		accumulate(fTail, pPrev)
+	}
+
+	if len(fHead) > 0 && len(fTail) == 0 {
+		accumulate(fHead[1:], pPrev)
+	}
+	return changes, true, nil, nil
 }
