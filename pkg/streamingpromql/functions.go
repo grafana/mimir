@@ -322,6 +322,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"present_over_time": FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
 	"rad":               InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":              FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
+	"resets":            FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
 	"round":             RoundFunctionOperatorFactory(),
 	"sgn":               InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
 	"sin":               InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
