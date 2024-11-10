@@ -463,7 +463,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	}
 
 	nv := r.bufferedFetchedRecords.Add(int64(len(partition.Records)))
-	level.Info(r.logger).Log("msg", "buffered fetched records", "num_records", len(partition.Records), "total_records", nv)
+	level.Debug(r.logger).Log("msg", "buffered fetched records", "num_records", len(partition.Records), "total_records", nv)
 
 	return fetchResult{
 		ctx:            ctx,
