@@ -31,7 +31,6 @@ var Increase = FunctionOverRangeVectorDefinition{
 
 var Delta = FunctionOverRangeVectorDefinition{
 	StepFunc:                       rate(false, false),
-	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
@@ -138,7 +137,10 @@ func histogramRate(isCounter, isRate bool, hCount int, hHead []promql.HPoint, hT
 	err = accumulate(hTail)
 	if err != nil {
 		return nil, err
+	}
 
+	if !isCounter && (firstPoint.H.CounterResetHint != histogram.GaugeType || lastPoint.H.CounterResetHint != histogram.GaugeType) {
+		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
 
 	if delta.Schema != desiredSchema {
@@ -164,27 +166,25 @@ func floatRate(isCounter, isRate bool, fCount int, fHead []promql.FPoint, fTail 
 	}
 
 	delta := lastPoint.F - firstPoint.F
-	if !isCounter {
-		return delta
-	}
+	if isCounter {
+		previousValue := firstPoint.F
 
-	previousValue := firstPoint.F
+		accumulate := func(points []promql.FPoint) {
+			for _, p := range points {
+				if p.F < previousValue {
+					// Counter reset.
+					delta += previousValue
+				}
 
-	accumulate := func(points []promql.FPoint) {
-		for _, p := range points {
-			if p.F < previousValue {
-				// Counter reset.
-				delta += previousValue
+				previousValue = p.F
 			}
-
-			previousValue = p.F
 		}
+
+		accumulate(fHead)
+		accumulate(fTail)
 	}
 
-	accumulate(fHead)
-	accumulate(fTail)
-
-	val := calculateFloatRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+	val := calculateFloatRate(isCounter, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
 	return val
 }
 
@@ -223,7 +223,7 @@ func calculateHistogramRate(isRate bool, rangeStart, rangeEnd int64, rangeSecond
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func calculateFloatRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
+func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -237,7 +237,7 @@ func calculateFloatRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds fl
 		durationToStart = averageDurationBetweenSamples / 2
 	}
 
-	if delta > 0 && firstPoint.F >= 0 {
+	if isCounter && delta > 0 && firstPoint.F >= 0 {
 		// Counters cannot be negative. If we have any slope at all
 		// (i.e. delta went up), we can extrapolate the zero point
 		// of the counter. If the duration to the zero point is shorter
