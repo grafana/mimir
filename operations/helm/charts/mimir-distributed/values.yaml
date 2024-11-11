@@ -1247,7 +1247,7 @@ ruler:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
-    #fallback:
+    # fallback:
     # -- Section to specify fallback options should the query for scaling metrics fail.
     # More information here: https://keda.sh/docs/2.15/reference/scaledobject-spec/#fallback
     #  failureThreshold: 3
@@ -1373,7 +1373,7 @@ ruler_querier:
     minReplicaCount: 1
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 12
-    #fallback:
+    # fallback:
     # -- Section to specify fallback options should the query for scaling metrics fail.
     # More information here: https://keda.sh/docs/2.15/reference/scaledobject-spec/#fallback
     #  failureThreshold: 3
@@ -1498,7 +1498,7 @@ ruler_query_frontend:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: 100
-    #fallback:
+    # fallback:
     # -- Section to specify fallback options should the query for scaling metrics fail.
     # More information here: https://keda.sh/docs/2.15/reference/scaledobject-spec/#fallback
     #  failureThreshold: 3
@@ -1708,7 +1708,7 @@ querier:
     # For example: if lookback is 30m and period is 6d23h30m,
     # the querier will scale based on the maximum inflight queries between 6d23h30m and 7d ago.
     predictiveScalingLookback: 30m
-    #fallback:
+    # fallback:
     # -- Section to specify fallback options should the query for scaling metrics fail.
     # More information here: https://keda.sh/docs/2.15/reference/scaledobject-spec/#fallback
     #  failureThreshold: 3
@@ -1832,7 +1832,7 @@ query_frontend:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: 100
-    #fallback:
+    # fallback:
     # -- Section to specify fallback options should the query for scaling metrics fail.
     # More information here: https://keda.sh/docs/2.15/reference/scaledobject-spec/#fallback
     #  failureThreshold: 3

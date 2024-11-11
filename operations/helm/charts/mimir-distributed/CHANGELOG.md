@@ -33,6 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `alertmanager` component by setting `alertmanager.serviceAcount.create` to true in the values. #9781
 * [BUGFIX] Fix PVC template in AlertManager to not show diff in ArgoCD. #9774
 * [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
+* [ENHANCEMENT] Add support for `fallback` in kedaAutoscaling settings. #9846
 
 ## 5.5.1
 
