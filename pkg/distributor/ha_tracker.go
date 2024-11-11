@@ -15,13 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/dskit/kv/memberlist"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -34,7 +33,7 @@ import (
 var (
 	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
-	errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
+	//errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
 )
 
 type haTrackerLimits interface {
@@ -53,8 +52,9 @@ func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
 }
 
-// Do we need localCas , when we have always at least 1 value ?
-func (r *ReplicaDesc) Merge(other memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {
+// Merge merges other replica into this one. Returns a new replica that represents the change,
+// and can be sent out to other clients.
+func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (memberlist.Mergeable, error) {
 	if other == nil {
 		return nil, nil
 	}
@@ -68,16 +68,17 @@ func (r *ReplicaDesc) Merge(other memberlist.Mergeable, localCAS bool) (memberli
 		return nil, nil
 	}
 
-	thisReplicaDesc := *r
+	thisReplicaDesc := r
 
 	// Track whether any changes were made
 	var changed bool
 
-	if otherReplicaDesc.DeletedAt > thisReplicaDesc.DeletedAt {
-		thisReplicaDesc.DeletedAt = otherReplicaDesc.DeletedAt
+	if otherReplicaDesc.Replica != thisReplicaDesc.Replica {
+		thisReplicaDesc.Replica = otherReplicaDesc.Replica
 		changed = true
 	}
-	if otherReplicaDesc.ReceivedAt > thisReplicaDesc.ReceivedAt {
+	// Keep the most recent values for timestamps
+	if otherReplicaDesc.ReceivedAt > thisReplicaDesc.DeletedAt {
 		thisReplicaDesc.ReceivedAt = otherReplicaDesc.ReceivedAt
 		changed = true
 	}
@@ -85,15 +86,12 @@ func (r *ReplicaDesc) Merge(other memberlist.Mergeable, localCAS bool) (memberli
 		thisReplicaDesc.ElectedAt = otherReplicaDesc.ElectedAt
 		changed = true
 	}
-	if otherReplicaDesc.ElectedChanges != thisReplicaDesc.ElectedChanges {
+	if otherReplicaDesc.ElectedChanges > thisReplicaDesc.ElectedChanges {
 		thisReplicaDesc.ElectedChanges = otherReplicaDesc.ElectedChanges
 		changed = true
 	}
-	if otherReplicaDesc.Replica != thisReplicaDesc.Replica {
-		thisReplicaDesc.Replica = otherReplicaDesc.Replica
-		changed = true
-	}
 
+	// No changes - return
 	if !changed {
 		return nil, nil
 	}
@@ -111,21 +109,16 @@ func (r *ReplicaDesc) Clone() memberlist.Mergeable {
 	return proto.Clone(r).(*ReplicaDesc)
 }
 
-// Given that we merge one record per time does it make sense to have this ?
 func (r *ReplicaDesc) MergeContent() []string {
 	return []string{r.Replica}
 }
 
-// Given that we merge one record per time does it make sense ?
-// Followed approach from ring/model.go
 func (r *ReplicaDesc) RemoveTombstones(limit time.Time) (total, removed int) {
-	total = 1
-	removed = 0
 	if r.DeletedAt > 0 {
 		if limit.IsZero() || time.Unix(r.DeletedAt, 0).Before(limit) {
 			removed = 1
 		} else {
-			total++
+			total = 1
 		}
 	}
 	return

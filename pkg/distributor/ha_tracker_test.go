@@ -16,13 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/kv/codec"
-	"github.com/grafana/dskit/kv/memberlist"
-
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -37,10 +36,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
-)
-
-var (
-// logger = log.With(log.NewLogfmtLogger(os.Stdout), level.AllowDebug())
 )
 
 var addrsOnce sync.Once
@@ -176,16 +171,18 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestHaTrackerWithMemberList(t *testing.T) {
+func TestHaTrackerWithMemberListAndWithoutCacheSyncStart(t *testing.T) {
 	var config memberlist.KVConfig
+
 	cluster := "cluster"
 	replica := "r1"
+
 	flagext.DefaultValues(&config)
 	ctx := context.Background()
 
 	config.TCPTransport = memberlist.TCPTransportConfig{
 		BindAddrs: getLocalhostAddrs(),
-		BindPort:  0, // randomize
+		BindPort:  0,
 	}
 
 	config.Codecs = []codec.Codec{
@@ -195,7 +192,6 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	memberListSvc := memberlist.NewKVInitService(
 		&config,
 		log.NewNopLogger(),
-		//log.With(logger, "component", "memberlist"),
 		&dnsProviderMock{},
 		prometheus.NewPedanticRegistry(),
 	)
@@ -218,12 +214,14 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	t.Cleanup(func() {
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, c))
 	})
+
 	now := time.Now()
 
 	// check replica r1
 	err = c.checkReplica(context.Background(), "user", cluster, replica, now)
 	assert.NoError(t, err)
 
+	// Create another memberList Svc to join the cluster
 	mkv1, err := memberListSvc.GetMemberlistKV()
 	require.NoError(t, err)
 	config.JoinMembers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(mkv1.GetListeningPort()))}
@@ -231,7 +229,6 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	memberListSvc2 := memberlist.NewKVInitService(
 		&config,
 		log.NewNopLogger(),
-		//log.With(logger, "component", "memberlist"),
 		&dnsProviderMock{},
 		prometheus.NewPedanticRegistry(),
 	)
@@ -240,6 +237,7 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc2))
 	})
 
+	// Create another HaTracker
 	c2, err := newHATracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
@@ -255,12 +253,13 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, c2))
 	})
 
-	time.Sleep(time.Second * 10)
 	now = time.Now()
+	//check r2 - it should reject sample
+	time.Sleep(time.Second * 1)
 	replica2 := "r2"
-	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)
-	assert.NoError(t, err)
-
+	err = c2.checkReplica(context.Background(), "user", cluster, replica2, now)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
 }
 
 // Test that values are set in the HATracker after WatchPrefix has found it in the KVStore.
