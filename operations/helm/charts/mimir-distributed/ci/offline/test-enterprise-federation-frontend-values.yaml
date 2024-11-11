@@ -5,6 +5,7 @@ enterprise:
 # Enable and configure federation-frontend
 federation_frontend:
   enabled: true
+  disableOtherComponents: true
   replicas: 2
   resources:
     requests:
@@ -18,8 +19,6 @@ mimir:
   structuredConfig:
     auth:
       type: trust
-    instrumentation:
-      enabled: false
     # The federation-frontend doesn't handle auth. Disabling multi-tenant means the FF doesn't need to check for the X-Scope-OrgID header
     # and will use the auth material from the proxy_targets configuration.
     # If using the federation-frontend.
@@ -31,50 +30,8 @@ mimir:
         - name: "mimir-distributed-2"
           url: "http://mimir-query-frontend.real-deployment.svc.cluster.local:8080/prometheus"
 
-# Disable all other components
-distributor:
-  replicas: 0
-admin_api:
-  replicas: 0
-alertmanager:
-  enabled: false
-ingester:
-  replicas: 0
-gateway:
-  replicas: 0
-querier:
-  replicas: 0
-query_frontend:
-  replicas: 0
-query_scheduler:
-  enabled: false
-compactor:
-  replicas: 0
-store_gateway:
-  replicas: 0
-ruler:
-  enabled: false
-overrides_exporter:
-  enabled: false
-
-# Disable all caches
-admin-cache:
-  enabled: false
-chunks-cache:
-  enabled: false
-index-cache:
-  enabled: false
-metadata-cache:
-  enabled: false
-results-cache:
-  enabled: false
-
-# Keep using minio to allow setting up the admin bucket
 minio:
   enabled: false
 
 rollout_operator:
-  enabled: true
-
-tokengenJob:
-  enable: false
+  enabled: false

@@ -31,7 +31,6 @@ spec:
         app.kubernetes.io/instance: test-enterprise-federation-frontend-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: federation-frontend
-        app.kubernetes.io/part-of: memberlist
       annotations:
     spec:
       serviceAccountName: test-enterprise-federation-frontend-values-mimir
@@ -54,8 +53,6 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
-            - name: runtime-config
-              mountPath: /var/mimir
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -64,9 +61,6 @@ spec:
               protocol: TCP
             - name: grpc
               containerPort: 9095
-              protocol: TCP
-            - name: memberlist
-              containerPort: 7946
               protocol: TCP
           livenessProbe:
             null
@@ -100,8 +94,5 @@ spec:
         - name: license
           secret:
             secretName: test-enterprise-federation-frontend-values-mimir-license
-        - name: runtime-config
-          configMap:
-            name: test-enterprise-federation-frontend-values-mimir-runtime
         - name: active-queries
           emptyDir: {}

@@ -262,7 +262,7 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
-      {{- if .Values.query_scheduler.enabled }}
+      {{- if and .Values.query_scheduler.enabled (not .Values.federation_frontend.disableOtherComponents) }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- end }}
       {{- if .Values.enterprise.enabled }}
@@ -289,8 +289,10 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         default:
           url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
         distributor:
           url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
+        {{- end }}
         ingester:
           url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
@@ -330,9 +332,11 @@ mimir:
 
     {{- if .Values.enterprise.enabled }}
     instrumentation:
-      enabled: true
+      enabled: {{ and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+    {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
       distributor_client:
         address: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
+    {{- end }}
 
     license:
       path: "/license/license.jwt"
@@ -393,8 +397,10 @@ mimir:
       {{- end }}
     {{- end }}
 
+    {{- if not .Values.federation_frontend.disableOtherComponents }}
     runtime_config:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
+    {{- end }}
 
     store_gateway:
       sharding_ring:
@@ -805,6 +811,9 @@ alertmanager:
         storageClass: null
 
 distributor:
+  # -- Whether to render the manifests related to the distributor component.
+  enabled: true
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -915,6 +924,9 @@ distributor:
   jaegerReporterMaxQueueSize: 1000
 
 ingester:
+  # -- Whether to render the manifests related to the ingester component.
+  enabled: true
+
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
@@ -1665,6 +1677,9 @@ ruler_query_scheduler:
   jaegerReporterMaxQueueSize: null
 
 querier:
+  # -- Whether to render the manifests related to the querier component.
+  enabled: true
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1793,6 +1808,9 @@ querier:
   jaegerReporterMaxQueueSize: 5000
 
 query_frontend:
+  # -- Whether to render the manifests related to the query-frontend component.
+  enabled: true
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1989,6 +2007,9 @@ query_scheduler:
   jaegerReporterMaxQueueSize: null
 
 store_gateway:
+  # -- Whether to render the manifests related to the store-gateway component.
+  enabled: true
+
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
@@ -2203,6 +2224,9 @@ store_gateway:
         storageClass: null
 
 compactor:
+  # -- Whether to render the manifests related to the compactor component.
+  enabled: true
+
   replicas: 1
 
   service:
@@ -3225,8 +3249,13 @@ ingress:
 # When enterprise.enabled is true the GEM gateway is deployed. Otherwise, it is an nginx.
 # Options except those under gateway.nginx apply to both versions - nginx and GEM gateway.
 gateway:
+  # -- Whether to render the manifests related to the gateway component.
+  # This controls the behaviour both when enterprise.enabled=true and when enterprise.enabled=false.
+  enabled: true
+
   # -- The gateway is deployed by default for enterprise installations (enterprise.enabled=true).
   # Toggle this to have it deployed for non-enterprise installations too.
+  # The value of this field is ignored when gateway.enabled=false.
   enabledNonEnterprise: false
 
   # -- Number of replicas for the Deployment
@@ -3958,6 +3987,9 @@ tokengenJob:
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
 admin_api:
+  # -- Whether to render the manifests related to the admin-api component.
+  enabled: true
+
   replicas: 1
 
   annotations: {}
@@ -4433,6 +4465,11 @@ gr-metricname-cache:
 federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
   enabled: false
+
+  # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
+  # federation-frontend without the rest of the GEM components.
+  disableOtherComponents: false
+
   # -- Number of replicas for the federation-frontend
   replicas: 2
   # -- Deployment strategy for the federation-frontend pods
