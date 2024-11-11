@@ -8,7 +8,9 @@ description: "Learn how to enable the GEM federation-frontend."
 
 You can deploy the Grafana Enterprise Metrics (GEM) federation-frontend in a Kubernetes cluster using Helm. The federation-frontend allows you to query data from multiple GEM clusters using a single endpoint. For more information about cluster query federation, refer to the [federation-frontend documentation](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/operations/cluster-query-federation).
 
+{{< admonition type="note" >}}
 This guide focuses specifically on deploying the federation-frontend component as a standalone deployment without any additional GEM or Mimir components.
+{{< /admonition >}}
 
 ## Before you begin
 
