@@ -107,10 +107,12 @@ This guide focuses specifically on deploying the federation-frontend component a
 
 5. Verify that the federation-frontend is running. The simplest way to do this is to issue a label names query against the federation-frontend service.
 
-   This example tries to reach the Kubernetes service from the cluster.
+   This example tries to reach the Kubernetes service from the cluster and request the label names from the past 1 year.
 
    ```bash
-   curl -XPOST 'https://mimir-federation-frontend:8080/prometheus/api/v1/labels' -d 'start=2024-01-01T00:00:00.0Z' -d 'end=2025-01-01T00:00:00.0Z'
+   curl -XPOST 'https://mimir-federation-frontend:8080/prometheus/api/v1/labels' \
+     -d "start=$(date -u +%Y-%m-%dT%H:%M:%S.0Z -d '1 year ago' 2>/dev/null || date -u -v -1y +%Y-%m-%dT%H:%M:%S.0Z)" \
+     -d "end=$(date -u +%Y-%m-%dT%H:%M:%S.0Z)"
    ```
 
    You should receive a response with the label names from the remote GEM clusters similar to this:
