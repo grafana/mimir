@@ -29,7 +29,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.80
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1
-	github.com/opentracing-contrib/go-grpc v0.0.0-20240724223109-9dec25a38fa8
+	github.com/opentracing-contrib/go-grpc v0.1.0
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
