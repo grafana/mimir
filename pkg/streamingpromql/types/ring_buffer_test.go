@@ -298,11 +298,13 @@ func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 		viewShouldHavePoints(t, view, promql.FPoint{T: 1, F: 100}, promql.FPoint{T: 2, F: 200})
 
 		// Test that reusing the view with ViewUntilSearchingForwards works correctly.
-		view = buf.ViewUntilSearchingForwards(1, view)
+		newView := buf.ViewUntilSearchingForwards(1, view)
+		require.Same(t, newView, view)
 		viewShouldHavePoints(t, view, promql.FPoint{T: 1, F: 100})
 
 		// Test that reusing the view with ViewUntilSearchingBackwards works correctly.
-		view = buf.ViewUntilSearchingBackwards(3, view)
+		newView = buf.ViewUntilSearchingBackwards(3, view)
+		require.Same(t, newView, view)
 		viewShouldHavePoints(t, view, promql.FPoint{T: 1, F: 100}, promql.FPoint{T: 2, F: 200}, promql.FPoint{T: 3, F: 300})
 	})
 
@@ -322,11 +324,13 @@ func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 		viewShouldHavePoints(t, view, promql.HPoint{T: 1, H: h1}, promql.HPoint{T: 2, H: h2})
 
 		// Test that reusing the view with ViewUntilSearchingForwards works correctly.
-		view = buf.ViewUntilSearchingForwards(1, view)
+		newView := buf.ViewUntilSearchingForwards(1, view)
+		require.Same(t, newView, view)
 		viewShouldHavePoints(t, view, promql.HPoint{T: 1, H: h1})
 
 		// Test that reusing the view with ViewUntilSearchingBackwards works correctly.
-		view = buf.ViewUntilSearchingBackwards(3, view)
+		newView = buf.ViewUntilSearchingBackwards(3, view)
+		require.Same(t, newView, view)
 		viewShouldHavePoints(t, view, promql.HPoint{T: 1, H: h1}, promql.HPoint{T: 2, H: h2}, promql.HPoint{T: 3, H: h3})
 	})
 }
