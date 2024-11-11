@@ -1,21 +1,21 @@
 ---
-title: "Configure GEM Federation-Frontend"
-menuTitle: "GEM Federation-Frontend"
-description: "Learn how to enable the GEM Federation-Frontend."
+title: "Configure GEM federation-frontend"
+menuTitle: "GEM federation-frontend"
+description: "Learn how to enable the GEM federation-frontend."
 ---
 
-# Configure GEM Federation-Frontend
+# Configure GEM federation-frontend
 
-This article explains how to deploy the Grafana Enterprise Metrics (GEM) Federation-Frontend in a Kubernetes cluster using Helm. The Federation-Frontend allows you to query data from multiple GEM clusters using a single endpoint. For more information about cluster query federation, refer to the [Federation-Frontend documentation](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/operations/cluster-query-federation).
+This article explains how to deploy the Grafana Enterprise Metrics (GEM) federation-frontend in a Kubernetes cluster using Helm. The federation-frontend allows you to query data from multiple GEM clusters using a single endpoint. For more information about cluster query federation, refer to the [federation-frontend documentation](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/operations/cluster-query-federation).
 
-This guide focuses specifically on deploying the Federation-Frontend component as a standalone deployment without any additional GEM or Mimir components.
+This guide focuses specifically on deploying the federation-frontend component as a standalone deployment without any additional GEM or Mimir components.
 
 ## Before you begin
 
 1. Set up a GEM cluster: For information about setting up and configuring a full GEM deployment, refer to the [Configure Grafana Enterprise Metrics]({{< relref "./configure-grafana-enterprise-metrics" >}}) and [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}) articles.
 2. Provision an access token with `metrics:read` scope for each cluster that you want to query. For more information, refer to [Set up a GEM tenant](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/set-up-gem-tenant).
 
-## Deploy the GEM Federation-Frontend
+## Deploy the GEM federation-frontend
 
 1. Create a Kubernetes `Secret` named `gem-tokens` with the GEM access tokens for each of the remote GEM clusters. This `Secret` will be later used in the Helm values file. Replace `TOKEN1` and `TOKEN2` with the access tokens for the remote GEM clusters.
 
@@ -95,15 +95,15 @@ This guide focuses specifically on deploying the Federation-Frontend component a
      enabled: false
    ```
 
-4. Deploy the Federation-Frontend using `helm`:
+4. Deploy the federation-frontend using `helm`:
 
    ```bash
    helm install federation-frontend grafana/mimir-distributed -f federation-frontend.yaml -n federation-frontend-demo
    ```
 
-   This will deploy only the Federation-Frontend component. The Federation-Frontend will be configured to proxy queries to the GEM clusters specified in the `proxy_targets` configuration.
+   This will deploy only the federation-frontend component. The federation-frontend will be configured to proxy queries to the GEM clusters specified in the `proxy_targets` configuration.
 
-5. Verify that the Federation-Frontend is running. The simplest way to do this is to issue a label names query against the Federation-Frontend service.
+5. Verify that the federation-frontend is running. The simplest way to do this is to issue a label names query against the federation-frontend service.
 
    This example tries to reach the Kubernetes service from within the cluster.
 
