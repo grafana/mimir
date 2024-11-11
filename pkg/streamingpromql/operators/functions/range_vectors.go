@@ -381,9 +381,9 @@ var Resets = FunctionOverRangeVectorDefinition{
 	StepFunc:               resets,
 }
 
-func resets(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
-	hHead, hTail := step.Histograms.UnsafePoints(step.RangeEnd)
+func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
 
 	haveFloats := len(fHead) > 0 || len(fTail) > 0
 	haveHistograms := len(hHead) > 0 || len(hTail) > 0
