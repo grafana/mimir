@@ -210,7 +210,7 @@ type HPointRingBufferView struct {
 
 // UnsafePoints returns slices of the points in this buffer view.
 // Either or both slice could be empty.
-// Callers must not modify the values in the returned slices or return them to a pool.
+// Callers must not modify the values in the returned slices nor return them to a pool.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of the buffer.
 // The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
