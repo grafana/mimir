@@ -12,12 +12,12 @@ This guide focuses specifically on deploying the federation-frontend component a
 
 ## Before you begin
 
-1. Set up a GEM cluster: For information about setting up and configuring a full GEM deployment, refer to the [Configure Grafana Enterprise Metrics]({{< relref "./configure-grafana-enterprise-metrics" >}}) and [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}) articles.
-2. Provision an access token with `metrics:read` scope for each cluster that you want to query. For more information, refer to [Set up a GEM tenant](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/set-up-gem-tenant).
+1. Set up a GEM cluster: For information about setting up and configuring a GEM deployment, refer to the [Configure Grafana Enterprise Metrics]({{< relref "./configure-grafana-enterprise-metrics" >}}) and [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}) articles.
+2. Provision an access token with the `metrics:read` scope for each cluster that you want to query. For more information, refer to [Set up a GEM tenant](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/set-up-gem-tenant).
 
 ## Deploy the GEM federation-frontend
 
-1. Create a Kubernetes `Secret` named `gem-tokens` with the GEM access tokens for each of the remote GEM clusters. This `Secret` will be later used in the Helm values file. Replace `TOKEN1` and `TOKEN2` with the access tokens for the remote GEM clusters.
+1. Create a Kubernetes `Secret` named `gem-tokens` with the GEM access tokens for each of the remote GEM clusters. The Helm values file uses this `Secret` later. Replace `TOKEN1` and `TOKEN2` with the access tokens for the remote GEM clusters.
 
    ```yaml
    apiVersion: v1
@@ -39,7 +39,7 @@ This guide focuses specifically on deploying the federation-frontend component a
 
    Replace `http://gem-query-frontend.monitoring.svc.cluster.local:8080/prometheus` and `https://gem.monitoring.acme.local/prometheus` with the URLs of the GEM clusters you want to query. Replace `tenant-1` and `tenant-2` with the tenant IDs of the remote GEM clusters.
 
-   Note that the resource settings shown below are examples that should be sufficient for small deployments. Adjust the values based on your specific requirements and load:
+   Note that these resource settings are examples that are sufficient for small deployments. Adjust the values based on your specific requirements and load:
 
    ```yaml
    # Enable enterprise features
@@ -105,7 +105,7 @@ This guide focuses specifically on deploying the federation-frontend component a
 
 5. Verify that the federation-frontend is running. The simplest way to do this is to issue a label names query against the federation-frontend service.
 
-   This example tries to reach the Kubernetes service from within the cluster.
+   This example tries to reach the Kubernetes service from the cluster.
 
    ```bash
    curl -XPOST 'https://mimir-federation-frontend:8080/prometheus/api/v1/labels' -d 'start=2024-01-01T00:00:00.0Z' -d 'end=2025-01-01T00:00:00.0Z'
