@@ -79,7 +79,7 @@ spec:
               name: tls-certs
               readOnly: true
         - name: exporter
-          image: prom/memcached-exporter:v0.14.4
+          image: prom/memcached-exporter:v0.15.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9150
