@@ -460,7 +460,6 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		fetchedBytes = sumRecordLengths(partition.Records)
 	}
 
-	r.bufferedFetchedRecords.Add(int64(len(partition.Records)))
 	return fetchResult{
 		ctx:            ctx,
 		FetchPartition: partition,
@@ -514,6 +513,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
+			r.bufferedFetchedRecords.Add(int64(len(f.FetchPartition.Records)))
 			f = f.Merge(previousResult)
 			previousResult = f
 			if f.Err != nil {
