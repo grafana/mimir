@@ -437,7 +437,7 @@ var Deriv = FunctionOverRangeVectorDefinition{
 func deriv(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
-	if len(head) < 2 && len(tail) == 0 {
+	if (len(head) + len(tail)) < 2 {
 		return 0, false, nil, nil
 	}
 
