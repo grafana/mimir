@@ -286,6 +286,51 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 	})
 }
 
+func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
+	t.Run("FPoint ring buffer", func(t *testing.T) {
+		buf := NewFPointRingBuffer(limiting.NewMemoryConsumptionTracker(0, nil))
+		require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 100}))
+		require.NoError(t, buf.Append(promql.FPoint{T: 2, F: 200}))
+		require.NoError(t, buf.Append(promql.FPoint{T: 3, F: 300}))
+		require.NoError(t, buf.Append(promql.FPoint{T: 4, F: 400}))
+
+		view := buf.ViewUntilSearchingForwards(2, nil)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 1, F: 100}, promql.FPoint{T: 2, F: 200})
+
+		// Test that reusing the view with ViewUntilSearchingForwards works correctly.
+		view = buf.ViewUntilSearchingForwards(1, view)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 1, F: 100})
+
+		// Test that reusing the view with ViewUntilSearchingBackwards works correctly.
+		view = buf.ViewUntilSearchingBackwards(3, view)
+		viewShouldHavePoints(t, view, promql.FPoint{T: 1, F: 100}, promql.FPoint{T: 2, F: 200}, promql.FPoint{T: 3, F: 300})
+	})
+
+	t.Run("HPoint ring buffer", func(t *testing.T) {
+		h1 := &histogram.FloatHistogram{Count: 100}
+		h2 := &histogram.FloatHistogram{Count: 200}
+		h3 := &histogram.FloatHistogram{Count: 300}
+		h4 := &histogram.FloatHistogram{Count: 400}
+
+		buf := NewHPointRingBuffer(limiting.NewMemoryConsumptionTracker(0, nil))
+		require.NoError(t, buf.Append(promql.HPoint{T: 1, H: h1}))
+		require.NoError(t, buf.Append(promql.HPoint{T: 2, H: h2}))
+		require.NoError(t, buf.Append(promql.HPoint{T: 3, H: h3}))
+		require.NoError(t, buf.Append(promql.HPoint{T: 4, H: h4}))
+
+		view := buf.ViewUntilSearchingForwards(2, nil)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 1, H: h1}, promql.HPoint{T: 2, H: h2})
+
+		// Test that reusing the view with ViewUntilSearchingForwards works correctly.
+		view = buf.ViewUntilSearchingForwards(1, view)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 1, H: h1})
+
+		// Test that reusing the view with ViewUntilSearchingBackwards works correctly.
+		view = buf.ViewUntilSearchingBackwards(3, view)
+		viewShouldHavePoints(t, view, promql.HPoint{T: 1, H: h1}, promql.HPoint{T: 2, H: h2}, promql.HPoint{T: 3, H: h3})
+	})
+}
+
 func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
 	shouldHavePoints(
 		t,
