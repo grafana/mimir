@@ -335,3 +335,43 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 
 	return avgSoFar, nil
 }
+
+var Changes = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               changes,
+}
+
+func changes(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+
+	if !haveFloats {
+		// Prometheus' engine doesn't support histogram for `changes` function yet,
+		// therefore we won't add that yet too.
+		return 0, false, nil, nil
+	}
+
+	if len(fHead) == 0 && len(fTail) == 0 {
+		return 0, true, nil, nil
+	}
+
+	changes := 0.0
+	prev := fHead[0].F
+
+	// Comparing the point with the point before it.
+	accumulate := func(points []promql.FPoint) {
+		for _, sample := range points {
+			current := sample.F
+			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+				changes++
+			}
+			prev = current
+		}
+	}
+
+	accumulate(fHead[1:])
+	accumulate(fTail)
+
+	return changes, true, nil, nil
+}
