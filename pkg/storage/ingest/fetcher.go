@@ -50,7 +50,7 @@ type fetcher interface {
 	Stop()
 
 	// BufferedRecords returns the number of records that have been fetched but not yet consumed.
-	BufferedRecords() float64
+	BufferedRecords() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -298,8 +298,8 @@ func newConcurrentFetchers(
 }
 
 // BufferedRecords implements fetcher.
-func (r *concurrentFetchers) BufferedRecords() float64 {
-	return float64(r.bufferedFetchedRecords.Load())
+func (r *concurrentFetchers) BufferedRecords() int64 {
+	return r.bufferedFetchedRecords.Load()
 }
 
 // Stop implements fetcher.
@@ -328,9 +328,7 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 		return kgo.Fetches{}, ctx
 	case f := <-r.orderedFetches:
 		// At this point, we're guaranteed that the records are not going to be with us anymore.
-		tr := r.bufferedFetchedRecords.Sub(int64(len(f.FetchPartition.Records)))
-		level.Debug(r.logger).Log("msg", "remove buffered fetched records", "num_records", len(f.FetchPartition.Records), "total_records", tr)
-
+		r.bufferedFetchedRecords.Sub(int64(len(f.FetchPartition.Records)))
 		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
@@ -462,9 +460,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		fetchedBytes = sumRecordLengths(partition.Records)
 	}
 
-	nv := r.bufferedFetchedRecords.Add(int64(len(partition.Records)))
-	level.Debug(r.logger).Log("msg", "buffered fetched records", "num_records", len(partition.Records), "total_records", nv)
-
+	r.bufferedFetchedRecords.Add(int64(len(partition.Records)))
 	return fetchResult{
 		ctx:            ctx,
 		FetchPartition: partition,

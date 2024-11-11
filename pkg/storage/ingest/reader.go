@@ -119,7 +119,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		reg:                                   reg,
 	}
 
-	r.metrics = newReaderMetrics(partitionID, reg, func() float64 { return r.BufferedRecords() })
+	r.metrics = newReaderMetrics(partitionID, reg, func() float64 { return float64(r.BufferedRecords()) })
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -135,16 +135,16 @@ func (r *PartitionReader) Update(_ context.Context, _, _ int) {
 	// Given the partition reader has no concurrency it doesn't support updates.
 }
 
-func (r *PartitionReader) BufferedRecords() float64 {
+func (r *PartitionReader) BufferedRecords() int64 {
 	r.fetcherMtx.Lock()
 	defer r.fetcherMtx.Unlock()
-	var fcount, ccount float64
+	var fcount, ccount int64
 	if r.fetcher != nil && r.fetcher != r {
 		fcount = r.fetcher.BufferedRecords()
 	}
 
 	if r.client != nil {
-		ccount = float64(r.client.BufferedFetchRecords())
+		ccount = r.client.BufferedFetchRecords()
 	}
 
 	return fcount + ccount
