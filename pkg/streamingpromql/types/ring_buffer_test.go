@@ -21,7 +21,8 @@ type ringBuffer[T any] interface {
 	Reset()
 	Use(s []T)
 	Release()
-	ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[T]
+	ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[T]
+	ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[T]
 	GetPoints() []T
 	GetFirstIndex() int
 	GetTimestamp(point T) int64
@@ -296,7 +297,7 @@ func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
 func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
 	var pointsFromForEachAfterSearchingForwards []T
 
-	buf.ViewUntilForTesting(math.MaxInt64, true).ForEach(func(p T) {
+	buf.ViewUntilSearchingForwardsForTesting(math.MaxInt64).ForEach(func(p T) {
 		pointsFromForEachAfterSearchingForwards = append(pointsFromForEachAfterSearchingForwards, p)
 	})
 
@@ -304,7 +305,7 @@ func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
 
 	var pointsFromForEachAfterSearchingBackwards []T
 
-	buf.ViewUntilForTesting(math.MaxInt64, false).ForEach(func(p T) {
+	buf.ViewUntilSearchingBackwardsForTesting(math.MaxInt64).ForEach(func(p T) {
 		pointsFromForEachAfterSearchingBackwards = append(pointsFromForEachAfterSearchingBackwards, p)
 	})
 
@@ -313,14 +314,14 @@ func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
 	if len(expected) == 0 {
 		shouldHavePointsAtOrBeforeTime(t, buf, math.MaxInt64, expected...)
 
-		_, present := buf.ViewUntilForTesting(math.MaxInt64, true).Last()
+		_, present := buf.ViewUntilSearchingForwardsForTesting(math.MaxInt64).Last()
 		require.False(t, present)
 
-		_, present = buf.ViewUntilForTesting(math.MaxInt64, false).Last()
+		_, present = buf.ViewUntilSearchingBackwardsForTesting(math.MaxInt64).Last()
 		require.False(t, present)
 	} else {
-		require.Equal(t, expected[0], buf.ViewUntilForTesting(math.MaxInt64, true).First())
-		require.Equal(t, expected[0], buf.ViewUntilForTesting(math.MaxInt64, false).First())
+		require.Equal(t, expected[0], buf.ViewUntilSearchingForwardsForTesting(math.MaxInt64).First())
+		require.Equal(t, expected[0], buf.ViewUntilSearchingBackwardsForTesting(math.MaxInt64).First())
 		// We test LastAtOrBefore() below.
 
 		lastPointT := buf.GetTimestamp(expected[len(expected)-1])
@@ -332,8 +333,8 @@ func shouldHavePoints[T any](t *testing.T, buf ringBuffer[T], expected ...T) {
 }
 
 func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts int64, expected ...T) {
-	viewShouldHavePoints(t, buf.ViewUntilForTesting(ts, true), expected...)
-	viewShouldHavePoints(t, buf.ViewUntilForTesting(ts, false), expected...)
+	viewShouldHavePoints(t, buf.ViewUntilSearchingForwardsForTesting(ts), expected...)
+	viewShouldHavePoints(t, buf.ViewUntilSearchingBackwardsForTesting(ts), expected...)
 }
 
 func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected ...T) {
@@ -374,11 +375,11 @@ type fPointRingBufferWrapper struct {
 	*FPointRingBuffer
 }
 
-func (w *fPointRingBufferWrapper) ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[promql.FPoint] {
-	if searchForwards {
-		return w.ViewUntilSearchingForwards(maxT, nil)
-	}
+func (w *fPointRingBufferWrapper) ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[promql.FPoint] {
+	return w.ViewUntilSearchingForwards(maxT, nil)
+}
 
+func (w *fPointRingBufferWrapper) ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[promql.FPoint] {
 	return w.ViewUntilSearchingBackwards(maxT, nil)
 }
 
@@ -399,11 +400,11 @@ type hPointRingBufferWrapper struct {
 	*HPointRingBuffer
 }
 
-func (w *hPointRingBufferWrapper) ViewUntilForTesting(maxT int64, searchForwards bool) ringBufferView[promql.HPoint] {
-	if searchForwards {
-		return w.ViewUntilSearchingForwards(maxT, nil)
-	}
+func (w *hPointRingBufferWrapper) ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[promql.HPoint] {
+	return w.ViewUntilSearchingForwards(maxT, nil)
+}
 
+func (w *hPointRingBufferWrapper) ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[promql.HPoint] {
 	return w.ViewUntilSearchingBackwards(maxT, nil)
 }
 
