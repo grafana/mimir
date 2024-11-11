@@ -441,34 +441,42 @@ func deriv(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFun
 		return 0, false, nil, nil
 	}
 
-	slope, _ := linearRegression(append(head, tail...), head[0].T)
+	slope, _ := linearRegression(head, tail, head[0].T)
 
 	return slope, true, nil, nil
 }
 
-func linearRegression(points []promql.FPoint, interceptTime int64) (slope, intercept float64) {
+func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, intercept float64) {
 	var (
 		n          float64
 		sumX, cX   float64
 		sumY, cY   float64
 		sumXY, cXY float64
 		sumX2, cX2 float64
+		initY      float64
+		constY     bool
 	)
-	initY := points[0].F
-	constY := true
 
-	for i, sample := range points {
-		// Set constY to false if any new y values are encountered.
-		if constY && i > 0 && sample.F != initY {
-			constY = false
+	initY = head[0].F
+	constY = true
+	accumulate := func(points []promql.FPoint, head bool) {
+		for i, sample := range points {
+			// Set constY to false if any new y values are encountered.
+			if constY && (i > 0 || !head) && sample.F != initY {
+				constY = false
+			}
+			n += 1.0
+			x := float64(sample.T-interceptTime) / 1e3
+			sumX, cX = floats.KahanSumInc(x, sumX, cX)
+			sumY, cY = floats.KahanSumInc(sample.F, sumY, cY)
+			sumXY, cXY = floats.KahanSumInc(x*sample.F, sumXY, cXY)
+			sumX2, cX2 = floats.KahanSumInc(x*x, sumX2, cX2)
 		}
-		n += 1.0
-		x := float64(sample.T-interceptTime) / 1e3
-		sumX, cX = floats.KahanSumInc(x, sumX, cX)
-		sumY, cY = floats.KahanSumInc(sample.F, sumY, cY)
-		sumXY, cXY = floats.KahanSumInc(x*sample.F, sumXY, cXY)
-		sumX2, cX2 = floats.KahanSumInc(x*x, sumX2, cX2)
 	}
+
+	accumulate(head, true)
+	accumulate(tail, false)
+
 	if constY {
 		if math.IsInf(initY, 0) {
 			return math.NaN(), math.NaN()
