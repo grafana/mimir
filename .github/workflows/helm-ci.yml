@@ -9,7 +9,7 @@ jobs:
       filter_regex_include: .*operations/helm/.*
 
   call-lint-test:
-    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@4c4e16038d3db8816a7c0d924c85eb04723d9c46
+    uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
