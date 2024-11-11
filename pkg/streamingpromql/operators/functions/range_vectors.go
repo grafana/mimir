@@ -341,8 +341,8 @@ var Changes = FunctionOverRangeVectorDefinition{
 	StepFunc:               changes,
 }
 
-func changes(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := step.Floats.UnsafePoints(step.RangeEnd)
+func changes(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
 
 	haveFloats := len(fHead) > 0 || len(fTail) > 0
 
