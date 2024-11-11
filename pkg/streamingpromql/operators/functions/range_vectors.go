@@ -421,7 +421,7 @@ func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 				prev = current
 			}
 		}
-		accumulate(hHead)
+		accumulate(hHead[1:])
 		accumulate(hTail)
 	}
 
