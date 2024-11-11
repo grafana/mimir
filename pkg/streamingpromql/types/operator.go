@@ -63,7 +63,7 @@ type RangeVectorOperator interface {
 	// NextStepSamples returns populated RingBuffers with the samples for the next time step for the
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
-	NextStepSamples() (RangeVectorStepData, error)
+	NextStepSamples() (*RangeVectorStepData, error)
 }
 
 // ScalarOperator represents all operators that produce scalars.

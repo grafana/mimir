@@ -70,7 +70,7 @@ func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarD
 //   - h *histogram.FloatHistogram: nil if no histogram is present.
 //   - err error.
 type RangeVectorStepFunction func(
-	step types.RangeVectorStepData,
+	step *types.RangeVectorStepData,
 	rangeSeconds float64,
 	emitAnnotation types.EmitAnnotationFunc,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)

@@ -21,7 +21,7 @@ type BucketedPool[T ~[]E, E any] struct {
 
 // NewBucketedPool returns a new BucketedPool with size buckets for minSize to maxSize
 // increasing by the given factor.
-func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor float64, makeFunc func(int) T) *BucketedPool[T, E] {
+func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor int, makeFunc func(int) T) *BucketedPool[T, E] {
 	if minSize < 1 {
 		panic("invalid minimum pool size")
 	}
@@ -34,7 +34,7 @@ func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor float64, makeFu
 
 	var sizes []int
 
-	for s := minSize; s <= maxSize; s = int(float64(s) * factor) {
+	for s := minSize; s <= maxSize; s = s * factor {
 		sizes = append(sizes, s)
 	}
 
