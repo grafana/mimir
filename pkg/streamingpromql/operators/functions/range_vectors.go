@@ -377,9 +377,8 @@ func changes(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationF
 }
 
 var Resets = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction:         DropSeriesName,
-	StepFunc:                       resets,
-	NeedsSeriesNamesForAnnotations: true,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               resets,
 }
 
 func resets(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
