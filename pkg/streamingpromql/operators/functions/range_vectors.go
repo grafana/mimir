@@ -408,22 +408,22 @@ func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 		}
 		accumulate(fHead[1:])
 		accumulate(fTail)
-
-		return resets, true, nil, nil
 	}
 
-	prev := hHead[0].H
-	accumulate := func(points []promql.HPoint) {
-		for _, sample := range points {
-			current := sample.H
-			if current.DetectReset(prev) {
-				resets++
+	if haveHistograms {
+		prev := hHead[0].H
+		accumulate := func(points []promql.HPoint) {
+			for _, sample := range points {
+				current := sample.H
+				if current.DetectReset(prev) {
+					resets++
+				}
+				prev = current
 			}
-			prev = current
 		}
+		accumulate(hHead)
+		accumulate(hTail)
 	}
-	accumulate(hHead)
-	accumulate(hTail)
 
 	return resets, true, nil, nil
 }
