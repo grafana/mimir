@@ -63,6 +63,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 
 		if !isPowerOfTwo(cap(newSlice)) {
 			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
+			// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
 			panic(fmt.Sprintf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize))
 		}
 
