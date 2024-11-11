@@ -205,7 +205,7 @@ func TestHaTrackerWithMemberListAndWithoutCacheSyncStart(t *testing.T) {
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
 			MemberlistKV: memberListSvc.GetMemberlistKV,
 		}},
-		UpdateTimeout:          time.Millisecond,
+		UpdateTimeout:          time.Millisecond * 100,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Millisecond * 2,
 	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
@@ -243,7 +243,7 @@ func TestHaTrackerWithMemberListAndWithoutCacheSyncStart(t *testing.T) {
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
 			MemberlistKV: memberListSvc2.GetMemberlistKV,
 		}},
-		UpdateTimeout:          time.Millisecond,
+		UpdateTimeout:          time.Millisecond * 100,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Millisecond * 2,
 	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())

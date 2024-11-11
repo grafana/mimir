@@ -286,47 +286,48 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		t.client = client
 	}
 
-	t.Service = services.NewBasicService(t.syncHATrackerStateOnStart, t.loop, nil)
+	t.Service = services.NewBasicService(nil, t.loop, nil)
 	return t, nil
 }
 
-func (h *haTracker) syncHATrackerStateOnStart(ctx context.Context) error {
-	if !h.cfg.EnableHATracker {
-		return nil
-	}
-	// haTracker holds HATrackerConfig with the prefix.
-	// This operation should wait until the underneath KV Store is at Running state
-	keys, err := h.client.List(ctx, "")
-	if err != nil {
-		return err
-	}
-
-	if len(keys) == 0 {
-		level.Warn(h.logger).Log("msg", "sync HA state on start: no keys for HA tracker prefix", "err", err)
-		return nil
-	}
-
-	for i := 0; i < len(keys); i++ {
-		if ctx.Err() != nil {
-			return fmt.Errorf("syncing HA tracker state on startup: %w", context.Cause(ctx))
-		}
-
-		val, err := h.client.Get(ctx, keys[i])
-		if err != nil {
-			level.Warn(h.logger).Log("msg", "sync HA state on start: failed to get replica value", "key", keys[i], "err", err)
-			return err
-		}
-
-		desc, ok := val.(*ReplicaDesc)
-		if !ok {
-			level.Error(h.logger).Log("msg", "sync HA state on start: got invalid replica descriptor", "key", keys[i])
-			continue
-		}
-		h.processKVStoreEntry(keys[i], desc)
-	}
-	level.Info(h.logger).Log("msg", "sync HA state on start: HA cache sync finished successfully")
-	return nil
-}
+//func (h *haTracker) syncHATrackerStateOnStart(ctx context.Context) error {
+//	if !h.cfg.EnableHATracker {
+//		return nil
+//	}
+//
+//	// haTracker holds HATrackerConfig with the prefix.
+//	// This operation should wait until the underneath KV Store is at Running state
+//	keys, err := h.client.List(ctx, "")
+//	if err != nil {
+//		return err
+//	}
+//
+//	if len(keys) == 0 {
+//		level.Warn(h.logger).Log("msg", "sync HA state on start: no keys for HA tracker prefix", "err", err)
+//		return nil
+//	}
+//
+//	for i := 0; i < len(keys); i++ {
+//		if ctx.Err() != nil {
+//			return fmt.Errorf("syncing HA tracker state on startup: %w", context.Cause(ctx))
+//		}
+//
+//		val, err := h.client.Get(ctx, keys[i])
+//		if err != nil {
+//			level.Warn(h.logger).Log("msg", "sync HA state on start: failed to get replica value", "key", keys[i], "err", err)
+//			return err
+//		}
+//
+//		desc, ok := val.(*ReplicaDesc)
+//		if !ok {
+//			level.Error(h.logger).Log("msg", "sync HA state on start: got invalid replica descriptor", "key", keys[i])
+//			continue
+//		}
+//		h.processKVStoreEntry(keys[i], desc)
+//	}
+//	level.Info(h.logger).Log("msg", "sync HA state on start: HA cache sync finished successfully")
+//	return nil
+//}
 
 // Follows pattern used by ring for WatchKey.
 func (h *haTracker) loop(ctx context.Context) error {
