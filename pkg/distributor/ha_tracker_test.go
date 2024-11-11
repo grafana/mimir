@@ -255,7 +255,6 @@ func TestHaTrackerWithMemberListAndWithoutCacheSyncStart(t *testing.T) {
 
 	now = time.Now()
 	//check r2 - it should reject sample
-	//time.Sleep(time.Millisecond * 100)
 	replica2 := "r2"
 	err = c2.checkReplica(context.Background(), "user", cluster, replica2, now)
 	assert.Error(t, err)
