@@ -407,7 +407,7 @@ func resets(step types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFun
 			}
 
 		}
-		accumulate(fHead)
+		accumulate(fHead[1:])
 		accumulate(fTail)
 
 		return resets, true, nil, nil
