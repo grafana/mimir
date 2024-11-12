@@ -12,18 +12,18 @@ load 1m
   some_metric_with_stale_marker 0 60 120 stale 240 300
 
 # Range query with rate.
-eval range from 0 to 4m step 1m rate(some_metric[1m])
-  {env="prod", cluster="eu"} _ 1 1 1 1
-  {env="prod", cluster="us"} _ 2 2 2 2
-  {env="test", cluster="eu"} _ 3 3 3 3
-  {env="test", cluster="us"} _ 4 4 4 4
+eval range from 0 to 4m step 1m rate(some_metric[1m1s])
+  {env="prod", cluster="eu"} _ 0.9836065573770493 1 1 1
+  {env="prod", cluster="us"} _ 1.9672131147540985 2 2 2
+  {env="test", cluster="eu"} _ 2.9508196721311477 3 3 3
+  {env="test", cluster="us"} _ 3.934426229508197 4 4 4
 
 # Range query with increase.
-eval range from 0 to 4m step 1m increase(some_metric[1m])
-  {env="prod", cluster="eu"} _ 60 60 60 60
-  {env="prod", cluster="us"} _ 120 120 120 120
-  {env="test", cluster="eu"} _ 180 180 180 180
-  {env="test", cluster="us"} _ 240 240 240 240
+eval range from 0 to 4m step 1m increase(some_metric[1m1s])
+  {env="prod", cluster="eu"} _ 60 61 61 61
+  {env="prod", cluster="us"} _ 120 122 122 122
+  {env="test", cluster="eu"} _ 180 183 183 183
+  {env="test", cluster="us"} _ 240 244 244 244
 
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
@@ -40,24 +40,24 @@ eval range from 0 to 4m step 1m increase(some_nonexistent_metric[1m])
 #
 # The first query below (with 1m) tests that we correctly skip evaluating rate() when there aren't enough points in the range.
 # The second query below (with 2m) tests that we correctly pick the last point from the buffer if the last point in the buffer is outside the range.
-eval range from 0 to 8m step 1m rate(some_metric_with_gaps[1m])
-  {} _ 1 1 1 1 _ _ 2 2
+eval range from 0 to 8m step 1m rate(some_metric_with_gaps[1m1s])
+  {} _ 0.9836065573770493 1 1 1 _ _ 2 2
 
-eval range from 0 to 8m step 1m increase(some_metric_with_gaps[1m])
-  {} _ 60 60 60 60 _ _ 120 120
+eval range from 0 to 8m step 1m increase(some_metric_with_gaps[1m1s])
+  {} _ 60 61 61 61 _ _ 122 122
 
-eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m])
-  {} _ 0.5 1 1 1 1 14.666666666666666 2 2
+eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m1s])
+  {} _ 0.49586776859504134 0.9917355371900827 1 1 1 14.666666666666666 2 2
 
-eval range from 0 to 8m step 1m increase(some_metric_with_gaps[2m])
-  {} _ 60 120 120 120 120 1760 240 240
+eval range from 0 to 8m step 1m increase(some_metric_with_gaps[2m1s])
+  {} _ 60 120 121 121 121 1774.6666666666665 242 242
 
 # Test that we handle staleness markers correctly.
-eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m])
-  {} _ 0.5 1 1 1 1
+eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m1s])
+  {} _ 0.49586776859504134 0.9917355371900827 1 1 1
 
-eval range from 0 to 5m step 1m increase(some_metric_with_stale_marker[2m])
-  {} _ 60 120 120 120 120
+eval range from 0 to 5m step 1m increase(some_metric_with_stale_marker[2m1s])
+  {} _ 60 120 121 121 121
 
 clear
 
@@ -90,76 +90,76 @@ load 1m
   some_nhcb_metric{baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}}
   some_inf_and_nan_metric{foo="baz"} 0 1 2 3 Inf Inf Inf NaN NaN NaN NaN 8 7 6
 
-eval range from 0 to 7m step 1m count_over_time(some_metric[3m])
+eval range from 0 to 7m step 1m count_over_time(some_metric[3m1s])
   {foo="bar"} 1 2 3 4 3 2 2 2
 
-eval range from 0 to 7m step 1m count_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m count_over_time(some_metric[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval range from 0 to 7m step 1m last_over_time(some_metric[3m])
+eval range from 0 to 7m step 1m last_over_time(some_metric[3m1s])
   some_metric{foo="bar"} 0 1 2 3 3 3 {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 7m step 1m last_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m last_over_time(some_metric[6s])
   some_metric{foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 7m step 1m present_over_time(some_metric[3m])
+eval range from 0 to 7m step 1m present_over_time(some_metric[3m1s])
   {foo="bar"} 1 1 1 1 1 1 1 1
 
-eval range from 0 to 7m step 1m present_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m present_over_time(some_metric[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval range from 0 to 7m step 1m min_over_time(some_metric[3m])
+eval range from 0 to 7m step 1m min_over_time(some_metric[3m1s])
   {foo="bar"} 0 0 0 0 1 2 3 _
 
-eval range from 0 to 7m step 1m min_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m min_over_time(some_metric[6s])
   {foo="bar"} 0 1 2 3 _ _ _ _
 
-eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m])
+eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
 
-eval range from 0 to 7m step 1m max_over_time(some_metric[3m])
+eval range from 0 to 7m step 1m max_over_time(some_metric[3m1s])
   {foo="bar"} 0 1 2 3 3 3 3 _
 
-eval range from 0 to 7m step 1m max_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m max_over_time(some_metric[6s])
   {foo="bar"} 0 1 2 3 _ _ _ _
 
-eval range from 0 to 16m step 1m max_over_time(some_inf_and_nan_metric[3m])
+eval range from 0 to 16m step 1m max_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 2 3 Inf Inf Inf Inf Inf Inf NaN 8 8 8 8 7 6
 
-eval_warn range from 0 to 10m step 1m sum_over_time(some_metric[3m])
+eval_warn range from 0 to 10m step 1m sum_over_time(some_metric[3m1s])
   {foo="bar"} 0 1 3 6 6 5 _ {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 5m step 1m sum_over_time(some_metric[3m])
+eval range from 0 to 5m step 1m sum_over_time(some_metric[3m1s])
   {foo="bar"} 0 1 3 6 6 5
 
-eval range from 7m to 10m step 1m sum_over_time(some_metric[3m])
+eval range from 7m to 10m step 1m sum_over_time(some_metric[3m1s])
   {foo="bar"} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 7m step 1m sum_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m sum_over_time(some_metric[6s])
   {foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m])
+eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m1s])
   {baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:16 count:7 custom_values:[5 10] buckets:[1 6]}} {{schema:-53 sum:19 count:22 custom_values:[5 10] buckets:[8 14]}}
 
-eval range from 0 to 16m step 1m sum_over_time(some_inf_and_nan_metric[3m])
+eval range from 0 to 16m step 1m sum_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 3 6 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 21 13 6
 
-eval_warn range from 0 to 10m step 1m avg_over_time(some_metric[3m])
+eval_warn range from 0 to 10m step 1m avg_over_time(some_metric[3m1s])
   {foo="bar"} 0 0.5 1 1.5 2 2.5 _ {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 5m step 1m avg_over_time(some_metric[3m])
+eval range from 0 to 5m step 1m avg_over_time(some_metric[3m1s])
   {foo="bar"} 0 0.5 1 1.5 2 2.5
 
-eval range from 7m to 10m step 1m avg_over_time(some_metric[3m])
+eval range from 7m to 10m step 1m avg_over_time(some_metric[3m1s])
   {foo="bar"} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 7m step 1m avg_over_time(some_metric[5s])
+eval range from 0 to 7m step 1m avg_over_time(some_metric[6s])
   {foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
-eval range from 0 to 2m step 1m avg_over_time(some_nhcb_metric[3m])
+eval range from 0 to 2m step 1m avg_over_time(some_nhcb_metric[3m1s])
   {baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:8 count:3.5 custom_values:[5 10] buckets:[0.5 3]}} {{schema:-53 sum:6.333333333333334 count:7.333333333333333 custom_values:[5 10] buckets:[2.666666666666667 4.666666666666666]}}
 
-eval range from 0 to 16m step 1m avg_over_time(some_inf_and_nan_metric[3m])
+eval range from 0 to 16m step 1m avg_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0.5 1 1.5 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 7 6.5 6
 
 clear
@@ -292,13 +292,13 @@ load 5m
   another_metric{env="1"}	60 120 180
 
 # Allows relabeling (to-be-dropped) __name__  via label_replace
-eval_fail instant at 15m label_replace(rate({env="1"}[10m]), "my_name", "rate_$1", "__name__", "(.+)")
+eval_fail instant at 15m label_replace(rate({env="1"}[15m]), "my_name", "rate_$1", "__name__", "(.+)")
   expected_fail_message vector cannot contain metrics with the same labelset
 #  {my_name="rate_metric", env="1"} 0.2
 #  {my_name="rate_another_metric", env="1"} 0.2
 
 # Allows preserving __name__ via label_replace
-eval_fail instant at 15m label_replace(rate({env="1"}[10m]), "__name__", "rate_$1", "__name__", "(.+)")
+eval_fail instant at 15m label_replace(rate({env="1"}[15m]), "__name__", "rate_$1", "__name__", "(.+)")
   expected_fail_message vector cannot contain metrics with the same labelset
 #  rate_metric{env="1"} 0.2
 #  rate_another_metric{env="1"} 0.2
@@ -417,25 +417,25 @@ load 5m
   mins   0   10 0  30 0   -10  0  5   NaN 0   NaN NaN
   maxes  10  20 5  0  -10 -5   40 50  10  NaN NaN NaN
   series -10 0  10 20 30  40   50 NaN 60  70  80  NaN
-  mixed_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+  mixed_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 1 2 3
 
 eval range from 0 to 60m step 5m clamp(series, scalar(mins), scalar(maxes))
-  {}     0   10 5  _  _   -5   40 NaN NaN NaN NaN NaN NaN
+  {}     0   10 5  _  _   -5   40 NaN NaN NaN NaN NaN _
 
 eval range from 0 to 60m step 5m clamp_min(series, scalar(mins))
-  {}     0   10 10 30 30  40   50 NaN NaN 70  NaN NaN NaN
+  {}     0   10 10 30 30  40   50 NaN NaN 70  NaN NaN _
 
 eval range from 0 to 60m step 5m clamp_max(series, scalar(maxes))
-  {}    -10  0  5  0  -10 -5   40 NaN 10  NaN NaN NaN NaN
+  {}    -10  0  5  0  -10 -5   40 NaN 10  NaN NaN NaN _
 
 # clamp ignores any histograms
-eval range from 0 to 5m step 1m clamp(mixed_metric, 2, 5)
+eval range from 0 to 15m step 5m clamp(mixed_metric, 2, 5)
 	{} _ 2 2 3
 
-eval range from 0 to 5m step 1m clamp_min(mixed_metric, 2)
+eval range from 0 to 15m step 5m clamp_min(mixed_metric, 2)
 	{} _ 2 2 3
 
-eval range from 0 to 5m step 1m clamp_max(mixed_metric, 2)
+eval range from 0 to 15m step 5m clamp_max(mixed_metric, 2)
 	{} _ 1 2 2
 
 clear
@@ -459,13 +459,13 @@ clear
 load 6m
   toNearest      1    _    3 4 0.1
   series{a="b"}  -5.5 2.75 _ _ 6.87
-  mixed_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+  mixed_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 1 2 3
 
 eval range from 0 to 24m step 6m round(series, scalar(toNearest))
   {a="b"}  -5   NaN  _ _ 6.9
 
 # round ignores any histograms
-eval range from 0 to 5m step 1m round(mixed_metric)
+eval range from 0 to 18m step 6m round(mixed_metric)
 	{} _ 1 2 3
 
 clear
@@ -500,7 +500,7 @@ load 1m
   metric{case="nhcb, some resets"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
   metric{case="floats, nh and nhcb, some resets"} 0 1 2 3 2 1 0 _ {{schema:3 sum:0 count:2 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 0 1]}} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval range from 0 to 20m step 1m resets(metric[3m])
+eval range from 0 to 20m step 1m resets(metric[3m1s])
   {case="all same floats, no resets value=0"} 0 0 0 0 0 0 0 0 0 0 0
   {case="all same floats, no resets value=3"} 0 0 0 0 0 0 0 0 0 0 0
   {case="all floats, no resets"} 0 0 0 0 0 0 0 0 0 0
@@ -541,7 +541,7 @@ load 1m
   metric{case="nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
   metric{case="floats, nh and nhcb"} 0 1 2 3 2 1 0 _ {{schema:3 sum:0 count:2 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 0 1]}} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval range from 0 to 20m step 1m deriv(metric[3m])
+eval range from 0 to 20m step 1m deriv(metric[3m1s])
   {case="all Inf"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all floats 1"} _ 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666

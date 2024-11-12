@@ -182,70 +182,65 @@ load 5m
   third_histogram{job="control"} {{schema:0 sum:15 count:5 buckets:[3 4 2]}}
   metric{job="test"}             2
 
-eval instant at 5m first_histogram + second_histogram
+eval instant at 0 first_histogram + second_histogram
   {job="test"} {{schema:0 sum:15 count:10 buckets:[2 4 2]}}
 
-eval instant at 5m second_histogram - first_histogram
+eval instant at 0 second_histogram - first_histogram
   {job="test"} {{schema:0 sum:5 count:2 buckets:[0 0 0]}}
 
-# Two histograms multiplied together result in a float 0
-eval instant at 5m first_histogram * second_histogram
-  {job="test"} 0
+# Cannot multiply two histograms
+eval instant at 0 first_histogram * second_histogram
 
 # Cannot divide a histogram by a histogram
-eval instant at 5m first_histogram / second_histogram
-  {job="test"} NaN
+eval instant at 0 first_histogram / second_histogram
 
 # Histogram multiplied by float
-eval instant at 5m first_histogram * metric
+eval instant at 0 first_histogram * metric
   {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
 
 # Works in either order
-eval instant at 5m metric * first_histogram
+eval instant at 0 metric * first_histogram
   {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
 
 # Histogram divide by float
-eval instant at 5m first_histogram / metric
+eval instant at 0 first_histogram / metric
   {job="test"} {{schema:0 count:2 sum:2.5 buckets:[0.5 1 0.5]}}
 
-# Float divided by histogram is equivalent to "float / 0"
-eval instant at 5m metric / first_histogram
-  {job="test"} +Inf
+# Cannot divide a float by a histogram
+eval instant at 0 metric / first_histogram
 
-# Histogram + float is equivalent to "0 + float"
-eval instant at 5m first_histogram + metric
-  {job="test"} 2
+# Cannot add a float to a histogram
+eval instant at 0 first_histogram + metric
 
-# Histogram - float is equivalent to "0 - float"
-eval instant at 5m first_histogram - metric
-  {job="test"} -2
+# Cannot subtract a float from a histogram
+eval instant at 0 first_histogram - metric
 
 # Histogram atan2 float is equivalent to "0 atan2 float"
-eval instant at 5m first_histogram atan2 metric
+eval instant at 0 first_histogram atan2 metric
   {job="test"} 0
 
 # Histogram to the power of a histogram is equivalent to "0 ^ 0"
-eval instant at 5m first_histogram ^ second_histogram
+eval instant at 0 first_histogram ^ second_histogram
   {job="test"} 1
 
 # Histogram to power of a float is equivalent to "0 ^ float"
-eval instant at 5m first_histogram ^ metric
+eval instant at 0 first_histogram ^ metric
   {job="test"} 0
 
 # Float to power of histogram is equivalent to "float ^ 0"
-eval instant at 5m metric ^ first_histogram
+eval instant at 0 metric ^ first_histogram
   {job="test"} 1
 
 # Histogram mod histogram is equivalent to "0 % 0"
-eval instant at 5m first_histogram % second_histogram
+eval instant at 0 first_histogram % second_histogram
   {job="test"} NaN
 
 # Histogram mod float is equivalent to "0 % float"
-eval instant at 5m first_histogram % metric
+eval instant at 0 first_histogram % metric
   {job="test"} 0
 
 # Float mod histogram is equivalent to "float % 0"
-eval instant at 5m metric % first_histogram
+eval instant at 0 metric % first_histogram
   {job="test"} NaN
 
 
@@ -260,11 +255,11 @@ load 5m
   second_histogram{env="dev",pod="pod-abc123"}    {{schema:0 sum:10 count:5 buckets:[2 3 2]}}
   second_histogram{env="dev",pod="pod-mno789"}    {{schema:0 sum:5 count:4 buckets:[1 1 1]}}
 
-eval instant at 5m first_histogram + second_histogram
+eval instant at 0 first_histogram + second_histogram
   {env="prod",pod="pod-abc123"} {{schema:0 sum:10 count:8 buckets:[2 4 2]}}
   {env="dev",pod="pod-abc123"}  {{schema:0 sum:20 count:10 buckets:[4 6 4]}}
 
-eval instant at 5m second_histogram - first_histogram
+eval instant at 0 second_histogram - first_histogram
   {env="prod",pod="pod-abc123"} {{schema:0 sum:0 count:0 buckets:[0 0 0]}}
   {env="dev",pod="pod-abc123"}  {{schema:0 sum:0 count:0 buckets:[0 0 0]}}
 
@@ -285,21 +280,21 @@ clear
 # whereby the histograms followed by a float are ignored and the lookback float value is used.
 # For example, in "another_mixed", at T=5m it has the lookback value of 10, and at T=5min the lookback value is _.
 load 5m
-  mixed_metric{job="test"}  10 1                                           2                                           3                                            {{schema:0 sum:6 count:3 buckets:[1 2 3]}} {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
-  another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}} {{schema:0 sum:12 count:6 buckets:[2 4 6]}} 4                                            5                                          {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
-#                           @0 @5m                                         @10m                                        @15m                                         @20m                                       @25m
+  mixed_metric{job="test"}  10 1                                            2                                             3                                            {{schema:0 sum:6 count:3 buckets:[1 2 3]}}     {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
+  another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}}  {{schema:0 sum:12 count:6 buckets:[2 4 6]}}   4                                            5                                              {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
+#                           @0 @5m                                          @10m                                          @15m                                         @20m                                           @25m
 
 eval range from 0 to 25m step 5m mixed_metric + another_mixed
-  {job="test"}              20 11                                          _                                           7                                            5                                          {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
+  {job="test"}              20 _                                            _                                             7                                            _                                              {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
 
 eval range from 0 to 25m step 5m mixed_metric - another_mixed
-  {job="test"}              0  -9                                          _                                           -1                                           -5                                         {{schema:0 sum:0 count:0}}
+  {job="test"}              0  _                                            _                                             -1                                           _                                              {{schema:0 sum:0 count:0}}
 
 eval range from 0 to 25m step 5m mixed_metric * another_mixed
-  {job="test"}              100 10                                         _                                           12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} 0
+  {job="test"}              100 _                                           _                                             12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} _
 
 eval range from 0 to 25m step 5m mixed_metric / another_mixed
-  {job="test"}              1  0.1                                         _                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} NAN
+  {job="test"}              1  _                                            _                                             0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} _
 
 clear
 
@@ -329,23 +324,20 @@ eval range from 0m to 24m step 6m my_metric / 2
   {job="bar"} 5 10 15 _ 25
 
 # Scalar on left side
-# Note that positive scalar / histogram == Inf.
+# Note that positive scalar / histogram == nothing.
 eval range from 0m to 24m step 6m 2 / my_metric
-  {histograms="only"} Inf Inf
-  {histograms="both"} 0.4 0.2 +Inf
+  {histograms="both"} 0.4 0.2 _
   {job="foo"} 2 1 0.6666666666666667 0.5 0.4
   {job="bar"} 0.2 0.1 0.06666666666666667 _ 0.04
 
 # Test other arithmetic operations.
 eval range from 0m to 24m step 6m my_metric + 2
-  {histograms="only"} 2 2
-  {histograms="both"} 7 12 2
+  {histograms="both"} 7 12 _
   {job="foo"} 3 4 5 6 7
   {job="bar"} 12 22 32 _ 52
 
 eval range from 0m to 24m step 6m my_metric - 2
-  {histograms="only"} -2 -2
-  {histograms="both"} 3 8 -2
+  {histograms="both"} 3 8
   {job="foo"} -1 0 1 2 3
   {job="bar"} 8 18 28 _ 48
 
