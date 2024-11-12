@@ -102,11 +102,12 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           deletionDelay,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      options.concurrency,
-		TenantCleanupDelay:      options.tenantDeletionDelay,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            options.concurrency,
+		TenantCleanupDelay:            options.tenantDeletionDelay,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	reg := prometheus.NewPedanticRegistry()
@@ -245,10 +246,11 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	}
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           deletionDelay,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	logger := log.NewNopLogger()
@@ -305,10 +307,11 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	require.NoError(t, bucketClient.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid!}")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           deletionDelay,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	logger := log.NewNopLogger()
@@ -354,10 +357,11 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	createTSDBBlock(t, bucketClient, "user-2", 30, 40, 2, nil)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           time.Hour,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	ctx := context.Background()
@@ -486,7 +490,7 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	id2 := createTSDBBlock(t, bucketClient, "user-1", 6000, 7000, 2, nil)
 	id3 := createTSDBBlock(t, bucketClient, "user-1", 7000, 8000, 2, nil)
 
-	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, logger)
+	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, 16, logger)
 	idx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 
@@ -791,10 +795,11 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           time.Hour,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	ctx := context.Background()
@@ -861,10 +866,11 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	block2 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           time.Hour,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	ctx := context.Background()
@@ -949,10 +955,11 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	require.NoError(t, err)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           time.Hour,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
 	}
 
 	// Configure an invalid delay.
@@ -1038,11 +1045,12 @@ func TestComputeCompactionJobs(t *testing.T) {
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:           time.Hour,
-		CleanupInterval:         time.Minute,
-		CleanupConcurrency:      1,
-		DeleteBlocksConcurrency: 1,
-		CompactionBlockRanges:   tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
+		DeletionDelay:                 time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+		CompactionBlockRanges:         tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
 	}
 
 	const user = "test"
@@ -1257,11 +1265,12 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 		logger      = log.NewNopLogger()
 		cfgProvider = newMockConfigProvider()
 		cfg         = BlocksCleanerConfig{
-			DeletionDelay:              deletionDelay,
-			CleanupInterval:            time.Minute,
-			CleanupConcurrency:         1,
-			DeleteBlocksConcurrency:    1,
-			NoBlocksFileCleanupEnabled: true,
+			DeletionDelay:                 deletionDelay,
+			CleanupInterval:               time.Minute,
+			CleanupConcurrency:            1,
+			DeleteBlocksConcurrency:       1,
+			GetDeletionMarkersConcurrency: 1,
+			NoBlocksFileCleanupEnabled:    true,
 		}
 	)
 

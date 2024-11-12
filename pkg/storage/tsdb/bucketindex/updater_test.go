@@ -41,7 +41,7 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
 	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
@@ -90,7 +90,7 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 	// Delete a block's meta.json to simulate a partial block.
 	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename)))
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
@@ -119,7 +119,7 @@ func TestUpdater_UpdateIndex_ShouldSkipBlocksWithCorruptedMeta(t *testing.T) {
 	// Overwrite a block's meta.json with invalid data.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename), bytes.NewReader([]byte("invalid!}"))))
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
@@ -148,7 +148,7 @@ func TestUpdater_UpdateIndex_ShouldSkipCorruptedDeletionMarks(t *testing.T) {
 	// Overwrite a block's deletion-mark.json with invalid data.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block2Mark.ID.String(), block.DeletionMarkFilename), bytes.NewReader([]byte("invalid!}"))))
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
@@ -164,7 +164,7 @@ func TestUpdater_UpdateIndex_NoTenantInTheBucket(t *testing.T) {
 	bkt, _ := testutil.PrepareFilesystemBucket(t)
 
 	for _, oldIdx := range []*Index{nil, {}} {
-		w := NewUpdater(bkt, userID, nil, log.NewNopLogger())
+		w := NewUpdater(bkt, userID, nil, 16, log.NewNopLogger())
 		idx, partials, err := w.UpdateIndex(ctx, oldIdx)
 
 		require.NoError(t, err)
@@ -203,7 +203,7 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	require.Equal(t, "3_of_4", block2.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
 
 	// Generate index (this produces V2 index, with compactor shard IDs).
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
