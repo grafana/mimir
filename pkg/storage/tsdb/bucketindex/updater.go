@@ -234,6 +234,9 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 
 		return BlockDeletionMarks{m}, nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	out = append(out, updatedMarks...)
 
 	level.Info(w.logger).Log("msg", "updated deletion markers for recently marked blocks", "count", len(discovered), "total_deletion_markers", len(out))
