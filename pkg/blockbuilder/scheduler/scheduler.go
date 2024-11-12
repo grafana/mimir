@@ -111,6 +111,10 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	// See if the group-committed offset per partition is behind our "old" offsets.
 
 	oldOffsets.Each(func(o kadm.ListedOffset) {
+		if o.Err != nil {
+			level.Warn(s.logger).Log("msg", "failed to get old offset", "partition", o.Partition, "err", o.Err)
+			return
+		}
 		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
 			if l.Commit.At < o.Offset {
 				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
