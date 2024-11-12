@@ -23,13 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// batchingQueueCapacity controls how many batches can be enqueued for flushing.
-// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
-// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
-// This is our initial assumption, and there's potential in testing with higher numbers if there's a high variability in flush times - assuming we can preserve the order of the batches. For now, we'll stick to 5.
-// If there's high variability in the time to flush or in the time to batch, then this buffer might need to be increased.
-const batchingQueueCapacity = 5
-
 type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
@@ -121,7 +114,14 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		}
 	}(ctx, records, recordsChannel)
 
-	writer := c.newStorageWriter()
+	// We accumulate the total bytes across all records per tenant to determine the number of timeseries we expected to receive.
+	// Then, we'll use that to determine the number of shards we need to parallelize the writes.
+	var bytesPerTenant = make(map[string]int)
+	for _, r := range records {
+		bytesPerTenant[r.tenantID] += len(r.content)
+	}
+
+	writer := c.newStorageWriter(bytesPerTenant)
 	for r := range recordsChannel {
 		if r.err != nil {
 			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
@@ -142,17 +142,21 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 	return multierror.New(writer.Close()...).Err()
 }
 
-func (c pusherConsumer) newStorageWriter() PusherCloser {
-	if c.kafkaConfig.IngestionConcurrency == 0 {
+func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
+	if c.kafkaConfig.IngestionConcurrencyMax == 0 {
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
 
 	return newParallelStoragePusher(
 		c.metrics.storagePusherMetrics,
 		c.pusher,
+		bytesPerTenant,
 		c.kafkaConfig.FallbackClientErrorSampleRate,
-		c.kafkaConfig.IngestionConcurrency,
+		c.kafkaConfig.IngestionConcurrencyMax,
 		c.kafkaConfig.IngestionConcurrencyBatchSize,
+		c.kafkaConfig.IngestionConcurrencyQueueCapacity,
+		c.kafkaConfig.IngestionConcurrencyEstimatedBytesPerSample,
+		c.kafkaConfig.IngestionConcurrencyTargetFlushesPerShard,
 		c.logger,
 	)
 }
@@ -186,6 +190,14 @@ func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sa
 	}
 }
 
+func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, pusher Pusher, errorHandler *pushErrorHandler) sequentialStoragePusher {
+	return sequentialStoragePusher{
+		metrics:      metrics,
+		pusher:       pusher,
+		errorHandler: errorHandler,
+	}
+}
+
 // PushToStorage implements the PusherCloser interface.
 func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	ssp.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
@@ -212,50 +224,63 @@ type parallelStoragePusher struct {
 	logger  log.Logger
 
 	// pushers is map["$tenant|$source"]*parallelStorageShards
-	pushers        map[string]*parallelStorageShards
+	pushers        map[string]PusherCloser
 	upstreamPusher Pusher
 	errorHandler   *pushErrorHandler
-	numShards      int
+
+	maxShards      int
 	batchSize      int
+	bytesPerTenant map[string]int
+
+	queueCapacity   int
+	bytesPerSample  int
+	targetFlushes   int
+	numActiveShards int
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sampleRate int64, numShards int, batchSize int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
-		pushers:        make(map[string]*parallelStorageShards),
+		pushers:        make(map[string]PusherCloser),
 		upstreamPusher: pusher,
-		numShards:      numShards,
+		maxShards:      maxShards,
+		bytesPerTenant: bytesPerTenant,
 		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
 		batchSize:      batchSize,
+		queueCapacity:  queueCapacity,
+		bytesPerSample: bytesPerSample,
+		targetFlushes:  targetFlushes,
 		metrics:        metrics,
 	}
 }
 
 // PushToStorage implements the PusherCloser interface.
-func (c parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
 	}
 
 	shards := c.shardsFor(userID, wr.Source)
-	return shards.ShardWriteRequest(ctx, wr)
+	return shards.PushToStorage(ctx, wr)
 }
 
 // Close implements the PusherCloser interface.
-func (c parallelStoragePusher) Close() []error {
+func (c *parallelStoragePusher) Close() []error {
 	var errs multierror.MultiError
 	for _, p := range c.pushers {
-		errs.Add(p.Stop())
+		errs = append(errs, p.Close()...)
 	}
+	c.metrics.shardsPerPush.Observe(float64(c.numActiveShards))
+	c.metrics.pushersPerPush.Observe(float64(len(c.pushers)))
 	clear(c.pushers)
 	return errs
 }
 
 // shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
 // We create a shard for each tenantID to parallelize the writes.
-func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) *parallelStorageShards {
+func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
 	// Construct the string inline so that it doesn't escape to the heap. Go doesn't escape strings that are used to only look up map keys.
 	// We can use "|" because that cannot be part of a tenantID in Mimir.
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
@@ -263,9 +288,39 @@ func (c parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.Wr
 	}
 	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
 	hashLabels := labels.Labels.Hash
-	p := newParallelStorageShards(c.metrics, c.errorHandler, c.numShards, c.batchSize, batchingQueueCapacity, c.upstreamPusher, hashLabels)
+
+	idealShards := c.idealShardsFor(userID)
+	var p PusherCloser
+	if idealShards <= 1 {
+		// If we're going to push only one shard, then we can use the sequential pusher.
+		// This means that pushes will now be synchronous.
+		// The idea is that if we don't see a reason to parallelize,
+		// then the pushes to this pusher are likely small in absolute terms and speeding them up will have marginal gains.
+		// So we choose the lower overhead and simpler sequential pusher.
+		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
+	} else {
+		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher, hashLabels)
+	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
+}
+
+// idealShardsFor returns the number of shards that should be used for the given userID.
+func (c *parallelStoragePusher) idealShardsFor(userID string) int {
+	// First, determine the number of timeseries we expect to receive based on the bytes of WriteRequest's we received.
+	expectedTimeseries := c.bytesPerTenant[userID] / c.bytesPerSample
+
+	c.metrics.estimatedTimeseries.Add(float64(expectedTimeseries))
+
+	// Then, determine the number of shards we should use to parallelize the writes.
+	idealShards := expectedTimeseries / c.batchSize / c.targetFlushes
+
+	// Finally, use the lower of the two as a conservative estimate.
+	// The max(1, ...) is to ensure that we always have at least one shard.
+	r := max(1, min(idealShards, c.maxShards))
+
+	c.numActiveShards += r
+	return r
 }
 
 type labelsHashFunc func(labels.Labels) uint64
@@ -312,10 +367,10 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 	return p
 }
 
-// ShardWriteRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
-// ShardWriteRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
-// ShardWriteRequest aborts the request if it encounters an error.
-func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+// PushToStorage hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
+// PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
+// PushToStorage aborts the request if it encounters an error.
+func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	var (
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
@@ -347,8 +402,8 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 	return nil
 }
 
-// Stop stops all the shards and waits for them to finish.
-func (p *parallelStorageShards) Stop() error {
+// Close stops all the shards and waits for them to finish.
+func (p *parallelStorageShards) Close() []error {
 	var errs multierror.MultiError
 
 	for _, shard := range p.shards {
@@ -357,7 +412,7 @@ func (p *parallelStorageShards) Stop() error {
 
 	p.wg.Wait()
 
-	return errs.Err()
+	return errs
 }
 
 // start starts the shards, each in its own goroutine.

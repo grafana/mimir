@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -202,7 +203,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEndTime time.T
 			continue
 		}
 
-		state := partitionStateFromLag(b.logger, lag, b.fallbackOffsetMillis)
+		state := PartitionStateFromLag(b.logger, lag, b.fallbackOffsetMillis)
 		if err := b.consumePartition(ctx, partition, state, cycleEndTime, lag.End.Offset); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "partition", partition)
 		}
@@ -218,7 +219,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.ConsumerGroup, b.fallbackOffsetMillis)
+		groupLag, err := GetGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.ConsumerGroup, b.fallbackOffsetMillis)
 		if err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
 		} else {
@@ -238,7 +239,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 	return kadm.GroupMemberLag{}, lastErr
 }
 
-type partitionState struct {
+type PartitionState struct {
 	// Commit is the offset of the next record we'll start consuming.
 	Commit kadm.Offset
 	// CommitRecordTimestamp is the timestamp of the record whose offset was committed (and not the time of commit).
@@ -249,7 +250,7 @@ type partitionState struct {
 	LastBlockEnd time.Time
 }
 
-func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackMillis int64) partitionState {
+func PartitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackMillis int64) PartitionState {
 	commitRecTs, lastSeenOffset, lastBlockEndTs, err := unmarshallCommitMeta(lag.Commit.Metadata)
 	if err != nil {
 		// If there is an error in unmarshalling the metadata, treat it as if
@@ -278,7 +279,7 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 		"last_block_end_ts", lastBlockEndTs,
 	)
 
-	return partitionState{
+	return PartitionState{
 		Commit:                lag.Commit,
 		CommitRecordTimestamp: time.UnixMilli(commitRecTs),
 		LastSeenOffset:        lastSeenOffset,
@@ -288,7 +289,12 @@ func partitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // If the partition is lagging behind, it takes care of consuming it in sections.
-func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state partitionState, cycleEndTime time.Time, cycleEndOffset int64) (err error) {
+func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state PartitionState, cycleEndTime time.Time, cycleEndOffset int64) (err error) {
+	sp, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BlockBuilder.consumePartition")
+	defer sp.Finish()
+
+	logger := log.With(sp, "partition", partition, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset)
+
 	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
@@ -305,10 +311,10 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 			b.cfg.ConsumeInterval,
 			b.cfg.ConsumeIntervalBuffer,
 		)
-		level.Info(b.logger).Log("msg", "partition is lagging behind the cycle", "partition", partition, "section_end", sectionEndTime, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset, "commit_rec_ts", state.CommitRecordTimestamp)
+		level.Info(logger).Log("msg", "partition is lagging behind the cycle", "section_end", sectionEndTime, "commit_rec_ts", state.CommitRecordTimestamp)
 	}
 	for !sectionEndTime.After(cycleEndTime) {
-		logger := log.With(b.logger, "partition", partition, "section_end", sectionEndTime, "cycle_end_offset", cycleEndOffset)
+		logger := log.With(logger, "section_end", sectionEndTime, "offset", state.Commit.At)
 		state, err = b.consumePartitionSection(ctx, logger, builder, partition, state, sectionEndTime, cycleEndOffset)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", partition, err)
@@ -324,16 +330,24 @@ func (b *BlockBuilder) consumePartitionSection(
 	logger log.Logger,
 	builder *TSDBBuilder,
 	partition int32,
-	state partitionState,
+	state PartitionState,
 	sectionEndTime time.Time,
 	cycleEndOffset int64,
-) (retState partitionState, retErr error) {
+) (retState PartitionState, retErr error) {
 	// Oppose to the section's range (and cycle's range), that include the ConsumeIntervalBuffer, the block's range doesn't.
 	// Thus, truncate the timestamp with ConsumptionInterval here to round the block's range.
 	blockEnd := sectionEndTime.Truncate(b.cfg.ConsumeInterval)
 
+	// If the last commit offset has already reached the offset, that marks the end of the cycle, bail. This can happen when the partition
+	// was scaled down (it's inactive now), but block-builder was lagging, and it chopped this cycle into sections. After a cycle section
+	// reaches the cycle end offset, the whole cycle must notice that there is nothing more to consume.
+	if state.Commit.At == cycleEndOffset {
+		level.Info(logger).Log("msg", "nothing to consume")
+		return state, nil
+	}
+
 	var numBlocks int
-	defer func(t time.Time, startState partitionState) {
+	defer func(t time.Time, startState PartitionState) {
 		// No need to log or track time of the unfinished section. Just bail out.
 		if errors.Is(retErr, context.Canceled) {
 			return
@@ -354,7 +368,7 @@ func (b *BlockBuilder) consumePartitionSection(
 	}(time.Now(), state)
 
 	// We always rewind the partition's offset to the commit offset by reassigning the partition to the client (this triggers partition assignment).
-	// This is so the cycle started exactly at the commit offset, and not at what was (potentially over-) consumed previously.
+	// This is so the consumption started exactly at the commit offset, and not at what was (potentially over-) consumed in the previous iteration.
 	// In the end, we remove the partition from the client (refer to the defer below) to guarantee the client always consumes
 	// from one partition at a time. I.e. when this partition is consumed, we start consuming the next one.
 	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
@@ -364,7 +378,7 @@ func (b *BlockBuilder) consumePartitionSection(
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
-	level.Info(logger).Log("msg", "start consuming", "offset", state.Commit.At)
+	level.Info(logger).Log("msg", "start consuming")
 
 	var (
 		firstRec  *kgo.Record
@@ -375,7 +389,7 @@ func (b *BlockBuilder) consumePartitionSection(
 consumerLoop:
 	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
 		if err := context.Cause(ctx); err != nil {
-			return partitionState{}, err
+			return PartitionState{}, err
 		}
 
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
@@ -471,7 +485,7 @@ consumerLoop:
 		LeaderEpoch: commitRec.LeaderEpoch,
 		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastSeenOffset, lastBlockEnd.UnixMilli()),
 	}
-	newState := partitionState{
+	newState := PartitionState{
 		Commit:                commit,
 		CommitRecordTimestamp: commitRec.Timestamp,
 		LastSeenOffset:        lastSeenOffset,
@@ -484,7 +498,7 @@ consumerLoop:
 	return newState, nil
 }
 
-func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group string, state partitionState) error {
+func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group string, state PartitionState) error {
 	offsets := make(kadm.Offsets)
 	offsets.Add(state.Commit)
 

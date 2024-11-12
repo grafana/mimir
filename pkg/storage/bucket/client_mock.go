@@ -51,6 +51,17 @@ func (m *ClientMock) Iter(ctx context.Context, dir string, f func(string) error,
 	return args.Error(0)
 }
 
+// IterWithAttributes mocks objstore.Bucket.IterWithAttributes().
+func (m *ClientMock) IterWithAttributes(ctx context.Context, dir string, f func(attrs objstore.IterObjectAttributes) error, options ...objstore.IterOption) error {
+	return m.Called(ctx, dir, f, options).Error(0)
+}
+
+// SupportedIterOptions mocks objstore.Bucket.SupportedIterOptions().
+func (m *ClientMock) SupportedIterOptions() []objstore.IterOptionType {
+	m.Called()
+	return nil
+}
+
 // MockIter is a convenient method to mock Iter()
 func (m *ClientMock) MockIter(prefix string, objects []string, err error) {
 	m.MockIterWithCallback(prefix, objects, err, nil)

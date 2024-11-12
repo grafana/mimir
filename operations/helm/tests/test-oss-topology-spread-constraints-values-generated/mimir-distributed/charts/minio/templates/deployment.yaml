@@ -6,7 +6,7 @@ metadata:
   name: test-oss-topology-spread-constraints-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: test-oss-topology-spread-constraints-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: test-oss-topology-spread-constraints-values
       annotations:
-        checksum/secrets: c036403f919e8acaab400ce69701243acae9d0383639fc2663cb58181e729532
-        checksum/config: 20a733b1aa091c1ac330e7a54be2de63b7c5d1d8f25bd1179006713fbd464c55
+        checksum/secrets: 212c65c89ea52abc5a300fe8e423c8a73c08c77c8d949f922ca80b9be11bca95
+        checksum/config: f4a09dd7a0ed15880a96711b9b850234ade1a8059c688513a8f146e612eabe0b
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

@@ -730,12 +730,12 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 			return nil, err
 		}
 
-		floats, err := step.Floats.CopyPoints(step.RangeEnd)
+		floats, err := step.Floats.CopyPoints()
 		if err != nil {
 			return nil, err
 		}
 
-		histograms, err := step.Histograms.CopyPoints(step.RangeEnd)
+		histograms, err := step.Histograms.CopyPoints()
 		if err != nil {
 			return nil, err
 		}
@@ -795,6 +795,8 @@ func (q *Query) Close() {
 		types.VectorPool.Put(v, q.memoryConsumptionTracker)
 	case promql.Scalar:
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
+	case promql.String:
+		// Nothing to do as strings don't come from a pool
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}

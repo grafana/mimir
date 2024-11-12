@@ -578,7 +578,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{$read_path_matcher}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{$read_path_matcher}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after dskit cache refactor.\n    sum (\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_hits_total{name=\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_requests_total{name=~\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
+                        "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{$read_path_matcher}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{$read_path_matcher}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    sum (\n      rate(thanos_cache_hits_total{name=\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(thanos_cache_requests_total{name=~\"frontend-cache\", $read_path_matcher}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{request_type}}",
                         "legendLink": null
@@ -1510,18 +1510,19 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Blocks queried / sec by compaction level\nIncreased volume of lower levels (for example levels 1 and 2) can indicate that the compactor is not keeping up.\nIn that case the store-gateway will start serving more blocks which aren't that well compacted.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
                            "pointSize": 5,
                            "showPoints": "never",
                            "spanNulls": false,
                            "stacking": {
                               "group": "A",
-                              "mode": "none"
+                              "mode": "normal"
                            }
                         },
                         "min": 0,
@@ -1547,13 +1548,19 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "expr": "sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level=~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "legendFormat": "blocks",
+                        "legendFormat": "{{level}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_bucket_store_series_blocks_queried_sum{component=\"store-gateway\",level!~\"[0-4]\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "5+",
                         "legendLink": null
                      }
                   ],
-                  "title": "Blocks queried / sec",
+                  "title": "Blocks queried / sec by compaction level",
                   "type": "timeseries"
                },
                {

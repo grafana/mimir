@@ -3,6 +3,8 @@
 package types
 
 import (
+	"fmt"
+
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -18,6 +20,7 @@ import (
 type HPointRingBuffer struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	points                   []promql.HPoint
+	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 }
@@ -42,96 +45,6 @@ func (b *HPointRingBuffer) DiscardPointsBefore(t int64) {
 	}
 }
 
-// UnsafePoints returns slices of the points in this buffer, including only points with timestamp less than or equal to maxT.
-// Either or both slice could be empty.
-// Callers must not modify the values in the returned slices or return them to a pool.
-// Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
-// points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-// The returned slices, and the FloatHistogram instances in the returned slices, are no longer valid if this buffer is modified
-// (eg. a point is added, or the buffer is reset or closed).
-//
-// FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
-// Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (b *HPointRingBuffer) UnsafePoints(maxT int64) (head []promql.HPoint, tail []promql.HPoint) {
-	size := b.size
-
-	for size > 0 && b.points[(b.firstIndex+size-1)%len(b.points)].T > maxT {
-		size--
-	}
-
-	endOfHeadSegment := b.firstIndex + size
-
-	if endOfHeadSegment > len(b.points) {
-		// Need to wrap around.
-		endOfTailSegment := endOfHeadSegment % len(b.points)
-		endOfHeadSegment = len(b.points)
-		return b.points[b.firstIndex:endOfHeadSegment], b.points[0:endOfTailSegment]
-	}
-
-	return b.points[b.firstIndex:endOfHeadSegment], nil
-}
-
-// CopyPoints returns a single slice of the points in this buffer, including only points with timestamp less than or equal to maxT.
-// Callers may modify the values in the returned slice, and should return the slice to the pool by calling
-// PutHPointSlice when it is no longer needed.
-// Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
-// points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-// In addition to copying the points, CopyPoints will also duplicate the FloatHistogram values
-// so that they are also safe to modify and use after calling Close.
-func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
-	if b.size == 0 {
-		return nil, nil
-	}
-
-	head, tail := b.UnsafePoints(maxT)
-	combined, err := getHPointSliceForRingBuffer(len(head)+len(tail), b.memoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	combine := func(p []promql.HPoint) {
-		for i := range p {
-			combined = append(combined,
-				promql.HPoint{
-					T: p[i].T,
-					H: p[i].H.Copy(),
-				},
-			)
-		}
-	}
-
-	combine(head)
-	combine(tail)
-
-	return combined, nil
-}
-
-// ForEach calls f for each point in this buffer.
-func (b *HPointRingBuffer) ForEach(f func(p promql.HPoint)) {
-	if b.size == 0 {
-		return
-	}
-
-	lastIndexPlusOne := b.firstIndex + b.size
-
-	if lastIndexPlusOne > len(b.points) {
-		lastIndexPlusOne = len(b.points)
-	}
-
-	for i := b.firstIndex; i < lastIndexPlusOne; i++ {
-		f(b.points[i])
-	}
-
-	if b.firstIndex+b.size < len(b.points) {
-		// Don't need to wrap around to start of buffer.
-		return
-	}
-
-	for i := 0; i < (b.firstIndex+b.size)%len(b.points); i++ {
-		f(b.points[i])
-	}
-}
-
 // Append adds p to this buffer, expanding it if required.
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
@@ -143,6 +56,49 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 	hPoint.T = p.T
 	hPoint.H = p.H
 	return nil
+}
+
+// ViewUntilSearchingForwards returns a view into this buffer, including only points with timestamps less than or equal to maxT.
+// ViewUntilSearchingForwards examines the points in the buffer starting from the front of the buffer, so is preferred over
+// ViewUntilSearchingBackwards if it is expected that there are many points with timestamp greater than maxT, and few points with
+// earlier timestamps.
+// existing is an existing view instance for this buffer that is reused if provided. It can be nil.
+// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
+	if existing == nil {
+		existing = &HPointRingBufferView{buffer: b}
+	}
+
+	size := 0
+
+	for size < b.size && b.pointAt(size).T <= maxT {
+		size++
+	}
+
+	existing.size = size
+	return existing
+}
+
+// ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
+// is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
+func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
+	if existing == nil {
+		existing = &HPointRingBufferView{buffer: b}
+	}
+
+	nextPositionToCheck := b.size - 1
+
+	for nextPositionToCheck >= 0 && b.pointAt(nextPositionToCheck).T > maxT {
+		nextPositionToCheck--
+	}
+
+	existing.size = nextPositionToCheck + 1
+	return existing
+}
+
+// pointAt returns the point at index 'position'.
+func (b *HPointRingBuffer) pointAt(position int) promql.HPoint {
+	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
 }
 
 // NextPoint gets the next point in this buffer, expanding it if required.
@@ -165,6 +121,12 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 			return nil, err
 		}
 
+		if !isPowerOfTwo(cap(newSlice)) {
+			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
+			// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
+			panic(fmt.Sprintf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize))
+		}
+
 		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
@@ -178,9 +140,10 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
+		b.pointsIndexMask = cap(newSlice) - 1
 	}
 
-	nextIndex := (b.firstIndex + b.size) % len(b.points)
+	nextIndex := (b.firstIndex + b.size) & b.pointsIndexMask
 	b.size++
 	return &b.points[nextIndex], nil
 }
@@ -220,12 +183,19 @@ func (b *HPointRingBuffer) Release() {
 // s will be modified in place when the buffer is modified, and callers should not modify s after passing it off to the ring buffer via Use.
 // s will be returned to the pool when Close is called, Use is called again, or the buffer needs to expand, so callers
 // should not return s to the pool themselves.
+// s must have a capacity that is a power of two.
 func (b *HPointRingBuffer) Use(s []promql.HPoint) {
+	if !isPowerOfTwo(cap(s)) {
+		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
+		panic(fmt.Sprintf("slice capacity must be a power of two, but is %v", cap(s)))
+	}
+
 	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 
-	b.points = s
+	b.points = s[:cap(s)]
 	b.firstIndex = 0
 	b.size = len(s)
+	b.pointsIndexMask = cap(s) - 1
 }
 
 // Close releases any resources associated with this buffer.
@@ -234,58 +204,105 @@ func (b *HPointRingBuffer) Close() {
 	b.points = nil
 }
 
-// First returns the first point in this buffer.
+type HPointRingBufferView struct {
+	buffer *HPointRingBuffer
+	size   int
+}
+
+// UnsafePoints returns slices of the points in this buffer view.
+// Either or both slice could be empty.
+// Callers must not modify the values in the returned slices nor return them to a pool.
+// Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
+// points into the slice, whereas UnsafePoints returns a view into the internal state of the buffer.
+// The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+//
+// FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
+// Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
+func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promql.HPoint) {
+	if v.size == 0 {
+		return nil, nil
+	}
+
+	endOfHeadSegment := v.buffer.firstIndex + v.size
+
+	if endOfHeadSegment > len(v.buffer.points) {
+		// Need to wrap around.
+		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
+		endOfHeadSegment = len(v.buffer.points)
+		return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
+	}
+
+	return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], nil
+}
+
+// CopyPoints returns a single slice of the points in this buffer view.
+// Callers may modify the values in the returned slice, and should return the slice to the pool by calling
+// PutHPointSlice when it is no longer needed.
+// Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
+// points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
+func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
+	if v.size == 0 {
+		return nil, nil
+	}
+
+	head, tail := v.UnsafePoints()
+	combined, err := getHPointSliceForRingBuffer(len(head)+len(tail), v.buffer.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	combine := func(p []promql.HPoint) {
+		for i := range p {
+			combined = append(combined,
+				promql.HPoint{
+					T: p[i].T,
+					H: p[i].H.Copy(),
+				},
+			)
+		}
+	}
+
+	combine(head)
+	combine(tail)
+
+	return combined, nil
+}
+
+// ForEach calls f for each point in this buffer view.
+func (v HPointRingBufferView) ForEach(f func(p promql.HPoint)) {
+	for i := 0; i < v.size; i++ {
+		f(v.buffer.pointAt(i))
+	}
+}
+
+// First returns the first point in this ring buffer view.
 // It panics if the buffer is empty.
-func (b *HPointRingBuffer) First() promql.HPoint {
-	if b.size == 0 {
+func (v HPointRingBufferView) First() promql.HPoint {
+	if v.size == 0 {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return b.points[b.firstIndex]
+	return v.buffer.points[v.buffer.firstIndex]
 }
 
-// LastAtOrBefore returns the last point in this buffer with timestamp less than or equal to maxT.
-// It returns false if there is no point satisfying this requirement.
-func (b *HPointRingBuffer) LastAtOrBefore(maxT int64) (promql.HPoint, bool) {
-	size := b.size
-
-	for size > 0 {
-		p := b.points[(b.firstIndex+size-1)%len(b.points)]
-
-		if p.T <= maxT {
-			return p, true
-		}
-
-		size--
+// Last returns the last point in this ring buffer view.
+// It returns false if the view is empty.
+func (v HPointRingBufferView) Last() (promql.HPoint, bool) {
+	if v.size == 0 {
+		return promql.HPoint{}, false
 	}
 
-	return promql.HPoint{}, false
+	return v.buffer.pointAt(v.size - 1), true
 }
 
-// CountAtOrBefore returns the number of points in this ring buffer with timestamp less than or equal to maxT.
-func (b *HPointRingBuffer) CountAtOrBefore(maxT int64) int {
-	count := b.size
-
-	for count > 0 {
-		p := b.points[(b.firstIndex+count-1)%len(b.points)]
-
-		if p.T <= maxT {
-			return count
-		}
-
-		count--
-	}
-
-	return count
+// Count returns the number of points in this ring buffer view.
+func (v HPointRingBufferView) Count() int {
+	return v.size
 }
 
-// AnyAtOrBefore returns true if this ring buffer contains any points with timestamp less than or equal to maxT.
-func (b *HPointRingBuffer) AnyAtOrBefore(maxT int64) bool {
-	if b.size == 0 {
-		return false
-	}
-
-	return b.points[b.firstIndex].T <= maxT
+// Any returns true if this ring buffer view contains any points.
+func (v HPointRingBufferView) Any() bool {
+	return v.size != 0
 }
 
 // These hooks exist so we can override them during unit tests.

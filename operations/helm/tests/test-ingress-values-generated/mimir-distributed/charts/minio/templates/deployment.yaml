@@ -6,7 +6,7 @@ metadata:
   name: test-ingress-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: test-ingress-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: test-ingress-values
       annotations:
-        checksum/secrets: 3a36702d389c24c8ea22120b361d08d1e34abad4e5821d9969eacadf017d6f9a
-        checksum/config: aa90f4e9d1a7c47c4d4e808efeb88020842503c4ac833793ebc73723a649093c
+        checksum/secrets: 015821c17413edf4491f30c6d9c7e1857d3ab1afe0dc51189b74b36780fe7723
+        checksum/config: dee881d6f221d6c65d217ab2dcaa4d96bd8a62b4b2581909a433395bcecb0dbc
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -56,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -633,7 +635,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 	}
 
-	i.circuitBreaker.activate()
+	i.circuitBreaker.read.activate()
+	if ro, _ := i.lifecycler.GetReadOnlyState(); !ro {
+		// If the ingester is not read-only, activate the push circuit breaker.
+		i.circuitBreaker.push.activate()
+	}
 	return nil
 }
 
@@ -1175,6 +1181,93 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				}
 			}
 		}
+
+		outOfOrderWindow = i.limits.OutOfOrderTimeWindow(userID)
+
+		errProcessor = mimir_storage.NewSoftAppendErrorProcessor(
+			func() {
+				stats.failedSamplesCount++
+			},
+			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.sampleOutOfBoundsCount++
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
+					return newSampleTimestampTooOldError(model.Time(timestamp), labels)
+				})
+			},
+			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.sampleOutOfOrderCount++
+				updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
+					return newSampleOutOfOrderError(model.Time(timestamp), labels)
+				})
+			},
+			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.sampleTooOldCount++
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
+					return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
+				})
+			},
+			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.sampleTooFarInFutureCount++
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
+					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
+				})
+			},
+			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.newValueForTimestampCount++
+				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
+					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
+				})
+			},
+			func() {
+				stats.perUserSeriesLimitCount++
+				updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() softError {
+					return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
+				})
+			},
+			func(labels []mimirpb.LabelAdapter) {
+				stats.perMetricSeriesLimitCount++
+				updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
+					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.sampleOutOfOrderCount++
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
+					return e
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+		)
 	)
 
 	// Walk the samples, appending them to the users database
@@ -1188,7 +1281,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime); pushSamplesToAppenderErr != nil {
+	if pushSamplesToAppenderErr := i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, &errProcessor, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
@@ -1282,107 +1375,8 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
-	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
+	stats *pushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
-
-	// Return true if handled as soft error, and we can ingest more series.
-	handleAppendError := func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
-		stats.failedSamplesCount++
-
-		// Check if the error is a soft error we can proceed on. If so, we keep track
-		// of it, so that we can return it back to the distributor, which will return a
-		// 400 error to the client. The client (Prometheus) will not retry on 400, and
-		// we actually ingested all samples which haven't failed.
-		switch {
-		case errors.Is(err, storage.ErrOutOfBounds):
-			stats.sampleOutOfBoundsCount++
-			updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
-				return newSampleTimestampTooOldError(model.Time(timestamp), labels)
-			})
-			return true
-
-		case errors.Is(err, storage.ErrOutOfOrderSample):
-			stats.sampleOutOfOrderCount++
-			updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
-				return newSampleOutOfOrderError(model.Time(timestamp), labels)
-			})
-			return true
-
-		case errors.Is(err, storage.ErrTooOldSample):
-			stats.sampleTooOldCount++
-			updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
-				return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
-			})
-			return true
-
-		case errors.Is(err, globalerror.SampleTooFarInFuture):
-			stats.sampleTooFarInFutureCount++
-			updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
-				return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
-			})
-			return true
-
-		case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-			stats.newValueForTimestampCount++
-			updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
-				return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
-			})
-			return true
-
-		case errors.Is(err, globalerror.MaxSeriesPerUser):
-			stats.perUserSeriesLimitCount++
-			updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() softError {
-				return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
-			})
-			return true
-
-		case errors.Is(err, globalerror.MaxSeriesPerMetric):
-			stats.perMetricSeriesLimitCount++
-			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
-				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
-			})
-			return true
-
-		// Map TSDB native histogram validation errors to soft errors.
-		case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-			stats.sampleOutOfOrderCount++
-			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-				return newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
-			})
-			return true
-		case errors.Is(err, histogram.ErrHistogramCountMismatch):
-			stats.invalidNativeHistogramCount++
-			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-				return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
-			})
-			return true
-		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
-			stats.invalidNativeHistogramCount++
-			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-				return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
-			})
-			return true
-		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
-			stats.invalidNativeHistogramCount++
-			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-				return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
-			})
-			return true
-		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
-			stats.invalidNativeHistogramCount++
-			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-				return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
-			})
-			return true
-		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
-			stats.invalidNativeHistogramCount++
-			updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-				return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
-			})
-			return true
-		}
-		return false
-	}
 
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
@@ -1458,10 +1452,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 			// Ensure the sample is not too far in the future.
 			if s.TimestampMs > maxTimestampMs {
-				handleAppendError(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
+				errProcessor.ProcessErr(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
 				continue
 			} else if s.TimestampMs < minTimestampMs {
-				handleAppendError(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
+				errProcessor.ProcessErr(globalerror.SampleTooFarInPast, s.TimestampMs, ts.Labels)
 				continue
 			}
 
@@ -1483,7 +1477,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 
 			// If it's a soft error it will be returned back to the distributor later as a 400.
-			if handleAppendError(err, s.TimestampMs, ts.Labels) {
+			if errProcessor.ProcessErr(err, s.TimestampMs, ts.Labels) {
 				continue
 			}
 
@@ -1501,10 +1495,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				)
 
 				if h.Timestamp > maxTimestampMs {
-					handleAppendError(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels)
+					errProcessor.ProcessErr(globalerror.SampleTooFarInFuture, h.Timestamp, ts.Labels)
 					continue
 				} else if h.Timestamp < minTimestampMs {
-					handleAppendError(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels)
+					errProcessor.ProcessErr(globalerror.SampleTooFarInPast, h.Timestamp, ts.Labels)
 					continue
 				}
 
@@ -1531,7 +1525,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 				}
 
-				if handleAppendError(err, h.Timestamp, ts.Labels) {
+				if errProcessor.ProcessErr(err, h.Timestamp, ts.Labels) {
 					continue
 				}
 
@@ -2666,6 +2660,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
+	userDBHasDB := atomic.NewBool(false)
+	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+		if !userDBHasDB.Load() {
+			return nil
+		}
+		return userDB.blocksToDelete(blocks)
+	}
+
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2680,7 +2682,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		WALSegmentSize:                        i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:                  walReplayConcurrency,
 		SeriesLifecycleCallback:               userDB,
-		BlocksToDelete:                        userDB.blocksToDelete,
+		BlocksToDelete:                        blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
@@ -2721,6 +2723,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB.db = db
+	userDBHasDB.Store(true)
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter

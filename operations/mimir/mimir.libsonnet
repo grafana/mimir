@@ -24,11 +24,14 @@
 // Mimir features
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
-(import 'multi-zone.libsonnet') +
-(import 'multi-zone-distributor.libsonnet') +
 (import 'rollout-operator.libsonnet') +
 (import 'ruler-remote-evaluation.libsonnet') +
 (import 'continuous-test.libsonnet') +
+
+// Multi-zone support.
+(import 'multi-zone.libsonnet') +
+(import 'multi-zone-distributor.libsonnet') +
+(import 'multi-zone-etcd.libsonnet') +
 
 // Import autoscaling after other features because it overrides deployments.
 (import 'autoscaling.libsonnet') +

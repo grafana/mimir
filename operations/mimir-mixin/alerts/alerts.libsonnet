@@ -296,7 +296,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('IngesterInstanceHasNoTenants'),
           'for': '1h',
           expr: |||
-            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
+            (
+              (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
+              unless
+              (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_lifecycler_read_only) > 0)
+            )
             and on (%(alert_aggregation_labels)s)
             # Only if there are more timeseries than would be expected due to continuous testing load
             (
@@ -775,8 +779,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             |||
               max by (%s) (memberlist_client_cluster_members_count)
               >
-              (sum by (%s) (up{%s=~".+/%s"}) + 10)
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
+              (sum by (%s) (up{%s}) + 10)
+            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ring_members)],
           'for': '20m',
           labels: {
             severity: 'warning',

@@ -248,6 +248,11 @@ func TestIngester_StartReadRequest(t *testing.T) {
 			CooldownPeriod: 10 * time.Second,
 			RequestTimeout: 30 * time.Second,
 		}
+		cfg.PushCircuitBreaker = CircuitBreakerConfig{
+			Enabled:        true,
+			CooldownPeriod: 10 * time.Second,
+			RequestTimeout: 2 * time.Second,
+		}
 		failingIng := newFailingIngester(t, cfg, nil, nil)
 		failingIng.startWaitAndCheck(context.Background(), t)
 		require.Equal(t, services.Running, failingIng.lifecycler.State())
@@ -286,7 +291,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 				require.ErrorIs(t, err, errTooBusy)
 			},
 		},
-		"fail if circuit breaker is open, and do not acquire a permit": {
+		"fail if read circuit breaker is open, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
 				failingIng.circuitBreaker.read.cb.Open()
 			},
@@ -295,9 +300,18 @@ func TestIngester_StartReadRequest(t *testing.T) {
 				require.ErrorAs(t, err, &circuitBreakerOpenError{})
 			},
 		},
-		"do not fail if circuit breaker is not active, and do not acquire a permit": {
+		"fail if push circuit breaker is open, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
-				failingIng.circuitBreaker.read.active.Store(false)
+				failingIng.circuitBreaker.push.cb.Open()
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"do not fail if read circuit breaker is not active, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.circuitBreaker.read.deactivate()
 			},
 			expectedAcquiredPermitCount: 0,
 		},

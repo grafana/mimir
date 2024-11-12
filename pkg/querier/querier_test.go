@@ -16,12 +16,14 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -49,6 +51,7 @@ const (
 	chunkLength     = 3 * time.Hour
 	sampleRate      = 15 * time.Second
 	samplesPerChunk = chunkLength / sampleRate
+	epsilon         = 0.000001 // Relative error allowed for sample values.
 )
 
 type query struct {
@@ -81,10 +84,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts + int64((sampleRate*4)/time.Millisecond),
-					F: 1000.0,
-				}, point)
+				require.Equal(t, ts+int64((sampleRate*4)/time.Millisecond), point.T)
+				require.True(t, almost.Equal(1000.0, point.F, epsilon))
 			},
 		},
 
@@ -99,10 +100,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts,
-					F: float64(ts),
-				}, point)
+				require.Equal(t, ts, point.T)
+				require.True(t, almost.Equal(float64(ts), point.F, epsilon))
 			},
 		},
 
@@ -116,10 +115,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts + int64((sampleRate*4)/time.Millisecond)*10,
-					F: 1000.0,
-				}, point)
+				require.Equal(t, ts+int64((sampleRate*4)/time.Millisecond)*10, point.T)
+				require.True(t, almost.Equal(1000.0, point.F, epsilon))
 			},
 		},
 
@@ -133,10 +130,8 @@ func TestQuerier(t *testing.T) {
 			},
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
-				require.Equal(t, promql.FPoint{
-					T: ts,
-					F: float64(ts),
-				}, point)
+				require.Equal(t, ts, point.T)
+				require.True(t, almost.Equal(float64(ts), point.F, epsilon))
 			},
 		},
 
@@ -150,6 +145,11 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(nil), point.H)
 			},
 		},
@@ -164,6 +164,11 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
@@ -178,6 +183,11 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
@@ -197,23 +207,32 @@ func TestQuerier(t *testing.T) {
 			},
 			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
 				require.True(t, ts <= int64(secondChunkStart))
-				require.Equal(t, promql.FPoint{
-					T: ts,
-					F: float64(ts),
-				}, point)
+				require.Equal(t, ts, point.T)
+				require.True(t, almost.Equal(float64(ts), point.F, epsilon))
 			},
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.True(t, ts > int64(secondChunkStart))
 				require.Equal(t, ts, point.T)
+				// The TSDB head uses heuristic to determine the chunk sizes, which
+				// can alter where chunks are started, which can alter where
+				// unknown and no reset hints are. We really don't care as the
+				// data doesn't have resets and is not a product of a merge.
+				point.H.CounterResetHint = histogram.UnknownCounterReset
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(ts)), point.H)
 			},
 		},
 	}
 
-	for _, q := range queries {
-		t.Run(q.query, func(t *testing.T) {
+	for qName, q := range queries {
+		t.Run(qName, func(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
+			dbQueryable := TimeRangeQueryable{
+				Queryable: db,
+				IsApplicable: func(_ string, _ time.Time, _, _ int64) bool {
+					return true
+				},
+			}
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
@@ -223,7 +242,7 @@ func TestQuerier(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _, err := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -617,10 +636,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// block storage will not be hit; provide nil querier
-			var storeQueryable storage.Queryable
-
-			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
@@ -1073,13 +1089,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// block storage will not be hit; provide nil querier
-			var storeQueryable storage.Queryable
-
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-			queryable, _, _, err := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1293,7 +1306,11 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _, err := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
+			querierQueryables := []TimeRangeQueryable{
+				NewStoreGatewayTimeRangeQueryable(newMockBlocksStorageQueryable(querier), cfg),
+			}
+
+			queryable, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)

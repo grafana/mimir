@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
+	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
@@ -142,6 +143,7 @@ const (
 	NoCompression CompressionType = iota
 	RawSnappy
 	Gzip
+	Lz4
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
@@ -203,11 +205,9 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
 	}
-	if compression != NoCompression && compression != RawSnappy && compression != Gzip {
-		return nil, fmt.Errorf("unrecognized compression type %v", compression)
-	}
 
-	if compression == NoCompression || compression == RawSnappy {
+	switch compression {
+	case NoCompression, RawSnappy:
 		buf, ok := tryBufferFromReader(reader)
 		if ok {
 			if compression == NoCompression {
@@ -219,18 +219,20 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 
 			return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
 		}
-	}
-
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("expectedSize", expectedSize))
-	}
-
-	if compression == Gzip {
+	case Gzip:
 		var err error
 		reader, err = gzip.NewReader(reader)
 		if err != nil {
 			return nil, errors.Wrap(err, "create gzip reader")
 		}
+	case Lz4:
+		reader = lz4.NewReader(reader)
+	default:
+		return nil, fmt.Errorf("unrecognized compression type %v", compression)
+	}
+
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("expectedSize", expectedSize))
 	}
 
 	// Limit at maxSize+1 so we can tell when the size is exceeded
@@ -242,11 +244,20 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		sz += bytes.MinRead
 	}
 	buf := buffers.Get(sz)
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[started_reading]"))
+	}
 	if _, err := buf.ReadFrom(reader); err != nil {
 		if compression == Gzip {
 			return nil, errors.Wrap(err, "decompress gzip")
 		}
+		if compression == Lz4 {
+			return nil, errors.Wrap(err, "decompress lz4")
+		}
 		return nil, errors.Wrap(err, "read body")
+	}
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[finished_reading]"))
 	}
 
 	if compression == RawSnappy {

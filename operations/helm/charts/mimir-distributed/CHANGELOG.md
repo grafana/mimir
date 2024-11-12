@@ -29,7 +29,14 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for GEM's federation-frontend. See the `federation_frontend` section in the values file. #9673
 * [ENHANCEMENT] Add support for setting type and internal traffic policy for Kubernetes service. Set `internalTrafficPolicy=Cluster` by default in all services with type `ClusterIP`. #9619
+* [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `alertmanager` component by setting `alertmanager.serviceAcount.create` to true in the values. #9781
+* [BUGFIX] Fix PVC template in AlertManager to not show diff in ArgoCD. #9774
+* [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
+
+## 5.5.1
+
 * [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
 
 ## 5.5.0

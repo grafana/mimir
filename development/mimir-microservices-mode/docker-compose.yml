@@ -113,6 +113,32 @@
     "image": "consul:1.15"
     "ports":
       - "8500:8500"
+  "continuous-test":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=continuous-test -server.http-listen-port=8090 -server.grpc-listen-port=9090 -activity-tracker.filepath=/activity/continuous-test-8090  -tests.run-interval=2m -tests.read-endpoint=http://query-frontend:8007/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-endpoint=http://distributor-1:8000 -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100 -memberlist.nodename=continuous-test -memberlist.bind-port=10090 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -blocks-storage.bucket-store.index-cache.backend=memcached -blocks-storage.bucket-store.chunks-cache.backend=memcached -blocks-storage.bucket-store.metadata-cache.backend=memcached -query-frontend.results-cache.backend=memcached -ruler-storage.cache.backend=memcached -blocks-storage.bucket-store.index-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dns+memcached:11211 -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dns+memcached:11211 -query-frontend.results-cache.memcached.addresses=dns+memcached:11211 -ruler-storage.cache.memcached.addresses=dns+memcached:11211"
+    "depends_on":
+      - "minio"
+      - "distributor-1"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=continuous-test"
+    "hostname": "continuous-test"
+    "image": "mimir"
+    "ports":
+      - "8090:8090"
+      - "10090:10090"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "distributor-1":
     "build":
       "context": "."
@@ -260,20 +286,6 @@
     "ports":
       - "16686:16686"
       - "14268"
-  "load-generator":
-    "command":
-      - "--remote-url=http://distributor-2:8001/api/v1/push"
-      - "--remote-write-concurrency=5"
-      - "--remote-write-interval=10s"
-      - "--series-count=1000"
-      - "--tenants-count=1"
-      - "--query-enabled=true"
-      - "--query-interval=1s"
-      - "--query-url=http://querier:8005/prometheus"
-      - "--server-metrics-port=9900"
-    "image": "pracucci/cortex-load-generator:add-query-support-8633d4e"
-    "ports":
-      - "9900:9900"
   "memcached":
     "image": "memcached:1.6.28-alpine"
     "ports":

@@ -251,10 +251,12 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 	require.NoError(t, err)
 	mimir := q.Exec(context.Background())
+	q.Close()
 
 	q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 	require.NoError(t, err)
 	prometheus := q.Exec(context.Background())
+	q.Close()
 
 	testutils.RequireEqualResults(t, expr, prometheus, mimir)
 }
@@ -2307,7 +2309,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase"} {
+		for _, function := range []string{"rate", "increase", "changes"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))

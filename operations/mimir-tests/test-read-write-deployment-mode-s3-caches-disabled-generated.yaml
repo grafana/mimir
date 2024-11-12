@@ -100,6 +100,14 @@ rules:
   - statefulsets/status
   verbs:
   - update
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - update
+  - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -420,7 +428,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -482,6 +490,8 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
+        - -use-zone-tracker=true
+        - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         image: grafana/rollout-operator:v0.19.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
@@ -622,7 +632,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -791,7 +801,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -960,7 +970,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1098,7 +1108,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1236,7 +1246,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1374,7 +1384,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

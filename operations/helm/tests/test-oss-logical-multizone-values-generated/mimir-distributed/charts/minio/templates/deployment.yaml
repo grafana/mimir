@@ -6,7 +6,7 @@ metadata:
   name: test-oss-logical-multizone-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: test-oss-logical-multizone-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: test-oss-logical-multizone-values
       annotations:
-        checksum/secrets: 6c2ffbccd6eea048cfc806c8bdca43ae473fa107df9d14aa24f57090ff8e514a
-        checksum/config: 96a8184b254edce212a7368cb7828f817019508d9f0b0356132f6a6caa20f11d
+        checksum/secrets: 4f69c5a0589629ec89f40b593f42429315cb525413aeacf6928368bb4db531b8
+        checksum/config: d413a6801ce3f0241e383381e376d8f5c00cf17d7651d1e46e455ea86205f097
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

@@ -674,7 +674,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 			lastModified = attrib.LastModified
 		}
 		return nil
-	}, objstore.WithRecursiveIter)
+	}, objstore.WithRecursiveIter())
 
 	if errors.Is(err, errStopIter) {
 		return time.Time{}, nil

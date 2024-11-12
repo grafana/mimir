@@ -225,6 +225,83 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 	`), "cortex_blockbuilder_consumer_lag_records"))
 }
 
+// When there are no records to consume before the last cycle section, the whole cycle should bail.
+func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+
+	// Producing backlog of records in partition 0.
+	// For this test, the last-produced record must belong to the second to last cycle's section; i.e. the last section has nothing to consume.
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+
+	var producedSamples []mimirpb.Sample
+	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-5 * time.Hour).Add(29 * time.Minute)
+	lastKafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
+	for kafkaRecTime.Before(lastKafkaRecTime) {
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+		producedSamples = append(producedSamples, samples...)
+
+		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
+	}
+	require.NotEmpty(t, producedSamples)
+
+	// Produce extra record to partition 1 to verify that block-builder finished the whole cycle and didn't get stuck consuming partition 0.
+	{
+		const partition = 1
+		kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-time.Minute)
+		samples := floatSample(kafkaRecTime.UnixMilli(), 100)
+		val := createWriteRequest(t, "1", samples, nil)
+		produceRecords(ctx, t, kafkaClient, kafkaRecTime, "1", testTopic, partition, val)
+		producedSamples = append(producedSamples, samples...)
+	}
+
+	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
+	kafkaCommits := atomic.NewInt32(0)
+	kafkaCluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCommits.Add(1)
+		return nil, nil, false
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+
+	bb, err := New(cfg, test.NewTestingLogger(t), reg, overrides)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// Wait for the end of all cycles. We expect at least several cycle sections because of how the pushed records were structured.
+	require.Eventually(t, func() bool { return kafkaCommits.Load() == 5 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
+		# TYPE cortex_blockbuilder_consumer_lag_records gauge
+		cortex_blockbuilder_consumer_lag_records{partition="0"} 8
+		cortex_blockbuilder_consumer_lag_records{partition="1"} 1
+	`), "cortex_blockbuilder_consumer_lag_records"))
+
+	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
+	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	compareQuery(t,
+		db,
+		producedSamples,
+		nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
 func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	t.Parallel()
 
@@ -611,7 +688,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 		name           string
 		lag            kadm.GroupMemberLag
 		fallbackMillis int64
-		wantState      partitionState
+		wantState      PartitionState
 	}{
 		{
 			name: "no commit",
@@ -621,7 +698,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 				Commit:    kadm.Offset{},
 			},
 			fallbackMillis: testTime.UnixMilli(),
-			wantState: partitionState{
+			wantState: PartitionState{
 				Commit:                kadm.Offset{},
 				CommitRecordTimestamp: testTime,
 				LastSeenOffset:        0,
@@ -636,7 +713,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 				Commit:    testKafkaOffset,
 			},
 			fallbackMillis: testTime.UnixMilli(),
-			wantState: partitionState{
+			wantState: PartitionState{
 				Commit:                testKafkaOffset,
 				CommitRecordTimestamp: commitRecTs,
 				LastSeenOffset:        lastRecOffset,
@@ -647,7 +724,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			state := partitionStateFromLag(log.NewNopLogger(), tc.lag, tc.fallbackMillis)
+			state := PartitionStateFromLag(log.NewNopLogger(), tc.lag, tc.fallbackMillis)
 			require.Equal(t, tc.wantState, state)
 		})
 	}

@@ -1,5 +1,11 @@
 ## Upcoming Release
 
+## 0.6.9
+
+### Bug Fixes
+
+- Fixed #73 - Retries should re-read request bodies.
+
 ## 0.6.8
 
 ### Bug Fixes

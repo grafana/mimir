@@ -6,7 +6,7 @@ metadata:
   name: test-oss-k8s-1.25-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: test-oss-k8s-1.25-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: test-oss-k8s-1.25-values
       annotations:
-        checksum/secrets: 48afbcc71eace1264a75c1781a88681e5eba96bd67452ba2b22820a4d008336a
-        checksum/config: 760be7597c91e1e5f8fc6c9eafbbe49ec367824005616cc418b8098ec50a80bd
+        checksum/secrets: b451e52cd4ab2cd488a942cf4a945ddbb85186085dab4d6757f28331886d7bd6
+        checksum/config: b977710208dbc36bd03a0ed6530f9b60404c8333fb1d0169b7e47736c20b4c50
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

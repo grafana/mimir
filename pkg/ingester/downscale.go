@@ -48,6 +48,8 @@ func (i *Ingester) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter, r 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Deactivate the push circuit breaker in read-only mode. Calling this repeatedly is fine.
+		i.circuitBreaker.push.deactivate()
 
 	case http.MethodDelete:
 		// Clear the read-only status.
@@ -57,6 +59,8 @@ func (i *Ingester) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter, r 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Activate the push circuit breaker when exiting read-only mode. Calling this repeatedly is fine.
+		i.circuitBreaker.push.activate()
 	}
 
 	ro, rots := i.lifecycler.GetReadOnlyState()
