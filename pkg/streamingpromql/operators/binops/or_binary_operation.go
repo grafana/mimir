@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -46,8 +47,8 @@ func NewOrBinaryOperation(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
-) *OrBinaryOperation {
-	return &OrBinaryOperation{
+) types.InstantVectorOperator {
+	o := &OrBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		VectorMatching:           vectorMatching,
@@ -55,6 +56,8 @@ func NewOrBinaryOperation(
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
 	}
+
+	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
 
 func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {

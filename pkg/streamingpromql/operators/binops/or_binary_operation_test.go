@@ -242,6 +242,8 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 		},
 		// OrBinaryOperation does not handle the case where both sides contain series with identical labels, and
 		// instead relies on DeduplicateAndMerge to handle merging series with identical labels.
+		// Given NewOrBinaryOperation wraps the OrBinaryOperation in a DeduplicateAndMerge, we can still test this
+		// here.
 		"same series on both sides, one series": {
 			leftSeries: []labels.Labels{
 				labels.FromStrings("series", "1", "group", "1"),
@@ -251,7 +253,6 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			},
 
 			expectedOutputSeriesOrder: []labels.Labels{
-				labels.FromStrings("series", "1", "group", "1"),
 				labels.FromStrings("series", "1", "group", "1"),
 			},
 		},
@@ -267,8 +268,6 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 
 			expectedOutputSeriesOrder: []labels.Labels{
 				labels.FromStrings("series", "1", "group", "1"),
-				labels.FromStrings("series", "1", "group", "1"),
-				labels.FromStrings("series", "2", "group", "2"),
 				labels.FromStrings("series", "2", "group", "2"),
 			},
 		},
@@ -283,8 +282,6 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			},
 
 			expectedOutputSeriesOrder: []labels.Labels{
-				labels.FromStrings("series", "1", "group", "1"),
-				labels.FromStrings("series", "2", "group", "2"),
 				labels.FromStrings("series", "2", "group", "2"),
 				labels.FromStrings("series", "1", "group", "1"),
 			},
