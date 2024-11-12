@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -32,14 +33,16 @@ var (
 
 // Updater is responsible to generate an update in-memory bucket index.
 type Updater struct {
-	bkt    objstore.InstrumentedBucket
-	logger log.Logger
+	bkt                           objstore.InstrumentedBucket
+	logger                        log.Logger
+	getDeletionMarkersConcurrency int
 }
 
-func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *Updater {
+func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, logger log.Logger) *Updater {
 	return &Updater{
-		bkt:    bucket.NewUserBucketClient(userID, bkt, cfgProvider),
-		logger: logger,
+		bkt:                           bucket.NewUserBucketClient(userID, bkt, cfgProvider),
+		getDeletionMarkersConcurrency: getDeletionMarkersConcurrency,
+		logger:                        logger,
 	}
 }
 
@@ -209,23 +212,29 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 	}
 
 	// Remaining markers are new ones and we have to fetch them.
+	discoveredSlice := make([]ulid.ULID, 0, len(discovered))
 	for id := range discovered {
+		discoveredSlice = append(discoveredSlice, id)
+	}
+
+	updatedMarks, err := concurrency.ForEachJobMergeResults(ctx, discoveredSlice, w.getDeletionMarkersConcurrency, func(ctx context.Context, id ulid.ULID) ([]*BlockDeletionMark, error) {
 		m, err := w.updateBlockDeletionMarkIndexEntry(ctx, id)
 		if errors.Is(err, ErrBlockDeletionMarkNotFound) {
 			// This could happen if the block is permanently deleted between the "list objects" and now.
 			level.Warn(w.logger).Log("msg", "skipped missing block deletion mark when updating bucket index", "block", id.String())
-			continue
+			return nil, nil
 		}
 		if errors.Is(err, ErrBlockDeletionMarkCorrupted) {
 			level.Error(w.logger).Log("msg", "skipped corrupted block deletion mark when updating bucket index", "block", id.String(), "err", err)
-			continue
+			return nil, nil
 		}
 		if err != nil {
 			return nil, err
 		}
 
-		out = append(out, m)
-	}
+		return BlockDeletionMarks{m}, nil
+	})
+	out = append(out, updatedMarks...)
 
 	level.Info(w.logger).Log("msg", "updated deletion markers for recently marked blocks", "count", len(discovered), "total_deletion_markers", len(out))
 
