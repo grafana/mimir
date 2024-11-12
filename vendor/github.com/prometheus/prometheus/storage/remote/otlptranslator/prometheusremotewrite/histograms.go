@@ -73,8 +73,8 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 	return annots, nil
 }
 
-// exponentialToNativeHistogram translates OTel Exponential Histogram data point
-// to Prometheus Native Histogram.
+// exponentialToNativeHistogram translates an OTel Exponential Histogram data point
+// to a Prometheus Native Histogram.
 func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prompb.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 	scale := p.Scale()

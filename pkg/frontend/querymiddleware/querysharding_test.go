@@ -304,7 +304,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query: `
 				sum by(unique) (metric_counter)
 				*
-				on (unique) group_left (group_1) 
+				on (unique) group_left (group_1)
 				avg by (unique, group_1) (metric_counter)`,
 			expectedShardedQueries: 3,
 		},

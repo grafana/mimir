@@ -153,6 +153,20 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
+		"BrokerNotAvailable": {
+			err: kerr.BrokerNotAvailable,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         true,
+			expectedMetadataRefresh: true,
+		},
 		"errUnknownPartitionLeader": {
 			err: errUnknownPartitionLeader,
 			lso: 5,
@@ -884,6 +898,62 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		// Verify the number and content of fetched records
 		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes, "Should fetch all produced records")
+	})
+
+	t.Run("starting to run against a broken broker fails creating the fetchers", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		mockErr := kerr.BrokerNotAvailable
+		cluster.ControlKey(kmsg.Metadata.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			respTopic := kmsg.NewMetadataResponseTopic()
+			topicName := topicName // can't take the address of a const, so we first write it to a variable
+			respTopic.Topic = &topicName
+			respTopic.TopicID = [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+			respTopic.ErrorCode = mockErr.Code
+
+			resp := kmsg.NewPtrMetadataResponse()
+			resp.Topics = append(resp.Topics, respTopic)
+			resp.Version = 12
+			return resp, nil, true
+		})
+
+		logger := log.NewNopLogger()
+		reg := prometheus.NewPedanticRegistry()
+		metrics := newReaderMetrics(partitionID, reg)
+
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// This instantiates the fields of kprom.
+		// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
+		metrics.kprom.OnNewClient(client)
+
+		offsetReader := newPartitionOffsetClient(client, topicName, reg, logger)
+
+		startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
+			return offsetReader.FetchPartitionStartOffset(ctx, partitionID)
+		}, time.Second, logger)
+
+		_, err := newConcurrentFetchers(
+			ctx,
+			client,
+			logger,
+			topicName,
+			partitionID,
+			0,
+			concurrency,
+			recordsPerFetch,
+			false,
+			time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
+			offsetReader,
+			startOffsetsReader,
+			&metrics,
+		)
+		assert.ErrorContains(t, err, "failed to find topic ID")
+		assert.ErrorIs(t, err, mockErr)
 	})
 }
 
