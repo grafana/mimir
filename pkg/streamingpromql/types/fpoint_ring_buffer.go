@@ -29,9 +29,9 @@ func NewFPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTra
 	return &FPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-// DiscardPointsBefore discards all points in this buffer with timestamp less than t.
-func (b *FPointRingBuffer) DiscardPointsBefore(t int64) {
-	for b.size > 0 && b.points[b.firstIndex].T < t {
+// DiscardPointsAtOrBefore discards all points in this buffer with timestamp less than or equal to t.
+func (b *FPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
+	for b.size > 0 && b.points[b.firstIndex].T <= t {
 		b.firstIndex++
 		b.size--
 

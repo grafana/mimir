@@ -41,7 +41,7 @@ func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.Ser
 
 func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
-		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds())
+		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds() - 1) // -1 to exclude samples on the lower boundary of the range.
 	}
 
 	var err error
@@ -103,7 +103,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		if valueType == chunkenc.ValNone || t > ts {
 			var ok bool
 			t, f, h, ok = v.memoizedIterator.PeekPrev()
-			if !ok || t < ts-v.Selector.LookbackDelta.Milliseconds() {
+			if !ok || t <= ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}
 			if h != nil {

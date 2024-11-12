@@ -29,9 +29,9 @@ func NewHPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTra
 	return &HPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-// DiscardPointsBefore discards all points in this buffer with timestamp less than t.
-func (b *HPointRingBuffer) DiscardPointsBefore(t int64) {
-	for b.size > 0 && b.points[b.firstIndex].T < t {
+// DiscardPointsAtOrBefore discards all points in this buffer with timestamp less than or equal to t.
+func (b *HPointRingBuffer) DiscardPointsAtOrBefore(t int64) {
+	for b.size > 0 && b.points[b.firstIndex].T <= t {
 		b.firstIndex++
 		b.size--
 
