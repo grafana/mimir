@@ -184,7 +184,7 @@ func TestSetDefaultNumberOfPartitionsForAutocreatedTopics(t *testing.T) {
 			}
 		)
 
-		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 			return &kmsg.AlterConfigsResponse{}, errors.New("failed request"), true
 		})
 
