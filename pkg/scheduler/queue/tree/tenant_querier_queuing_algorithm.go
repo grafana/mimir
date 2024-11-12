@@ -231,8 +231,8 @@ func (qa *TenantQuerierQueuingAlgorithm) dequeueUpdateState(node *Node, dequeued
 		// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
 		removeFromSharedQueueOrder := len(qa.tenantNodes[childName]) == 0
 
-		// As tenantIDOrder can be very long, removing tenants from the order can be performance-sensitive
-		// when clearing & deleting many tenant queues due to shutdown operations during rollouts or otherwise.
+		// When tenantIDOrder is very long, removing tenants from the order is performance-sensitive
+		// when clearing & deleting many tenant queues at the same time due to rollout operations.
 		if removeFromSharedQueueOrder {
 
 			// First, just replace the tenantID with the emptyTenantID sentinel value.
