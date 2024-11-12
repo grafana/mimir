@@ -360,7 +360,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 		ts       time.Time
 	}{
 		"matches series with points in range": {
-			expr: "some_metric[1m]",
+			expr: "some_metric[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -396,7 +396,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"does not return points outside range if last selected point does not align to end of range": {
-			expr: "some_metric_with_gaps[1m]",
+			expr: "some_metric_with_gaps[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -410,7 +410,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"metric with stale marker": {
-			expr: "some_metric_with_stale_marker[3m]",
+			expr: "some_metric_with_stale_marker[3m1s]",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -426,7 +426,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"histogram: matches series with points in range": {
-			expr: "incr_histogram[1m]",
+			expr: "incr_histogram[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -519,7 +519,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"histogram: does not return points outside range if last selected point does not align to end of range": {
-			expr: "histogram_with_gaps[1m]",
+			expr: "histogram_with_gaps[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -549,7 +549,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"histogram: metric with stale marker": {
-			expr: "histogram_with_stale_marker[3m]",
+			expr: "histogram_with_stale_marker[3m1s]",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -672,7 +672,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 		},
 		"mixed series with a float then a histogram": {
 			// No incorrect lookback
-			expr: "mixed_metric_float_first[2m]",
+			expr: "mixed_metric_float_first[2m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -707,7 +707,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with positive offset (looking backwards)": {
-			expr: "some_metric[1m] offset 1m",
+			expr: "some_metric[1m1s] offset 1m",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -729,7 +729,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with negative offset (looking forwards)": {
-			expr: "some_metric[1m] offset -1m",
+			expr: "some_metric[1m1s] offset -1m",
 			ts:   baseT.Add(1 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -765,7 +765,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with @ modifier": {
-			expr: "some_metric[1m] @ 2m",
+			expr: "some_metric[1m1s] @ 2m",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -787,7 +787,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with @ modifier and offset": {
-			expr: "some_metric[1m] @ 3m offset 1m",
+			expr: "some_metric[1m1s] @ 3m offset 1m",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -1918,19 +1918,19 @@ func TestAnnotations(t *testing.T) {
 
 		"sum_over_time() over series with both floats and histograms": {
 			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       `sum_over_time(some_metric[1m])`,
+			expr:                       `sum_over_time(some_metric[1m1s])`,
 			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric" (1:15)`},
 		},
 		"sum_over_time() over native histograms with both exponential and custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `sum_over_time(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expr: `sum_over_time(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
 		"sum_over_time() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
+			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
 			},
@@ -1938,19 +1938,19 @@ func TestAnnotations(t *testing.T) {
 
 		"avg_over_time() over series with both floats and histograms": {
 			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       `avg_over_time(some_metric[1m])`,
+			expr:                       `avg_over_time(some_metric[1m1s])`,
 			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric" (1:15)`},
 		},
 		"avg_over_time() over native histograms with both exponential and custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `avg_over_time(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expr: `avg_over_time(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
 		"avg_over_time() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
+			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
 			},
@@ -1978,14 +1978,14 @@ func TestAnnotations(t *testing.T) {
 				float_metric             10 20
 				other_float_metric       10 20
 			`,
-			expr: "rate(mixed_metric_count[1m]) + rate(other_mixed_metric_count[1m]) + rate(float_metric[1m]) + rate(other_float_metric[1m])",
+			expr: "rate(mixed_metric_count[1m1s]) + rate(other_mixed_metric_count[1m1s]) + rate(float_metric[1m1s]) + rate(other_float_metric[1m1s])",
 			expectedWarningAnnotations: []string{
 				`PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric_count" (1:6)`,
-				`PromQL warning: encountered a mix of histograms and floats for metric name "other_mixed_metric_count" (1:37)`,
+				`PromQL warning: encountered a mix of histograms and floats for metric name "other_mixed_metric_count" (1:39)`,
 			},
 			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:74)`,
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:99)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:78)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:105)`,
 			},
 		},
 	}
@@ -1995,29 +1995,29 @@ func TestAnnotations(t *testing.T) {
 		position := len(fmt.Sprintf("%s(", function)) + 1
 		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only floats", function)] = testCase{
 			data:                    mixedFloatHistogramData,
-			expr:                    fmt.Sprintf(`%s(metric{type="float"}[1m])`, function),
+			expr:                    fmt.Sprintf(`%s(metric{type="float"}[1m1s])`, function),
 			expectedInfoAnnotations: []string{fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric" (1:%d)`, position)},
 		}
 
 		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only native histograms", function)] = testCase{
 			data: mixedFloatHistogramData,
-			expr: fmt.Sprintf(`%s(metric{type="histogram"}[1m])`, function),
+			expr: fmt.Sprintf(`%s(metric{type="histogram"}[1m1s])`, function),
 		}
 		testCases[fmt.Sprintf("%s() over metric ending in _total", function)] = testCase{
 			data: `some_metric_total 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_total[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_total[1m1s])`, function),
 		}
 		testCases[fmt.Sprintf("%s() over metric ending in _sum", function)] = testCase{
 			data: `some_metric_sum 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_sum[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_sum[1m1s])`, function),
 		}
 		testCases[fmt.Sprintf("%s() over metric ending in _count", function)] = testCase{
 			data: `some_metric_count 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_count[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_count[1m1s])`, function),
 		}
 		testCases[fmt.Sprintf("%s() over metric ending in _bucket", function)] = testCase{
 			data: `some_metric_bucket 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_bucket[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_bucket[1m1s])`, function),
 		}
 		testCases[fmt.Sprintf("%s() over multiple metric names", function)] = testCase{
 			data: `
@@ -2029,7 +2029,7 @@ func TestAnnotations(t *testing.T) {
 				not_a_counter{env="test", series="6"}      5+1x3
 				also_not_a_counter{env="test", series="7"} 6+1x3
 			`,
-			expr: fmt.Sprintf(`%s({__name__!=""}[1m])`, function),
+			expr: fmt.Sprintf(`%s({__name__!=""}[1m1s])`, function),
 			expectedInfoAnnotations: []string{
 				fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:%d)`, position),
 				fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:%d)`, position),
@@ -2037,35 +2037,35 @@ func TestAnnotations(t *testing.T) {
 		}
 		testCases[fmt.Sprintf("%s() over series with both floats and histograms", function)] = testCase{
 			data:                       `some_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric_count[1m])`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric_count[1m1s])`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric_count" (1:%d)`, position)},
 		}
 		testCases[fmt.Sprintf("%s() over series with first histogram that is not a counter", function)] = testCase{
 			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric[1m])`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric[1m1s])`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
 		testCases[fmt.Sprintf("%s() over series with last histogram that is not a counter", function)] = testCase{
 			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric[1m])`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric[1m1s])`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
 		testCases[fmt.Sprintf("%s() over series with a histogram that is not a counter that is neither the first or last in the range", function)] = testCase{
 			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric[2m] @ 2m)`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric[2m1s] @ 2m)`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
 
 		testCases[fmt.Sprintf("%s() over native histograms with both exponential and custom buckets", function)] = testCase{
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[1m])`, function),
+			expr: fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[1m1s])`, function),
 			expectedWarningAnnotations: []string{
 				fmt.Sprintf(`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:%d)`, position),
 			},
 		}
 		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = testCase{
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[1m])`, function),
+			expr: fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[1m1s])`, function),
 			expectedWarningAnnotations: []string{
 				fmt.Sprintf(`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:%d)`, position),
 			},
@@ -2074,7 +2074,7 @@ func TestAnnotations(t *testing.T) {
 			data: `
 				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
 			`,
-			expr:                       fmt.Sprintf("%s(series[45s])", function),
+			expr:                       fmt.Sprintf("%s(series[46s])", function),
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		}
@@ -2082,7 +2082,7 @@ func TestAnnotations(t *testing.T) {
 			data: `
 				series 1
 			`,
-			expr:                       fmt.Sprintf("%s(series[1m])", function),
+			expr:                       fmt.Sprintf("%s(series[1m1s])", function),
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		}
