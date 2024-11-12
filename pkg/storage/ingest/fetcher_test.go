@@ -153,6 +153,20 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
+		"BrokerNotAvailable": {
+			err: kerr.BrokerNotAvailable,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         true,
+			expectedMetadataRefresh: true,
+		},
 		"errUnknownPartitionLeader": {
 			err: errUnknownPartitionLeader,
 			lso: 5,
