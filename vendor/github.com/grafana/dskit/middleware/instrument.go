@@ -6,10 +6,12 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gorilla/mux"
@@ -50,6 +52,11 @@ type Instrument struct {
 	RequestBodySize   *prometheus.HistogramVec
 	ResponseBodySize  *prometheus.HistogramVec
 	InflightRequests  *prometheus.GaugeVec
+
+	// Throughput related settings and helpers.
+	SlowRequestCutoff time.Duration
+	// ServerProcessedVolume       func(http.ResponseWriter) (int64, bool)
+	SlowRequestServerThroughput *prometheus.HistogramVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -101,6 +108,16 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 		}
 		labelValues = labelValues[:len(labelValues)-1]
 		instrument.ObserveWithExemplar(r.Context(), i.Duration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
+
+		if i.SlowRequestCutoff > 0 && respMetrics.Duration > i.SlowRequestCutoff {
+			h := w.Header().Get("X-Mimir-Query-Stats")
+			if h != "" {
+				volume := int64(0)
+				fmt.Sscanf(h, "total_samples=%d", &volume)
+				i.SlowRequestServerThroughput.WithLabelValues(r.Method, route).Observe(float64(volume) / respMetrics.Duration.Seconds())
+			}
+		}
+
 		if tenantID, ok := i.PerTenantCallback.shouldInstrument(r.Context()); ok {
 			labelValues = append(labelValues, tenantID)
 			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())

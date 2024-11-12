@@ -94,25 +94,14 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 		if writeErr != nil {
 			if errors.Is(writeErr, context.Canceled) {
 				if l.LogRequestAtInfoLevel {
-					if l.LogRequestHeaders && headers != nil {
-						level.Info(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
-					} else {
-						level.Info(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r)))
-					}
+					level.Info(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
 				} else {
-					if l.LogRequestHeaders && headers != nil {
-						level.Debug(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
-					} else {
-						level.Debug(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r)))
-					}
+					level.Debug(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, request cancelled: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
 				}
 			} else {
-				if l.LogRequestHeaders && headers != nil {
-					level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
-				} else {
-					level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, error: %s ws: %v", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r)))
-				}
+				level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s %s, error: %s ws: %v; %s", r.Method, uri, time.Since(begin), writeErr, IsWSHandshakeRequest(r), headers))
 			}
+
 			return
 		}
 
@@ -136,11 +125,7 @@ func (l Log) Wrap(next http.Handler) http.Handler {
 				}
 			}
 		default:
-			if l.LogRequestHeaders && headers != nil {
-				level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s Response: %q ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers))
-			} else {
-				level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s", r.Method, uri, statusCode, time.Since(begin)))
-			}
+			level.Warn(requestLog).Log("msg", dskit_log.LazySprintf("%s %s (%d) %s Response: %q ws: %v; %s", r.Method, uri, statusCode, time.Since(begin), buf.Bytes(), IsWSHandshakeRequest(r), headers))
 		}
 	})
 }
