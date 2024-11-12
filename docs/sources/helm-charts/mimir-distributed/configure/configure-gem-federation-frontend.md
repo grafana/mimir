@@ -14,7 +14,7 @@ This guide focuses specifically on deploying the federation-frontend component a
 
 ## Before you begin
 
-1. Set up a GEM cluster: For information about setting up and configuring a GEM deployment, refer to the [Configure Grafana Enterprise Metrics]({{< relref "./configure-grafana-enterprise-metrics" >}}) and [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}) articles.
+1. Set up a GEM cluster: For information about setting up and configuring a GEM deployment, refer to [Configure Grafana Enterprise Metrics]({{< relref "./configure-grafana-enterprise-metrics" >}}) and [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}).
 2. Provision an access token with the `metrics:read` scope for each cluster that you want to query. For more information, refer to [Set up a GEM tenant](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/set-up-gem-tenant).
 
 ## Deploy the GEM federation-frontend
@@ -51,7 +51,7 @@ This guide focuses specifically on deploying the federation-frontend component a
    # Enable and configure federation-frontend
    federation_frontend:
      enabled: true
-     # Since this is a standalone deployment, we configure the chart to not render any of the other GEM components.
+     # Since this is a standalone deployment, configure the chart to not render any of the other GEM components.
      disableOtherComponents: true
      replicas: 2
      resources:
@@ -70,8 +70,8 @@ This guide focuses specifically on deploying the federation-frontend component a
      structuredConfig:
        auth:
          type: trust
-       # The federation-frontend doesn't handle authentication and authorization. Disabling multitenancy means the federation-frontend will not require the X-Scope-OrgID header.
-       # With disabled multitenant the federation-frontend will use the authn/z material from the proxy_targets configuration.
+       # The federation-frontend doesn't handle authentication or authorization. Disabling multitenancy means the federation-frontend doesn't require the X-Scope-OrgID header.
+       # With disabled multitenancy, the federation-frontend uses the authn/z material from the proxy_targets configuration.
        # For a complete list of configuration options, refer to the configuration reference at https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/config/reference/#federation.
        multitenancy_enabled: false
        federation:
@@ -103,11 +103,11 @@ This guide focuses specifically on deploying the federation-frontend component a
    helm install federation-frontend grafana/mimir-distributed -f federation-frontend.yaml -n federation-frontend-demo
    ```
 
-   This will deploy only the federation-frontend component. The federation-frontend will be configured to proxy queries to the GEM clusters specified in the `proxy_targets` configuration.
+   This deploys only the federation-frontend component. The federation-frontend is configured to proxy queries to the GEM clusters that you specify in the `proxy_targets` configuration.
 
 5. Verify that the federation-frontend is running. The simplest way to do this is to issue a label names query against the federation-frontend service.
 
-   This example tries to reach the Kubernetes service from the cluster and request the label names from the past 1 year.
+   This example tries to reach the Kubernetes service from the cluster and requests the label names from the past year.
 
    ```bash
    curl -XPOST 'https://mimir-federation-frontend:8080/prometheus/api/v1/labels' \
