@@ -69,7 +69,7 @@
 * [BUGFIX] Ingester: Fix race condition in per-tenant TSDB creation. #9708
 * [BUGFIX] Ingester: Fix race condition in exemplar adding. #9765
 * [BUGFIX] Ingester: Fix race condition in native histogram appending. #9765
-* [BUGFIX] PromQL: `round` removes the metric name. #9879
+* [BUGFIX] PromQL: `round` now removes the metric name again. #9879
 
 ### Mixin
 
