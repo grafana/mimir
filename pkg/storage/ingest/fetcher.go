@@ -288,11 +288,10 @@ func newConcurrentFetchers(
 	if !topics.Has(topic) {
 		return nil, fmt.Errorf("failed to find topic ID: topic not found")
 	}
-	topicMetadata := topics[topic]
-	if err := topicMetadata.Err; err != nil {
+	if err := topics.Error(); err != nil {
 		return nil, fmt.Errorf("failed to find topic ID: %w", err)
 	}
-	f.topicID = topicMetadata.ID
+	f.topicID = topics[topic].ID
 
 	f.wg.Add(1)
 	go f.start(ctx, startOffset, concurrency, recordsPerFetch)
