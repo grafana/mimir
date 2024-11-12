@@ -67,6 +67,7 @@
 * [BUGFIX] Ingester: Fix race condition in per-tenant TSDB creation. #9708
 * [BUGFIX] Ingester: Fix race condition in exemplar adding. #9765
 * [BUGFIX] Ingester: Fix race condition in native histogram appending. #9765
+* [BUGFIX] Ingester: fix bug in concurrent fetching where a failure to list topics on startup would cause to use an invalid topic ID (0x00000000000000000000000000000000). #9883
 
 ### Mixin
 
