@@ -741,6 +741,10 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 		// This isn't listed in the possible errors in franz-go, but Apache Kafka returns it when the partition has no leader.
 		triggerMetadataRefresh()
 		longBackoff.Wait()
+	case errors.Is(err, kerr.BrokerNotAvailable):
+		// This isn't listed in the possible errors in franz-go, but Warpstream returns it.
+		triggerMetadataRefresh()
+		longBackoff.Wait()
 	case errors.Is(err, errUnknownPartitionLeader):
 		triggerMetadataRefresh()
 		longBackoff.Wait()
