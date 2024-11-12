@@ -333,6 +333,8 @@ func TestMonitor(t *testing.T) {
 	sched, cli := mustSchedulerWithKafkaAddr(t, kafkaAddr)
 	reg := sched.register.(*prometheus.Registry)
 
+	sched.completeObservationMode()
+
 	// Partition i gets i records.
 	for i := int32(0); i < 4; i++ {
 		for n := int32(0); n < i; n++ {

@@ -44,7 +44,7 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
-		jobs:     newJobQueue(cfg.JobLeaseExpiry, logger),
+		jobs:     nil,
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
