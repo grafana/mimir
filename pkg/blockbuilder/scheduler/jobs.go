@@ -19,19 +19,19 @@ var (
 )
 
 type jobQueue struct {
-	leaseTime time.Duration
-	logger    log.Logger
+	leaseExpiry time.Duration
+	logger      log.Logger
 
 	mu         sync.Mutex
-	epoch      uint
+	epoch      int64
 	jobs       map[string]*job
 	unassigned jobHeap
 }
 
-func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
+func newJobQueue(leaseExpiry time.Duration, logger log.Logger) *jobQueue {
 	return &jobQueue{
-		leaseTime: leaseTime,
-		logger:    logger,
+		leaseExpiry: leaseExpiry,
+		logger:      logger,
 
 		jobs: make(map[string]*job),
 	}
@@ -40,7 +40,7 @@ func newJobQueue(leaseTime time.Duration, logger log.Logger) *jobQueue {
 // assign assigns the highest-priority unassigned job to the given worker.
 func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
 	if workerID == "" {
-		return jobKey{}, jobSpec{}, errors.New("workerID cannot not be empty")
+		return jobKey{}, jobSpec{}, errors.New("workerID cannot be empty")
 	}
 
 	s.mu.Lock()
@@ -54,7 +54,7 @@ func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
 	j.key.epoch = s.epoch
 	s.epoch++
 	j.assignee = workerID
-	j.leaseExpiry = time.Now().Add(s.leaseTime)
+	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
 	return j.key, j.spec, nil
 }
 
@@ -94,7 +94,7 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 		s.jobs[key.id] = &job{
 			key:         key,
 			assignee:    workerID,
-			leaseExpiry: time.Now().Add(s.leaseTime),
+			leaseExpiry: time.Now().Add(s.leaseExpiry),
 			failCount:   0,
 			spec:        spec,
 		}
@@ -122,7 +122,7 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 			epoch: 0,
 		},
 		assignee:    "",
-		leaseExpiry: time.Now().Add(s.leaseTime),
+		leaseExpiry: time.Now().Add(s.leaseExpiry),
 		failCount:   0,
 		spec:        spec,
 	}
@@ -154,7 +154,7 @@ func (s *jobQueue) renewLease(key jobKey, workerID string) error {
 		return errBadEpoch
 	}
 
-	j.leaseExpiry = time.Now().Add(s.leaseTime)
+	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
 	return nil
 }
 
@@ -218,7 +218,7 @@ type jobKey struct {
 	id string
 	// The assignment epoch. This is used to break ties when multiple workers
 	// have knowledge of the same job.
-	epoch uint
+	epoch int64
 }
 
 type jobSpec struct {
