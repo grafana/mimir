@@ -303,8 +303,8 @@ load 5m
   native_histogram{instance="2"} {{schema:3 sum:4 count:4 buckets:[4]}}
 
 # Test range query with native histograms
-eval range from 0m to 10m step 5m sum (native_histogram)
-  {} {{schema:3 count:11 sum:14 buckets:[5 6]}} {{schema:3 count:11 sum:12 buckets:[5 6]}} {{schema:5 count:17 sum:18 buckets:[1 5 1]}}
+eval range from 0m to 10m step 5m sum(native_histogram)
+  {} {{schema:3 count:11 sum:14 buckets:[5 6]}} {{schema:5 sum:8 count:7 buckets:[1 5 1]}} {{schema:5 count:17 sum:18 buckets:[1 5 1]}}
 
 clear
 
