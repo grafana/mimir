@@ -998,3 +998,13 @@ eval range from 0 to 24m step 6m right_side or ignoring(pod, idx) left_side
   left_side{env="prod", cluster="blah", pod="a"}  9  _  11 _
   left_side{env="prod", cluster="blah", pod="b"}  13 _  15 _
   left_side{env="test", cluster="food", pod="a"}  17 18 19 _
+
+clear
+
+load 6m
+  series_1 _ 1 2 _ 4 5 _ 7 _
+  series_2 9 _ _ 9 _ _ 9 _ 9
+
+# Test the case where both sides of 'or' contain series with the same labels.
+eval range from 0 to 48m step 6m min(series_1) or min(series_2)
+  {} 9 1 2 9 4 5 9 7 9

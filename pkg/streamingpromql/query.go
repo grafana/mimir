@@ -267,7 +267,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		case parser.LAND, parser.LUNLESS:
 			return binops.NewAndUnlessBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, e.Op == parser.LUNLESS, timeRange, e.PositionRange()), nil
 		case parser.LOR:
-			return binops.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
+			o := binops.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange())
+			return operators.NewDeduplicateAndMerge(o, q.memoryConsumptionTracker), nil
 		default:
 			return binops.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 		}

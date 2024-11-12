@@ -144,6 +144,11 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 	// We can return left series as soon as they're read, given they are returned unmodified (we just need to store sample presence
 	// information so we can filter the corresponding right side series later on).
 	//
+	// We deliberately ignore the case where series on both sides have the same labels: this makes the logic here much simpler, and
+	// we rely on DeduplicateAndMerge to merge series when required. This does come at a slight performance cost, so we could revisit this
+	// in the future if profiles show this is problematic. DeduplicateAndMerge should never produce a conflict, as the filtering done here
+	// should ensure there is only one value for each time step for each set of series with the same labels.
+	//
 	// A simpler version of this would be to just return all left side series first, then all right side series.
 	// However, if we do that, we will always need to hold presence bitmaps for every group in memory until we've read all left side series.
 	// By sorting the series so we return series from the right as soon as we've seen all of the corresponding series from the left, we
