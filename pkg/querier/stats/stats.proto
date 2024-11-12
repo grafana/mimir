@@ -38,5 +38,5 @@ message Stats {
   google.protobuf.Duration encode_time = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   // TotalSamples represents the total number of samples scanned while evaluating a query.
   // This value is taken from the Prometheus engine github.com/prometheus/prometheus/util/stats/query_stats.go
-  uint64 total_samples = 10;
+  uint64 total_samples = 11;
 }
