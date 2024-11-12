@@ -57,7 +57,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 
 	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
 	rangeMilliseconds := s.Range.Milliseconds()
-	startTimestamp = startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds - s.Offset
+	startTimestamp = startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds - s.Offset - 1 // -1 to exclude samples on the lower boundary of the range.
 	endTimestamp = endTimestamp - s.Offset
 
 	hints := &storage.SelectHints{
