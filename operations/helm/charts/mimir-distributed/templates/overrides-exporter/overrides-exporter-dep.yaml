@@ -1,4 +1,4 @@
-{{- if .Values.overrides_exporter.enabled -}}
+{{- if and .Values.overrides_exporter.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

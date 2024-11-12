@@ -730,12 +730,12 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 			return nil, err
 		}
 
-		floats, err := step.Floats.CopyPoints(step.RangeEnd)
+		floats, err := step.Floats.CopyPoints()
 		if err != nil {
 			return nil, err
 		}
 
-		histograms, err := step.Histograms.CopyPoints(step.RangeEnd)
+		histograms, err := step.Histograms.CopyPoints()
 		if err != nil {
 			return nil, err
 		}

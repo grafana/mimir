@@ -97,6 +97,16 @@ func (b *globalMarkersBucket) Iter(ctx context.Context, dir string, f func(strin
 	return b.parent.Iter(ctx, dir, f, options...)
 }
 
+// IterWithAttributes implements objstore.Bucket.
+func (b *globalMarkersBucket) IterWithAttributes(ctx context.Context, dir string, f func(objstore.IterObjectAttributes) error, options ...objstore.IterOption) error {
+	return b.parent.IterWithAttributes(ctx, dir, f, options...)
+}
+
+// SupportedIterOptions implements objstore.Bucket.
+func (b *globalMarkersBucket) SupportedIterOptions() []objstore.IterOptionType {
+	return b.parent.SupportedIterOptions()
+}
+
 // Get implements objstore.Bucket.
 func (b *globalMarkersBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	return b.parent.Get(ctx, name)

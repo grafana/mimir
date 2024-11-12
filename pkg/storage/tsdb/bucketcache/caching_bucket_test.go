@@ -846,9 +846,9 @@ func TestCachingKeyObjectSubrange(t *testing.T) {
 
 func TestCachingKeyIter(t *testing.T) {
 	assert.Equal(t, "iter:/object", cachingKeyIter("", "/object"))
-	assert.Equal(t, "iter:/object:recursive", cachingKeyIter("", "/object", objstore.WithRecursiveIter))
+	assert.Equal(t, "iter:/object:recursive", cachingKeyIter("", "/object", objstore.WithRecursiveIter()))
 	assert.Equal(t, "test:iter:/object", cachingKeyIter("test", "/object"))
-	assert.Equal(t, "test:iter:/object:recursive", cachingKeyIter("test", "/object", objstore.WithRecursiveIter))
+	assert.Equal(t, "test:iter:/object:recursive", cachingKeyIter("test", "/object", objstore.WithRecursiveIter()))
 }
 
 func TestCachingKeyExists(t *testing.T) {
@@ -886,7 +886,7 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 		},
 		"cachingKeyIter() recursive": {
 			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter())
 			},
 			expectedAllocs: 2.0,
 		},
@@ -1023,7 +1023,7 @@ func BenchmarkCachingKey(b *testing.B) {
 		},
 		"cachingKeyIter() recursive": {
 			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter())
 			},
 		},
 		"cachingKeyExists()": {

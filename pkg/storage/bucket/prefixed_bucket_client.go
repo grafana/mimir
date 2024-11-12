@@ -58,6 +58,23 @@ func (b *PrefixedBucketClient) Iter(ctx context.Context, dir string, f func(stri
 	}, options...)
 }
 
+// IterWithAttributes calls f for each entry in the given directory similar to Iter.
+// In addition to Name, it also includes requested object attributes in the argument to f.
+//
+// Attributes can be requested using IterOption.
+// Not all IterOptions are supported by all providers, requesting for an unsupported option will fail with ErrOptionNotSupported.
+func (b *PrefixedBucketClient) IterWithAttributes(ctx context.Context, dir string, f func(objstore.IterObjectAttributes) error, options ...objstore.IterOption) error {
+	return b.bucket.IterWithAttributes(ctx, b.fullName(dir), func(attrs objstore.IterObjectAttributes) error {
+		attrs.Name = strings.TrimPrefix(attrs.Name, b.prefix+objstore.DirDelim)
+		return f(attrs)
+	}, options...)
+}
+
+// SupportedIterOptions returns a list of supported IterOptions by the underlying provider.
+func (b *PrefixedBucketClient) SupportedIterOptions() []objstore.IterOptionType {
+	return b.bucket.SupportedIterOptions()
+}
+
 // Get returns a reader for the given object name.
 func (b *PrefixedBucketClient) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	return b.bucket.Get(ctx, b.fullName(name))

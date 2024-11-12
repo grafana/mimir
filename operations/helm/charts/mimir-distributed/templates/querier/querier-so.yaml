@@ -1,4 +1,4 @@
-{{- if .Values.querier.kedaAutoscaling.enabled }}
+{{- if and .Values.querier.enabled .Values.querier.kedaAutoscaling.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- if not .Values.query_scheduler.enabled }}
 {{- fail "KEDA autoscaling for querier requires query scheduler to be enabled" }}
 {{- end }}
