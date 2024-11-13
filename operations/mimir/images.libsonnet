@@ -5,7 +5,7 @@
     memcachedExporter: 'prom/memcached-exporter:v0.14.4',
 
     // Our services.
-    mimir: 'grafana/mimir:2.14.1',
+    mimir: 'grafana/mimir:2.14.2',
 
     alertmanager: self.mimir,
     distributor: self.mimir,
@@ -19,8 +19,8 @@
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
 
-    query_tee: 'grafana/query-tee:2.14.1',
-    continuous_test: 'grafana/mimir-continuous-test:2.14.1',
+    query_tee: 'grafana/query-tee:2.14.2',
+    continuous_test: 'grafana/mimir-continuous-test:2.14.2',
 
     // Read-write deployment mode.
     mimir_write: self.mimir,
