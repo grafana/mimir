@@ -3924,6 +3924,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
 
+  # The maximum number of bytes for buffered responses to fetch requests. This
+  # limit is applied on the sum of all MaxBytes requests that are ongoing. 0 to
+  # disable the limit.
+  # CLI flag: -ingest-storage.kafka.max-buffered-bytes
+  [max_buffered_bytes: <int> | default = 100000000]
+
   # The maximum number of concurrent ingestion streams to the TSDB head. Every
   # tenant has their own set of streams. 0 to disable.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
