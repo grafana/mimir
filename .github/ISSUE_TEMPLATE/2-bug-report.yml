@@ -15,7 +15,7 @@ body:
   id: how
   attributes:
     label: How to reproduce it?
-    placeholder: Steps to reproduce the behavior. 1. Start Mimir (SHA or version) 2. Perform Operations(Read/Write/Others)...
+    placeholder: Steps to reproduce the behavior. 1. Start Mimir (SHA or version) 2. Perform operations (Read/Write/Others)...
   validations:
     required: true
 
