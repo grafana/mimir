@@ -923,7 +923,9 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
-		metrics := newReaderMetrics(partitionID, reg)
+		metrics := newReaderMetrics(partitionID, reg, func() float64 {
+			return 0
+		})
 
 		client := newKafkaProduceClient(t, clusterAddr)
 
