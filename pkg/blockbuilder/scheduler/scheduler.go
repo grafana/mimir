@@ -34,7 +34,6 @@ type BlockBuilderScheduler struct {
 
 	mu                  sync.Mutex
 	committed           kadm.Offsets
-	dirty               bool
 	observations        obsMap
 	observationComplete bool
 }
