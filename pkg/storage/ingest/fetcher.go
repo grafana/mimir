@@ -223,7 +223,12 @@ type concurrentFetchers struct {
 
 	minBytesWaitTime time.Duration
 
-	orderedFetches     chan fetchResult
+	// orderedFetches is a channel where we write fetches that are ready to be polled by PollFetches().
+	// Since all records must be polled in order, the fetches written to this channel are after
+	// ordering and "deduplication" (in case the same record is fetched multiple times from different
+	// routines).
+	orderedFetches chan fetchResult
+
 	lastReturnedRecord int64
 	startOffsets       *genericOffsetReader[int64]
 
@@ -304,10 +309,17 @@ func (r *concurrentFetchers) BufferedRecords() int64 {
 
 // Stop implements fetcher.
 func (r *concurrentFetchers) Stop() {
-	close(r.done)
+	// Ensure it's not already stopped.
+	select {
+	case _, ok := <-r.done:
+		if !ok {
+			return
+		}
+	default:
+	}
 
+	close(r.done)
 	r.wg.Wait()
-	r.bufferedFetchedRecords.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 }
@@ -328,8 +340,6 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 	case <-ctx.Done():
 		return kgo.Fetches{}, ctx
 	case f := <-r.orderedFetches:
-		// At this point, we're guaranteed that the records are not going to be with us anymore.
-		r.bufferedFetchedRecords.Sub(int64(len(f.FetchPartition.Records)))
 		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
@@ -514,7 +524,6 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
-			r.bufferedFetchedRecords.Add(int64(len(f.FetchPartition.Records)))
 			f = f.Merge(previousResult)
 			previousResult = f
 			if f.Err != nil {
@@ -602,18 +611,31 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		go r.run(ctx, wants, logger, highWatermark)
 	}
 
+	// We need to make sure we don't leak any goroutine given that start is called within a goroutine.
+	defer r.wg.Done()
+
 	var (
 		nextFetch      = fetchWantFrom(startOffset, recordsPerFetch)
 		nextResult     chan fetchResult
 		pendingResults = list.New()
 
-		bufferedResult       fetchResult
-		readyBufferedResults chan fetchResult // this is non-nil when bufferedResult is non-empty
+		// bufferedResult is the next fetch that should be polled by PollFetches().
+		bufferedResult fetchResult
+
+		// readyBufferedResults channel gets continuously flipped between nil and the actual channel
+		// where PollFetches() reads from. This channel is nil when there are no ordered buffered
+		// records ready to be written to the channel where PollFetches(), and is non-nil when there
+		// are some ordered buffered records ready.
+		//
+		// It is guaranteed that this channel is non-nil when bufferedResult is non-empty.
+		readyBufferedResults chan fetchResult
 	)
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
-	// We need to make sure we don't leak any goroutine given that start is called within a goroutine.
-	defer r.wg.Done()
+	// When the fetcher is stopped, buffered records are intentionally dropped. For this reason,
+	// we do reset the counter of buffered records to zero when this goroutine ends.
+	defer r.bufferedFetchedRecords.Store(0)
+
 	for {
 		refillBufferedResult := nextResult
 		if readyBufferedResults != nil {
@@ -657,10 +679,24 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 				continue
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
+
+			// We have some ordered records ready to be sent to PollFetches(). We store the fetch
+			// result in bufferedResult, and we flip readyBufferedResults to the channel used by
+			// PollFetches().
 			bufferedResult = result
 			readyBufferedResults = r.orderedFetches
 
+			// We increase the count of buffered records only for ordered records that we're sure
+			// will not be discarded later, so that we can get an accurate tracking of the records
+			// ready to be polled by PollFetches() but not polled yet.
+			r.bufferedFetchedRecords.Add(int64(len(result.Records)))
+
 		case readyBufferedResults <- bufferedResult:
+			// We've written the records to the channel read by PollFetches(). Since the channel
+			// is not buffered, as soon as the write succeed it means PollFetches() has read it,
+			// so we can consider these records polled and decrease the buffered records counter.
+			r.bufferedFetchedRecords.Sub(int64(len(bufferedResult.Records)))
+
 			bufferedResult.finishWaitingForConsumption()
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
