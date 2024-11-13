@@ -275,8 +275,9 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 				return fmt.Errorf("complete job: %w", err)
 			}
 		}
-		s.committed.AddOffset(s.cfg.Kafka.Topic, j.partition, j.endOffset, -1)
-		s.dirty = true
+
+		// TODO: Push forward the local notion of the committed offset.
+
 		s.logger.Log("msg", "completed job", "key", key, "worker", workerID)
 	} else {
 		// It's an in-progress job whose lease we need to renew.
