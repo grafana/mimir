@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -82,13 +81,9 @@ type PartitionReader struct {
 
 	// client and fetcher are both start after PartitionReader creation. Fetcher could also be
 	// replaced during PartitionReader lifetime. To avoid concurrency issues with functions
-	// getting their pointers (e.g. BufferedRecords()) we use atomic / mutex to protect.
-	client atomic.Pointer[kgo.Client]
-
-	// We use a mutex for fetcher because it's an interface and we have to check against the
-	// nil case too.
-	fetcherMx sync.Mutex
-	fetcher   fetcher
+	// getting their pointers (e.g. BufferedRecords()) we use atomic to protect.
+	client  atomic.Pointer[kgo.Client]
+	fetcher atomic.Pointer[fetcher]
 
 	newConsumer consumerFactory
 	metrics     readerMetrics
@@ -824,15 +819,16 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 }
 
 func (r *PartitionReader) setFetcher(f fetcher) {
-	r.fetcherMx.Lock()
-	defer r.fetcherMx.Unlock()
-	r.fetcher = f
+	r.fetcher.Store(&f)
 }
 
 func (r *PartitionReader) getFetcher() fetcher {
-	r.fetcherMx.Lock()
-	defer r.fetcherMx.Unlock()
-	return r.fetcher
+	pointer := r.fetcher.Load()
+	if pointer == nil {
+		return nil
+	}
+
+	return *pointer
 }
 
 func (r *PartitionReader) PollFetches(ctx context.Context) (result kgo.Fetches, fetchContext context.Context) {
