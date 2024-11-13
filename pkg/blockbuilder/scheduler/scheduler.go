@@ -209,7 +209,7 @@ func (s *BlockBuilderScheduler) fetchLag(ctx context.Context) (kadm.GroupLag, er
 	for boff.Ongoing() {
 		groupLag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
 		if err != nil {
-			lastErr = fmt.Errorf("get consumer group lag: %w", err)
+			lastErr = fmt.Errorf("lag: %w", err)
 			boff.Wait()
 			continue
 		}
@@ -220,6 +220,7 @@ func (s *BlockBuilderScheduler) fetchLag(ctx context.Context) (kadm.GroupLag, er
 	return kadm.GroupLag{}, lastErr
 }
 
+// commitOffsetsFromLag computes the committed offset info from the given lag.
 func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 	offsets := make(kadm.Offsets)
 	for _, ps := range lag {
