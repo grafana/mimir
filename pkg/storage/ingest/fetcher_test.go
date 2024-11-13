@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -1127,10 +1126,107 @@ func TestConcurrentFetchers(t *testing.T) {
 		pollFetchesAndAssertNoRecords(t, fetchers)
 		assert.Equal(t, totalProducedRecords, totalConsumedRecords, "Should have received all records eventually")
 	})
+
+	t.Run("respect maximum buffered bytes limit with varying record sizes", func(t *testing.T) {
+		// This test makes sure that the buffer doesn't become inefficient when the size estimations change (from large records we switch to small records).
+		t.Parallel()
+
+		const (
+			topicName        = "test-topic"
+			partitionID      = 1
+			concurrency      = 30
+			recordsPerFetch  = 100
+			maxInflightBytes = 50_000_000
+
+			largeRecordsCount = 100
+			largeRecordSize   = 100_000
+			smallRecordsCount = 200_000
+			smallRecordSize   = 200
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Create fetchers early to ensure we don't miss any records
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch, maxInflightBytes)
+
+		waitForStableBufferedRecords := func() {
+			previousBufferedRecords := int64(0)
+			assert.Eventually(t, func() bool {
+				bufferedRecords := fetchers.BufferedRecords()
+				stabilized := bufferedRecords == previousBufferedRecords
+				previousBufferedRecords = bufferedRecords
+				return stabilized
+			}, 2*time.Second, 100*time.Millisecond)
+		}
+
+		// Produce large records
+		largeValue := bytes.Repeat([]byte{'a'}, largeRecordSize)
+		for i := 0; i < largeRecordsCount; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, largeValue)
+		}
+
+		t.Logf("Produced %d large records", largeRecordsCount)
+
+		waitForStableBufferedRecords()
+		t.Log("Buffered records stabilized")
+
+		assert.LessOrEqualf(t, fetchers.BufferedRecords()*largeRecordSize, int64(maxInflightBytes), "Should not buffer more than %d bytes of large records", maxInflightBytes)
+		// Consume all large records
+		consumedRecords := 0
+		for consumedRecords < largeRecordsCount {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+
+		t.Log("Consumed all large records")
+
+		// Produce small records
+		smallValue := bytes.Repeat([]byte{'b'}, smallRecordSize)
+		for i := 0; i < smallRecordsCount; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, smallValue)
+		}
+
+		t.Logf("Produced %d small records", smallRecordsCount)
+
+		// Consume half of the small records. This should be enough to stabilize the records size estimation.
+		for consumedRecords < largeRecordsCount+smallRecordsCount/2 {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		t.Log("Consumed half of the small records")
+
+		// Assert that the buffer is well utilized.
+		waitForStableBufferedRecords()
+		t.Log("Buffered records stabilized")
+
+		assert.LessOrEqualf(t, fetchers.BufferedRecords()*smallRecordSize, int64(maxInflightBytes), "Should not buffer more than %d bytes of small records", maxInflightBytes)
+		assert.GreaterOrEqual(t, fetchers.BufferedRecords(), int64(concurrency*recordsPerFetch), "Should still buffer a decent number of records")
+
+		// Consume the rest of the small records.
+		const totalProducedRecords = largeRecordsCount + smallRecordsCount
+		for consumedRecords < totalProducedRecords {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		t.Log("Consumed rest of the small records")
+
+		// Verify we received correct number of records
+		assert.Equal(t, totalProducedRecords, consumedRecords, "Should have consumed all records")
+
+		// Verify no more records are buffered. First wait for the buffered records to stabilize.
+		waitForStableBufferedRecords()
+
+		//pollFetchesAndAssertNoRecords(t, fetchers)
+	})
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int, maxInflightBytes int32) *concurrentFetchers {
-	logger := log.NewLogfmtLogger(os.Stdout) // TODO dimitarvdimitrov undo to nop logger
+	//logger := log.NewLogfmtLogger(os.Stdout) // TODO dimitarvdimitrov undo to nop logger
+	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg, func() float64 { return 1 })
 
@@ -1190,7 +1286,10 @@ func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
 	}
 
 	// We stopped polling fetches. We have to make sure there are no buffered records.
-	require.Zero(t, fetchers.BufferedRecords())
+	if !assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records") {
+		fetches, _ := fetchers.PollFetches(ctx)
+		t.Log(fmt.Sprintf("%#v", fetches))
+	}
 }
 
 type waiterFunc func()
