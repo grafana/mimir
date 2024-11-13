@@ -375,3 +375,56 @@ func changes(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationF
 
 	return changes, true, nil, nil
 }
+
+var Resets = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               resets,
+}
+
+func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
+
+	// There is no need to check xTail length because xHead slice will always be populated first if there is at least 1 point.
+	haveFloats := len(fHead) > 0
+	haveHistograms := len(hHead) > 0
+
+	if !haveFloats && !haveHistograms {
+		return 0, false, nil, nil
+	}
+
+	resets := 0.0
+
+	if haveFloats {
+		prev := fHead[0].F
+		accumulate := func(points []promql.FPoint) {
+			for _, sample := range points {
+				current := sample.F
+				if current < prev {
+					resets++
+				}
+				prev = current
+			}
+
+		}
+		accumulate(fHead[1:])
+		accumulate(fTail)
+	}
+
+	if haveHistograms {
+		prev := hHead[0].H
+		accumulate := func(points []promql.HPoint) {
+			for _, sample := range points {
+				current := sample.H
+				if current.DetectReset(prev) {
+					resets++
+				}
+				prev = current
+			}
+		}
+		accumulate(hHead[1:])
+		accumulate(hTail)
+	}
+
+	return resets, true, nil, nil
+}
