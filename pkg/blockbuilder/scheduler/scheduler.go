@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -77,12 +78,33 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
-	// The first thing we do when starting up is to complete the startup process
-	//  where we allow both of these to complete:
-	// 1. perform an initial update of the schedule
-	// 2. listen to worker updates for a while to learn the state of the world
+	// The first thing we do when starting up is to complete the startup process where we:
+	//  1. obtain an initial set of offset info from Kafka
+	//  2. listen to worker updates for a while to learn the state of the world
+	// When both of those are complete, we transition from observation mode to normal operation.
 
-	time.Sleep(s.cfg.StartupObserveTime)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		lag, err := s.fetchLag(ctx)
+		if err != nil {
+			panic(err)
+		}
+		s.committed = commitOffsetsFromLag(lag)
+	}()
+	go func() {
+		defer wg.Done()
+		time.Sleep(s.cfg.StartupObserveTime)
+	}()
+
+	wg.Wait()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	s.completeObservationMode()
 
 	// Now that that's done, we can start the main loop.
@@ -159,6 +181,37 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 			}
 		}
 	})
+}
+
+func (s *BlockBuilderScheduler) fetchLag(ctx context.Context) (kadm.GroupLag, error) {
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 10,
+	})
+	var lastErr error
+	for boff.Ongoing() {
+		groupLag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
+		if err != nil {
+			lastErr = fmt.Errorf("get consumer group lag: %w", err)
+			boff.Wait()
+			continue
+		}
+
+		return groupLag, nil
+	}
+
+	return kadm.GroupLag{}, lastErr
+}
+
+func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
+	offsets := make(kadm.Offsets)
+	for _, ps := range lag {
+		for _, gl := range ps {
+			offsets.Add(gl.Commit)
+		}
+	}
+	return offsets
 }
 
 // assignJob returns an assigned job for the given workerID.
