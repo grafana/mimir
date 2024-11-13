@@ -133,7 +133,7 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 
 	elapsedTime := time.Since(startTime)
 	l.loadDuration.Observe(elapsedTime.Seconds())
-	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "duration", elapsedTime)
+	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "updatedAt", idx.UpdatedAt, "duration", elapsedTime)
 	return idx, nil
 }
 
