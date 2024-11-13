@@ -307,6 +307,7 @@ func (r *concurrentFetchers) Stop() {
 	close(r.done)
 
 	r.wg.Wait()
+	r.bufferedFetchedRecords.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 }
