@@ -521,7 +521,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	require.NoError(t, seriesSet.Err())
 }
 
-// Krajo's test from https://github.com/grafana/mimir/pull/9823/, failing (as expected)
+// Krajo's test from https://github.com/grafana/mimir/pull/9823/, working with cr -> ucr header update. I think it's right?
 func TestDistributorQuerier_Select_FixedInflatedCounterResets(t *testing.T) {
 	var (
 		queryStart int64
@@ -603,13 +603,128 @@ func TestDistributorQuerier_Select_FixedInflatedCounterResets(t *testing.T) {
 				case 1:
 					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
 				case 2:
-					require.Contains(t, []histogram.CounterResetHint{histogram.CounterReset}, h.CounterResetHint, "time %d", ts)
+					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
 				case 3:
 					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
 				}
 			}
 			require.NoError(t, it.Err())
 			require.Equal(t, int64(3), count)
+
+			require.False(t, seriesSet.Next())
+		})
+	}
+}
+
+// This test shows overlapping chunks in a single ingester aren't fixed
+func TestDistributorQuerier_Select_OverlappingChunksFromSingleIngester(t *testing.T) {
+	var (
+		queryStart int64
+		queryEnd   int64 = 1000
+	)
+
+	// In ts order:
+	// - 40 (chunk 1 - unknown, first in chunk)
+	// - 20 (chunk 2 - unknown, first in chunk)
+	// - 60 (chunk 2 - not reset, second in chunk 2 and is consecutive)
+	// - 50 (chunk 4 - unknown, second in chunk 1, not consecutive, is actually counter reset but we currently treat all counter resets as unknowns)
+	// C1 could be an in-order chunk, C2 an OOO chunk
+	h1 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 40},
+		Sum:   40,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{40},
+		Timestamp:      queryStart + 100,
+	}
+	h2 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 20},
+		Sum:   20,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{20},
+		Timestamp:      queryStart + 200,
+	}
+	h3 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 60},
+		Sum:   60,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{60},
+		Timestamp:      queryStart + 300,
+	}
+
+	h4 := mimirpb.Histogram{
+		Count: &mimirpb.Histogram_CountInt{CountInt: 50},
+		Sum:   50,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 0, Length: 1},
+		},
+		PositiveDeltas: []int64{50},
+		Timestamp:      queryStart + 400,
+	}
+
+	c1 := convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{h1, h4}), false)
+	c2 := convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{h2, h3}), false)
+	allChunksInOneIngester := append(c1, c2...)
+
+	testCases := map[string]struct {
+		combinedResponse client.CombinedQueryStreamResponse
+		// To be able to encode unsupported cases that might become supported in
+		// the future.
+		expectError bool
+	}{
+		"chunkseries": {
+			combinedResponse: client.CombinedQueryStreamResponse{
+				Chunkseries: []client.TimeSeriesChunk{
+					{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: allChunksInOneIngester,
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			d := &mockDistributor{}
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.combinedResponse, nil)
+
+			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+			querier, err := queryable.Querier(queryStart, queryEnd)
+			require.NoError(t, err)
+
+			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: queryStart, End: queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+			require.True(t, seriesSet.Next())
+			require.NoError(t, seriesSet.Err())
+
+			series := seriesSet.At()
+			it := series.Iterator(nil)
+			count := int64(0)
+			for it.Next() == chunkenc.ValHistogram {
+				count++
+				ts, h := it.AtHistogram(nil)
+				require.Equal(t, queryStart+(count*100), ts)
+				require.NotNil(t, h)
+				switch count {
+				case 1:
+					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
+				case 2:
+					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+				case 3:
+					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
+				case 4:
+					// FIXME: this is being returned as NCR
+					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+				}
+			}
+			require.NoError(t, it.Err())
+			require.Equal(t, int64(4), count)
 
 			require.False(t, seriesSet.Next())
 		})
