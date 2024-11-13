@@ -123,10 +123,22 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 }
 
 func (s *BlockBuilderScheduler) completeObservationMode() {
+	newJobs := newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
+
 	s.mu.Lock()
-	s.committed, s.jobs = s.computeStateFromObservations(s.observations, s.committed)
+	defer s.mu.Unlock()
+
+	if s.observationComplete {
+		return
+	}
+
+	if err := s.observations.finalize(s.committed, newJobs); err != nil {
+		level.Warn(s.logger).Log("msg", "failed to compute state from observations", "err", err)
+		// (what to do here?)
+	}
+
+	s.jobs = newJobs
 	s.observationComplete = true
-	s.mu.Unlock()
 }
 
 func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
@@ -236,7 +248,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 	if !s.observationComplete {
 		if err := s.observations.update(key, workerID, complete, j); err != nil {
-			return err
+			return fmt.Errorf("observe update: %w", err)
 		}
 
 		s.logger.Log("msg", "recovered job", "key", key, "worker", workerID)
@@ -306,52 +318,35 @@ func (m obsMap) update(key jobKey, workerID string, complete bool, j jobSpec) er
 	return nil
 }
 
-// completeObservationMode considers the observations and offsets from Kafka, rectifying them into
+// finalize considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
-func (s *BlockBuilderScheduler) computeStateFromObservations(observations obsMap, kafkaOffsets kadm.Offsets) (kadm.Offsets, *jobQueue) {
-	/*
-		Inputs:
-			- the observations
-			- the offsets we've learned from Kafka
-
-			Note that the observations for in-progress jobs should be strictly less than whatever
-			we've learned from Kafka.
-			Some of the completed job observations can exceed the offsets from Kafka, and should move them forward.
-		The output from this is:
-			- Updated Kafka committed offsets.
-			- a jobQueue that's ready for action.
-
-
-		TODO:
-		* Needs to include the serialized metadata for the consumption job.
-	*/
-
-	committed := make(map[int32]int64)
-	kafkaOffsets.Each(func(o kadm.Offset) {
-		committed[o.Partition] = o.At
-	})
-
-	jobs := newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
-
-	for _, rj := range observations {
+func (m obsMap) finalize(kafkaOffsets kadm.Offsets, newQueue *jobQueue) error {
+	for _, rj := range m {
 		if rj.complete {
-			if o, ok := committed[rj.spec.partition]; !ok || o < rj.spec.endOffset {
-				committed[rj.spec.partition] = rj.spec.endOffset
+			// Completed.
+			if o, ok := kafkaOffsets.Lookup(rj.spec.topic, rj.spec.partition); ok {
+				if rj.spec.endOffset > o.At {
+					// Completed jobs can push forward the offsets we've learned from Kafka.
+					o.At = rj.spec.endOffset
+					o.Metadata = "{}" // TODO: take the new meta from the completion message.
+					kafkaOffsets[rj.spec.topic][rj.spec.partition] = o
+				}
+			} else {
+				kafkaOffsets.Add(kadm.Offset{
+					Topic:     rj.spec.topic,
+					Partition: rj.spec.partition,
+					At:        rj.spec.endOffset,
+					Metadata:  "{}", // TODO: take the new meta from the completion message.
+				})
 			}
 		} else {
-			// In progress.
-			if err := jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to recover job", "err", err)
+			// An in-progress job.
+			// These don't affect offsets (yet), they just get added to the job queue.
+			if err := newQueue.importJob(rj.key, rj.workerID, rj.spec); err != nil {
+				return fmt.Errorf("import job: %w", err)
 			}
 		}
 	}
 
-	c := make(kadm.Offsets)
-
-	// Now we go back through the committed offsets and rig up the K offsets.
-	for part, off := range committed {
-		c.AddOffset(s.cfg.Kafka.Topic, part, off, -1)
-	}
-
-	return c, jobs
+	return nil
 }

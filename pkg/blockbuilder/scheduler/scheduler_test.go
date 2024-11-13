@@ -273,49 +273,62 @@ func TestObserve(t *testing.T) {
 
 func TestStateFromObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
-	m := make(obsMap)
-	require.NoError(t,
-		m.update(
-			jobKey{id: "ingest/63/5524", epoch: 10},
-			"w0",
-			false,
-			jobSpec{topic: "ingest", partition: 63, commitRecTs: time.Unix(2, 0), endOffset: 6000},
-		),
-	)
-	require.NoError(t,
-		m.update(
-			jobKey{id: "ingest/64/1000", epoch: 11},
-			"w0",
-			true,
-			jobSpec{topic: "ingest", partition: 64, commitRecTs: time.Unix(5, 0), endOffset: 2000},
-		),
-	)
+	// Initially we're in observation mode.
 
-	offs, q := sched.computeStateFromObservations(
-		m, kadm.Offsets{
-			"ingest": {
-				63: kadm.Offset{
-					Partition: 63,
-					At:        5000,
-				},
-				64: kadm.Offset{
-					Partition: 64,
-					At:        800,
-				},
-				65: kadm.Offset{
-					Partition: 65,
-					At:        974,
-				},
+	kafkaOffsets := kadm.Offsets{
+		"ingest": {
+			1: kadm.Offset{
+				Topic:     "ingest",
+				Partition: 1,
+				At:        5000,
+			},
+			2: kadm.Offset{
+				Topic:     "ingest",
+				Partition: 2,
+				At:        800,
+			},
+			3: kadm.Offset{
+				Topic:     "ingest",
+				Partition: 3,
+				At:        974,
 			},
 		},
+	}
+
+	{
+		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
+		err := sched.observations.finalize(kafkaOffsets, nq)
+		require.NoError(t, err)
+		require.Len(t, nq.jobs, 0, "No observations, no jobs")
+	}
+
+	require.NoError(t,
+		sched.updateJob(
+			jobKey{id: "ingest/1/5524", epoch: 10},
+			"w0",
+			false,
+			jobSpec{topic: "ingest", partition: 1, commitRecTs: time.Unix(2, 0), endOffset: 6000},
+		),
+	)
+	require.NoError(t,
+		sched.updateJob(
+			jobKey{id: "ingest/2/1000", epoch: 11},
+			"w0",
+			true,
+			jobSpec{topic: "ingest", partition: 2, commitRecTs: time.Unix(5, 0), endOffset: 2000},
+		),
 	)
 
-	requireOffset(t, offs, "ingest", 63, 5000, "ingest/65 is in progress, so we should not move the offset")
-	requireOffset(t, offs, "ingest", 64, 2000)
-	requireOffset(t, offs, "ingest", 65, 974, "ingest/65 should be unchanged - not among observations")
+	nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
+	err := sched.observations.finalize(kafkaOffsets, nq)
+	require.NoError(t, err)
 
-	require.Len(t, q.jobs, 1)
-	require.Equal(t, 11, int(q.epoch))
+	requireOffset(t, kafkaOffsets, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
+	requireOffset(t, kafkaOffsets, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
+	requireOffset(t, kafkaOffsets, "ingest", 3, 974, "ingest/3 should be unchanged - not among observations")
+
+	require.Len(t, nq.jobs, 1)
+	require.Equal(t, 11, int(nq.epoch))
 }
 
 func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int32, expected int64, msgAndArgs ...interface{}) {
