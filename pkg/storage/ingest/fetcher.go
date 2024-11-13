@@ -617,11 +617,48 @@ func casHWM(highWwatermark *atomic.Int64, newHWM int64) {
 	}
 }
 
+type inflightFetchWants struct {
+	// queue is the list of all fetchResult of all inflight fetch operations. Pending results
+	// are ordered in the same order these results should be returned to PollFetches(), so the first one
+	// in the list is the next one that should be returned.
+	queue list.List
+
+	// inflightMaxBytes is the sum of the MaxBytes of all fetchWants that are currently inflight.
+	inflightMaxBytes int32
+}
+
+// nextResult is the channel where we expect a worker will write the result of the next fetch
+// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
+// records ordering.
+func (w *inflightFetchWants) nextResult() chan fetchResult {
+	if w.queue.Len() == 0 {
+		return nil
+	}
+	return w.queue.Front().Value.(fetchWant).result
+}
+
+func (w *inflightFetchWants) count() int {
+	return w.queue.Len()
+}
+
+func (w *inflightFetchWants) add(nextFetch fetchWant) {
+	w.inflightMaxBytes += nextFetch.MaxBytes()
+	w.queue.PushBack(nextFetch)
+}
+
+func (w *inflightFetchWants) headResultsExhausted() {
+	head := w.queue.Front()
+	// The MaxBytes of the fetchWant might have changed as it was being fetched (e.g. UpdateBytesPerRecord).
+	// But we don't care about that here because we're only interested in the MaxBytes when the fetchWant was added to the inflight fetchWants.
+	w.inflightMaxBytes -= head.Value.(fetchWant).MaxBytes()
+	w.queue.Remove(head)
+}
+
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
 
 	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
-	// A value of 0 doesn't prevent progress because we ensure there is at least one dispatched fetchWant.
+	// A value of 0 doesn't prevent progress because we ensure there is at least one inflight fetchWant.
 	highWatermark := atomic.NewInt64(0)
 
 	wants := make(chan fetchWant)
@@ -640,19 +677,8 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// It contains the offset range to fetch and a channel where the result should be written to.
 		nextFetch = fetchWantFrom(startOffset, recordsPerFetch)
 
-		// nextResult is the channel where we expect a worker will write the result of the next fetch
-		// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
-		// records ordering.
-		nextResult chan fetchResult
-
-		// pendingResults is the list of all fetchResult of all inflight fetch operations. Pending results
-		// are ordered in the same order these results should be returned to PollFetches(), so the first one
-		// in the list is the next one that should be returned, unless nextResult is valued (if nextResult
-		// is valued, then nextResult is the next and the first item in the pendingResults list is the
-		// 2nd next one).
-		pendingResults = list.New()
-
-		inflightWantsExpectedBytes = int32(0)
+		// inflight is the list of all fetchWants that are currently in flight.
+		inflight inflightFetchWants
 
 		// bufferedResult is the next fetch that should be polled by PollFetches().
 		bufferedResult fetchResult
@@ -663,39 +689,31 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// are some ordered buffered records ready.
 		//
 		// It is guaranteed that this channel is non-nil when bufferedResult is non-empty.
+		//
+		// The idea is that we don't want to block the main loop when we have records ready to be consumed.
 		readyBufferedResults chan fetchResult
 	)
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	for {
-		refillBufferedResult := nextResult
+		refillBufferedResult := inflight.nextResult()
 		if readyBufferedResults != nil {
 			// We have a single result that's still not consumed.
 			// So we don't try to get new results from the fetchers.
 			refillBufferedResult = nil
 		}
 		dispatchNextWant := chan fetchWant(nil)
-		wouldExceedInflightBytesLimit := inflightWantsExpectedBytes+nextFetch.MaxBytes() > r.maxInflightBytesLimit
-		if wouldExceedInflightBytesLimit {
-			// TODO dimitarvdimitrov remove these logs
-			r.logger.Log("msg", "would exceed inflight bytes limit", "inflight", inflightWantsExpectedBytes, "would_be", inflightWantsExpectedBytes+nextFetch.MaxBytes(), "limit", r.maxInflightBytesLimit)
-		} else {
-			r.logger.Log("msg", "within limit of dispatching next want", "inflight", inflightWantsExpectedBytes, "would_be", inflightWantsExpectedBytes+nextFetch.MaxBytes(), "limit", r.maxInflightBytesLimit)
-		}
-
-		if nextResult == nil || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
+		wouldExceedInflightBytesLimit := inflight.inflightMaxBytes+nextFetch.MaxBytes() > r.maxInflightBytesLimit
+		if inflight.count() == 0 || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 			// So we dispatch a fetch only if it's fetching an existing offset.
 			// This shouldn't noticeably affect performance with Apache Kafka, after all franz-go only has a concurrency of 1 per partition.
 			//
+			// We also don't want to have too many fetches in flight, so we only dispatch a fetch if it wouldn't exceed the memory limit.
+			//
 			// At the same time we don't want to reach a deadlock where the HWM is not updated and there are no fetches in flight.
 			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
 			dispatchNextWant = wants
-		}
-		bufferedRecords := r.BufferedRecords()
-		if bufferedRecords == 0 {
-			// TODO dimitarvdimitrov remove
-			fmt.Println("bufferedRecords == 0")
 		}
 		select {
 		case <-r.done:
@@ -704,26 +722,12 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			return
 
 		case dispatchNextWant <- nextFetch:
-			// TODO dimitarvdimitrov <remove>
-			inflightWantsExpectedBytes += nextFetch.MaxBytes()
-			r.logger.Log("msg", "dispatched fetch want", "inflight", inflightWantsExpectedBytes, "start", nextFetch.startOffset, "end", nextFetch.endOffset)
-			// TODO dimitarvdimitrov </remove>
-			pendingResults.PushBack(nextFetch.result)
-			if nextResult == nil {
-				// In case we previously exhausted pendingResults, we just created
-				nextResult = pendingResults.Front().Value.(chan fetchResult)
-				pendingResults.Remove(pendingResults.Front())
-			}
+			inflight.add(nextFetch)
 			nextFetch = nextFetch.Next(recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
-				if pendingResults.Len() > 0 {
-					nextResult = pendingResults.Front().Value.(chan fetchResult)
-					pendingResults.Remove(pendingResults.Front())
-				} else {
-					nextResult = nil
-				}
+				inflight.headResultsExhausted()
 				continue
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
@@ -736,8 +740,6 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 
 		case readyBufferedResults <- bufferedResult:
 			bufferedResult.finishWaitingForConsumption()
-			inflightWantsExpectedBytes -= int32(bufferedResult.fetchedBytes)
-			inflightWantsExpectedBytes = max(inflightWantsExpectedBytes, 0) // TODO dimitarvdimitrov this doesn't account for disparity between the fetchWant and the actual fetched bytes
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
 		}

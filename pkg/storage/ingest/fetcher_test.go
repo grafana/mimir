@@ -1220,12 +1220,11 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Verify no more records are buffered. First wait for the buffered records to stabilize.
 		waitForStableBufferedRecords()
 
-		//pollFetchesAndAssertNoRecords(t, fetchers)
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int, maxInflightBytes int32) *concurrentFetchers {
-	//logger := log.NewLogfmtLogger(os.Stdout) // TODO dimitarvdimitrov undo to nop logger
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg, func() float64 { return 1 })
