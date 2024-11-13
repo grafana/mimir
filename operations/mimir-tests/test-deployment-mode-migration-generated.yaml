@@ -983,7 +983,7 @@ spec:
           value: "8"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1095,7 +1095,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -1196,7 +1196,7 @@ spec:
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1282,7 +1282,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1362,7 +1362,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1503,7 +1503,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1581,7 +1581,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1680,7 +1680,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1804,7 +1804,7 @@ spec:
           value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1928,7 +1928,7 @@ spec:
           value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2052,7 +2052,7 @@ spec:
           value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2460,7 +2460,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2652,7 +2652,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2844,7 +2844,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2981,7 +2981,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -3118,7 +3118,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -3255,7 +3255,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -3393,7 +3393,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3531,7 +3531,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3669,7 +3669,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.14.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
