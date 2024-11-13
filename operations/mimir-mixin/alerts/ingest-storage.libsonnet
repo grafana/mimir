@@ -151,8 +151,7 @@
               rate(cortex_ingest_storage_reader_requests_total[5m])
             ) == 0)
             and
-            # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
-            (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
+            (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingest_storage_reader_buffered_fetched_records) > 0)
           ||| % $._config,
           labels: {
             severity: 'critical',

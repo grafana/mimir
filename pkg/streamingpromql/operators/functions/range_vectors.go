@@ -375,3 +375,123 @@ func changes(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationF
 
 	return changes, true, nil, nil
 }
+
+var Resets = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               resets,
+}
+
+func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
+
+	// There is no need to check xTail length because xHead slice will always be populated first if there is at least 1 point.
+	haveFloats := len(fHead) > 0
+	haveHistograms := len(hHead) > 0
+
+	if !haveFloats && !haveHistograms {
+		return 0, false, nil, nil
+	}
+
+	resets := 0.0
+
+	if haveFloats {
+		prev := fHead[0].F
+		accumulate := func(points []promql.FPoint) {
+			for _, sample := range points {
+				current := sample.F
+				if current < prev {
+					resets++
+				}
+				prev = current
+			}
+
+		}
+		accumulate(fHead[1:])
+		accumulate(fTail)
+	}
+
+	if haveHistograms {
+		prev := hHead[0].H
+		accumulate := func(points []promql.HPoint) {
+			for _, sample := range points {
+				current := sample.H
+				if current.DetectReset(prev) {
+					resets++
+				}
+				prev = current
+			}
+		}
+		accumulate(hHead[1:])
+		accumulate(hTail)
+	}
+
+	return resets, true, nil, nil
+}
+
+var Deriv = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               deriv,
+}
+
+func deriv(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if (len(head) + len(tail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	slope, _ := linearRegression(head, tail, head[0].T)
+
+	return slope, true, nil, nil
+}
+
+func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, intercept float64) {
+	var (
+		n          float64
+		sumX, cX   float64
+		sumY, cY   float64
+		sumXY, cXY float64
+		sumX2, cX2 float64
+		initY      float64
+		constY     bool
+	)
+
+	initY = head[0].F
+	constY = true
+	accumulate := func(points []promql.FPoint, head bool) {
+		for i, sample := range points {
+			// Set constY to false if any new y values are encountered.
+			if constY && (i > 0 || !head) && sample.F != initY {
+				constY = false
+			}
+			n += 1.0
+			x := float64(sample.T-interceptTime) / 1e3
+			sumX, cX = floats.KahanSumInc(x, sumX, cX)
+			sumY, cY = floats.KahanSumInc(sample.F, sumY, cY)
+			sumXY, cXY = floats.KahanSumInc(x*sample.F, sumXY, cXY)
+			sumX2, cX2 = floats.KahanSumInc(x*x, sumX2, cX2)
+		}
+	}
+
+	accumulate(head, true)
+	accumulate(tail, false)
+
+	if constY {
+		if math.IsInf(initY, 0) {
+			return math.NaN(), math.NaN()
+		}
+		return 0, initY
+	}
+	sumX += cX
+	sumY += cY
+	sumXY += cXY
+	sumX2 += cX2
+
+	covXY := sumXY - sumX*sumY/n
+	varX := sumX2 - sumX*sumX/n
+
+	slope = covXY / varX
+	intercept = sumY/n - slope*sumX/n
+	return slope, intercept
+}

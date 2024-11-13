@@ -171,13 +171,23 @@ func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger lo
 	defer adm.Close()
 
 	defaultNumberOfPartitions := fmt.Sprintf("%d", cfg.AutoCreateTopicDefaultPartitions)
-	_, err = adm.AlterBrokerConfigsState(context.Background(), []kadm.AlterConfig{
+	responses, err := adm.AlterBrokerConfigsState(context.Background(), []kadm.AlterConfig{
 		{
 			Op:    kadm.SetConfig,
 			Name:  "num.partitions",
 			Value: &defaultNumberOfPartitions,
 		},
 	})
+
+	// Check if any error has been returned as part of the response.
+	if err == nil {
+		for _, res := range responses {
+			if res.Err != nil {
+				err = res.Err
+				break
+			}
+		}
+	}
 
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to alter default number of partitions", "err", err)
