@@ -28,8 +28,8 @@ body:
   validations:
     required: true
 
-- type: environment
-  id: expectations
+- type: textarea
+  id: environment
   attributes:
     label: What was your environment?
     placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet)

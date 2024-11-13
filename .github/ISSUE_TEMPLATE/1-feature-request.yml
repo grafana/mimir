@@ -1,6 +1,6 @@
 name: Feature request
 description: Submit a new idea
-title: "[Idea]: "
+title: "Idea: "
 labels: ["enhancement"]
 body:
 - type: textarea
