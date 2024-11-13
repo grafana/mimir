@@ -726,6 +726,36 @@
           "fieldFlag": "server.path-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "throughput_config",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "slow_request_cutoff",
+              "required": false,
+              "desc": "Duration after which a request is considered slow. For requests taking longer than this duration to finish, the throughput will be calculated. If set to 0, the throughput will not be calculated.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "server.throughput-config.slow-request-cutoff",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "unit",
+              "required": false,
+              "desc": "Unit of the server throughput metric, for example 'bytes' or 'samples'. If set, it is appended to the server_throughput metric name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.throughput-config.unit",
+              "fieldType": "string"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

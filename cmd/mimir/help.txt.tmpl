@@ -775,6 +775,10 @@ Usage of ./cmd/mimir/mimir:
     	Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
+  -server.throughput-config.slow-request-cutoff duration
+    	Duration after which a request is considered slow. For requests taking longer than this duration to finish, the throughput will be calculated. If set to 0, the throughput will not be calculated.
+  -server.throughput-config.unit string
+    	Unit of the server throughput metric, for example 'bytes' or 'samples'. If set, it is appended to the server_throughput metric name.
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
