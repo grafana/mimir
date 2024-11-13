@@ -197,6 +197,46 @@ func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
 	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
 }
 
+func TestCircuitBreaker_IsActiveWithDelay_CancelThenRestart(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 150 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	cb.activate()
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// t = 0ms, queue an activation
+	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+	require.False(t, cb.isActive())
+
+	// We're going to cancel this activation, so it shouldn't trigger at t=150ms
+	go require.Never(t, cb.isActive, 200*time.Millisecond, 1*time.Millisecond)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// t = 50ms, cancel the activation
+	cb.deactivate()
+
+	// Should be inactive immediately, and cancel any queued activation
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+
+	time.Sleep(50 * time.Millisecond)
+
+	// t = 100ms, queue another activation
+	cb.activate()
+	_, err = cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// A new activation should be queued, and activate the breaker at t=250ms
+	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+	require.False(t, cb.isActive())
+	require.Eventually(t, cb.isActive, 200*time.Millisecond, 1*time.Millisecond)
+	requireCircuitBreakerState(t, cb, circuitBreakerActive)
+}
+
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
