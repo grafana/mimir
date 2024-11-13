@@ -320,6 +320,10 @@ func (r *concurrentFetchers) Stop() {
 	close(r.done)
 	r.wg.Wait()
 
+	// When the fetcher is stopped, buffered records are intentionally dropped. For this reason,
+	// we do reset the counter of buffered records here.
+	r.bufferedFetchedRecords.Store(0)
+
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 }
 
@@ -339,6 +343,13 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 	case <-ctx.Done():
 		return kgo.Fetches{}, ctx
 	case f := <-r.orderedFetches:
+		// The records have been polled from the buffer, so we can now decrease the number of
+		// buffered records. It's important to note that we decrease it by the number of actually
+		// buffered records and not by the number of records returned by PollFetchers(), which
+		// could be lower if some records are discarded because "old" (already returned by previous
+		// PollFetches() calls).
+		r.bufferedFetchedRecords.Sub(int64(len(f.Records)))
+
 		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
@@ -523,6 +534,10 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			attemptSpan.SetTag("attempt", attempt)
 
 			f := r.fetchSingle(ctx, w)
+
+			// We increase the count of buffered records as soon as we fetch them.
+			r.bufferedFetchedRecords.Add(int64(len(f.Records)))
+
 			f = f.Merge(previousResult)
 			previousResult = f
 			if f.Err != nil {
@@ -614,8 +629,20 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	defer r.wg.Done()
 
 	var (
-		nextFetch      = fetchWantFrom(startOffset, recordsPerFetch)
-		nextResult     chan fetchResult
+		// nextFetch is the next records fetch operation we want to issue to one of the running workers.
+		// It contains the offset range to fetch and a channel where the result should be written to.
+		nextFetch = fetchWantFrom(startOffset, recordsPerFetch)
+
+		// nextResult is the channel where we expect a worker will write the result of the next fetch
+		// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
+		// records ordering.
+		nextResult chan fetchResult
+
+		// pendingResults is the list of all fetchResult of all inflight fetch operations. Pending results
+		// are ordered in the same order these results should be returned to PollFetches(), so the first one
+		// in the list is the next one that should be returned, unless nextResult is valued (if nextResult
+		// is valued, then nextResult is the next and the first item in the pendingResults list is the
+		// 2nd next one).
 		pendingResults = list.New()
 
 		// bufferedResult is the next fetch that should be polled by PollFetches().
@@ -630,10 +657,6 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		readyBufferedResults chan fetchResult
 	)
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
-
-	// When the fetcher is stopped, buffered records are intentionally dropped. For this reason,
-	// we do reset the counter of buffered records to zero when this goroutine ends.
-	defer r.bufferedFetchedRecords.Store(0)
 
 	for {
 		refillBufferedResult := nextResult
@@ -685,17 +708,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			bufferedResult = result
 			readyBufferedResults = r.orderedFetches
 
-			// We increase the count of buffered records only for ordered records, so that we can
-			// get an accurate tracking of the records ready to be polled by PollFetches() but not
-			// polled yet. This mimics the similar tracking done by the franz-go library.
-			r.bufferedFetchedRecords.Add(int64(len(result.Records)))
-
 		case readyBufferedResults <- bufferedResult:
-			// We've written the records to the channel read by PollFetches(). Since the channel
-			// is not buffered, as soon as the write succeed it means PollFetches() has read it,
-			// so we can consider these records polled and decrease the buffered records counter.
-			r.bufferedFetchedRecords.Sub(int64(len(bufferedResult.Records)))
-
 			bufferedResult.finishWaitingForConsumption()
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
