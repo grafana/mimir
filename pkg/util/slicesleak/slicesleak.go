@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: BSD-3-Clause
 // Provenance-includes-location: https://github.com/golang/go/blob/master/src/slices/slices.go
-// Provenance-includes-license: MIT
+// Provenance-includes-license: BSD-3-Clause
 // Provenance-includes-copyright: Go authors
 
 // Package slicesleak is intended to provide access to the Go stdlib slices package
