@@ -385,8 +385,9 @@ func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFu
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
-	haveFloats := len(fHead) > 0 || len(fTail) > 0
-	haveHistograms := len(hHead) > 0 || len(hTail) > 0
+	// There is no need to check xTail length because xHead slice will always be populated first if there is at least 1 point.
+	haveFloats := len(fHead) > 0
+	haveHistograms := len(hHead) > 0
 
 	if !haveFloats && !haveHistograms {
 		return 0, false, nil, nil
