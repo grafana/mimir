@@ -71,8 +71,9 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {
-	cluster := "c1"
-	replica := "r1"
+	const cluster = "c1"
+	const replica = "r1"
+
 	var c *haTracker
 	var err error
 	var now time.Time
@@ -85,7 +86,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	c, err = newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
-		UpdateTimeout:          time.Second * 100,
+		UpdateTimeout:          time.Millisecond * 100,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Millisecond * 2,
 	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
@@ -103,7 +104,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	c, err = newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
-		UpdateTimeout:          1000 * time.Second,
+		UpdateTimeout:          time.Millisecond * 100,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Millisecond * 2,
 	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())

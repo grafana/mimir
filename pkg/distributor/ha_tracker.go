@@ -240,7 +240,7 @@ func (h *haTracker) syncHATrackerStateOnStart(ctx context.Context) error {
 		val, err := h.client.Get(ctx, keys[i])
 		if err != nil {
 			level.Warn(h.logger).Log("msg", "sync HA state on start: failed to get replica value", "key", keys[i], "err", err)
-			return err
+			return nil
 		}
 		desc, ok := val.(*ReplicaDesc)
 		if !ok {
