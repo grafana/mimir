@@ -1986,6 +1986,18 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 	}
 }
 
+func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+	reader := createReader(t, clusterAddr, topicName, partitionID, nil)
+
+	require.Zero(t, reader.BufferedRecords())
+}
+
 func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 	const (
 		topicName   = "test"

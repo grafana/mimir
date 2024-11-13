@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -81,9 +82,13 @@ type PartitionReader struct {
 
 	// client and fetcher are both start after PartitionReader creation. Fetcher could also be
 	// replaced during PartitionReader lifetime. To avoid concurrency issues with functions
-	// getting their pointers (e.g. BufferedRecords()) we do store their pointers in an atomic.
-	client  atomic.Pointer[kgo.Client]
-	fetcher atomic.Value
+	// getting their pointers (e.g. BufferedRecords()) we use atomic / mutex to protect.
+	client atomic.Pointer[kgo.Client]
+
+	// We use a mutex for fetcher because it's an interface and we have to check against the
+	// nil case too.
+	fetcherMx sync.Mutex
+	fetcher   fetcher
 
 	newConsumer consumerFactory
 	metrics     readerMetrics
@@ -224,7 +229,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
-		r.fetcher.Store(f)
+		r.setFetcher(f)
 	} else {
 		// When concurrent fetch is disabled we read records directly from the Kafka client, so we want it
 		// to consume the partition.
@@ -232,7 +237,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(startOffset)},
 		})
 
-		r.fetcher.Store(r)
+		r.setFetcher(r)
 	}
 
 	// Enforce the max consumer lag (if enabled).
@@ -296,7 +301,6 @@ func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 	}
 
 	if r.kafkaCfg.StartupFetchConcurrency > 0 && r.kafkaCfg.OngoingFetchConcurrency > 0 {
-
 		// No need to switch the fetcher, just update the records per fetch.
 		r.getFetcher().Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
 		return
@@ -315,7 +319,7 @@ func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 
 		// We need to switch to franz-go for ongoing fetches.
 		// If we've already fetched some records, we should discard them from franz-go and start from the last consumed offset.
-		r.fetcher.Store(r)
+		r.setFetcher(r)
 
 		lastConsumed := r.consumedOffsetWatcher.LastConsumedOffset()
 		if lastConsumed == -1 {
@@ -819,8 +823,16 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 	return err
 }
 
+func (r *PartitionReader) setFetcher(f fetcher) {
+	r.fetcherMx.Lock()
+	defer r.fetcherMx.Unlock()
+	r.fetcher = f
+}
+
 func (r *PartitionReader) getFetcher() fetcher {
-	return r.fetcher.Load().(fetcher)
+	r.fetcherMx.Lock()
+	defer r.fetcherMx.Unlock()
+	return r.fetcher
 }
 
 func (r *PartitionReader) PollFetches(ctx context.Context) (result kgo.Fetches, fetchContext context.Context) {
