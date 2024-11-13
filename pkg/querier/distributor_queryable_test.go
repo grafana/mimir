@@ -627,7 +627,7 @@ func TestDistributorQuerier_Select_OverlappingChunksFromSingleIngester(t *testin
 	// - 40 (chunk 1 - unknown, first in chunk)
 	// - 20 (chunk 2 - unknown, first in chunk)
 	// - 60 (chunk 2 - not reset, second in chunk 2 and is consecutive)
-	// - 50 (chunk 4 - unknown, second in chunk 1, not consecutive, is actually counter reset but we currently treat all counter resets as unknowns)
+	// - 50 (chunk 1 - unknown, second in chunk 1, not consecutive, is actually counter reset but we currently treat all counter resets as unknowns)
 	// C1 could be an in-order chunk, C2 an OOO chunk
 	h1 := mimirpb.Histogram{
 		Count: &mimirpb.Histogram_CountInt{CountInt: 40},
