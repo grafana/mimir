@@ -1716,7 +1716,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-circuit-breaker.failure-threshold-percentage uint
     	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
   -ingester.push-circuit-breaker.initial-delay duration
-    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+    	[experimental] Duration, in seconds, after an initial request that an activated circuit breaker should wait before becoming effectively active. During this time, neither failures nor successes are counted.
   -ingester.push-circuit-breaker.request-timeout duration
     	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
   -ingester.push-circuit-breaker.thresholding-period duration
@@ -1732,7 +1732,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.failure-threshold-percentage uint
     	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
   -ingester.read-circuit-breaker.initial-delay duration
-    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+    	[experimental] Duration, in seconds, after an initial request that an activated circuit breaker should wait before becoming effectively active. During this time, neither failures nor successes are counted.
   -ingester.read-circuit-breaker.request-timeout duration
     	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
   -ingester.read-circuit-breaker.thresholding-period duration
