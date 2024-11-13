@@ -702,6 +702,10 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
 
+			for recs := result.Records; len(recs) > 0 && recs[len(recs)-1].Offset >= nextFetch.endOffset; {
+				// We just received some records. If the nextFetch is already covered by these, then we can avoid fetching it.
+				nextFetch = nextFetch.Next(recordsPerFetch)
+			}
 			// We have some ordered records ready to be sent to PollFetches(). We store the fetch
 			// result in bufferedResult, and we flip readyBufferedResults to the channel used by
 			// PollFetches().
