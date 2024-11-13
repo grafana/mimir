@@ -225,8 +225,7 @@ type concurrentFetchers struct {
 
 	// orderedFetches is a channel where we write fetches that are ready to be polled by PollFetches().
 	// Since all records must be polled in order, the fetches written to this channel are after
-	// ordering and "deduplication" (in case the same record is fetched multiple times from different
-	// routines).
+	// ordering.
 	orderedFetches chan fetchResult
 
 	lastReturnedRecord int64
