@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"flag"
+	"sync"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
@@ -99,13 +100,14 @@ func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	f.DurationVar(&cfg.RequestTimeout, prefix+"request-timeout", defaultRequestDuration, "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
 }
 
-type ActivatingState int
+type circuitBreakerState int
 
+// circuitBreakerState represents the state of the circuit breaker.
 const (
-	// tri-state activating values
-	activationIdle ActivatingState = iota
-	activationPending
-	activationQueued
+	circuitBreakerInactive circuitBreakerState = iota
+	circuitBreakerPending
+	circuitBreakerActivating
+	circuitBreakerActive
 )
 
 // circuitBreaker abstracts the ingester's server-side circuit breaker functionality.
@@ -115,9 +117,16 @@ type circuitBreaker struct {
 	requestType string
 	logger      log.Logger
 	metrics     *circuitBreakerMetrics
-	active      atomic.Bool
-	activating  atomic.Value
 	cb          circuitbreaker.CircuitBreaker[any]
+
+	// used to ensure that exactly one activation is scheduled in tryAcquirePermit()
+	activationNeeded atomic.Bool
+
+	// stateMtx is used to synchronize access to the activationTimer and *changes* to the state.
+	// Reading the state while a transition is in progress is fine.
+	stateMtx        sync.Mutex
+	state           atomic.Value
+	activationTimer *time.Timer
 
 	// testRequestDelay is needed for testing purposes to simulate long-lasting requests
 	testRequestDelay time.Duration
@@ -127,14 +136,13 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 	if !cfg.Enabled {
 		return nil
 	}
-	active := atomic.NewBool(false)
+
 	cb := circuitBreaker{
 		cfg:         cfg,
 		requestType: requestType,
 		logger:      logger,
-		active:      *active,
 	}
-	cb.activating.Store(activationIdle)
+	cb.state.Store(circuitBreakerInactive)
 
 	circuitBreakerTransitionsCounter := func(metrics *circuitBreakerMetrics, state circuitbreaker.State) prometheus.Counter {
 		return metrics.circuitBreakerTransitions.WithLabelValues(state.String())
@@ -179,7 +187,7 @@ func isDeadlineExceeded(err error) bool {
 }
 
 func (cb *circuitBreaker) tryRecordFailure(err error) bool {
-	if err == nil {
+	if cb == nil || err == nil {
 		return false
 	}
 
@@ -195,30 +203,29 @@ func (cb *circuitBreaker) tryRecordFailure(err error) bool {
 }
 
 func (cb *circuitBreaker) isActive() bool {
-	return cb != nil && cb.active.Load()
-}
-
-func (cb *circuitBreaker) isActivationIdle() bool {
-	return cb != nil && (cb.activating.Load() == activationIdle)
-}
-
-func (cb *circuitBreaker) isActivationPending() bool {
-	return cb != nil && (cb.activating.Load() == activationPending)
-}
-
-func (cb *circuitBreaker) isActivationQueued() bool {
-	return cb != nil && (cb.activating.Load() == activationQueued)
+	return cb != nil && (cb.state.Load() == circuitBreakerActive)
 }
 
 func (cb *circuitBreaker) activate() {
-	if cb == nil || cb.active.Load() {
+	if cb == nil {
 		return
 	}
+
+	cb.stateMtx.Lock()
+	defer cb.stateMtx.Unlock()
+
+	if cb.state.Load() != circuitBreakerInactive {
+		return
+	}
+
 	if cb.cfg.InitialDelay > 0 {
-		cb.activating.CompareAndSwap(activationIdle, activationPending)
+		// Move breaker from inactive to pending state. Activation will be completed by tryAcquirePermit()
+		cb.activationNeeded.Store(true)
+		cb.state.Store(circuitBreakerPending)
 	} else {
+		// Immediately move the breaker to active state
 		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
-		cb.active.Store(true)
+		cb.state.Store(circuitBreakerActive)
 	}
 }
 
@@ -226,16 +233,24 @@ func (cb *circuitBreaker) deactivate() {
 	if cb == nil {
 		return
 	}
-	if !cb.active.Load() {
-		// cancel delayed activation if it was scheduled
-		if old := cb.activating.Swap(activationIdle); old != activationIdle {
-			level.Info(cb.logger).Log("msg", "canceled delayed circuit breaker activation", "requestType", cb.requestType)
-		}
+
+	cb.stateMtx.Lock()
+	defer cb.stateMtx.Unlock()
+
+	if cb.state.Load() == circuitBreakerInactive {
 		return
 	}
+
 	level.Info(cb.logger).Log("msg", "deactivating circuit breaker", "requestType", cb.requestType)
-	cb.activating.Store(activationIdle)
-	cb.active.Store(false)
+	cb.activationNeeded.Store(false)
+	cb.state.Store(circuitBreakerInactive)
+
+	// cancel any pending activation
+	if cb.activationTimer != nil {
+		cb.activationTimer.Stop()
+		cb.activationTimer = nil
+		level.Info(cb.logger).Log("msg", "canceled delayed circuit breaker activation", "requestType", cb.requestType)
+	}
 }
 
 func (cb *circuitBreaker) isOpen() bool {
@@ -245,21 +260,54 @@ func (cb *circuitBreaker) isOpen() bool {
 	return cb.cb.IsOpen()
 }
 
+func (cb *circuitBreaker) scheduleActivation() {
+	if cb == nil {
+		return
+	}
+
+	cb.stateMtx.Lock()
+	defer cb.stateMtx.Unlock()
+
+	if cb.state.Load() != circuitBreakerPending {
+		return
+	}
+
+	level.Info(cb.logger).Log("msg", "scheduling delayed circuit breaker activation", "requestType", cb.requestType, "delay", cb.cfg.InitialDelay)
+
+	cb.state.Store(circuitBreakerActivating)
+
+	cb.activationTimer = time.AfterFunc(cb.cfg.InitialDelay, func() {
+		cb.stateMtx.Lock()
+		defer cb.stateMtx.Unlock()
+
+		// Clear the timer
+		cb.activationTimer = nil
+
+		if cb.state.Load() != circuitBreakerActivating {
+			return
+		}
+
+		level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
+		cb.state.Store(circuitBreakerActive)
+	})
+}
+
 // tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
 // If it was possible to acquire a permit, it returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
 func (cb *circuitBreaker) tryAcquirePermit() (func(time.Duration, error), error) {
-	if !cb.isActive() {
-		// We only want one request to schedule the delayed activation of the circuit breaker.
-		if cb != nil && cb.cfg.InitialDelay > 0 && cb.activating.CompareAndSwap(activationPending, activationQueued) {
-			level.Info(cb.logger).Log("msg", "scheduling delayed circuit breaker activation", "requestType", cb.requestType, "delay", cb.cfg.InitialDelay)
-			time.AfterFunc(cb.cfg.InitialDelay, func() {
-				// Don't activate the circuit breaker if it was deactivated during the delay.
-				if cb.activating.CompareAndSwap(activationQueued, activationIdle) {
-					level.Info(cb.logger).Log("msg", "activating circuit breaker", "requestType", cb.requestType)
-					cb.active.Store(true)
-				}
-			})
+	if cb == nil {
+		return func(time.Duration, error) {}, nil
+	}
+
+	s := cb.state.Load()
+	switch s {
+	case circuitBreakerInactive, circuitBreakerActivating:
+		return func(time.Duration, error) {}, nil
+	case circuitBreakerPending:
+		// We only want to schedule the delayed activation of the circuit breaker once.
+		if cb.activationNeeded.CompareAndSwap(true, false) {
+			cb.scheduleActivation()
 		}
 		return func(time.Duration, error) {}, nil
 	}
