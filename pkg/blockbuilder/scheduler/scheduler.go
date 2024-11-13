@@ -137,6 +137,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 	}
 
 	s.jobs = newJobs
+	s.observations = nil
 	s.observationComplete = true
 }
 
