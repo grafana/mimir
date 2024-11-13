@@ -2,6 +2,6 @@
   "name": "screenshots",
   "version": "0.1.0",
   "dependencies": {
-    "puppeteer": "^21.0.0"
+    "puppeteer": "^23.0.0"
   }
 }
