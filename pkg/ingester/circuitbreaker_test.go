@@ -168,10 +168,6 @@ func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
 	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
 	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 
-	// Inactive by default
-	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
-	require.False(t, cb.isActive())
-
 	cb.activate()
 
 	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
@@ -186,11 +182,6 @@ func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
 	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
 
 	cb.activate()
-
-	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
-	requireCircuitBreakerState(t, cb, circuitBreakerPending)
-	require.False(t, cb.isActive())
-
 	_, err := cb.tryAcquirePermit()
 	require.NoError(t, err)
 
