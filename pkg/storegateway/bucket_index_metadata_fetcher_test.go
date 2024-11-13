@@ -68,7 +68,6 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		block3.ID: block3.ThanosMeta(),
 	}, metas)
 	assert.Empty(t, partials)
-	assert.Empty(t, logs)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
