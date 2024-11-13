@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -303,9 +304,12 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		assert.Zero(t, fetches.NumRecords())
 		assert.Error(t, fetchCtx.Err(), "Expected context to be cancelled")
+		assert.Zero(t, fetchers.BufferedRecords())
 	})
 
 	t.Run("cold replay", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -321,9 +325,14 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		fetches, _ := fetchers.PollFetches(ctx)
 		assert.Equal(t, fetches.NumRecords(), 5)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fetch records produced after startup", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -339,6 +348,9 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		fetches, _ := fetchers.PollFetches(ctx)
 		assert.Equal(t, fetches.NumRecords(), 3)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("slow processing of fetches", func(t *testing.T) {
@@ -357,26 +369,42 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		var wg sync.WaitGroup
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
 			consumedRecords := 0
 			for consumedRecords < 10 {
 				fetches, _ := fetchers.PollFetches(ctx)
-				time.Sleep(1000 * time.Millisecond) // Simulate slow processing
 				consumedRecords += fetches.NumRecords()
+
+				// Simulate slow processing.
+				time.Sleep(200 * time.Millisecond)
 			}
 			assert.Equal(t, 10, consumedRecords)
 		}()
 
-		// Produce more records while processing is slow
-		for i := 5; i < 10; i++ {
-			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
-		}
+		// Slowly produce more records while processing is slow too. This increase the chances
+		// of progressive fetches done by the consumer.
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for i := 5; i < 10; i++ {
+				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+				time.Sleep(200 * time.Millisecond)
+			}
+		}()
 
 		wg.Wait()
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fast processing of fetches", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -390,25 +418,27 @@ func TestConcurrentFetchers(t *testing.T) {
 			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 		}
 
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			consumedRecords := 0
-			for consumedRecords < 10 {
-				fetches, _ := fetchers.PollFetches(ctx)
-				consumedRecords += fetches.NumRecords()
-				// no processing delay
-			}
-			assert.Equal(t, 10, consumedRecords)
-		}()
+		// Consume all expected records.
+		consumedRecords := 0
+		for consumedRecords < 10 {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		assert.Equal(t, 10, consumedRecords)
 
-		wg.Wait()
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fetch with different concurrency levels", func(t *testing.T) {
+		t.Parallel()
+
 		for _, concurrency := range []int{1, 2, 4} {
+			concurrency := concurrency
+
 			t.Run(fmt.Sprintf("concurrency-%d", concurrency), func(t *testing.T) {
+				t.Parallel()
+
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 
@@ -429,11 +459,16 @@ func TestConcurrentFetchers(t *testing.T) {
 				}
 
 				assert.Equal(t, 20, totalRecords)
+
+				// We expect no more records returned by PollFetches() and no buffered records.
+				pollFetchesAndAssertNoRecords(t, fetchers)
 			})
 		}
 	})
 
 	t.Run("start from mid-stream offset", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -472,9 +507,14 @@ func TestConcurrentFetchers(t *testing.T) {
 			"new-record-1",
 			"new-record-2",
 		}, fetchedRecordsContents)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("synchronous produce and fetch", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -507,10 +547,15 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			// Verify fetched records
 			assert.Equal(t, expectedRecords, fetchedRecords, "Fetched records in round %d do not match expected", round)
+
+			// We expect no more records returned by PollFetches() and no buffered records.
+			pollFetchesAndAssertNoRecords(t, fetchers)
 		}
 	})
 
 	t.Run("concurrency can be updated", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		rec1 := []byte("record-1")
@@ -548,10 +593,13 @@ func TestConcurrentFetchers(t *testing.T) {
 		fetchers.Update(ctx, 10, 10)
 		produceRecordAndAssert(rec3)
 
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("update concurrency with continuous production", func(t *testing.T) {
 		t.Parallel()
+
 		const (
 			testDuration       = 10 * time.Second
 			produceInterval    = 10 * time.Millisecond
@@ -633,6 +681,9 @@ func TestConcurrentFetchers(t *testing.T) {
 				"Record %d has unexpected content: %s", i, string(record.Value))
 		}
 
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
+
 		// Log some statistics
 		t.Logf("Total produced: %d, Total fetched: %d", totalProduced, totalFetched)
 		t.Logf("Fetched with initial concurrency: %d", initialFetched)
@@ -642,6 +693,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 	t.Run("consume from end and update immediately", func(t *testing.T) {
 		t.Parallel()
+
 		const (
 			initialRecords     = 100
 			additionalRecords  = 50
@@ -693,6 +745,9 @@ func TestConcurrentFetchers(t *testing.T) {
 			assert.Equal(t, expectedContent, string(record.Value),
 				"Record %d has unexpected content: %s", i, string(record.Value))
 		}
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 
 		// Log some statistics
 		t.Logf("Total records produced: %d", initialRecords+additionalRecords)
@@ -756,6 +811,9 @@ func TestConcurrentFetchers(t *testing.T) {
 		}
 
 		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("staggered production with one less than multiple of concurrency and records per fetch", func(t *testing.T) {
@@ -823,6 +881,9 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			return nil, errors.New("mocked error"), true
 		})
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fetchers do not request offset beyond high watermark", func(t *testing.T) {
@@ -898,9 +959,14 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		// Verify the number and content of fetched records
 		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes, "Should fetch all produced records")
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("starting to run against a broken broker fails creating the fetchers", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -923,7 +989,9 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
-		metrics := newReaderMetrics(partitionID, reg)
+		metrics := newReaderMetrics(partitionID, reg, func() float64 {
+			return 0
+		})
 
 		client := newKafkaProduceClient(t, clusterAddr)
 
@@ -955,12 +1023,43 @@ func TestConcurrentFetchers(t *testing.T) {
 		assert.ErrorContains(t, err, "failed to find topic ID")
 		assert.ErrorIs(t, err, mockErr)
 	})
+
+	t.Run("should reset the buffered records count when stopping", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		// Produce some records.
+		for i := 0; i < 10; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// We are not consuming the records, so we expect the count of buffered records to increase.
+		// The actual number of buffered records may change due to concurrency, so we just check
+		// that there are some buffered records.
+		test.Poll(t, time.Second, true, func() interface{} {
+			return fetchers.BufferedRecords() > 0
+		})
+
+		// Stop the fetchers.
+		fetchers.Stop()
+
+		// Even if there were some buffered records we expect the count to be reset to 0 when stopping
+		// because the Stop() intentionally discard any buffered record.
+		require.Zero(t, fetchers.BufferedRecords())
+	})
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newReaderMetrics(partition, reg)
+	metrics := newReaderMetrics(partition, reg, func() float64 { return 1 })
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
@@ -991,6 +1090,33 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	t.Cleanup(f.Stop)
 
 	return f
+}
+
+// pollFetchesAndAssertNoRecords ensures that PollFetches() returns 0 records and there are
+// no buffered records in fetchers. Since some records are discarded in the PollFetches(),
+// we may have to call it multiple times to process all buffered records that need to be
+// discarded.
+func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	for {
+		fetches, returnCtx := fetchers.PollFetches(ctx)
+		if errors.Is(returnCtx.Err(), context.DeadlineExceeded) {
+			break
+		}
+
+		// We always expect that PollFetches() returns zero records.
+		require.Len(t, fetches.Records(), 0)
+
+		// If there are no buffered records, we're good. We can end the assertion.
+		if fetchers.BufferedRecords() == 0 {
+			return
+		}
+	}
+
+	// We stopped polling fetches. We have to make sure there are no buffered records.
+	require.Zero(t, fetchers.BufferedRecords())
 }
 
 type waiterFunc func()

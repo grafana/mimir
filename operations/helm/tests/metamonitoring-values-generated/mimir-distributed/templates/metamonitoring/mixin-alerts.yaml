@@ -1129,8 +1129,7 @@ spec:
                 rate(cortex_ingest_storage_reader_requests_total[5m])
               ) == 0)
               and
-              # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
-              (sum by (cluster, namespace, pod) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
+              (sum by (cluster, namespace, pod) (cortex_ingest_storage_reader_buffered_fetched_records) > 0)
             for: 5m
             labels:
               severity: critical
