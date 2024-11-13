@@ -70,6 +70,54 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 	})
 }
 
+func TestHATrackerCacheSyncOnStart(t *testing.T) {
+	const cluster = "c1"
+	const replica = "r1"
+
+	var c *haTracker
+	var err error
+	var now time.Time
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+	c, err = newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          time.Millisecond * 100,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	now = time.Now()
+	err = c.checkReplica(context.Background(), "user", cluster, replica, now)
+	assert.NoError(t, err)
+
+	err = services.StopAndAwaitTerminated(context.Background(), c)
+	assert.NoError(t, err)
+
+	replicaTwo := "r2"
+	c, err = newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          time.Millisecond * 100,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
+
+	now = time.Now()
+	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
+}
+
 func TestHATrackerConfig_Validate(t *testing.T) {
 	t.Parallel()
 
