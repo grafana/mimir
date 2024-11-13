@@ -685,9 +685,9 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			bufferedResult = result
 			readyBufferedResults = r.orderedFetches
 
-			// We increase the count of buffered records only for ordered records that we're sure
-			// will not be discarded later, so that we can get an accurate tracking of the records
-			// ready to be polled by PollFetches() but not polled yet.
+			// We increase the count of buffered records only for ordered records, so that we can
+			// get an accurate tracking of the records ready to be polled by PollFetches() but not
+			// polled yet. This mimics the similar tracking done by the franz-go library.
 			r.bufferedFetchedRecords.Add(int64(len(result.Records)))
 
 		case readyBufferedResults <- bufferedResult:
