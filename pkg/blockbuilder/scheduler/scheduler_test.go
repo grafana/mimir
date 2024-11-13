@@ -155,51 +155,11 @@ func TestStartup(t *testing.T) {
 	require.Equal(t, "ingest/65/256", a1key.id)
 }
 
-func TestObserve(t *testing.T) {
-	m := make(obsMap)
-
-	require.NoError(t,
-		m.update(
-			jobKey{id: "ingest/64/1000", epoch: 10},
-			"w0",
-			true,
-			jobSpec{topic: "ingest", commitRecTs: time.Unix(5, 0)},
-		),
-	)
-	require.NoError(t,
-		m.update(
-			jobKey{id: "ingest/64/1000", epoch: 10},
-			"w0",
-			true,
-			jobSpec{topic: "ingest", commitRecTs: time.Unix(5, 0)},
-		),
-	)
-	require.NoError(t,
-		m.update(
-			jobKey{id: "ingest/64/99999999", epoch: 84},
-			"w0",
-			true,
-			jobSpec{topic: "ingest", commitRecTs: time.Unix(99, 0)},
-		),
-	)
-	require.Len(t, m, 2)
-
-	require.ErrorIs(t,
-		m.update(
-			jobKey{id: "ingest/64/1000", epoch: 9},
-			"w9",
-			false,
-			jobSpec{topic: "ingest", commitRecTs: time.Unix(2, 0)},
-		),
-		errBadEpoch,
-	)
-}
-
-func TestFinalizeObservations(t *testing.T) {
+func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	// Initially we're in observation mode. We have Kafka's start offsets, but no client jobs.
 
-	kafkaOffsets := kadm.Offsets{
+	sched.committed = kadm.Offsets{
 		"ingest": {
 			1: kadm.Offset{
 				Topic:     "ingest",
@@ -231,7 +191,7 @@ func TestFinalizeObservations(t *testing.T) {
 
 	{
 		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
-		err := sched.observations.finalize(kafkaOffsets, nq)
+		err := sched.observations.finalize(sched.committed, nq)
 		require.NoError(t, err)
 		require.Len(t, nq.jobs, 0, "No observations, no jobs")
 	}
@@ -307,28 +267,38 @@ func TestFinalizeObservations(t *testing.T) {
 			t.Log("sending update", c.key, c.workerID)
 			err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
 			if c.expectErr == maybeBadEpoch {
-				if !(errors.Is(err, errBadEpoch) || err == nil) {
-					require.Fail(t, "expected either bad epoch or no error", "got %v", err)
-				}
+				require.True(t, errors.Is(err, errBadEpoch) || err == nil, "expected either bad epoch or no error, got %v", err)
 			} else {
 				require.NoError(t, err)
 			}
 		}
 	}
 
-	nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
-	err := sched.observations.finalize(kafkaOffsets, nq)
-	require.NoError(t, err)
+	sched.completeObservationMode()
+	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
+	requireOffset(t, sched.committed, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
+	requireOffset(t, sched.committed, "ingest", 3, 974, "ingest/3 should be unchanged - no updates")
+	requireOffset(t, sched.committed, "ingest", 4, 899, "ingest/4 should be moved forward to account for the completed jobs")
+	requireOffset(t, sched.committed, "ingest", 5, 12000, "ingest/5 has nothing new completed")
+	requireOffset(t, sched.committed, "ingest", 6, 599, "ingest/6 should have been added to the offsets")
 
-	requireOffset(t, kafkaOffsets, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
-	requireOffset(t, kafkaOffsets, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
-	requireOffset(t, kafkaOffsets, "ingest", 3, 974, "ingest/3 should be unchanged - not among observations")
-	requireOffset(t, kafkaOffsets, "ingest", 4, 899, "ingest/4 should be moved forward to account for the completed jobs")
-	requireOffset(t, kafkaOffsets, "ingest", 5, 12000, "ingest/5 has nothing new completed")
-	requireOffset(t, kafkaOffsets, "ingest", 6, 599, "ingest/6 should have been added to the offsets")
+	require.Len(t, sched.jobs.jobs, 3)
+	require.Equal(t, 35, int(sched.jobs.epoch))
 
-	require.Len(t, nq.jobs, 3)
-	require.Equal(t, 35, int(nq.epoch))
+	// Now verify that the same set of updates can be sent now that we're out of observation mode.
+
+	for range 3 {
+		rnd.Shuffle(len(clientData), func(i, j int) { clientData[i], clientData[j] = clientData[j], clientData[i] })
+		for _, c := range clientData {
+			t.Log("sending update", c.key, c.workerID)
+			err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
+			if c.expectErr == maybeBadEpoch {
+				require.True(t, errors.Is(err, errBadEpoch) || err == nil, "expected either bad epoch or no error, got %v", err)
+			} else {
+				require.NoError(t, err)
+			}
+		}
+	}
 }
 
 func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int32, expected int64, msgAndArgs ...interface{}) {
