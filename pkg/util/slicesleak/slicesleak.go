@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/golang/go/blob/master/src/slices/slices.go
 // Provenance-includes-license: MIT
 // Provenance-includes-copyright: Go authors
