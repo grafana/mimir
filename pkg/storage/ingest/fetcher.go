@@ -232,7 +232,8 @@ type concurrentFetchers struct {
 	startOffsets       *genericOffsetReader[int64]
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
-	trackCompressedBytes bool
+	trackCompressedBytes  bool
+	maxInflightBytesLimit int32
 
 	bufferedFetchedRecords *atomic.Int64
 }
@@ -247,6 +248,7 @@ func newConcurrentFetchers(
 	startOffset int64,
 	concurrency int,
 	recordsPerFetch int,
+	maxInflightBytesLimit int32,
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
@@ -267,6 +269,10 @@ func newConcurrentFetchers(
 	if err != nil {
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
+
+	if maxInflightBytesLimit <= 0 {
+		maxInflightBytesLimit = math.MaxInt32
+	}
 	f := &concurrentFetchers{
 		bufferedFetchedRecords: atomic.NewInt64(0),
 		client:                 client,
@@ -278,6 +284,7 @@ func newConcurrentFetchers(
 		lastReturnedRecord:     startOffset - 1,
 		startOffsets:           startOffsetsReader,
 		trackCompressedBytes:   trackCompressedBytes,
+		maxInflightBytesLimit:  maxInflightBytesLimit,
 		tracer:                 recordsTracer(),
 		orderedFetches:         make(chan fetchResult),
 		done:                   make(chan struct{}),
@@ -645,6 +652,8 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// 2nd next one).
 		pendingResults = list.New()
 
+		inflightWantsExpectedBytes = int32(0)
+
 		// bufferedResult is the next fetch that should be polled by PollFetches().
 		bufferedResult fetchResult
 
@@ -666,7 +675,15 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			refillBufferedResult = nil
 		}
 		dispatchNextWant := chan fetchWant(nil)
-		if nextResult == nil || nextFetch.startOffset <= highWatermark.Load() {
+		wouldExceedInflightBytesLimit := inflightWantsExpectedBytes+nextFetch.MaxBytes() > r.maxInflightBytesLimit
+		if wouldExceedInflightBytesLimit {
+			// TODO dimitarvdimitrov remove these logs
+			r.logger.Log("msg", "would exceed inflight bytes limit", "inflight", inflightWantsExpectedBytes, "would_be", inflightWantsExpectedBytes+nextFetch.MaxBytes(), "limit", r.maxInflightBytesLimit)
+		} else {
+			r.logger.Log("msg", "within limit of dispatching next want", "inflight", inflightWantsExpectedBytes, "would_be", inflightWantsExpectedBytes+nextFetch.MaxBytes(), "limit", r.maxInflightBytesLimit)
+		}
+
+		if nextResult == nil || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 			// So we dispatch a fetch only if it's fetching an existing offset.
 			// This shouldn't noticeably affect performance with Apache Kafka, after all franz-go only has a concurrency of 1 per partition.
@@ -675,6 +692,11 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
 			dispatchNextWant = wants
 		}
+		bufferedRecords := r.BufferedRecords()
+		if bufferedRecords == 0 {
+			// TODO dimitarvdimitrov remove
+			fmt.Println("bufferedRecords == 0")
+		}
 		select {
 		case <-r.done:
 			return
@@ -682,6 +704,10 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			return
 
 		case dispatchNextWant <- nextFetch:
+			// TODO dimitarvdimitrov <remove>
+			inflightWantsExpectedBytes += nextFetch.MaxBytes()
+			r.logger.Log("msg", "dispatched fetch want", "inflight", inflightWantsExpectedBytes, "start", nextFetch.startOffset, "end", nextFetch.endOffset)
+			// TODO dimitarvdimitrov </remove>
 			pendingResults.PushBack(nextFetch.result)
 			if nextResult == nil {
 				// In case we previously exhausted pendingResults, we just created
@@ -710,6 +736,8 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 
 		case readyBufferedResults <- bufferedResult:
 			bufferedResult.finishWaitingForConsumption()
+			inflightWantsExpectedBytes -= int32(bufferedResult.fetchedBytes)
+			inflightWantsExpectedBytes = max(inflightWantsExpectedBytes, 0) // TODO dimitarvdimitrov this doesn't account for disparity between the fetchWant and the actual fetched bytes
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
 		}
