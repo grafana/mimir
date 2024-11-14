@@ -240,11 +240,15 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Kafka records / sec') +
+        $.timeseriesPanel('Write request batches processed / sec') +
         $.panelDescription(
-          'Kafka records / sec',
+          'Write request batches processed / sec',
           |||
-            Rate of processed records from Kafka. Failed records are categorized as "client" errors (e.g. per-tenant limits) or server errors.
+            Rate of write requests processed from Kafka. When concurrent fetcher is enabled, this panel shows the rate
+            of write request batches processed: multiple requests could get batched together and so the resulting number
+            batches processed may be lower than the number of write requests received in the distributor.
+
+            Failed records are categorized as "client" errors (e.g. per-tenant limits) or server errors.
           |||
         ) +
         $.queryPanel(
@@ -285,11 +289,11 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Kafka record processing latency') +
+        $.timeseriesPanel('Kafka records batch processing latency') +
         $.panelDescription(
-          'Kafka record processing latency',
+          'Kafka records batch processing latency',
           |||
-            Time used to process a single record (write request). This time is spent by appending data to per-tenant TSDB.
+            Time taken to process a batch of Kafka records (each record contains a write request).
           |||
         ) +
         $.queryPanel(
