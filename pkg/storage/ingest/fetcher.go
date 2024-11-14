@@ -383,15 +383,35 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
 	r.metrics.fetchWaitDuration.Observe(waitDuration.Seconds())
 
-	doubleFetchedBytes := 0
+	var (
+		doubleFetchedBytes             = 0
+		skippedRecordsCount            = 0
+		firstSkippedRecordOffset int64 = -1
+		lastSkippedRecordOffset  int64 = -1
+	)
+
 	for i, record := range f.Records {
 		if i < firstReturnedRecordIndex {
 			doubleFetchedBytes += len(record.Value)
-			spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
+
+			// Keep track of first/last skipped record offsets, just for debugging purposes.
+			skippedRecordsCount++
+			lastSkippedRecordOffset = record.Offset
+			if firstSkippedRecordOffset < 0 {
+				firstSkippedRecordOffset = record.Offset
+			}
 		}
 		r.tracer.OnFetchRecordUnbuffered(record, true)
 	}
 	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
+
+	if skippedRecordsCount > 0 {
+		spanlogger.FromContext(f.Records[0].Context, r.logger).DebugLog(
+			"msg", "skipped records because already returned",
+			"skipped_records_count", skippedRecordsCount,
+			"first_skipped_offset", firstSkippedRecordOffset,
+			"last_skipped_offset", lastSkippedRecordOffset)
+	}
 }
 
 // fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
