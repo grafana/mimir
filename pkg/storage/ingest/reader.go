@@ -994,6 +994,7 @@ type readerMetrics struct {
 	services.Service
 
 	bufferedFetchedRecords           prometheus.GaugeFunc
+	bufferedFetchedBytes             prometheus.GaugeFunc
 	bytesPerRecord                   prometheus.Histogram
 	receiveDelayWhenStarting         prometheus.Observer
 	receiveDelayWhenRunning          prometheus.Observer
@@ -1039,8 +1040,12 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 	m := readerMetrics{
 		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingest_storage_reader_buffered_fetched_records",
-			Help: "The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.",
+			Help: "The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.",
 		}, func() float64 { return float64(metricsSource.BufferedRecords()) }),
+		bufferedFetchedBytes: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingest_storage_reader_allocated_fetched_bytes",
+			Help: "The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.",
+		}, func() float64 { return float64(metricsSource.BufferedBytes()) }),
 		bytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_bytes_per_record",
 			Help:                        "Observations with the current size of records fetched from Kafka. Sampled at 10Hz.",
