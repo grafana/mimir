@@ -716,6 +716,8 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	for {
+		// refillBufferedResult is the channel of the next fetch result. This variable is valued (non-nil) only when
+		// we're ready to actually read the result, so that we don't try to read the next result if we're not ready.
 		refillBufferedResult := inflight.peekNextResult()
 		if readyBufferedResults != nil {
 			// We have a single result that's still not consumed.
