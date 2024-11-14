@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -1268,6 +1269,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
+	defer entry.FreeBuffer()
 
 	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "cached series postings doesn't match, possible collision", "cached_trimmed_postings", previewDiffEncodedPostings(entry.DiffEncodedPostings))
@@ -1278,8 +1280,10 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	// after Next() will be called again.
 	res := newSeriesChunkRefsSet(len(entry.Series), true)
 	for _, lset := range entry.Series {
+		ls := mimirpb.FromLabelAdaptersToLabels(lset.Labels)
+		ls.InternStrings(strings.Clone)
 		res.series = append(res.series, seriesChunkRefs{
-			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
+			lset: ls,
 		})
 	}
 	return res, true
