@@ -89,6 +89,14 @@ func (bs *batchStream) curr() *chunk.Batch {
 	return &bs.batches[0]
 }
 
+type sampleSource int
+
+const (
+	floatValue sampleSource = iota
+	fromBatchStream
+	fromIncomingBatch
+)
+
 // merge merges this streams of chunk.Batch objects and the given chunk.Batch of the same series over time.
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
@@ -114,6 +122,8 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 	resultLen := 1 // Number of batches in the final result.
 	b := &bs.batchesBuf[0]
 
+	prevSampleSource := fromBatchStream //TODO: is this right for first merge() call? I think so...
+
 	// Step to the next Batch in the result, create it if it does not exist
 	nextBatch := func(valueType chunkenc.ValueType) {
 		// The Index is the place at which new sample
@@ -129,7 +139,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		b.ValueType = valueType
 	}
 
-	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType) {
+	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType, currSampleSource sampleSource) {
 		if b.Index == 0 {
 			// Starting to write this Batch, it is safe to set the value type
 			b.ValueType = valueType
@@ -142,10 +152,25 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		switch valueType {
 		case chunkenc.ValFloat:
 			b.Timestamps[b.Index], b.Values[b.Index] = batch.At()
+			currSampleSource = floatValue //TODO: best way to do this?
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
+			if currSampleSource != prevSampleSource {
+				h := (*histogram.Histogram)(b.PointerValues[b.Index])
+				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
+					h.CounterResetHint = histogram.UnknownCounterReset
+				}
+			}
+			prevSampleSource = currSampleSource
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
+			if currSampleSource != prevSampleSource {
+				h := (*histogram.FloatHistogram)(b.PointerValues[b.Index])
+				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
+					h.CounterResetHint = histogram.UnknownCounterReset
+				}
+			}
+			prevSampleSource = currSampleSource
 		}
 		b.Index++
 	}
@@ -153,17 +178,17 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 	for lt, rt := bs.hasNext(), batch.HasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = bs.hasNext(), batch.HasNext() {
 		t1, t2 := bs.curr().AtTime(), batch.AtTime()
 		if t1 < t2 {
-			populate(bs.curr(), lt)
+			populate(bs.curr(), lt, fromBatchStream)
 			bs.next()
 		} else if t1 > t2 {
-			populate(batch, rt)
+			populate(batch, rt, fromIncomingBatch)
 			batch.Next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(batch, rt)
+				populate(batch, rt, fromBatchStream)
 			} else {
-				populate(bs.curr(), lt)
+				populate(bs.curr(), lt, fromIncomingBatch)
 				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
 				if rt == chunkenc.ValHistogram && bs.hPool != nil {
 					_, h := batch.AtHistogram()
@@ -181,12 +206,13 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 	}
 
 	for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
-		populate(bs.curr(), t)
+		populate(bs.curr(), t, fromBatchStream)
 		bs.next()
 	}
 
+	// TODO: check if first sample in batch matches last one
 	for t := batch.HasNext(); t != chunkenc.ValNone; t = batch.HasNext() {
-		populate(batch, t)
+		populate(batch, t, fromIncomingBatch)
 		batch.Next()
 	}
 
