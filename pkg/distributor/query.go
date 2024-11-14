@@ -211,6 +211,20 @@ type ingesterQueryResult struct {
 	chunkseriesBatches [][]ingester_client.TimeSeriesChunk
 	timeseriesBatches  [][]mimirpb.TimeSeries
 	streamingSeries    seriesChunksStream
+
+	// Retain responses owning referenced gRPC buffers, until they are freed.
+	responses []*ingester_client.QueryStreamResponse
+}
+
+func (r *ingesterQueryResult) addResponse(resp *ingester_client.QueryStreamResponse) {
+	r.responses = append(r.responses, resp)
+}
+
+func (r *ingesterQueryResult) freeBuffers() {
+	for _, resp := range r.responses {
+		resp.FreeBuffer()
+	}
+	r.responses = nil
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
@@ -221,8 +235,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
 	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
-		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.queryIngesterStream")
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (result ingesterQueryResult, err error) {
+		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Finish()
 			cancelContext(errStreamClosed)
@@ -239,6 +253,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				}
 
 				cleanup()
+			}
+
+			if err != nil {
+				result.freeBuffers()
 			}
 		}()
 
@@ -264,15 +282,70 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter)
+			// XXX: Note that while we free responses' gRPC buffers on error, we don't do the same in case of success,
+			// as the combined response retains references to gRPC buffers.
+			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
 			} else if err != nil {
 				return result, err
 			}
-			if labelsBatch != nil {
-				streamingSeriesCount += len(labelsBatch)
+
+			result.addResponse(resp)
+
+			if len(resp.Timeseries) > 0 {
+				for _, series := range resp.Timeseries {
+					if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
+						return ingesterQueryResult{}, limitErr
+					}
+				}
+
+				result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
+			} else if len(resp.Chunkseries) > 0 {
+				// Enforce the max chunks limits.
+				if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
+					return ingesterQueryResult{}, err
+				}
+
+				if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
+					return ingesterQueryResult{}, err
+				}
+
+				for _, series := range resp.Chunkseries {
+					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
+						return ingesterQueryResult{}, err
+					}
+				}
+
+				if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
+					return ingesterQueryResult{}, err
+				}
+
+				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
+			} else if len(resp.StreamingSeries) > 0 {
+				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
+				streamingSeriesCount += len(resp.StreamingSeries)
+
+				for _, s := range resp.StreamingSeries {
+					l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+					if err := queryLimiter.AddSeries(l); err != nil {
+						return ingesterQueryResult{}, err
+					}
+
+					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
+					if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
+						return ingesterQueryResult{}, err
+					}
+
+					if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
+						return ingesterQueryResult{}, err
+					}
+
+					labelsBatch = append(labelsBatch, l)
+				}
+
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
 			}
 			if isEOS {

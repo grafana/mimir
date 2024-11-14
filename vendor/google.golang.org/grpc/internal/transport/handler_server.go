@@ -333,7 +333,7 @@ func (ht *serverHandlerTransport) writeCustomHeaders(s *ServerStream) {
 	s.hdrMu.Unlock()
 }
 
-func (ht *serverHandlerTransport) write(s *ServerStream, hdr []byte, data mem.BufferSlice, _ *WriteOptions) error {
+func (ht *serverHandlerTransport) Write(s *Stream, hdr []byte, data mem.BufferSlice, _ *Options) error {
 	// Always take a reference because otherwise there is no guarantee the data will
 	// be available after this function returns. This is what callers to Write
 	// expect.
@@ -474,6 +474,8 @@ func (ht *serverHandlerTransport) runStream() {
 }
 
 func (ht *serverHandlerTransport) incrMsgRecv() {}
+
+func (ht *serverHandlerTransport) IncrMsgRecv() {}
 
 func (ht *serverHandlerTransport) Drain(string) {
 	panic("Drain() is not implemented")

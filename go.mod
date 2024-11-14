@@ -358,9 +358,8 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 // Replacing prometheus/alertmanager with our fork.
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
 
-// Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
-// while allowing Mimir to move at a more conservative pace.
-replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
-
-// Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
-replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
+// Replacing with a fork commit based on v1.17.1 having cherry-picked the following PRs:
+// - https://github.com/grafana/franz-go/pull/1
+// - https://github.com/grafana/franz-go/pull/3
+// - https://github.com/grafana/franz-go/pull/4
+replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937

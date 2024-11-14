@@ -166,19 +166,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 
 	// If the fields of WriteRequest have changed, then you will probably need to modify
 	// the SplitWriteRequestByMaxMarshalSize() implementation accordingly!
-	assert.ElementsMatch(t, []string{
-		"Timeseries",
-		"Source",
-		"Metadata",
-		"SymbolsRW2",
-		"TimeseriesRW2",
-		"SkipLabelValidation",
-		"SkipLabelCountValidation",
-		"skipUnmarshalingExemplars",
-		"unmarshalFromRW2",
-		"rw2symbols",
-		"BufferHolder",
-	}, fieldNames)
+	assert.ElementsMatch(t, []string{"Timeseries", "Source", "Metadata", "SkipLabelValidation", "SkipLabelCountValidation", "skipUnmarshalingExemplars", "BufferHolder"}, fieldNames)
 }
 
 func BenchmarkSplitWriteRequestByMaxMarshalSize(b *testing.B) {
