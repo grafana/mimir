@@ -1,21 +1,28 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 1d662c7bcb..3d3b15da3b 100644
+index 2116cd052e..9ac60b7863 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
-@@ -286,12 +286,6 @@ type WriteRequest struct {
+@@ -275,9 +275,6 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
+ }
+ 
+ type WriteRequest struct {
+-	// Keep reference to buffer for unsafe references.
+-	BufferHolder
+-
+ 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
+ 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
+ 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+@@ -285,9 +282,6 @@ type WriteRequest struct {
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
 -
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
--	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
--	unmarshalFromRW2 bool
--	rw2symbols       rw2PagedSymbols
  }
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
-@@ -458,9 +452,6 @@ type TimeSeries struct {
+@@ -440,9 +434,6 @@ type TimeSeries struct {
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
@@ -25,32 +32,12 @@ index 1d662c7bcb..3d3b15da3b 100644
  }
  
  func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
-@@ -7318,8 +7309,6 @@ func valueToStringMimir(v interface{}) string {
- 	return fmt.Sprintf("*%v", pv)
- }
- func (m *WriteRequest) Unmarshal(dAtA []byte) error {
--	var metadata map[string]*MetricMetadata
--
- 	l := len(dAtA)
- 	iNdEx := 0
- 	for iNdEx < l {
-@@ -7349,9 +7338,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
- 		}
- 		switch fieldNum {
- 		case 1:
--			if m.unmarshalFromRW2 {
--				return errorUnexpectedRW1Timeseries
--			}
- 			if wireType != 2 {
- 				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
- 			}
-@@ -7381,8 +7367,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7290,7 +7281,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
--			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil); err != nil {
-+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
  			iNdEx = postIndex
@@ -120,7 +107,7 @@ index 1d662c7bcb..3d3b15da3b 100644
  	return nil
  }
  func (m *WriteResponse) Unmarshal(dAtA []byte) error {
-@@ -7834,11 +7796,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+@@ -7651,11 +7644,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
