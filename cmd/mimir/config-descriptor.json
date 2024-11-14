@@ -6755,6 +6755,16 @@
             },
             {
               "kind": "field",
+              "name": "max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "ingest-storage.kafka.max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
               "name": "ingestion_concurrency_max",
               "required": false,
               "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",

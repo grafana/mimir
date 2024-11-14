@@ -51,6 +51,12 @@ type fetcher interface {
 
 	// BufferedRecords returns the number of records that have been fetched but not yet consumed.
 	BufferedRecords() int64
+
+	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
+	BufferedBytes() int64
+
+	// BytesPerRecord returns the current estimation for how many bytes each record is.
+	BytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -232,9 +238,12 @@ type concurrentFetchers struct {
 	startOffsets       *genericOffsetReader[int64]
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
-	trackCompressedBytes bool
+	trackCompressedBytes  bool
+	maxBufferedBytesLimit int32
 
-	bufferedFetchedRecords *atomic.Int64
+	bufferedFetchedRecords  *atomic.Int64
+	bufferedFetchedBytes    *atomic.Int64
+	estimatedBytesPerRecord *atomic.Int64
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -247,6 +256,7 @@ func newConcurrentFetchers(
 	startOffset int64,
 	concurrency int,
 	recordsPerFetch int,
+	maxBufferedBytesLimit int32,
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
@@ -267,20 +277,27 @@ func newConcurrentFetchers(
 	if err != nil {
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
+
+	if maxBufferedBytesLimit <= 0 {
+		maxBufferedBytesLimit = math.MaxInt32
+	}
 	f := &concurrentFetchers{
-		bufferedFetchedRecords: atomic.NewInt64(0),
-		client:                 client,
-		logger:                 logger,
-		topicName:              topic,
-		partitionID:            partition,
-		metrics:                metrics,
-		minBytesWaitTime:       minBytesWaitTime,
-		lastReturnedRecord:     startOffset - 1,
-		startOffsets:           startOffsetsReader,
-		trackCompressedBytes:   trackCompressedBytes,
-		tracer:                 recordsTracer(),
-		orderedFetches:         make(chan fetchResult),
-		done:                   make(chan struct{}),
+		bufferedFetchedRecords:  atomic.NewInt64(0),
+		bufferedFetchedBytes:    atomic.NewInt64(0),
+		estimatedBytesPerRecord: atomic.NewInt64(0),
+		client:                  client,
+		logger:                  logger,
+		topicName:               topic,
+		partitionID:             partition,
+		metrics:                 metrics,
+		minBytesWaitTime:        minBytesWaitTime,
+		lastReturnedRecord:      startOffset - 1,
+		startOffsets:            startOffsetsReader,
+		trackCompressedBytes:    trackCompressedBytes,
+		maxBufferedBytesLimit:   maxBufferedBytesLimit,
+		tracer:                  recordsTracer(),
+		orderedFetches:          make(chan fetchResult),
+		done:                    make(chan struct{}),
 	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
@@ -306,6 +323,15 @@ func (r *concurrentFetchers) BufferedRecords() int64 {
 	return r.bufferedFetchedRecords.Load()
 }
 
+// BufferedBytes implements fetcher.
+func (r *concurrentFetchers) BufferedBytes() int64 {
+	return r.bufferedFetchedBytes.Load()
+}
+
+func (r *concurrentFetchers) BytesPerRecord() int64 {
+	return r.estimatedBytesPerRecord.Load()
+}
+
 // Stop implements fetcher.
 func (r *concurrentFetchers) Stop() {
 	// Ensure it's not already stopped.
@@ -323,6 +349,7 @@ func (r *concurrentFetchers) Stop() {
 	// When the fetcher is stopped, buffered records are intentionally dropped. For this reason,
 	// we do reset the counter of buffered records here.
 	r.bufferedFetchedRecords.Store(0)
+	r.bufferedFetchedBytes.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 }
@@ -630,11 +657,48 @@ func casHWM(highWwatermark *atomic.Int64, newHWM int64) {
 	}
 }
 
+type inflightFetchWants struct {
+	// wants is the list of all fetchResult of all inflight fetch operations. Pending results
+	// are ordered in the same order these results should be returned to PollFetches(), so the first one
+	// in the list is the next one that should be returned.
+	wants list.List
+
+	// bytes is the sum of the MaxBytes of all fetchWants that are currently inflight.
+	bytes *atomic.Int64
+}
+
+// peekNextResult is the channel where we expect a worker will write the result of the next fetch
+// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
+// records ordering. The channel can be closed. In this case you are expected to call removeNextResult.
+func (w *inflightFetchWants) peekNextResult() chan fetchResult {
+	if w.wants.Len() == 0 {
+		return nil
+	}
+	return w.wants.Front().Value.(fetchWant).result
+}
+
+func (w *inflightFetchWants) count() int {
+	return w.wants.Len()
+}
+
+func (w *inflightFetchWants) append(nextFetch fetchWant) {
+	w.bytes.Add(int64(nextFetch.MaxBytes()))
+	w.wants.PushBack(nextFetch)
+}
+
+func (w *inflightFetchWants) removeNextResult() {
+	head := w.wants.Front()
+	// The MaxBytes of the fetchWant might have changed as it was being fetched (e.g. UpdateBytesPerRecord).
+	// But we don't care about that here because we're only interested in the MaxBytes when the fetchWant was added to the inflight fetchWants.
+	w.bytes.Sub(int64(head.Value.(fetchWant).MaxBytes()))
+	w.wants.Remove(head)
+}
+
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
 
 	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
-	// A value of 0 doesn't prevent progress because we ensure there is at least one dispatched fetchWant.
+	// A value of 0 doesn't prevent progress because we ensure there is at least one inflight fetchWant.
 	highWatermark := atomic.NewInt64(0)
 
 	wants := make(chan fetchWant)
@@ -653,17 +717,8 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// It contains the offset range to fetch and a channel where the result should be written to.
 		nextFetch = fetchWantFrom(startOffset, recordsPerFetch)
 
-		// nextResult is the channel where we expect a worker will write the result of the next fetch
-		// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
-		// records ordering.
-		nextResult chan fetchResult
-
-		// pendingResults is the list of all fetchResult of all inflight fetch operations. Pending results
-		// are ordered in the same order these results should be returned to PollFetches(), so the first one
-		// in the list is the next one that should be returned, unless nextResult is valued (if nextResult
-		// is valued, then nextResult is the next and the first item in the pendingResults list is the
-		// 2nd next one).
-		pendingResults = list.New()
+		// inflight is the list of all fetchWants that are currently in flight.
+		inflight = inflightFetchWants{bytes: r.bufferedFetchedBytes}
 
 		// bufferedResult is the next fetch that should be polled by PollFetches().
 		bufferedResult fetchResult
@@ -674,22 +729,29 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// are some ordered buffered records ready.
 		//
 		// It is guaranteed that this channel is non-nil when bufferedResult is non-empty.
+		//
+		// The idea is that we don't want to block the main loop when we have records ready to be consumed.
 		readyBufferedResults chan fetchResult
 	)
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	for {
-		refillBufferedResult := nextResult
+		// refillBufferedResult is the channel of the next fetch result. This variable is valued (non-nil) only when
+		// we're ready to actually read the result, so that we don't try to read the next result if we're not ready.
+		refillBufferedResult := inflight.peekNextResult()
 		if readyBufferedResults != nil {
 			// We have a single result that's still not consumed.
 			// So we don't try to get new results from the fetchers.
 			refillBufferedResult = nil
 		}
 		dispatchNextWant := chan fetchWant(nil)
-		if nextResult == nil || nextFetch.startOffset <= highWatermark.Load() {
+		wouldExceedInflightBytesLimit := inflight.bytes.Load()+int64(nextFetch.MaxBytes()) > int64(r.maxBufferedBytesLimit)
+		if inflight.count() == 0 || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 			// So we dispatch a fetch only if it's fetching an existing offset.
 			// This shouldn't noticeably affect performance with Apache Kafka, after all franz-go only has a concurrency of 1 per partition.
+			//
+			// We also don't want to have too many fetches in flight, so we only dispatch a fetch if it wouldn't exceed the memory limit.
 			//
 			// At the same time we don't want to reach a deadlock where the HWM is not updated and there are no fetches in flight.
 			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
@@ -702,22 +764,12 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			return
 
 		case dispatchNextWant <- nextFetch:
-			pendingResults.PushBack(nextFetch.result)
-			if nextResult == nil {
-				// In case we previously exhausted pendingResults, we just created
-				nextResult = pendingResults.Front().Value.(chan fetchResult)
-				pendingResults.Remove(pendingResults.Front())
-			}
+			inflight.append(nextFetch)
 			nextFetch = nextFetch.Next(recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
-				if pendingResults.Len() > 0 {
-					nextResult = pendingResults.Front().Value.(chan fetchResult)
-					pendingResults.Remove(pendingResults.Front())
-				} else {
-					nextResult = nil
-				}
+				inflight.removeNextResult()
 				continue
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
