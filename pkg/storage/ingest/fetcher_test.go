@@ -772,7 +772,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		t.Logf("Records fetched: %d", len(fetchedRecords))
 	})
 
-	t.Run("staggered production with exact multiple of concurrency and records per fetch", func(t *testing.T) {
+	t.Run("staggered production", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -318,7 +318,7 @@ func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
 	}
 
 	if r.kafkaCfg.StartupFetchConcurrency > 0 && r.kafkaCfg.OngoingFetchConcurrency > 0 {
-		// No need to switch the fetcher, just update the records per fetch.
+		// No need to switch the fetcher, just update the concurrency.
 		r.getFetcher().Update(ctx, r.kafkaCfg.OngoingFetchConcurrency)
 		return
 	}
