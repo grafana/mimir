@@ -33,8 +33,6 @@ func newExperimentalFunctionsMiddleware(limits Limits, logger log.Logger) Metric
 }
 
 func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	// log := spanlogger.FromContext(ctx, m.logger)
-
 	if !parser.EnableExperimentalFunctions {
 		// If experimental functions are disabled globally, we don't need to check for tenant-specific
 		// settings, and can skip this middleware and leave the checking to the rest of the flow.
@@ -54,11 +52,7 @@ func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQue
 		return m.next.Do(ctx, req)
 	}
 
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-
+	expr := req.GetQueryExpr()
 	if res, name := containsExperimentalFunction(expr); res {
 		err := fmt.Errorf("function %q is not enabled for the active tenant", name)
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
@@ -110,8 +104,6 @@ func containsExperimentalFunction(expr parser.Expr) (bool, string) {
 	case *parser.StepInvariantExpr:
 		return containsExperimentalFunction(e.Expr)
 	case *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
-		return false, ""
-	default:
 		return false, ""
 	}
 	return false, ""
