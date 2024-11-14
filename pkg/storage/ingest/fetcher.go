@@ -638,40 +638,40 @@ func casHWM(highWwatermark *atomic.Int64, newHWM int64) {
 }
 
 type inflightFetchWants struct {
-	// queue is the list of all fetchResult of all inflight fetch operations. Pending results
+	// wants is the list of all fetchResult of all inflight fetch operations. Pending results
 	// are ordered in the same order these results should be returned to PollFetches(), so the first one
 	// in the list is the next one that should be returned.
-	queue list.List
+	wants list.List
 
 	// bytes is the sum of the MaxBytes of all fetchWants that are currently inflight.
 	bytes *atomic.Int64
 }
 
-// nextResult is the channel where we expect a worker will write the result of the next fetch
+// peekNextResult is the channel where we expect a worker will write the result of the next fetch
 // operation. This result is the next result that will be returned to PollFetches(), guaranteeing
-// records ordering.
-func (w *inflightFetchWants) nextResult() chan fetchResult {
-	if w.queue.Len() == 0 {
+// records ordering. The channel can be closed. In this case you are expected to call removeNextResult.
+func (w *inflightFetchWants) peekNextResult() chan fetchResult {
+	if w.wants.Len() == 0 {
 		return nil
 	}
-	return w.queue.Front().Value.(fetchWant).result
+	return w.wants.Front().Value.(fetchWant).result
 }
 
 func (w *inflightFetchWants) count() int {
-	return w.queue.Len()
+	return w.wants.Len()
 }
 
-func (w *inflightFetchWants) add(nextFetch fetchWant) {
+func (w *inflightFetchWants) append(nextFetch fetchWant) {
 	w.bytes.Add(int64(nextFetch.MaxBytes()))
-	w.queue.PushBack(nextFetch)
+	w.wants.PushBack(nextFetch)
 }
 
-func (w *inflightFetchWants) headResultsExhausted() {
-	head := w.queue.Front()
+func (w *inflightFetchWants) removeNextResult() {
+	head := w.wants.Front()
 	// The MaxBytes of the fetchWant might have changed as it was being fetched (e.g. UpdateBytesPerRecord).
 	// But we don't care about that here because we're only interested in the MaxBytes when the fetchWant was added to the inflight fetchWants.
 	w.bytes.Sub(int64(head.Value.(fetchWant).MaxBytes()))
-	w.queue.Remove(head)
+	w.wants.Remove(head)
 }
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
@@ -716,7 +716,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	for {
-		refillBufferedResult := inflight.nextResult()
+		refillBufferedResult := inflight.peekNextResult()
 		if readyBufferedResults != nil {
 			// We have a single result that's still not consumed.
 			// So we don't try to get new results from the fetchers.
@@ -742,12 +742,12 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			return
 
 		case dispatchNextWant <- nextFetch:
-			inflight.add(nextFetch)
+			inflight.append(nextFetch)
 			nextFetch = nextFetch.Next(recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
-				inflight.headResultsExhausted()
+				inflight.removeNextResult()
 				continue
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
