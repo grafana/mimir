@@ -20,7 +20,6 @@ Use each protocol's respective exporter and native Mimir endpoint. For example:
 - OTel data: `otlphttp`
 - Prometheus data: `prometheusremotewrite`
 
-
 ## OTLP
 
 Mimir supports native OTLP over HTTP. When possible, use this protocol to send OTLP data. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
