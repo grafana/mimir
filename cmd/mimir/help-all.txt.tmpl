@@ -2211,6 +2211,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache requests that are not step-aligned.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
+  -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
+    	[experimental] Enable certain experimental PromQL functions, which are subject to being changed or removed at any time.
   -query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-frontend.grpc-client-config.backoff-min-period duration
@@ -2283,8 +2285,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
-  -query-frontend.promql-experimental-functions-enabled
-    	[experimental] Enable experimental PromQL functions, which are subject to being changed or removed at any time.
   -query-frontend.prune-queries
     	[experimental] True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.
   -query-frontend.querier-forget-delay duration

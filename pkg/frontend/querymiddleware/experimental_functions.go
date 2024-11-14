@@ -9,9 +9,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/promql/parser"
+	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type experimentalFunctionsMiddleware struct {
@@ -38,32 +38,48 @@ func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQue
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	experimentalFunctionsEnabled := validation.AllTrueBooleansPerTenant(tenantIDs, m.limits.PromQLExperimentalFunctionsEnabled)
+	enabledExperimentalFunctions := make(map[string][]string, len(tenantIDs))
+	for _, id := range tenantIDs {
+		enabled := m.limits.EnabledPromQLExperimentalFunctions(id)
+		if len(enabled) == 0 {
+			// The default is to allow all experimental functions.
+			continue
+		}
+		enabledExperimentalFunctions[id] = enabled
+	}
 
-	if experimentalFunctionsEnabled {
-		// If experimental functions are enabled for this tenant, we don't need to check the query
-		// for those functions and can skip this middleware.
+	if len(enabledExperimentalFunctions) == 0 {
+		// All functions are enabled.
 		return m.next.Do(ctx, req)
 	}
 
 	expr := req.GetQueryExpr()
-	if res, name := containsExperimentalFunction(expr); res {
-		err := fmt.Errorf("function %q is not enabled for the active tenant", name)
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
+	funcs := containedExperimentalFunctions(expr)
+	if len(funcs) == 0 {
+		return m.next.Do(ctx, req)
 	}
 
-	// If the query does not contain any experimental functions, we can continue.
+	// Make sure that every used experimental function is enabled.
+	for name := range funcs {
+		for id, enabled := range enabledExperimentalFunctions {
+			if !slices.Contains(enabled, name) {
+				err := fmt.Errorf("function %s is not enabled for tenant %s", name, id)
+				return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
+			}
+		}
+	}
+	// Every used experimental function is enabled for the tenant(s).
 	return m.next.Do(ctx, req)
 }
 
-// containsExperimentalFunction checks if the query contains PromQL experimental functions.
-func containsExperimentalFunction(expr parser.Expr) (bool, string) {
-	expFuncNames := make([]string, 0)
+// containedExperimentalFunctions returns any PromQL experimental functions used in the query.
+func containedExperimentalFunctions(expr parser.Expr) map[string]struct{} {
+	expFuncNames := map[string]struct{}{}
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		call, ok := node.(*parser.Call)
 		if ok {
 			if parser.Functions[call.Func.Name].Experimental {
-				expFuncNames = append(expFuncNames, call.Func.Name)
+				expFuncNames[call.Func.Name] = struct{}{}
 			}
 			return nil
 		}
@@ -73,13 +89,10 @@ func containsExperimentalFunction(expr parser.Expr) (bool, string) {
 			// defined and enforced, so they have to be hardcoded here and updated along with changes in Prometheus.
 			switch agg.Op {
 			case parser.LIMITK, parser.LIMIT_RATIO:
-				expFuncNames = append(expFuncNames, agg.Op.String())
+				expFuncNames[agg.Op.String()] = struct{}{}
 			}
 		}
 		return nil
 	})
-	if len(expFuncNames) > 0 {
-		return true, expFuncNames[0]
-	}
-	return false, ""
+	return expFuncNames
 }
