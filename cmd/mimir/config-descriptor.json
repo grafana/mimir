@@ -4310,7 +4310,7 @@
           "kind": "field",
           "name": "promql_experimental_functions_enabled",
           "required": false,
-          "desc": "Enable experimental PromQL functions.",
+          "desc": "Enable experimental PromQL functions, which are subject to being changed or removed at any time.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.promql-experimental-functions-enabled",
