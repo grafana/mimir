@@ -1176,6 +1176,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			consumedRecords += fetches.NumRecords()
 		}
 
+		pollFetchesAndAssertNoRecords(t, fetchers)
 		t.Log("Consumed all large records")
 
 		// Produce small records
