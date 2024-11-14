@@ -13,63 +13,17 @@ weight: 150
 To send OTel data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
 {{% /admonition %}}
 
-When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can write metrics into Mimir via two options: `prometheusremotewrite` and `otlphttp`.
+When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can write metrics into Mimir using two options: `otlphttp` (preferred) and `prometheusremotewrite`.
 
-We recommend using each protocol's respective exporter and native Mimir endpoint:
+Use each protocol's respective exporter and native Mimir endpoint. For example:
 
-- Prometheus data: `prometheusremotewrite`
 - OTel data: `otlphttp`
+- Prometheus data: `prometheusremotewrite`
 
-## Prometheus Remote Write
-
-For the Remote Write, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector:
-
-In the `exporters` section add:
-
-```yaml
-exporters:
-  prometheusremotewrite:
-    endpoint: http://<mimir-endpoint>/api/v1/push
-```
-
-And enable it in the `service.pipelines`:
-
-```yaml
-service:
-  pipelines:
-    metrics:
-      receivers: [...]
-      processors: [...]
-      exporters: [..., prometheusremotewrite]
-```
-
-If you want to authenticate using basic auth, we recommend the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension:
-
-```yaml
-extensions:
-  basicauth/prw:
-    client_auth:
-      username: username
-      password: password
-
-exporters:
-  prometheusremotewrite:
-    auth:
-      authenticator: basicauth/prw
-    endpoint: http://<mimir-endpoint>/api/v1/push
-
-service:
-  extensions: [basicauth/prw]
-  pipelines:
-    metrics:
-      receivers: [...]
-      processors: [...]
-      exporters: [..., prometheusremotewrite]
-```
 
 ## OTLP
 
-Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, you use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
+Mimir supports native OTLP over HTTP. When possible, use this protocol to send OTLP data. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
 
 ```yaml
 exporters:
@@ -77,7 +31,7 @@ exporters:
     endpoint: http://<mimir-endpoint>/otlp
 ```
 
-And enable it in `service.pipelines`:
+Then, enable it in `service.pipelines`:
 
 ```yaml
 service:
@@ -88,7 +42,7 @@ service:
       exporters: [..., otlphttp]
 ```
 
-If you want to authenticate using basic auth, we recommend the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension:
+If you want to authenticate using basic auth, use the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension:
 
 ```yaml
 extensions:
@@ -110,6 +64,53 @@ service:
       receivers: [...]
       processors: [...]
       exporters: [..., otlphttp]
+```
+
+## Prometheus remote write
+
+For remote write, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector:
+
+In the `exporters` section add:
+
+```yaml
+exporters:
+  prometheusremotewrite:
+    endpoint: http://<mimir-endpoint>/api/v1/push
+```
+
+Then, enable it in the `service.pipelines` block:
+
+```yaml
+service:
+  pipelines:
+    metrics:
+      receivers: [...]
+      processors: [...]
+      exporters: [..., prometheusremotewrite]
+```
+
+If you want to authenticate using basic auth, use the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension:
+
+```yaml
+extensions:
+  basicauth/prw:
+    client_auth:
+      username: username
+      password: password
+
+exporters:
+  prometheusremotewrite:
+    auth:
+      authenticator: basicauth/prw
+    endpoint: http://<mimir-endpoint>/api/v1/push
+
+service:
+  extensions: [basicauth/prw]
+  pipelines:
+    metrics:
+      receivers: [...]
+      processors: [...]
+      exporters: [..., prometheusremotewrite]
 ```
 
 ## Format considerations
