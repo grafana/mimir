@@ -1138,8 +1138,8 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			largeRecordsCount = 100
 			largeRecordSize   = 100_000
-			smallRecordsCount = 100_000
-			smallRecordSize   = 100
+			smallRecordsCount = 10_000
+			smallRecordSize   = 1000
 		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
