@@ -1287,7 +1287,7 @@ func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
 	// We stopped polling fetches. We have to make sure there are no buffered records.
 	if !assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records") {
 		fetches, _ := fetchers.PollFetches(ctx)
-		t.Log(fmt.Sprintf("%#v", fetches))
+		t.Logf("%#v", fetches)
 	}
 }
 
