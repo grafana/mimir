@@ -3,8 +3,6 @@
 package querymiddleware
 
 import (
-	"maps"
-	"slices"
 	"testing"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -46,14 +44,20 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 			query:  `limit_ratio(0.5, up)`,
 			expect: []string{"limit_ratio"},
 		},
+		"limit_ratio with mad_over_time": {
+			query:  `limit_ratio(0.5, mad_over_time(up[5m]))`,
+			expect: []string{"limit_ratio", "mad_over_time"},
+		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.query)
 			require.NoError(t, err)
-			enabledMap := containedExperimentalFunctions(expr)
-			enabled := slices.Sorted(maps.Keys(enabledMap))
+			var enabled []string
+			for key := range containedExperimentalFunctions(expr) {
+				enabled = append(enabled, key)
+			}
 			require.ElementsMatch(t, tc.expect, enabled)
 		})
 	}
