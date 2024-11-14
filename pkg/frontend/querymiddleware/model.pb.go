@@ -83,6 +83,9 @@ func (m *PrometheusHeader) GetValues() []string {
 }
 
 type PrometheusResponse struct {
+	// Keep reference to buffer for unsafe references.
+	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
+
 	Status    string              `protobuf:"bytes,1,opt,name=Status,proto3" json:"status"`
 	Data      *PrometheusData     `protobuf:"bytes,2,opt,name=Data,proto3" json:"data,omitempty"`
 	ErrorType string              `protobuf:"bytes,3,opt,name=ErrorType,proto3" json:"errorType,omitempty"`
