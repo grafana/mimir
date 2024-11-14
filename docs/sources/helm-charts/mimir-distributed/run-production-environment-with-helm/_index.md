@@ -336,5 +336,5 @@ rollout_operator:
 ```
 
 {{< admonition type="caution" >}}
-When using the `mimir-distributed` Helm chart as a dependency, you might experience a known issue while attempting to override default values. To view examples and possible workarounds, refer to [this issue on GitHub](https://github.com/grafana/mimir/issues/8059). If your specific situation isn't addressed, open a new [issue in the Mimir repository](https://github.com/grafana/mimir/issues).
+In Helm versions 3.13 and earlier, you might experience a known issue overriding default values when using the `mimir-distributed` Helm chart as a dependency. To view examples and possible workarounds, refer to [this issue on GitHub](https://github.com/grafana/mimir/issues/8059). If your specific situation isn't addressed, open an [issue in the Mimir repository](https://github.com/grafana/mimir/issues).
 {{< /admonition >}}
