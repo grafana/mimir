@@ -168,7 +168,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
 			if currSampleSource != prevSampleSource &&
-				// this would mean the current sample comes from the same iterator as the previous sample, so it's safe to trust its hint
+				// this would mean the current sample comes from the same iterator as the previous sample and is consecutive to the previous sample, so it's safe to trust its hint
 				!(currSampleSource == fromIncomingBatch && batch.Index == 0 && bs.prevT == bs.lastIteratorHistogramTs[iteratorID]) {
 				h := (*histogram.Histogram)(b.PointerValues[b.Index])
 				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
@@ -182,7 +182,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
 			if currSampleSource != prevSampleSource &&
-				// this would mean the current sample comes from the same iterator as the previous sample, so it's safe to trust its hint
+				// this would mean the current sample comes from the same iterator as the previous sample and is consecutive to the previous sample, so it's safe to trust its hint
 				!(currSampleSource == fromIncomingBatch && batch.Index == 0 && bs.prevT == bs.lastIteratorHistogramTs[iteratorID]) {
 				h := (*histogram.FloatHistogram)(b.PointerValues[b.Index])
 				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
