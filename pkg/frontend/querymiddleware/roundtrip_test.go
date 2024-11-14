@@ -585,7 +585,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
 				"pruneMiddleware",                       // No query pruning support.
-				"rejectMiddleware",                      // No blocking for PromQL experimental functions as it is executed remotely.
+				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
 			},
 		},
 	}
