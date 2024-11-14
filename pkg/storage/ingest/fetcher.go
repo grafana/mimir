@@ -701,7 +701,7 @@ func (w *inflightFetchWants) removeNextResult() {
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
 	const defaultBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
-	targetBytesPerFetcher := int(r.maxInflightBytesLimit) / concurrency
+	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
 
 	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
