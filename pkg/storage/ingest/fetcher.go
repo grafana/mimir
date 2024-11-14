@@ -239,7 +239,7 @@ type concurrentFetchers struct {
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
 	trackCompressedBytes  bool
-	maxInflightBytesLimit int32
+	maxBufferedBytesLimit int32
 
 	bufferedFetchedRecords  *atomic.Int64
 	bufferedFetchedBytes    *atomic.Int64
@@ -256,7 +256,7 @@ func newConcurrentFetchers(
 	startOffset int64,
 	concurrency int,
 	recordsPerFetch int,
-	maxInflightBytesLimit int32,
+	maxBufferedBytesLimit int32,
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
@@ -278,8 +278,8 @@ func newConcurrentFetchers(
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
 
-	if maxInflightBytesLimit <= 0 {
-		maxInflightBytesLimit = math.MaxInt32
+	if maxBufferedBytesLimit <= 0 {
+		maxBufferedBytesLimit = math.MaxInt32
 	}
 	f := &concurrentFetchers{
 		bufferedFetchedRecords:  atomic.NewInt64(0),
@@ -294,7 +294,7 @@ func newConcurrentFetchers(
 		lastReturnedRecord:      startOffset - 1,
 		startOffsets:            startOffsetsReader,
 		trackCompressedBytes:    trackCompressedBytes,
-		maxInflightBytesLimit:   maxInflightBytesLimit,
+		maxBufferedBytesLimit:   maxBufferedBytesLimit,
 		tracer:                  recordsTracer(),
 		orderedFetches:          make(chan fetchResult),
 		done:                    make(chan struct{}),
@@ -723,7 +723,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			refillBufferedResult = nil
 		}
 		dispatchNextWant := chan fetchWant(nil)
-		wouldExceedInflightBytesLimit := inflight.bytes.Load()+int64(nextFetch.MaxBytes()) > int64(r.maxInflightBytesLimit)
+		wouldExceedInflightBytesLimit := inflight.bytes.Load()+int64(nextFetch.MaxBytes()) > int64(r.maxBufferedBytesLimit)
 		if inflight.count() == 0 || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 			// So we dispatch a fetch only if it's fetching an existing offset.

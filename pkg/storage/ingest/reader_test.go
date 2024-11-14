@@ -1955,10 +1955,10 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
         		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
         		cortex_ingest_storage_reader_buffered_fetched_records %d
 
-        		# HELP cortex_ingest_storage_reader_allocated_fetched_bytes The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.
-        		# TYPE cortex_ingest_storage_reader_allocated_fetched_bytes gauge
-        		cortex_ingest_storage_reader_allocated_fetched_bytes %d
-			`, tt.expectedBufferedRecordsFromClient, tt.expectedBufferedRecords, tt.expectedBufferedBytes)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records", "cortex_ingest_storage_reader_allocated_fetched_bytes")
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_bytes The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.
+        		# TYPE cortex_ingest_storage_reader_buffered_fetched_bytes gauge
+        		cortex_ingest_storage_reader_buffered_fetched_bytes %d
+			`, tt.expectedBufferedRecordsFromClient, tt.expectedBufferedRecords, tt.expectedBufferedBytes)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records", "cortex_ingest_storage_reader_buffered_fetched_bytes")
 			})
 
 			// With that assertion done, we can unblock records consumption.

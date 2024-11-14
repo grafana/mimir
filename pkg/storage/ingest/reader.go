@@ -1043,7 +1043,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 			Help: "The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.",
 		}, func() float64 { return float64(metricsSource.BufferedRecords()) }),
 		bufferedFetchedBytes: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingest_storage_reader_allocated_fetched_bytes",
+			Name: "cortex_ingest_storage_reader_buffered_fetched_bytes",
 			Help: "The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.",
 		}, func() float64 { return float64(metricsSource.BufferedBytes()) }),
 		bytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
