@@ -8,6 +8,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	types "github.com/gogo/protobuf/types"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -120,6 +121,9 @@ func (m *Stats) XXX_DiscardUnknown() {
 var xxx_messageInfo_Stats proto.InternalMessageInfo
 
 type SeriesResponse struct {
+	// Keep reference to buffer for unsafe references.
+	mimirpb.BufferHolder
+
 	// Types that are valid to be assigned to Result:
 	//	*SeriesResponse_Series
 	//	*SeriesResponse_Warning
