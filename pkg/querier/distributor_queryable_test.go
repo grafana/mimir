@@ -732,7 +732,6 @@ func TestDistributorQuerier_Select_OverlappingChunksFromSingleIngester(t *testin
 			series := seriesSet.At()
 			it := series.Iterator(nil)
 			count := int64(0)
-			//FIXME: technically correct but should be the commented out expectations - some NCRs are being set as UCR which will still work later on. This is as batches start from size 1 and increase, and currently first sample in a batch is always unknown as we don't track last ts for a batch
 			for it.Next() == chunkenc.ValHistogram {
 				count++
 				ts, h := it.AtHistogram(nil)
@@ -743,14 +742,12 @@ func TestDistributorQuerier_Select_OverlappingChunksFromSingleIngester(t *testin
 					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
 				case 2:
 					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
-					//require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
 				case 3:
-					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
+					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
 				case 4:
 					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
 				case 5:
-					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
-					//require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
+					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
 				case 6:
 					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
 				case 7:

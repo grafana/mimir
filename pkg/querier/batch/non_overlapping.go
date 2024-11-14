@@ -17,6 +17,7 @@ type nonOverlappingIterator struct {
 	curr   int
 	chunks []GenericChunk
 	iter   chunkIterator
+	id     int
 }
 
 // newNonOverlappingIterator returns a single iterator over a slice of sorted,
