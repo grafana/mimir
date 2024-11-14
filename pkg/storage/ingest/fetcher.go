@@ -407,7 +407,7 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 
 	if skippedRecordsCount > 0 {
 		spanlogger.FromContext(f.Records[0].Context, r.logger).DebugLog(
-			"msg", "skipped records because already returned",
+			"msg", "skipped records because it is already returned",
 			"skipped_records_count", skippedRecordsCount,
 			"first_skipped_offset", firstSkippedRecordOffset,
 			"last_skipped_offset", lastSkippedRecordOffset)
