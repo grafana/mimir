@@ -283,6 +283,13 @@ func TestFranzGoErrorStrings(t *testing.T) {
 	assert.ErrorContains(t, unknownBrokerError, unknownBroker)
 }
 
+type noopReaderMetricsSource struct {
+}
+
+func (n noopReaderMetricsSource) BufferedBytes() int64   { return 0 }
+func (n noopReaderMetricsSource) BufferedRecords() int64 { return 0 }
+func (n noopReaderMetricsSource) BytesPerRecord() int64  { return 0 }
+
 func TestConcurrentFetchers(t *testing.T) {
 	const (
 		topicName       = "test-topic"
@@ -990,9 +997,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
-		metrics := newReaderMetrics(partitionID, reg, func() float64 {
-			return 0
-		})
+		metrics := newReaderMetrics(partitionID, reg, noopReaderMetricsSource{})
 
 		client := newKafkaProduceClient(t, clusterAddr)
 
@@ -1225,7 +1230,7 @@ func TestConcurrentFetchers(t *testing.T) {
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int, maxInflightBytes int32) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newReaderMetrics(partition, reg, func() float64 { return 1 })
+	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.

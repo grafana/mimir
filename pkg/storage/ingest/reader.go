@@ -119,7 +119,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		reg:                                   reg,
 	}
 
-	r.metrics = newReaderMetrics(partitionID, reg, func() float64 { return float64(r.BufferedRecords()) })
+	r.metrics = newReaderMetrics(partitionID, reg, r)
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -161,6 +161,14 @@ func (r *PartitionReader) BufferedBytes() int64 {
 	}
 
 	return fcount + ccount
+}
+
+func (r *PartitionReader) BytesPerRecord() int64 {
+	if f := r.getFetcher(); f != nil && f != r {
+		return f.BytesPerRecord()
+	}
+
+	return 0
 }
 
 func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
@@ -208,7 +216,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 
 	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
-	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, startOffsetReader)
+	r.dependencies, err = services.NewManager(r.committer, r.offsetReader, r.consumedOffsetWatcher, startOffsetReader, r.metrics)
 	if err != nil {
 		return errors.Wrap(err, "creating service manager")
 	}
@@ -983,7 +991,10 @@ func (r *partitionCommitter) stop(error) error {
 }
 
 type readerMetrics struct {
+	services.Service
+
 	bufferedFetchedRecords           prometheus.GaugeFunc
+	bytesPerRecord                   prometheus.Histogram
 	receiveDelayWhenStarting         prometheus.Observer
 	receiveDelayWhenRunning          prometheus.Observer
 	recordsPerFetch                  prometheus.Histogram
@@ -997,7 +1008,13 @@ type readerMetrics struct {
 	kprom                            *kprom.Metrics
 }
 
-func newReaderMetrics(partitionID int32, reg prometheus.Registerer, bufferedRecordsCollector func() float64) readerMetrics {
+type readerMetricsSource interface {
+	BufferedBytes() int64
+	BufferedRecords() int64
+	BytesPerRecord() int64
+}
+
+func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource) readerMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -1019,11 +1036,16 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, bufferedReco
 	// Initialise the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
 	lastConsumedOffset.Set(-1)
 
-	return readerMetrics{
+	m := readerMetrics{
 		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingest_storage_reader_buffered_fetched_records",
 			Help: "The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.",
-		}, bufferedRecordsCollector),
+		}, func() float64 { return float64(metricsSource.BufferedRecords()) }),
+		bytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_bytes_per_record",
+			Help:                        "Observations with the current size of records fetched from Kafka. Sampled at 10Hz.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
 		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
 		receiveDelayWhenRunning:  receiveDelay.WithLabelValues("running"),
 		recordsPerFetch: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -1057,6 +1079,12 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, bufferedReco
 		lastConsumedOffset:               lastConsumedOffset,
 		kprom:                            NewKafkaReaderClientMetrics(component, reg),
 	}
+
+	m.Service = services.NewTimerService(100*time.Millisecond, nil, func(context.Context) error {
+		m.bytesPerRecord.Observe(float64(metricsSource.BytesPerRecord()))
+		return nil
+	}, nil)
+	return m
 }
 
 type StrongReadConsistencyInstrumentation[T any] struct {

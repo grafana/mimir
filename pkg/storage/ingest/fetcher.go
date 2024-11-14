@@ -54,6 +54,9 @@ type fetcher interface {
 
 	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
 	BufferedBytes() int64
+
+	// BytesPerRecord returns the current estimation for how many bytes each record is.
+	BytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -238,8 +241,9 @@ type concurrentFetchers struct {
 	trackCompressedBytes  bool
 	maxInflightBytesLimit int32
 
-	bufferedFetchedRecords *atomic.Int64
-	bufferedFetchedBytes   *atomic.Int64
+	bufferedFetchedRecords  *atomic.Int64
+	bufferedFetchedBytes    *atomic.Int64
+	estimatedBytesPerRecord *atomic.Int64
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -278,21 +282,22 @@ func newConcurrentFetchers(
 		maxInflightBytesLimit = math.MaxInt32
 	}
 	f := &concurrentFetchers{
-		bufferedFetchedRecords: atomic.NewInt64(0),
-		bufferedFetchedBytes:   atomic.NewInt64(0),
-		client:                 client,
-		logger:                 logger,
-		topicName:              topic,
-		partitionID:            partition,
-		metrics:                metrics,
-		minBytesWaitTime:       minBytesWaitTime,
-		lastReturnedRecord:     startOffset - 1,
-		startOffsets:           startOffsetsReader,
-		trackCompressedBytes:   trackCompressedBytes,
-		maxInflightBytesLimit:  maxInflightBytesLimit,
-		tracer:                 recordsTracer(),
-		orderedFetches:         make(chan fetchResult),
-		done:                   make(chan struct{}),
+		bufferedFetchedRecords:  atomic.NewInt64(0),
+		bufferedFetchedBytes:    atomic.NewInt64(0),
+		estimatedBytesPerRecord: atomic.NewInt64(0),
+		client:                  client,
+		logger:                  logger,
+		topicName:               topic,
+		partitionID:             partition,
+		metrics:                 metrics,
+		minBytesWaitTime:        minBytesWaitTime,
+		lastReturnedRecord:      startOffset - 1,
+		startOffsets:            startOffsetsReader,
+		trackCompressedBytes:    trackCompressedBytes,
+		maxInflightBytesLimit:   maxInflightBytesLimit,
+		tracer:                  recordsTracer(),
+		orderedFetches:          make(chan fetchResult),
+		done:                    make(chan struct{}),
 	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
@@ -321,6 +326,10 @@ func (r *concurrentFetchers) BufferedRecords() int64 {
 // BufferedBytes implements fetcher.
 func (r *concurrentFetchers) BufferedBytes() int64 {
 	return r.bufferedFetchedBytes.Load()
+}
+
+func (r *concurrentFetchers) BytesPerRecord() int64 {
+	return r.estimatedBytesPerRecord.Load()
 }
 
 // Stop implements fetcher.
