@@ -1101,7 +1101,6 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg.WriteTimeout = 2 * time.Second
 	cfg.StartupFetchConcurrency = 2
 	cfg.OngoingFetchConcurrency = 0
-	cfg.OngoingRecordsPerFetch = 2
 
 	return cfg
 }
