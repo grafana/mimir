@@ -72,7 +72,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 		reqs := serv.requests()
 		diff := cmp.Diff(requestsToSend, reqs, cmp.Comparer(func(a, b *mimirpb.WriteRequest) bool {
 			return cmp.Equal(*a, *b, cmpopts.IgnoreUnexported(mimirpb.WriteRequest{}), cmpopts.IgnoreUnexported(mimirpb.BufferHolder{}), cmp.Comparer(func(a, b mimirpb.PreallocTimeseries) bool {
-				return a.Equal(b.TimeSeries)
+				return a.TimeSeries.Equal(b.TimeSeries)
 			}))
 		}))
 		require.Empty(t, diff)
@@ -94,7 +94,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 		reqs := serv.requests()
 		diff := cmp.Diff(requestsToSend, reqs, cmp.Comparer(func(a, b *mimirpb.WriteRequest) bool {
 			return cmp.Equal(*a, *b, cmpopts.IgnoreUnexported(mimirpb.WriteRequest{}), cmpopts.IgnoreUnexported(mimirpb.BufferHolder{}), cmp.Comparer(func(a, b mimirpb.PreallocTimeseries) bool {
-				return a.Equal(b.TimeSeries)
+				return a.TimeSeries.Equal(b.TimeSeries)
 			}))
 		}))
 		require.Empty(t, diff)
@@ -163,7 +163,7 @@ func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T)
 
 	diff := cmp.Diff([]*mimirpb.WriteRequest{req}, serv.requests(), cmp.Comparer(func(a, b *mimirpb.WriteRequest) bool {
 		return cmp.Equal(*a, *b, cmpopts.IgnoreUnexported(mimirpb.WriteRequest{}), cmpopts.IgnoreUnexported(mimirpb.BufferHolder{}), cmp.Comparer(func(a, b mimirpb.PreallocTimeseries) bool {
-			return a.Equal(b.TimeSeries)
+			return a.TimeSeries.Equal(b.TimeSeries)
 		}))
 	}))
 	require.Empty(t, diff)

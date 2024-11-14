@@ -158,8 +158,7 @@ type RulesResponse struct {
 	// Keep reference to buffer for unsafe references.
 	github_com_grafana_mimir_pkg_mimirpb.BufferHolder
 
-	Groups   []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
-	Warnings []string          `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	Groups []*GroupStateDesc `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
 }
 
 func (m *RulesResponse) Reset()      { *m = RulesResponse{} }

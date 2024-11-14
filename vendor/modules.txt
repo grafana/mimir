@@ -1846,8 +1846,8 @@ google.golang.org/genproto/googleapis/api/monitoredres
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.73.0
-## explicit; go 1.23.0
+# google.golang.org/grpc v1.68.1
+## explicit; go 1.22
 google.golang.org/grpc
 google.golang.org/grpc/attributes
 google.golang.org/grpc/authz/audit
@@ -1864,10 +1864,6 @@ google.golang.org/grpc/balancer/leastrequest
 google.golang.org/grpc/balancer/pickfirst
 google.golang.org/grpc/balancer/pickfirst/internal
 google.golang.org/grpc/balancer/pickfirst/pickfirstleaf
-google.golang.org/grpc/balancer/ringhash
-google.golang.org/grpc/balancer/rls
-google.golang.org/grpc/balancer/rls/internal/adaptive
-google.golang.org/grpc/balancer/rls/internal/keys
 google.golang.org/grpc/balancer/roundrobin
 google.golang.org/grpc/balancer/weightedroundrobin
 google.golang.org/grpc/balancer/weightedroundrobin/internal
@@ -1893,7 +1889,6 @@ google.golang.org/grpc/credentials/tls/certprovider/pemfile
 google.golang.org/grpc/encoding
 google.golang.org/grpc/encoding/gzip
 google.golang.org/grpc/encoding/proto
-google.golang.org/grpc/experimental/opentelemetry
 google.golang.org/grpc/experimental/stats
 google.golang.org/grpc/grpclog
 google.golang.org/grpc/grpclog/internal
@@ -2129,5 +2124,5 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250722103749-329f0c4df1ba
-# github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
+# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250325133853-820cb26e127a
+# github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937

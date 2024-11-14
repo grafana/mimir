@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/experimental/stats"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/balancer/gracefulswitch"
 	"google.golang.org/grpc/internal/channelz"
@@ -35,15 +34,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var (
-	setConnectedAddress = internal.SetConnectedAddress.(func(*balancer.SubConnState, resolver.Address))
-	// noOpRegisterHealthListenerFn is used when client side health checking is
-	// disabled. It sends a single READY update on the registered listener.
-	noOpRegisterHealthListenerFn = func(_ context.Context, listener func(balancer.SubConnState)) func() {
-		listener(balancer.SubConnState{ConnectivityState: connectivity.Ready})
-		return func() {}
-	}
-)
+var setConnectedAddress = internal.SetConnectedAddress.(func(*balancer.SubConnState, resolver.Address))
 
 // ccBalancerWrapper sits between the ClientConn and the Balancer.
 //
@@ -94,6 +85,7 @@ func newCCBalancerWrapper(cc *ClientConn) *ccBalancerWrapper {
 			CustomUserAgent: cc.dopts.copts.UserAgent,
 			ChannelzParent:  cc.channelz,
 			Target:          cc.parsedTarget,
+			MetricsRecorder: cc.metricsRecorderList,
 		},
 		serializer:       grpcsync.NewCallbackSerializer(ctx),
 		serializerCancel: cancel,
@@ -275,32 +267,6 @@ type acBalancerWrapper struct {
 
 	producersMu sync.Mutex
 	producers   map[balancer.ProducerBuilder]*refCountedProducer
-
-	// Access to healthData is protected by healthMu.
-	healthMu sync.Mutex
-	// healthData is stored as a pointer to detect when the health listener is
-	// dropped or updated. This is required as closures can't be compared for
-	// equality.
-	healthData *healthData
-}
-
-// healthData holds data related to health state reporting.
-type healthData struct {
-	// connectivityState stores the most recent connectivity state delivered
-	// to the LB policy. This is stored to avoid sending updates when the
-	// SubConn has already exited connectivity state READY.
-	connectivityState connectivity.State
-	// closeHealthProducer stores function to close the ref counted health
-	// producer. The health producer is automatically closed when the SubConn
-	// state changes.
-	closeHealthProducer func()
-}
-
-func newHealthData(s connectivity.State) *healthData {
-	return &healthData{
-		connectivityState:   s,
-		closeHealthProducer: func() {},
-	}
 }
 
 // updateState is invoked by grpc to push a subConn state update to the
@@ -320,24 +286,6 @@ func (acbw *acBalancerWrapper) updateState(s connectivity.State, curAddr resolve
 		if s == connectivity.Ready {
 			setConnectedAddress(&scs, curAddr)
 		}
-		// Invalidate the health listener by updating the healthData.
-		acbw.healthMu.Lock()
-		// A race may occur if a health listener is registered soon after the
-		// connectivity state is set but before the stateListener is called.
-		// Two cases may arise:
-		// 1. The new state is not READY: RegisterHealthListener has checks to
-		//    ensure no updates are sent when the connectivity state is not
-		//    READY.
-		// 2. The new state is READY: This means that the old state wasn't Ready.
-		//    The RegisterHealthListener API mentions that a health listener
-		//    must not be registered when a SubConn is not ready to avoid such
-		//    races. When this happens, the LB policy would get health updates
-		//    on the old listener. When the LB policy registers a new listener
-		//    on receiving the connectivity update, the health updates will be
-		//    sent to the new health listener.
-		acbw.healthData = newHealthData(scs.ConnectivityState)
-		acbw.healthMu.Unlock()
-
 		acbw.stateListener(scs)
 	})
 }
@@ -517,4 +465,14 @@ func (acbw *acBalancerWrapper) RegisterHealthListener(listener func(balancer.Sub
 
 		hd.closeHealthProducer = registerFn(ctx, listenerWrapper)
 	})
+}
+
+func (acbw *acBalancerWrapper) closeProducers() {
+	acbw.producersMu.Lock()
+	defer acbw.producersMu.Unlock()
+	for pb, pData := range acbw.producers {
+		pData.refs = 0
+		pData.close()
+		delete(acbw.producers, pb)
+	}
 }

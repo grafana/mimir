@@ -131,7 +131,7 @@ type recvBufferReader struct {
 	err         error
 }
 
-func (r *recvBufferReader) ReadMessageHeader(header []byte) (n int, err error) {
+func (r *recvBufferReader) ReadHeader(header []byte) (n int, err error) {
 	if r.err != nil {
 		return 0, r.err
 	}
@@ -140,9 +140,9 @@ func (r *recvBufferReader) ReadMessageHeader(header []byte) (n int, err error) {
 		return n, nil
 	}
 	if r.closeStream != nil {
-		n, r.err = r.readMessageHeaderClient(header)
+		n, r.err = r.readHeaderClient(header)
 	} else {
-		n, r.err = r.readMessageHeader(header)
+		n, r.err = r.readHeader(header)
 	}
 	return n, r.err
 }
@@ -172,12 +172,12 @@ func (r *recvBufferReader) Read(n int) (buf mem.Buffer, err error) {
 	return buf, r.err
 }
 
-func (r *recvBufferReader) readMessageHeader(header []byte) (n int, err error) {
+func (r *recvBufferReader) readHeader(header []byte) (n int, err error) {
 	select {
 	case <-r.ctxDone:
 		return 0, ContextErr(r.ctx.Err())
 	case m := <-r.recv.get():
-		return r.readMessageHeaderAdditional(m, header)
+		return r.readHeaderAdditional(m, header)
 	}
 }
 
@@ -190,7 +190,7 @@ func (r *recvBufferReader) read(n int) (buf mem.Buffer, err error) {
 	}
 }
 
-func (r *recvBufferReader) readMessageHeaderClient(header []byte) (n int, err error) {
+func (r *recvBufferReader) readHeaderClient(header []byte) (n int, err error) {
 	// If the context is canceled, then closes the stream with nil metadata.
 	// closeStream writes its error parameter to r.recv as a recvMsg.
 	// r.readAdditional acts on that message and returns the necessary error.
@@ -211,9 +211,9 @@ func (r *recvBufferReader) readMessageHeaderClient(header []byte) (n int, err er
 		// faster.
 		r.closeStream(ContextErr(r.ctx.Err()))
 		m := <-r.recv.get()
-		return r.readMessageHeaderAdditional(m, header)
+		return r.readHeaderAdditional(m, header)
 	case m := <-r.recv.get():
-		return r.readMessageHeaderAdditional(m, header)
+		return r.readHeaderAdditional(m, header)
 	}
 }
 
@@ -244,7 +244,7 @@ func (r *recvBufferReader) readClient(n int) (buf mem.Buffer, err error) {
 	}
 }
 
-func (r *recvBufferReader) readMessageHeaderAdditional(m recvMsg, header []byte) (n int, err error) {
+func (r *recvBufferReader) readHeaderAdditional(m recvMsg, header []byte) (n int, err error) {
 	r.recv.load()
 	if m.err != nil {
 		if m.buffer != nil {
@@ -286,8 +286,14 @@ const (
 // Stream represents an RPC in the transport layer.
 type Stream struct {
 	id           uint32
-	ctx          context.Context // the associated context of the stream
-	method       string          // the associated RPC method of the stream
+	st           ServerTransport    // nil for client side Stream
+	ct           ClientTransport    // nil for server side Stream
+	ctx          context.Context    // the associated context of the stream
+	cancel       context.CancelFunc // always nil for client side Stream
+	done         chan struct{}      // closed at the end of stream to unblock writers. On the client side.
+	doneFunc     func()             // invoked at the end of stream on client side.
+	ctxDone      <-chan struct{}    // same as done chan but for server side. Cache of ctx.Done() (for performance)
+	method       string             // the associated RPC method of the stream
 	recvCompress string
 	sendCompress string
 	buf          *recvBuffer
@@ -320,8 +326,96 @@ func (s *Stream) getState() streamState {
 	return streamState(atomic.LoadUint32((*uint32)(&s.state)))
 }
 
+func (s *Stream) waitOnHeader() {
+	if s.headerChan == nil {
+		// On the server headerChan is always nil since a stream originates
+		// only after having received headers.
+		return
+	}
+	select {
+	case <-s.ctx.Done():
+		// Close the stream to prevent headers/trailers from changing after
+		// this function returns.
+		s.ct.CloseStream(s, ContextErr(s.ctx.Err()))
+		// headerChan could possibly not be closed yet if closeStream raced
+		// with operateHeaders; wait until it is closed explicitly here.
+		<-s.headerChan
+	case <-s.headerChan:
+	}
+}
+
+// RecvCompress returns the compression algorithm applied to the inbound
+// message. It is empty string if there is no compression applied.
+func (s *Stream) RecvCompress() string {
+	s.waitOnHeader()
+	return s.recvCompress
+}
+
+// SetSendCompress sets the compression algorithm to the stream.
+func (s *Stream) SetSendCompress(name string) error {
+	if s.isHeaderSent() || s.getState() == streamDone {
+		return errors.New("transport: set send compressor called after headers sent or stream done")
+	}
+
+	s.sendCompress = name
+	return nil
+}
+
+// SendCompress returns the send compressor name.
+func (s *Stream) SendCompress() string {
+	return s.sendCompress
+}
+
+// ClientAdvertisedCompressors returns the compressor names advertised by the
+// client via grpc-accept-encoding header.
+func (s *Stream) ClientAdvertisedCompressors() []string {
+	values := strings.Split(s.clientAdvertisedCompressors, ",")
+	for i, v := range values {
+		values[i] = strings.TrimSpace(v)
+	}
+	return values
+}
+
+// Done returns a channel which is closed when it receives the final status
+// from the server.
+func (s *Stream) Done() <-chan struct{} {
+	return s.done
+}
+
+// Header returns the header metadata of the stream.
+//
+// On client side, it acquires the key-value pairs of header metadata once it is
+// available. It blocks until i) the metadata is ready or ii) there is no header
+// metadata or iii) the stream is canceled/expired.
+//
+// On server side, it returns the out header after t.WriteHeader is called.  It
+// does not block and must not be called until after WriteHeader.
+func (s *Stream) Header() (metadata.MD, error) {
+	if s.headerChan == nil {
+		// On server side, return the header in stream. It will be the out
+		// header after t.WriteHeader is called.
+		return s.header.Copy(), nil
+	}
+	s.waitOnHeader()
+
+	if !s.headerValid || s.noHeaders {
+		return nil, s.status.Err()
+	}
+
+	return s.header.Copy(), nil
+}
+
+// TrailersOnly blocks until a header or trailers-only frame is received and
+// then returns true if the stream was trailers-only.  If the stream ends
+// before headers are received, returns true, nil.  Client-side only.
+func (s *Stream) TrailersOnly() bool {
+	s.waitOnHeader()
+	return s.noHeaders
+}
+
 // Trailer returns the cached trailer metadata. Note that if it is not called
-// after the entire stream is done, it could return an empty MD.
+// after the entire stream is done, it could return an empty MD. Client
+// side only.
 // It can be safely read only after stream has ended that is either read
 // or write have returned io.EOF.
 func (s *Stream) Trailer() metadata.MD {
@@ -342,22 +436,23 @@ func (s *Stream) write(m recvMsg) {
 	s.buf.put(m)
 }
 
-// ReadMessageHeader reads data into the provided header slice from the stream.
-// It first checks if there was an error during a previous read operation and
+// ReadHeader reads data into the provided header slice from the stream. It
+// first checks if there was an error during a previous read operation and
 // returns it if present. It then requests a read operation for the length of
 // the header. It continues to read from the stream until the entire header
-// slice is filled or an error occurs. If an `io.EOF` error is encountered with
-// partially read data, it is converted to `io.ErrUnexpectedEOF` to indicate an
-// unexpected end of the stream. The method returns any error encountered during
-// the read process or nil if the header was successfully read.
-func (s *Stream) ReadMessageHeader(header []byte) (err error) {
+// slice is filled or an error occurs. If an `io.EOF` error is encountered
+// with partially read data, it is converted to `io.ErrUnexpectedEOF` to
+// indicate an unexpected end of the stream. The method returns any error
+// encountered during the read process or nil if the header was successfully
+// read.
+func (s *Stream) ReadHeader(header []byte) (err error) {
 	// Don't request a read if there was an error earlier
 	if er := s.trReader.er; er != nil {
 		return er
 	}
 	s.requestRead(len(header))
 	for len(header) != 0 {
-		n, err := s.trReader.ReadMessageHeader(header)
+		n, err := s.trReader.ReadHeader(header)
 		header = header[n:]
 		if len(header) == 0 {
 			err = nil
@@ -373,7 +468,7 @@ func (s *Stream) ReadMessageHeader(header []byte) (err error) {
 }
 
 // Read reads n bytes from the wire for this stream.
-func (s *Stream) read(n int) (data mem.BufferSlice, err error) {
+func (s *Stream) Read(n int) (data mem.BufferSlice, err error) {
 	// Don't request a read if there was an error earlier
 	if er := s.trReader.er; er != nil {
 		return nil, er
@@ -413,14 +508,24 @@ type transportReader struct {
 	er            error
 }
 
-func (t *transportReader) ReadMessageHeader(header []byte) (int, error) {
-	n, err := t.reader.ReadMessageHeader(header)
+func (t *transportReader) ReadHeader(header []byte) (int, error) {
+	n, err := t.reader.ReadHeader(header)
 	if err != nil {
 		t.er = err
 		return 0, err
 	}
 	t.windowHandler(n)
 	return n, nil
+}
+
+func (t *transportReader) Read(n int) (mem.Buffer, error) {
+	buf, err := t.reader.Read(n)
+	if err != nil {
+		t.er = err
+		return buf, err
+	}
+	t.windowHandler(buf.Len())
+	return buf, nil
 }
 
 func (t *transportReader) Read(n int) (mem.Buffer, error) {
@@ -502,6 +607,8 @@ type ConnectOptions struct {
 	ChannelzParent *channelz.SubChannel
 	// MaxHeaderListSize sets the max (uncompressed) size of header list that is prepared to be received.
 	MaxHeaderListSize *uint32
+	// UseProxy specifies if a proxy should be used.
+	UseProxy bool
 	// The mem.BufferPool to use when reading/writing to the wire.
 	BufferPool mem.BufferPool
 }
@@ -562,6 +669,10 @@ type ClientTransport interface {
 	// It does not block.
 	GracefulClose()
 
+	// Write sends the data for the given stream. A nil stream indicates
+	// the write is to be performed on the transport as a whole.
+	Write(s *Stream, hdr []byte, data mem.BufferSlice, opts *Options) error
+
 	// NewStream creates a Stream for an RPC.
 	NewStream(ctx context.Context, callHdr *CallHdr) (*ClientStream, error)
 
@@ -592,7 +703,19 @@ type ClientTransport interface {
 // Write methods for a given Stream will be called serially.
 type ServerTransport interface {
 	// HandleStreams receives incoming streams using the given handler.
-	HandleStreams(context.Context, func(*ServerStream))
+	HandleStreams(context.Context, func(*Stream))
+
+	// WriteHeader sends the header metadata for the given stream.
+	// WriteHeader may not be called on all streams.
+	WriteHeader(s *Stream, md metadata.MD) error
+
+	// Write sends the data for the given stream.
+	// Write may not be called on all streams.
+	Write(s *Stream, hdr []byte, data mem.BufferSlice, opts *Options) error
+
+	// WriteStatus sends the status of a stream to the client.  WriteStatus is
+	// the final call made on a stream and always occurs.
+	WriteStatus(s *Stream, st *status.Status) error
 
 	// Close tears down the transport. Once it is called, the transport
 	// should not be accessed any more. All the pending streams and their

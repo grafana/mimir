@@ -21,10 +21,7 @@ func init() {
 	encoding.RegisterCodecV2(&codecV2{codec: c})
 }
 
-// codecV2 customizes gRPC marshalling and unmarshalling.
-// We customize marshalling in order to use optimized paths when possible.
-// We customize unmarshalling in order to use an optimized path when possible,
-// and to retain the unmarshalling buffer when necessary.
+// codecV2 customizes gRPC unmarshalling.
 type codecV2 struct {
 	codec encoding.CodecV2
 }
@@ -43,97 +40,25 @@ func messageV2Of(v any) protobufproto.Message {
 }
 
 func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
-	vv := messageV2Of(v)
-	if vv == nil {
-		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
-	}
-
-	var size int
-	if sizer, ok := v.(gogoproto.Sizer); ok {
-		size = sizer.Size()
-	} else {
-		size = protobufproto.Size(vv)
-	}
-
-	var data mem.BufferSlice
-	// MarshalWithSize should be the most optimized method.
-	if marshaler, ok := v.(MarshalerWithSize); ok {
-		buf, err := marshaler.MarshalWithSize(size)
-		if err != nil {
-			return nil, err
-		}
-		data = append(data, mem.SliceBuffer(buf))
-	} else if mem.IsBelowBufferPoolingThreshold(size) {
-		marshaler, ok := v.(gogoproto.Marshaler)
-		var buf []byte
-		var err error
-		if ok {
-			buf, err = marshaler.Marshal()
-		} else {
-			buf, err = protobufproto.Marshal(vv)
-		}
-		if err != nil {
-			return nil, err
-		}
-		data = append(data, mem.SliceBuffer(buf))
-	} else {
-		pool := mem.DefaultBufferPool()
-		buf := pool.Get(size)
-		var err error
-		marshaler, ok := v.(SizedMarshaler)
-		if ok {
-			_, err = marshaler.MarshalToSizedBuffer((*buf)[:size])
-		} else {
-			_, err = (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv)
-		}
-		if err != nil {
-			pool.Put(buf)
-			return nil, err
-		}
-		data = append(data, mem.NewBuffer(buf, pool))
-	}
-
-	return data, nil
-}
-
-// mem.DefaultBufferPool() only has five sizes: 256 B, 4 KB, 16 KB, 32 KB and 1 MB.
-// This means that for messages between 32 KB and 1 MB, we may over-allocate by up to 992 KB,
-// or ~97%. If we have a lot of messages in this range, we can waste a lot of memory.
-// So instead, we create our own buffer pool with more sizes to reduce this wasted space, and
-// also include pools for larger sizes up to 256 MB.
-var unmarshalSlicePool = mem.NewTieredBufferPool(unmarshalSlicePoolSizes()...)
-
-func unmarshalSlicePoolSizes() []int {
-	var sizes []int
-
-	for s := 256; s <= 256<<20; s <<= 1 {
-		sizes = append(sizes, s)
-	}
-
-	return sizes
+	return c.codec.Marshal(v)
 }
 
 // Unmarshal customizes gRPC unmarshalling.
-// If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
-// The latter means that v's FreeBuffer method should be called when v is no longer used.
+// If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	buf := data.MaterializeToBuffer(unmarshalSlicePool)
-	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
+	vv := messageV2Of(v)
+	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
+	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
 
-	if unmarshaler, ok := v.(gogoproto.Unmarshaler); ok {
-		if err := unmarshaler.Unmarshal(buf.ReadOnlyData()); err != nil {
-			return err
-		}
-	} else {
-		vv := messageV2Of(v)
-		if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
-			return err
-		}
+	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+		return err
 	}
 
-	if holder, ok := v.(MessageWithBufferRef); ok {
+	if holder, ok := v.(interface {
+		SetBuffer(mem.Buffer)
+	}); ok {
 		buf.Ref()
 		holder.SetBuffer(buf)
 	}
@@ -145,15 +70,8 @@ func (c *codecV2) Name() string {
 	return c.codec.Name()
 }
 
-// MessageWithBufferRef is an unmarshalling buffer retaining protobuf message.
-type MessageWithBufferRef interface {
-	// SetBuffer sets the unmarshalling buffer.
-	SetBuffer(mem.Buffer)
-	// FreeBuffer drops the unmarshalling buffer reference.
-	FreeBuffer()
-}
-
 // BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// Implementations of this interface should keep a reference to said buffer.
 type BufferHolder struct {
 	buffer mem.Buffer
 }
@@ -168,8 +86,6 @@ func (m *BufferHolder) FreeBuffer() {
 		m.buffer = nil
 	}
 }
-
-var _ MessageWithBufferRef = &BufferHolder{}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
