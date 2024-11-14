@@ -68,9 +68,9 @@ service:
 
 ## Prometheus remote write
 
-For remote write, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector:
+For remote write, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector.
 
-In the `exporters` section add:
+In the `exporters` section, add:
 
 ```yaml
 exporters:
