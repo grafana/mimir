@@ -79,11 +79,11 @@ func containsExperimentalFunction(expr parser.Expr) (bool, string) {
 		}
 		return false, ""
 	case *parser.AggregateExpr:
+		// Note that unlike most PromQL functions, the experimental nature of the aggregation functions are manually
+		// defined and enforced, so they have to be hardcoded here and updated along with changes in Prometheus.
 		switch e.Op {
-		case parser.LIMITK:
-			return true, "limitk"
-		case parser.LIMIT_RATIO:
-			return true, "limit_ratio"
+		case parser.LIMITK, parser.LIMIT_RATIO:
+			return true, e.Op.String()
 		}
 		if res, name := containsExperimentalFunction(e.Param); res {
 			return true, name
