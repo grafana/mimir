@@ -181,7 +181,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 									[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
 									[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
 								),
-							})
+							}, nil)
 						},
 					}, nil
 				},
@@ -430,7 +430,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 												testData.samples,
 												testData.histograms,
 											),
-										}),
+										}, nil),
 									)
 								},
 							}, nil
@@ -566,7 +566,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
 			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
 		),
-	})
+	}, nil)
 
 	testCases := map[string]struct {
 		getQuerierErr error
