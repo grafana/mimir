@@ -3925,7 +3925,7 @@ kafka:
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
 
   # The maximum number of bytes for buffered responses to fetch requests. This
-  # limit is applied on the sum of all MaxBytes requests that are ongoing. 0 to
+  # limit applies to the sum of all ongoing MaxBytes requests. Set to 0 to
   # disable the limit.
   # CLI flag: -ingest-storage.kafka.max-buffered-bytes
   [max_buffered_bytes: <int> | default = 100000000]

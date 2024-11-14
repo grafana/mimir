@@ -6757,7 +6757,7 @@
               "kind": "field",
               "name": "max_buffered_bytes",
               "required": false,
-              "desc": "The maximum number of bytes for buffered responses to fetch requests. This limit is applied on the sum of all MaxBytes requests that are ongoing. 0 to disable the limit.",
+              "desc": "The maximum number of bytes for buffered responses to fetch requests. This limit applies to the sum of all ongoing MaxBytes requests. Set to 0 to disable the limit.",
               "fieldValue": null,
               "fieldDefaultValue": 100000000,
               "fieldFlag": "ingest-storage.kafka.max-buffered-bytes",
