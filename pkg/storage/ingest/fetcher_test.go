@@ -1100,6 +1100,11 @@ func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
+	// If there are no buffered records, we can skip the polling at all.
+	if fetchers.BufferedRecords() == 0 {
+		return
+	}
+
 	for {
 		fetches, returnCtx := fetchers.PollFetches(ctx)
 		if errors.Is(returnCtx.Err(), context.DeadlineExceeded) {
