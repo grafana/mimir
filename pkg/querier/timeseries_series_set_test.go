@@ -43,7 +43,7 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 		},
 	}
 
-	ss := newTimeSeriesSeriesSet(timeseries)
+	ss := newTimeSeriesSeriesSet(timeseries, nil)
 
 	require.True(t, ss.Next())
 	series := ss.At()
@@ -93,7 +93,7 @@ func BenchmarkTimeSeriesSeriesSet(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		_ = newTimeSeriesSeriesSet(timeseries)
+		_ = newTimeSeriesSeriesSet(timeseries, nil)
 	}
 }
 
