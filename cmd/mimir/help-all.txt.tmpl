@@ -2283,6 +2283,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
+  -query-frontend.promql-experimental-functions-enabled
+    	[experimental] Enable experimental PromQL functions.
   -query-frontend.prune-queries
     	[experimental] True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.
   -query-frontend.querier-forget-delay duration
