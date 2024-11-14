@@ -51,6 +51,9 @@ type fetcher interface {
 
 	// BufferedRecords returns the number of records that have been fetched but not yet consumed.
 	BufferedRecords() int64
+
+	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
+	BufferedBytes() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -236,6 +239,7 @@ type concurrentFetchers struct {
 	maxInflightBytesLimit int32
 
 	bufferedFetchedRecords *atomic.Int64
+	bufferedFetchedBytes   *atomic.Int64
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -275,6 +279,7 @@ func newConcurrentFetchers(
 	}
 	f := &concurrentFetchers{
 		bufferedFetchedRecords: atomic.NewInt64(0),
+		bufferedFetchedBytes:   atomic.NewInt64(0),
 		client:                 client,
 		logger:                 logger,
 		topicName:              topic,
@@ -313,6 +318,11 @@ func (r *concurrentFetchers) BufferedRecords() int64 {
 	return r.bufferedFetchedRecords.Load()
 }
 
+// BufferedBytes implements fetcher.
+func (r *concurrentFetchers) BufferedBytes() int64 {
+	return r.bufferedFetchedBytes.Load()
+}
+
 // Stop implements fetcher.
 func (r *concurrentFetchers) Stop() {
 	// Ensure it's not already stopped.
@@ -330,6 +340,7 @@ func (r *concurrentFetchers) Stop() {
 	// When the fetcher is stopped, buffered records are intentionally dropped. For this reason,
 	// we do reset the counter of buffered records here.
 	r.bufferedFetchedRecords.Store(0)
+	r.bufferedFetchedBytes.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 }
@@ -623,8 +634,8 @@ type inflightFetchWants struct {
 	// in the list is the next one that should be returned.
 	queue list.List
 
-	// inflightMaxBytes is the sum of the MaxBytes of all fetchWants that are currently inflight.
-	inflightMaxBytes int32
+	// bytes is the sum of the MaxBytes of all fetchWants that are currently inflight.
+	bytes *atomic.Int64
 }
 
 // nextResult is the channel where we expect a worker will write the result of the next fetch
@@ -642,7 +653,7 @@ func (w *inflightFetchWants) count() int {
 }
 
 func (w *inflightFetchWants) add(nextFetch fetchWant) {
-	w.inflightMaxBytes += nextFetch.MaxBytes()
+	w.bytes.Add(int64(nextFetch.MaxBytes()))
 	w.queue.PushBack(nextFetch)
 }
 
@@ -650,7 +661,7 @@ func (w *inflightFetchWants) headResultsExhausted() {
 	head := w.queue.Front()
 	// The MaxBytes of the fetchWant might have changed as it was being fetched (e.g. UpdateBytesPerRecord).
 	// But we don't care about that here because we're only interested in the MaxBytes when the fetchWant was added to the inflight fetchWants.
-	w.inflightMaxBytes -= head.Value.(fetchWant).MaxBytes()
+	w.bytes.Sub(int64(head.Value.(fetchWant).MaxBytes()))
 	w.queue.Remove(head)
 }
 
@@ -678,7 +689,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		nextFetch = fetchWantFrom(startOffset, recordsPerFetch)
 
 		// inflight is the list of all fetchWants that are currently in flight.
-		inflight inflightFetchWants
+		inflight = inflightFetchWants{bytes: r.bufferedFetchedBytes}
 
 		// bufferedResult is the next fetch that should be polled by PollFetches().
 		bufferedResult fetchResult
@@ -703,7 +714,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			refillBufferedResult = nil
 		}
 		dispatchNextWant := chan fetchWant(nil)
-		wouldExceedInflightBytesLimit := inflight.inflightMaxBytes+nextFetch.MaxBytes() > r.maxInflightBytesLimit
+		wouldExceedInflightBytesLimit := inflight.bytes.Load()+int64(nextFetch.MaxBytes()) > int64(r.maxInflightBytesLimit)
 		if inflight.count() == 0 || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 			// So we dispatch a fetch only if it's fetching an existing offset.

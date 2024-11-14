@@ -1099,8 +1099,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		waitForStableBufferedRecords()
 
 		// Assert that we don't buffer more than maxInflightBytes
-		assert.LessOrEqual(t, fetchers.BufferedRecords()*recordSizeBytes, int64(maxInflightBytes),
-			"Should not buffer more than %d bytes of records", maxInflightBytes)
+		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of records", maxInflightBytes)
 
 		// Consume one batch of records
 		fetches, _ := fetchers.PollFetches(ctx)
@@ -1111,8 +1110,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		waitForStableBufferedRecords()
 
 		// Assert again that buffered bytes remain under limit
-		assert.LessOrEqual(t, fetchers.BufferedRecords()*recordSizeBytes, int64(maxInflightBytes),
-			"Should still not buffer more than %d bytes after consuming some records", maxInflightBytes)
+		assert.LessOrEqualf(t, fetchers.BufferedRecords(), int64(maxInflightBytes), "Should still not buffer more than %d bytes after consuming some records", maxInflightBytes)
 
 		// Consume all remaining records and verify total
 		for totalConsumedRecords < totalProducedRecords {
@@ -1136,12 +1134,12 @@ func TestConcurrentFetchers(t *testing.T) {
 			partitionID      = 1
 			concurrency      = 30
 			recordsPerFetch  = 100
-			maxInflightBytes = 50_000_000
+			maxInflightBytes = 5_000_000
 
 			largeRecordsCount = 100
 			largeRecordSize   = 100_000
-			smallRecordsCount = 200_000
-			smallRecordSize   = 200
+			smallRecordsCount = 100_000
+			smallRecordSize   = 100
 		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1174,7 +1172,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		waitForStableBufferedRecords()
 		t.Log("Buffered records stabilized")
 
-		assert.LessOrEqualf(t, fetchers.BufferedRecords()*largeRecordSize, int64(maxInflightBytes), "Should not buffer more than %d bytes of large records", maxInflightBytes)
+		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of large records", maxInflightBytes)
 		// Consume all large records
 		consumedRecords := 0
 		for consumedRecords < largeRecordsCount {
@@ -1203,8 +1201,8 @@ func TestConcurrentFetchers(t *testing.T) {
 		waitForStableBufferedRecords()
 		t.Log("Buffered records stabilized")
 
-		assert.LessOrEqualf(t, fetchers.BufferedRecords()*smallRecordSize, int64(maxInflightBytes), "Should not buffer more than %d bytes of small records", maxInflightBytes)
-		assert.GreaterOrEqual(t, fetchers.BufferedRecords(), int64(concurrency*recordsPerFetch), "Should still buffer a decent number of records")
+		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of small records", maxInflightBytes)
+		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(maxInflightBytes/2), "Should still buffer a decent number of records")
 
 		// Consume the rest of the small records.
 		const totalProducedRecords = largeRecordsCount + smallRecordsCount

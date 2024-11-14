@@ -149,6 +149,20 @@ func (r *PartitionReader) BufferedRecords() int64 {
 	return fcount + ccount
 }
 
+func (r *PartitionReader) BufferedBytes() int64 {
+	var fcount, ccount int64
+
+	if f := r.getFetcher(); f != nil && f != r {
+		fcount = f.BufferedBytes()
+	}
+
+	if c := r.client.Load(); c != nil {
+		ccount = c.BufferedFetchBytes()
+	}
+
+	return fcount + ccount
+}
+
 func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	if r.kafkaCfg.AutoCreateTopicEnabled {
 		setDefaultNumberOfPartitionsForAutocreatedTopics(r.kafkaCfg, r.logger)
