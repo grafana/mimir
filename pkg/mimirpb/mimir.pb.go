@@ -236,6 +236,9 @@ func (QueryResponse_ErrorType) EnumDescriptor() ([]byte, []int) {
 }
 
 type WriteRequest struct {
+	// Keep reference to buffer for unsafe references.
+	BufferHolder
+
 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
