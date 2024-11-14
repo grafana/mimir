@@ -258,54 +258,13 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 							require.NotNil(t, hints, "select hints must be set")
 
-							// Find which query this request corresponds to
-							queryIndex := findQueryIndexByMatchers(queryData.query, matchers)
-							require.True(t, queryIndex >= 0 && queryIndex < len(queryData.expectedResults), "Failed to find matching query for matchers")
-
-							// Verify the start and end times match the expected query
-							expectedResult := queryData.expectedResults[queryIndex]
-							require.Equal(t, expectedResult.start, hints.Start, "Start time mismatch for query %d", queryIndex)
-							require.Equal(t, expectedResult.end, hints.End, "End time mismatch for query %d", queryIndex)
-
-							// Increment the call count for this specific query
-							queryCalls[queryIndex].Inc()
-
-							// Return different data based on matchers
-							var metricName string
-							for _, matcher := range matchers {
-								if matcher.Name == labels.MetricName {
-									metricName = matcher.Value
-									break
-								}
-							}
-
-							switch metricName {
-							case "metric1":
-								return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-									series.NewConcreteSeries(
-										labels.FromStrings("__name__", "metric1", "foo", "bar"),
-										[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}},
-										nil,
-									),
-								})
-							case "metric2":
-								return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-									series.NewConcreteSeries(
-										labels.FromStrings("__name__", "metric2", "foo", "bar"),
-										[]model.SamplePair{{Timestamp: 6, Value: 6}, {Timestamp: 7, Value: 7}},
-										nil,
-									),
-								})
-							default:
-								// Default for single queries without specific matchers
-								return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-									series.NewConcreteSeries(
-										labels.FromStrings("foo", "bar"),
-										[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-										[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
-									),
-								})
-							}
+							return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+								series.NewConcreteSeries(
+									labels.FromStrings("foo", "bar"),
+									[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+									[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+								),
+							}, nil)
 						},
 					}, nil
 				},
@@ -769,66 +728,17 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 			// Create a slice of atomics, one per query
 			queryCalls := make([]atomic.Int64, len(testData.query))
 
-			q := &mockSampleAndChunkQueryable{
-				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
-					return mockChunkQuerier{
-						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-							require.NotNil(t, hints, "select hints must be set")
-
-							// Find which query this request corresponds to
-							queryIndex := findQueryIndexByMatchers(testData.query, matchers)
-							require.True(t, queryIndex >= 0 && queryIndex < len(testData.expectedResults), "Failed to find matching query for matchers")
-
-							// Verify the start and end times match the expected query
-							expectedResult := testData.expectedResults[queryIndex]
-							require.Equal(t, expectedResult.start, hints.Start, "Start time mismatch for query %d", queryIndex)
-							require.Equal(t, expectedResult.end, hints.End, "End time mismatch for query %d", queryIndex)
-
-							// Increment the call count for this specific query
-							queryCalls[queryIndex].Inc()
-
-							// Return different data based on matchers for multiple queries
-							var metricName string
-							for _, matcher := range matchers {
-								if matcher.Name == labels.MetricName {
-									metricName = matcher.Value
-									break
-								}
-							}
-
-							switch metricName {
-							case "metric1":
-								return storage.NewSeriesSetToChunkSet(
-									series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-										series.NewConcreteSeries(
-											labels.FromStrings("__name__", "metric1", "foo", "bar"),
-											testData.samples,
-											testData.histograms,
-										),
-									}),
-								)
-							case "metric2":
-								return storage.NewSeriesSetToChunkSet(
-									series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-										series.NewConcreteSeries(
-											labels.FromStrings("__name__", "metric2", "foo", "bar"),
-											testData.samples,
-											testData.histograms,
-										),
-									}),
-								)
-							default:
-								// Default for single queries without specific matchers
-								return storage.NewSeriesSetToChunkSet(
-									series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-										series.NewConcreteSeries(
-											labels.FromStrings("foo", "bar"),
-											testData.samples,
-											testData.histograms,
-										),
-									}),
-								)
-							}
+									return storage.NewSeriesSetToChunkSet(
+										series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+											series.NewConcreteSeries(
+												labels.FromStrings("foo", "bar"),
+												testData.samples,
+												testData.histograms,
+											),
+										}, nil),
+									)
+								},
+							}, nil
 						},
 					}, nil
 				},
@@ -972,7 +882,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
 			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
 		),
-	})
+	}, nil)
 
 	someMoreSeries := series.NewConcreteSeriesSetFromSortedSeries([]storage.Series{
 		series.NewConcreteSeries(
