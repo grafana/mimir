@@ -8,7 +8,83 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
+	protobufproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 )
+
+func init() {
+	c := encoding.GetCodecV2(proto.Name)
+	encoding.RegisterCodecV2(&codecV2{codec: c})
+}
+
+// codecV2 customizes gRPC unmarshalling.
+type codecV2 struct {
+	codec encoding.CodecV2
+}
+
+var _ encoding.CodecV2 = &codecV2{}
+
+func messageV2Of(v any) protobufproto.Message {
+	switch v := v.(type) {
+	case protoadapt.MessageV1:
+		return protoadapt.MessageV2Of(v)
+	case protoadapt.MessageV2:
+		return v
+	default:
+		panic(fmt.Errorf("unrecognized message type %T", v))
+	}
+}
+
+func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
+	return c.codec.Marshal(v)
+}
+
+// Unmarshal customizes gRPC unmarshalling.
+// If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
+func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	vv := messageV2Of(v)
+	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
+	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
+	// we increase buf's reference count first so it doesn't go to zero.
+	defer buf.Free()
+
+	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+		return err
+	}
+
+	if holder, ok := v.(interface {
+		SetBuffer(mem.Buffer)
+	}); ok {
+		buf.Ref()
+		holder.SetBuffer(buf)
+	}
+
+	return nil
+}
+
+func (c *codecV2) Name() string {
+	return c.codec.Name()
+}
+
+// BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// Implementations of this interface should keep a reference to said buffer.
+type BufferHolder struct {
+	buffer mem.Buffer
+}
+
+func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
+	m.buffer = buf
+}
+
+func (m *BufferHolder) FreeBuffer() {
+	if m.buffer != nil {
+		m.buffer.Free()
+		m.buffer = nil
+	}
+}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
