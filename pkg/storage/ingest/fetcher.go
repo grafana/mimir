@@ -43,8 +43,8 @@ type fetcher interface {
 	// record and use the returned context when doing something that is common to all records.
 	PollFetches(context.Context) (kgo.Fetches, context.Context)
 
-	// Update updates the fetcher with the given concurrency and records.
-	Update(ctx context.Context, concurrency, records int)
+	// Update updates the fetcher with the given concurrency.
+	Update(ctx context.Context, concurrency int)
 
 	// Stop stops the fetcher.
 	Stop()
@@ -66,22 +66,27 @@ type fetchWant struct {
 	startOffset    int64 // inclusive
 	endOffset      int64 // exclusive
 	bytesPerRecord int
+	targetMaxBytes int
 
 	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
 	result chan fetchResult
 }
 
-func fetchWantFrom(offset int64, recordsPerFetch int) fetchWant {
+func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fetchWant {
+	estimatedBytesPerRecord = max(estimatedBytesPerRecord, 1)
+	estimatedNumberOfRecords := max(1, targetMaxBytes/estimatedBytesPerRecord)
 	return fetchWant{
-		startOffset: offset,
-		endOffset:   offset + int64(recordsPerFetch),
-		result:      make(chan fetchResult),
+		startOffset:    offset,
+		endOffset:      offset + int64(estimatedNumberOfRecords),
+		targetMaxBytes: targetMaxBytes,
+		bytesPerRecord: estimatedBytesPerRecord,
+		result:         make(chan fetchResult),
 	}
 }
 
 // Next returns the fetchWant for the next numRecords starting from the last known offset.
-func (w fetchWant) Next(numRecords int) fetchWant {
-	n := fetchWantFrom(w.endOffset, numRecords)
+func (w fetchWant) Next() fetchWant {
+	n := fetchWantFrom(w.endOffset, w.targetMaxBytes, w.bytesPerRecord)
 	n.bytesPerRecord = w.bytesPerRecord
 	return n.trimIfTooBig()
 }
@@ -255,7 +260,6 @@ func newConcurrentFetchers(
 	partition int32,
 	startOffset int64,
 	concurrency int,
-	recordsPerFetch int,
 	maxBufferedBytesLimit int32,
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
@@ -313,7 +317,7 @@ func newConcurrentFetchers(
 	f.topicID = topics[topic].ID
 
 	f.wg.Add(1)
-	go f.start(ctx, startOffset, concurrency, recordsPerFetch)
+	go f.start(ctx, startOffset, concurrency)
 
 	return f, nil
 }
@@ -355,12 +359,12 @@ func (r *concurrentFetchers) Stop() {
 }
 
 // Update implements fetcher
-func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records int) {
+func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
 	r.Stop()
 	r.done = make(chan struct{})
 
 	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedRecord+1, concurrency, records)
+	go r.start(ctx, r.lastReturnedRecord+1, concurrency)
 }
 
 // PollFetches implements fetcher
@@ -694,8 +698,11 @@ func (w *inflightFetchWants) removeNextResult() {
 	w.wants.Remove(head)
 }
 
-func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
-	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
+func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
+	const defaultBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
+
+	targetBytesPerFetcher := int(r.maxInflightBytesLimit) / concurrency
+	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
 
 	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
 	// A value of 0 doesn't prevent progress because we ensure there is at least one inflight fetchWant.
@@ -715,7 +722,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	var (
 		// nextFetch is the next records fetch operation we want to issue to one of the running workers.
 		// It contains the offset range to fetch and a channel where the result should be written to.
-		nextFetch = fetchWantFrom(startOffset, recordsPerFetch)
+		nextFetch = fetchWantFrom(startOffset, targetBytesPerFetcher, defaultBytesPerRecord)
 
 		// inflight is the list of all fetchWants that are currently in flight.
 		inflight = inflightFetchWants{bytes: r.bufferedFetchedBytes}
@@ -733,7 +740,6 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// The idea is that we don't want to block the main loop when we have records ready to be consumed.
 		readyBufferedResults chan fetchResult
 	)
-	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	for {
 		// refillBufferedResult is the channel of the next fetch result. This variable is valued (non-nil) only when
@@ -765,7 +771,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 
 		case dispatchNextWant <- nextFetch:
 			inflight.append(nextFetch)
-			nextFetch = nextFetch.Next(recordsPerFetch)
+			nextFetch = nextFetch.Next()
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {

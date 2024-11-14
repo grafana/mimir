@@ -131,7 +131,7 @@ func (r *PartitionReader) Stop() {
 }
 
 // Update implements fetcher
-func (r *PartitionReader) Update(_ context.Context, _, _ int) {
+func (r *PartitionReader) Update(_ context.Context, _ int) {
 	// Given the partition reader has no concurrency it doesn't support updates.
 }
 
@@ -242,7 +242,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(startOffset)},
 		})
 
-		f, err := newConcurrentFetchers(ctx, r.client.Load(), r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.StartupFetchConcurrency, r.kafkaCfg.StartupRecordsPerFetch, int32(r.kafkaCfg.MaxBufferedBytes), r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
+		f, err := newConcurrentFetchers(ctx, r.client.Load(), r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.StartupFetchConcurrency, int32(r.kafkaCfg.MaxBufferedBytes), r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
@@ -312,14 +312,14 @@ func (r *PartitionReader) run(ctx context.Context) error {
 // switchToOngoingFetcher switches to the configured ongoing fetcher. This function could be
 // called multiple times.
 func (r *PartitionReader) switchToOngoingFetcher(ctx context.Context) {
-	if r.kafkaCfg.StartupFetchConcurrency == r.kafkaCfg.OngoingFetchConcurrency && r.kafkaCfg.StartupRecordsPerFetch == r.kafkaCfg.OngoingRecordsPerFetch {
+	if r.kafkaCfg.StartupFetchConcurrency == r.kafkaCfg.OngoingFetchConcurrency {
 		// we're already using the same settings, no need to switch
 		return
 	}
 
 	if r.kafkaCfg.StartupFetchConcurrency > 0 && r.kafkaCfg.OngoingFetchConcurrency > 0 {
 		// No need to switch the fetcher, just update the records per fetch.
-		r.getFetcher().Update(ctx, r.kafkaCfg.OngoingFetchConcurrency, r.kafkaCfg.OngoingRecordsPerFetch)
+		r.getFetcher().Update(ctx, r.kafkaCfg.OngoingFetchConcurrency)
 		return
 	}
 
