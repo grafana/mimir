@@ -12,7 +12,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/model/histogram"
 	"io"
 	"math"
 	"net"
@@ -28,6 +27,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
