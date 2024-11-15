@@ -207,7 +207,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(batch, rt, fromBatchStream)
+				populate(batch, rt, fromIncomingBatch)
 			} else {
 				populate(bs.curr(), lt, fromIncomingBatch)
 				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
