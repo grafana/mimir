@@ -119,11 +119,11 @@ func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRec
 
 // expectedBytes returns how many bytes we'd need to accommodate the range of offsets using estimatedBytesPerRecord.
 // They may be more than the kafka protocol supports (> MaxInt32). Use MaxBytes.
-func (w fetchWant) expectedBytes() int {
+func (w fetchWant) expectedBytes() int64 {
 	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
 	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
 	const overFetchBytesFactor = 1.05
-	return int(overFetchBytesFactor * float64(int64(w.estimatedBytesPerRecord)*(w.endOffset-w.startOffset)))
+	return int64(overFetchBytesFactor * float64(int64(w.estimatedBytesPerRecord)*(w.endOffset-w.startOffset)))
 }
 
 type fetchResult struct {

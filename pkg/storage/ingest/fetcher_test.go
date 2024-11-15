@@ -1307,8 +1307,7 @@ func TestFetchWant_UpdateBytesPerRecord(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			result := baseWant.UpdateBytesPerRecord(tc.lastFetchBytes, tc.lastFetchRecords)
-			//1844674407370955961
-			// endOffset should never change
+
 			assert.Equal(t, baseWant.startOffset, result.startOffset, "startOffset should not change")
 			assert.Equal(t, baseWant.endOffset, result.endOffset, "endOffset should not change")
 
