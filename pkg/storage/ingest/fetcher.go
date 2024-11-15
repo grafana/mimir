@@ -88,7 +88,7 @@ func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fe
 func (w fetchWant) Next() fetchWant {
 	n := fetchWantFrom(w.endOffset, w.targetMaxBytes, w.estimatedBytesPerRecord)
 	n.estimatedBytesPerRecord = w.estimatedBytesPerRecord
-	return n.trimIfTooBig()
+	return n
 }
 
 // MaxBytes returns the maximum number of bytes we can fetch in a single request.
@@ -114,7 +114,7 @@ func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRec
 	actualBytesPerRecord := float64(lastFetchBytes) / float64(lastFetchNumberOfRecords)
 	w.estimatedBytesPerRecord = int(currentEstimateWeight*float64(w.estimatedBytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
 
-	return w.trimIfTooBig()
+	return w
 }
 
 // expectedBytes returns how many bytes we'd need to accommodate the range of offsets using estimatedBytesPerRecord.
@@ -124,18 +124,6 @@ func (w fetchWant) expectedBytes() int {
 	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
 	const overFetchBytesFactor = 1.05
 	return int(overFetchBytesFactor * float64(w.estimatedBytesPerRecord*int(w.endOffset-w.startOffset)))
-}
-
-// trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
-// It's capped at math.MaxInt32 bytes.
-func (w fetchWant) trimIfTooBig() fetchWant {
-	if w.expectedBytes() <= math.MaxInt32 {
-		return w
-	}
-	// We are overflowing, so we need to trim the end offset.
-	// We do this by calculating how many records we can fetch with the max bytes, and then setting the end offset to that.
-	w.endOffset = w.startOffset + int64(math.MaxInt32/w.estimatedBytesPerRecord)
-	return w
 }
 
 type fetchResult struct {
