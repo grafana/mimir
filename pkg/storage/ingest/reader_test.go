@@ -1795,8 +1795,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testing.T) {
 	const (
-		topicName   = "test"
-		partitionID = 1
+		topicName        = "test"
+		partitionID      = 1
+		maxBufferedBytes = 2_000_000
 	)
 
 	tc := map[string]struct {
@@ -1818,15 +1819,20 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 			expectedBufferedRecordsFromClient: 1,
 		},
 		"with startup and ongoing concurrency": {
-			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(2)},
-			expectedBufferedRecords:           1,
-			expectedBufferedBytes:             2_000_000,
+			concurrencyVariant:      []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(2)},
+			expectedBufferedRecords: 1,
+			// only one fetcher is active because we don't fetch over the HWM.
+			// That fetcher should fetch 1MB. It's padded with 5% to account for underestimation of the record size.
+			// The expected buffered bytes are 1.05MB
+			expectedBufferedBytes:             1_050_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
 		"with startup and ongoing concurrency (different settings)": {
-			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(4)},
-			expectedBufferedRecords:           1,
-			expectedBufferedBytes:             2_000_000, // only two of the fetchers are occupied because we don't fetch beyond the HWM.
+			concurrencyVariant:      []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(4)},
+			expectedBufferedRecords: 1,
+			// There is one fetcher fetching. That fetcher should fetch 500KB.
+			// But we clamp the MaxBytes to at least 1MB, so that we don't underfetch when the absolute volume of data is low.
+			expectedBufferedBytes:             1_000_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
 	}
@@ -1887,6 +1893,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
 				withRegistry(reg),
 				withLogger(log.NewLogfmtLogger(logs)),
+				withMaxBufferedBytes(maxBufferedBytes),
 			}, concurrencyVariant...)
 
 			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
@@ -2403,6 +2410,12 @@ func withStartupConcurrency(i int) readerTestCfgOpt {
 func withOngoingConcurrency(i int) readerTestCfgOpt {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.OngoingFetchConcurrency = i
+	}
+}
+
+func withMaxBufferedBytes(i int) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.MaxBufferedBytes = i
 	}
 }
 
