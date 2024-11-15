@@ -66,6 +66,10 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 	}
 
 	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+
+	// Clear any labels we no longer need, to allow them to be garbage collected when they're no longer needed elsewhere.
+	clear(bqss.series[seriesIdxStart : bqss.nextSeriesIndex-1])
+
 	return true
 }
 
