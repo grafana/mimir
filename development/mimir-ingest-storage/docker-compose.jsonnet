@@ -54,8 +54,6 @@ std.manifestYamlDoc({
         '-ingester.ring.prefix=exclusive-prefix',
         '-ingest-storage.kafka.consume-from-position-at-startup=end',
         '-ingest-storage.kafka.consume-from-timestamp-at-startup=0',
-        '-ingest-storage.kafka.ingestion-concurrency=2',
-        '-ingest-storage.kafka.ingestion-concurrency-batch-size=150',
         '-ingest-storage.kafka.startup-fetch-concurrency=15',
         '-ingest-storage.kafka.ongoing-fetch-concurrency=2',
       ],

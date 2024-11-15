@@ -226,7 +226,7 @@ type concurrentFetchers struct {
 	// ordering.
 	orderedFetches chan fetchResult
 
-	lastReturnedRecord int64
+	lastReturnedOffset int64
 	startOffsets       *genericOffsetReader[int64]
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
@@ -282,7 +282,7 @@ func newConcurrentFetchers(
 		partitionID:             partition,
 		metrics:                 metrics,
 		minBytesWaitTime:        minBytesWaitTime,
-		lastReturnedRecord:      startOffset - 1,
+		lastReturnedOffset:      startOffset - 1,
 		startOffsets:            startOffsetsReader,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
@@ -342,7 +342,7 @@ func (r *concurrentFetchers) Stop() {
 	r.bufferedFetchedRecords.Store(0)
 	r.bufferedFetchedBytes.Store(0)
 
-	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
+	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_offset", r.lastReturnedOffset)
 }
 
 // Update implements fetcher
@@ -351,7 +351,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
 	r.done = make(chan struct{})
 
 	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedRecord+1, concurrency)
+	go r.start(ctx, r.lastReturnedOffset+1, concurrency)
 }
 
 // PollFetches implements fetcher
@@ -368,12 +368,20 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 		// PollFetches() calls).
 		r.bufferedFetchedRecords.Sub(int64(len(f.Records)))
 
-		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
+		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedOffset)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			r.lastReturnedRecord = f.Records[len(f.Records)-1].Offset
+			if firstOffset := f.Records[0].Offset; firstOffset > r.lastReturnedOffset+1 {
+				r.metrics.missedRecords.Add(float64(firstOffset - r.lastReturnedOffset - 1))
+				level.Error(r.logger).Log(
+					"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
+					"next_available_offset", firstOffset,
+					"last_returned_offset", r.lastReturnedOffset,
+				)
+			}
+			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
 		return kgo.Fetches{{
