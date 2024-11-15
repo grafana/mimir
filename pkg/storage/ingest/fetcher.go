@@ -125,7 +125,6 @@ func (w fetchWant) expectedBytes() int64 {
 	const overFetchBytesFactor = 1.05
 	return int64(overFetchBytesFactor * float64(int64(w.estimatedBytesPerRecord)*(w.endOffset-w.startOffset)))
 }
-
 type fetchResult struct {
 	kgo.FetchPartition
 	ctx          context.Context
