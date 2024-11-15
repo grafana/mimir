@@ -28,15 +28,15 @@ services:
     ports:
       - 9190:9090
 
-  grafana:
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:10.4.12
-    ports:
-      - 3000:3000
-    volumes:
-      - ./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml
+  # grafana:
+  #   environment:
+  #     - GF_AUTH_ANONYMOUS_ENABLED=true
+  #     - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+  #   image: grafana/grafana:10.4.12
+  #   ports:
+  #     - 3000:3000
+  #   volumes:
+  #     - ./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml
 
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).
