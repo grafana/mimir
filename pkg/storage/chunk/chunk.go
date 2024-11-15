@@ -140,6 +140,18 @@ func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
 	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
+// GetIteratorId retrieves the non overlapping iterator id.
+// Only call when type is chunkenc.ValHistogram or chunkenc.ValFloatHistogram.
+func (b *Batch) GetIteratorId() int {
+	return int(b.Values[b.Index])
+}
+
+// SetIteratorId stores the non overlapping iterator id.
+// Only call when type is chunkenc.ValHistogram or chunkenc.ValFloatHistogram.
+func (b *Batch) SetIteratorId(id int) {
+	b.Values[b.Index] = float64(id)
+}
+
 // Chunk contains encoded timeseries data
 type Chunk struct {
 	From    model.Time    `json:"from"`
