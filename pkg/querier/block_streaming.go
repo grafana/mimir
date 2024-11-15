@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -31,7 +30,7 @@ import (
 
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockStreamingQuerierSeriesSet struct {
-	series       []*storepb.StreamingSeries
+	series       []labels.Labels
 	streamReader chunkStreamReader
 
 	// next response to process
@@ -55,18 +54,18 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		return false
 	}
 
-	currLabels := bqss.series[bqss.nextSeriesIndex].Labels
+	currLabels := bqss.series[bqss.nextSeriesIndex]
 	seriesIdxStart := bqss.nextSeriesIndex // First series in this group. We might merge with more below.
 	bqss.nextSeriesIndex++
 
 	// Chunks may come in multiple responses, but as soon as the response has chunks for a new series,
 	// we can stop searching. Series are sorted. See documentation for StoreClient.Series call for details.
 	// The actually merging of chunks happens in the Iterator() call where chunks are fetched.
-	for bqss.nextSeriesIndex < len(bqss.series) && mimirpb.CompareLabelAdapters(currLabels, bqss.series[bqss.nextSeriesIndex].Labels) == 0 {
+	for bqss.nextSeriesIndex < len(bqss.series) && labels.Equal(currLabels, bqss.series[bqss.nextSeriesIndex]) {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
 	return true
 }
 
