@@ -120,6 +120,11 @@ type MetricsQueryRequest interface {
 	// GetQuery returns the query of the request.
 	GetQuery() string
 	// GetQueryExpr returns the parsed query expression of the request.
+	// Since this returns a pointer, be careful not to use the returned expression in
+	// functions that may mutate it unintentionally and pass the mutated form to the next
+	// middleware, unless that is the intended behavior and we use WithQuery to replace the query.
+	// If you need to mutate the expression temporarily, then reparse the query string
+	// and use that instead of this function.
 	GetQueryExpr() parser.Expr
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
