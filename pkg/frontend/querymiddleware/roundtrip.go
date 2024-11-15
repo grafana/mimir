@@ -56,17 +56,18 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCacheConfig       `yaml:"results_cache"`
-	CacheResults             bool          `yaml:"cache_results"`
-	CacheErrors              bool          `yaml:"cache_errors" category:"experimental"`
-	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
-	PrunedQueries            bool          `yaml:"prune_queries" category:"experimental"`
-	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCacheConfig               `yaml:"results_cache"`
+	CacheResults                     bool          `yaml:"cache_results"`
+	CacheErrors                      bool          `yaml:"cache_errors" category:"experimental"`
+	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                time.Duration `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
+	PrunedQueries                    bool          `yaml:"prune_queries" category:"experimental"`
+	BlockPromQLExperimentalFunctions bool          `yaml:"block_promql_experimental_functions" category:"experimental"`
+	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder           bool          `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -92,6 +93,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.PrunedQueries, "query-frontend.prune-queries", false, "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.")
+	f.BoolVar(&cfg.BlockPromQLExperimentalFunctions, "query-frontend.block-promql-experimental-functions", false, "True to control access to specific PromQL experimental functions per tenant.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
@@ -453,8 +455,11 @@ func newQueryMiddlewares(
 		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
-	if parser.EnableExperimentalFunctions {
-		// We only need to check for tenant-specific settings if experimental functions are enabled globally.
+	if parser.EnableExperimentalFunctions && cfg.BlockPromQLExperimentalFunctions {
+		// We only need to check for tenant-specific settings if experimental functions are enabled globally
+		// and if we want to control access to them per tenant.
+		// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
+		// functions for those are not controlled here.
 		experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
