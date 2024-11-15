@@ -813,7 +813,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
-					if err := queryLimiter.AddSeries(s.Labels); err != nil {
+					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
 						return err
 					}
 
@@ -854,14 +854,18 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 				if ss := resp.GetStreamingSeries(); ss != nil {
 					myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
+
 					for _, s := range ss.Series {
 						// Add series fingerprint to query limiter; will return error if we are over the limit
-						if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
+						l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+						if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
 							return limitErr
 						}
 
-						myStreamingSeriesLabels = append(myStreamingSeriesLabels, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+						myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
 					}
+
 					if ss.IsEndOfSeriesStream {
 						// If we aren't expecting any series from this stream, close it now.
 						if len(myStreamingSeriesLabels) == 0 {
