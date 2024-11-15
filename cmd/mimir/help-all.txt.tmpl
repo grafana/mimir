@@ -1529,8 +1529,6 @@ Usage of ./cmd/mimir/mimir:
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
   -ingest-storage.kafka.ongoing-fetch-concurrency int
     	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to disable.
-  -ingest-storage.kafka.ongoing-records-per-fetch int
-    	The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0. (default 30)
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
@@ -1541,8 +1539,6 @@ Usage of ./cmd/mimir/mimir:
     	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.startup-fetch-concurrency int
     	The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.
-  -ingest-storage.kafka.startup-records-per-fetch int
-    	The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on ingest-storage.kafka.startup-fetch-concurrency being greater than 0. (default 2500)
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string

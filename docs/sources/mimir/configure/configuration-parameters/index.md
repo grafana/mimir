@@ -3898,24 +3898,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
   [startup_fetch_concurrency: <int> | default = 0]
 
-  # The number of records per fetch request that the ingester makes when reading
-  # data from Kafka during startup. Depends on
-  # ingest-storage.kafka.startup-fetch-concurrency being greater than 0.
-  # CLI flag: -ingest-storage.kafka.startup-records-per-fetch
-  [startup_records_per_fetch: <int> | default = 2500]
-
   # The number of concurrent fetch requests that the ingester makes when reading
   # data continuously from Kafka after startup. Is disabled unless
   # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to
   # disable.
   # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
   [ongoing_fetch_concurrency: <int> | default = 0]
-
-  # The number of records per fetch request that the ingester makes when reading
-  # data continuously from Kafka after startup. Depends on
-  # ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0.
-  # CLI flag: -ingest-storage.kafka.ongoing-records-per-fetch
-  [ongoing_records_per_fetch: <int> | default = 30]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
