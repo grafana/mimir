@@ -405,6 +405,9 @@ std.manifestYamlDoc({
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
       ],
       ports: ['3000:3000'],
+      extra_hosts: [
+        "host.docker.internal:host-gateway",
+      ],
     },
   },
 

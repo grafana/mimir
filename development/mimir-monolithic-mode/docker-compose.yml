@@ -32,6 +32,8 @@ services:
   #   environment:
   #     - GF_AUTH_ANONYMOUS_ENABLED=true
   #     - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+  #   extra_hosts:
+  #     - host.docker.internal:host-gateway
   #   image: grafana/grafana:10.4.12
   #   ports:
   #     - 3000:3000
