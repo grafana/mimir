@@ -95,7 +95,7 @@ func (w fetchWant) Next() fetchWant {
 // It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MB.
 func (w fetchWant) MaxBytes() int32 {
 	fetchBytes := w.expectedBytes()
-	if fetchBytes > math.MaxInt32 {
+	if fetchBytes > math.MaxInt32 || fetchBytes < 0 {
 		// This shouldn't happen because w should have been trimmed before sending the request.
 		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
 		return math.MaxInt32
@@ -123,7 +123,7 @@ func (w fetchWant) expectedBytes() int {
 	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
 	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
 	const overFetchBytesFactor = 1.05
-	return int(overFetchBytesFactor * float64(w.estimatedBytesPerRecord*int(w.endOffset-w.startOffset)))
+	return int(overFetchBytesFactor * float64(int64(w.estimatedBytesPerRecord)*(w.endOffset-w.startOffset)))
 }
 
 type fetchResult struct {
