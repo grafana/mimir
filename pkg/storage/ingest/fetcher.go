@@ -63,10 +63,10 @@ type fetcher interface {
 // Based on a given number of records, it tries to estimate how many bytes we need to fetch, given there's no support for fetching offsets directly.
 // fetchWant also contains the channel on which to send the fetched records for the offset range.
 type fetchWant struct {
-	startOffset    int64 // inclusive
-	endOffset      int64 // exclusive
-	bytesPerRecord int
-	targetMaxBytes int
+	startOffset             int64 // inclusive
+	endOffset               int64 // exclusive
+	estimatedBytesPerRecord int
+	targetMaxBytes          int
 
 	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
 	result chan fetchResult
@@ -76,18 +76,18 @@ func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fe
 	estimatedBytesPerRecord = max(estimatedBytesPerRecord, 1)
 	estimatedNumberOfRecords := max(1, targetMaxBytes/estimatedBytesPerRecord)
 	return fetchWant{
-		startOffset:    offset,
-		endOffset:      offset + int64(estimatedNumberOfRecords),
-		targetMaxBytes: targetMaxBytes,
-		bytesPerRecord: estimatedBytesPerRecord,
-		result:         make(chan fetchResult),
+		startOffset:             offset,
+		endOffset:               offset + int64(estimatedNumberOfRecords),
+		targetMaxBytes:          targetMaxBytes,
+		estimatedBytesPerRecord: estimatedBytesPerRecord,
+		result:                  make(chan fetchResult),
 	}
 }
 
 // Next returns the fetchWant for the next numRecords starting from the last known offset.
 func (w fetchWant) Next() fetchWant {
-	n := fetchWantFrom(w.endOffset, w.targetMaxBytes, w.bytesPerRecord)
-	n.bytesPerRecord = w.bytesPerRecord
+	n := fetchWantFrom(w.endOffset, w.targetMaxBytes, w.estimatedBytesPerRecord)
+	n.estimatedBytesPerRecord = w.estimatedBytesPerRecord
 	return n.trimIfTooBig()
 }
 
@@ -112,18 +112,18 @@ func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRec
 	const currentEstimateWeight = 0.8
 
 	actualBytesPerRecord := float64(lastFetchBytes) / float64(lastFetchNumberOfRecords)
-	w.bytesPerRecord = int(currentEstimateWeight*float64(w.bytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
+	w.estimatedBytesPerRecord = int(currentEstimateWeight*float64(w.estimatedBytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
 
 	return w.trimIfTooBig()
 }
 
-// expectedBytes returns how many bytes we'd need to accommodate the range of offsets using bytesPerRecord.
+// expectedBytes returns how many bytes we'd need to accommodate the range of offsets using estimatedBytesPerRecord.
 // They may be more than the kafka protocol supports (> MaxInt32). Use MaxBytes.
 func (w fetchWant) expectedBytes() int {
 	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
 	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
 	const overFetchBytesFactor = 1.05
-	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
+	return int(overFetchBytesFactor * float64(w.estimatedBytesPerRecord*int(w.endOffset-w.startOffset)))
 }
 
 // trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
@@ -134,7 +134,7 @@ func (w fetchWant) trimIfTooBig() fetchWant {
 	}
 	// We are overflowing, so we need to trim the end offset.
 	// We do this by calculating how many records we can fetch with the max bytes, and then setting the end offset to that.
-	w.endOffset = w.startOffset + int64(math.MaxInt32/w.bytesPerRecord)
+	w.endOffset = w.startOffset + int64(math.MaxInt32/w.estimatedBytesPerRecord)
 	return w
 }
 
@@ -699,7 +699,7 @@ func (w *inflightFetchWants) removeNextResult() {
 }
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
-	const defaultBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
+	const initialBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
@@ -722,7 +722,7 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	var (
 		// nextFetch is the next records fetch operation we want to issue to one of the running workers.
 		// It contains the offset range to fetch and a channel where the result should be written to.
-		nextFetch = fetchWantFrom(startOffset, targetBytesPerFetcher, defaultBytesPerRecord)
+		nextFetch = fetchWantFrom(startOffset, targetBytesPerFetcher, initialBytesPerRecord)
 
 		// inflight is the list of all fetchWants that are currently in flight.
 		inflight = inflightFetchWants{bytes: r.bufferedFetchedBytes}
