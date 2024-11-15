@@ -390,13 +390,13 @@
     scale_down_period=null,
     extra_triggers=[],
     container_name='',
-    pod_regex='',
+    extra_matchers='',
   ):: self.newScaledObject(
     name, $._config.namespace, {
       local queryParameters = {
         container: if container_name != '' then container_name else name,
         namespace: $._config.namespace,
-        extra_matchers: if pod_regex == '' then '' else ',pod=~"%s"' % pod_regex,
+        extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
       },
 
       min_replica_count: replicasWithWeight(min_replicas, weight),
@@ -569,7 +569,7 @@
         {}
   ),
 
-  newDistributorScaledObject(name, pod_regex='')::
+  newDistributorScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
       name=name,
       container_name='distributor',
@@ -581,7 +581,7 @@
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
       with_cortex_prefix=true,
       with_ready_trigger=true,
-      pod_regex=pod_regex,
+      extra_matchers=extra_matchers,
     ) + (
       {
         spec+: {
@@ -644,7 +644,9 @@
   local isDistributorAutoscalingZoneCEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
   distributor_scaled_object: if !isDistributorAutoscalingSingleZoneEnabled then null else
-    $.newDistributorScaledObject('distributor'),
+    // When both single-zone and multi-zone coexists, the single-zone scaling metrics shouldn't
+    // match the multi-zone pods.
+    $.newDistributorScaledObject('distributor', extra_matchers=(if isDistributorMultiZoneEnabled then 'pod!~"distributor-zone.*"' else '')),
 
   distributor_deployment: overrideSuperIfExists(
     'distributor_deployment',
@@ -652,7 +654,7 @@
   ),
 
   distributor_zone_a_scaled_object: if !isDistributorAutoscalingZoneAEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-a', 'distributor-zone-a.*'),
+    $.newDistributorScaledObject('distributor-zone-a', 'pod=~"distributor-zone-a.*"'),
 
   distributor_zone_a_deployment: overrideSuperIfExists(
     'distributor_zone_a_deployment',
@@ -660,7 +662,7 @@
   ),
 
   distributor_zone_b_scaled_object: if !isDistributorAutoscalingZoneBEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-b', 'distributor-zone-b.*'),
+    $.newDistributorScaledObject('distributor-zone-b', 'pod=~"distributor-zone-b.*"'),
 
   distributor_zone_b_deployment: overrideSuperIfExists(
     'distributor_zone_b_deployment',
@@ -668,7 +670,7 @@
   ),
 
   distributor_zone_c_scaled_object: if !isDistributorAutoscalingZoneCEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-c', 'distributor-zone-c.*'),
+    $.newDistributorScaledObject('distributor-zone-c', 'pod=~"distributor-zone-c.*"'),
 
   distributor_zone_c_deployment: overrideSuperIfExists(
     'distributor_zone_c_deployment',
