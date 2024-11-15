@@ -395,20 +395,6 @@ func newQueryMiddlewares(
 		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
 	}
 
-	if cfg.PrunedQueries {
-		pruneMiddleware := newPruneMiddleware(log)
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("pruning", metrics),
-			pruneMiddleware,
-		)
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newInstrumentMiddleware("pruning", metrics),
-			pruneMiddleware,
-		)
-	}
-
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and
 		// before query-sharding so that it can operate on the partial queries that are
@@ -444,6 +430,20 @@ func newQueryMiddlewares(
 			queryInstantMiddleware,
 			newInstrumentMiddleware("querysharding", metrics),
 			queryshardingMiddleware,
+		)
+	}
+
+	if cfg.PrunedQueries {
+		pruneMiddleware := newPruneMiddleware(log)
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("pruning", metrics),
+			pruneMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("pruning", metrics),
+			pruneMiddleware,
 		)
 	}
 
