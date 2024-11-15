@@ -33,52 +33,6 @@ import (
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
-type CountingKvClient struct {
-	client     kv.Client
-	callsCount map[string]int
-}
-
-func NewCountingKvClient(client kv.Client) *CountingKvClient {
-	return &CountingKvClient{
-		client:     client,
-		callsCount: make(map[string]int),
-	}
-}
-
-func (c *CountingKvClient) List(ctx context.Context, prefix string) ([]string, error) {
-	c.callsCount["List"]++
-	return c.client.List(ctx, prefix)
-}
-
-func (c *CountingKvClient) Get(ctx context.Context, key string) (interface{}, error) {
-	c.callsCount["Get"]++
-	return c.client.Get(ctx, key)
-}
-
-func (c *CountingKvClient) Delete(ctx context.Context, key string) error {
-	c.callsCount["Delete"]++
-	return c.client.Delete(ctx, key)
-}
-
-func (c *CountingKvClient) CAS(ctx context.Context, key string, f func(in interface{}) (out interface{}, retry bool, err error)) error {
-	c.callsCount["CAS"]++
-	return c.client.CAS(ctx, key, f)
-}
-
-func (c *CountingKvClient) WatchKey(ctx context.Context, key string, f func(interface{}) bool) {
-	c.callsCount["WatchKey"]++
-	c.client.WatchKey(ctx, key, f)
-}
-
-func (c *CountingKvClient) WatchPrefix(ctx context.Context, prefix string, f func(string, interface{}) bool) {
-	c.callsCount["WatchPrefix"]++
-	c.client.WatchPrefix(ctx, prefix, f)
-}
-
-func (c *CountingKvClient) MethodCallCount(method string) int {
-	return c.callsCount[method]
-}
-
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time, elected time.Time) {
 	t.Helper()
 
@@ -116,7 +70,7 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 	})
 }
 
-func TestHATrackerCacheSyncOnStart2(t *testing.T) {
+func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	const cluster = "c1"
 	const replicaOne = "r1"
 	const replicaTwo = "r2"
@@ -129,11 +83,10 @@ func TestHATrackerCacheSyncOnStart2(t *testing.T) {
 	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	countClient := NewCountingKvClient(kvStore)
-
+	mockCountingClient := kv.NewMockCountingClient(kvStore)
 	c, err = newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
-		KVStore:                kv.Config{Mock: countClient},
+		KVStore:                kv.Config{Mock: mockCountingClient},
 		UpdateTimeout:          time.Millisecond * 100,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Millisecond * 2,
@@ -144,71 +97,21 @@ func TestHATrackerCacheSyncOnStart2(t *testing.T) {
 	// KV Store empty: The sync should try fetching the Keys only
 	// client.List: 1
 	// client.Get: 0
-	assert.Equal(t, 1, countClient.MethodCallCount("List"))
-	assert.Equal(t, 0, countClient.MethodCallCount("Get"))
+	assert.Equal(t, 1, int(mockCountingClient.ListCalls.Load()))
+	assert.Equal(t, 0, int(mockCountingClient.GetCalls.Load()))
 
 	now = time.Now()
 	err = c.checkReplica(context.Background(), "user", cluster, replicaOne, now)
 	assert.NoError(t, err)
 
-	// Initializing a New Client to set calls to zero
-	countClient = NewCountingKvClient(kvStore)
-	c, err = newHATracker(HATrackerConfig{
-		EnableHATracker:        true,
-		KVStore:                kv.Config{Mock: countClient},
-		UpdateTimeout:          time.Millisecond * 100,
-		UpdateTimeoutJitterMax: 0,
-		FailoverTimeout:        time.Millisecond * 2,
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
-	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
-
-	now = time.Now()
-
-	// KV Store has one entry: The sync should try fetching the Keys and updating the cache
-	assert.Equal(t, 1, countClient.MethodCallCount("List"))
-	assert.Equal(t, 1, countClient.MethodCallCount("Get"))
-
-	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now)
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
-}
-
-func TestHATrackerCacheSyncOnStart(t *testing.T) {
-	const cluster = "c1"
-	const replica = "r1"
-
-	var c *haTracker
-	var err error
-	var now time.Time
-
-	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	mock := kv.PrefixClient(kvStore, "prefix")
-	c, err = newHATracker(HATrackerConfig{
-		EnableHATracker:        true,
-		KVStore:                kv.Config{Mock: mock},
-		UpdateTimeout:          time.Millisecond * 100,
-		UpdateTimeoutJitterMax: 0,
-		FailoverTimeout:        time.Millisecond * 2,
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
-
-	now = time.Now()
-	err = c.checkReplica(context.Background(), "user", cluster, replica, now)
-	assert.NoError(t, err)
-
 	err = services.StopAndAwaitTerminated(context.Background(), c)
 	assert.NoError(t, err)
 
-	replicaTwo := "r2"
+	// Initializing a New Client to set calls to zero
+	mockCountingClient = kv.NewMockCountingClient(kvStore)
 	c, err = newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
-		KVStore:                kv.Config{Mock: mock},
+		KVStore:                kv.Config{Mock: mockCountingClient},
 		UpdateTimeout:          time.Millisecond * 100,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Millisecond * 2,
@@ -216,6 +119,12 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
+
+	// KV Store has one entry: The sync should try fetching the Keys and updating the cache
+	// client.List: 1
+	// client.Get: 1
+	assert.Equal(t, 1, int(mockCountingClient.ListCalls.Load()))
+	assert.Equal(t, 1, int(mockCountingClient.GetCalls.Load()))
 
 	now = time.Now()
 	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now)
