@@ -116,7 +116,7 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (tree.QueuePath, er
 	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
 		queryComponent = schedulerRequest.ExpectedQueryComponentName()
 	}
-	return append([]string{queryComponent}, request.tenantID), nil
+	return []string{queryComponent, request.tenantID}, nil
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(
