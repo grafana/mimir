@@ -2784,7 +2784,7 @@ metadata:
   name: ingester-zone-a
   namespace: default
 spec:
-  labelSelector: name=unused
+  labelSelector: name=ingester-zone-a
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
