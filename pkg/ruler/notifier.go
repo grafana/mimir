@@ -33,12 +33,14 @@ type NotifierConfig struct {
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
 	BasicAuth  util.BasicAuth   `yaml:",inline"`
+	ProxyURL   string           `yaml:"proxy_url" category:"advanced"`
 }
 
 func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TLSEnabled, "ruler.alertmanager-client.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
 	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
+	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through.")
 }
 
 // rulerNotifier bundles a notifier.Manager together with an associated
@@ -213,6 +215,15 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 				ServerName:         rulerConfig.Notifier.TLS.ServerName,
 			}
 		}
+	}
+
+	// Whether to use an optional HTTP, HTTP+CONNECT, or SOCKS5 proxy.
+	if rulerConfig.Notifier.ProxyURL != "" {
+		url, err := url.Parse(rulerConfig.Notifier.ProxyURL)
+		if err != nil {
+			return nil, err
+		}
+		amConfig.HTTPClientConfig.ProxyURL = config_util.URL{URL: url}
 	}
 
 	return amConfig, nil
