@@ -2199,6 +2199,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
+  -query-frontend.block-promql-experimental-functions
+    	[experimental] True to control access to specific PromQL experimental functions per tenant.
   -query-frontend.cache-errors
     	[experimental] Cache non-transient errors from queries.
   -query-frontend.cache-results
@@ -2207,6 +2209,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache requests that are not step-aligned.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
+  -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
+    	[experimental] Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-frontend.grpc-client-config.backoff-min-period duration

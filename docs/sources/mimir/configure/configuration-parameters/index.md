@@ -1681,6 +1681,11 @@ results_cache:
 # CLI flag: -query-frontend.prune-queries
 [prune_queries: <boolean> | default = false]
 
+# (experimental) True to control access to specific PromQL experimental
+# functions per tenant.
+# CLI flag: -query-frontend.block-promql-experimental-functions
+[block_promql_experimental_functions: <boolean> | default = false]
+
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -3505,6 +3510,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # improve result caching.
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
+
+# (experimental) Enable certain experimental PromQL functions, which are subject
+# to being changed or removed at any time, on a per-tenant basis. Defaults to
+# empty which means all experimental functions are disabled. Set to 'all' to
+# enable all experimental functions.
+# CLI flag: -query-frontend.enabled-promql-experimental-functions
+[enabled_promql_experimental_functions: <string> | default = ""]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

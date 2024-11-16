@@ -96,6 +96,9 @@ type Limits interface {
 	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
 	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 
+	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
+	EnabledPromQLExperimentalFunctions(userID string) []string
+
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
 

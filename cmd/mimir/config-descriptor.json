@@ -4308,6 +4308,17 @@
         },
         {
           "kind": "field",
+          "name": "enabled_promql_experimental_functions",
+          "required": false,
+          "desc": "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -6410,6 +6421,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.prune-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "block_promql_experimental_functions",
+          "required": false,
+          "desc": "True to control access to specific PromQL experimental functions per tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.block-promql-experimental-functions",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
