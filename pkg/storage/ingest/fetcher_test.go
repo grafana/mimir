@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -1220,3 +1221,103 @@ func (w waiterFunc) Wait() { w() }
 type refresherFunc func()
 
 func (r refresherFunc) ForceMetadataRefresh() { r() }
+
+func TestFetchWant_MaxBytes(t *testing.T) {
+	testCases := map[string]struct {
+		fw       fetchWant
+		expected int32
+	}{
+		"small fetch": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               10,
+				estimatedBytesPerRecord: 100,
+			},
+			expected: 1_000_000, // minimum fetch size
+		},
+		"medium fetch": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               1000,
+				estimatedBytesPerRecord: 1000,
+			},
+			expected: 1_050_000, // 1000 * 1000 * 1.05
+		},
+		"huge fetch with huge bytes per record; overflow risk": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               2 << 31,
+				estimatedBytesPerRecord: 2 << 30,
+			},
+			expected: math.MaxInt32,
+		},
+		"negative product due to overflow": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               math.MaxInt64,
+				estimatedBytesPerRecord: math.MaxInt32,
+			},
+			expected: math.MaxInt32,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			result := tc.fw.MaxBytes()
+			assert.Equal(t, tc.expected, result)
+			assert.GreaterOrEqual(t, result, int32(0), "MaxBytes should never return negative values")
+		})
+	}
+}
+
+func TestFetchWant_UpdateBytesPerRecord(t *testing.T) {
+	baseWant := fetchWant{
+		startOffset:             100,
+		endOffset:               200,
+		estimatedBytesPerRecord: 1000,
+	}
+
+	testCases := map[string]struct {
+		lastFetchBytes         int
+		lastFetchRecords       int
+		expectedBytesPerRecord int
+	}{
+		"similar to estimate": {
+			lastFetchBytes:         10000,
+			lastFetchRecords:       10,
+			expectedBytesPerRecord: 1000,
+		},
+		"much larger than estimate": {
+			lastFetchBytes:         100000,
+			lastFetchRecords:       10,
+			expectedBytesPerRecord: 2800,
+		},
+		"much smaller than estimate": {
+			lastFetchBytes:         1000,
+			lastFetchRecords:       10,
+			expectedBytesPerRecord: 820,
+		},
+		"risk of overflow": {
+			lastFetchBytes:         math.MaxInt64,
+			lastFetchRecords:       1,
+			expectedBytesPerRecord: math.MaxInt64/5 + int(float64(baseWant.estimatedBytesPerRecord)*0.8),
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			result := baseWant.UpdateBytesPerRecord(tc.lastFetchBytes, tc.lastFetchRecords)
+
+			assert.Equal(t, baseWant.startOffset, result.startOffset, "startOffset should not change")
+			assert.Equal(t, baseWant.endOffset, result.endOffset, "endOffset should not change")
+
+			// Check the new bytes per record estimation. Because of large numbers and floats we allow for 0.1% error.
+			assert.InEpsilon(t, tc.expectedBytesPerRecord, result.estimatedBytesPerRecord, 0.001)
+
+			// Verify MaxBytes() doesn't overflow or return negative values
+			maxBytes := result.MaxBytes()
+			assert.GreaterOrEqual(t, maxBytes, int32(0), "MaxBytes should never return negative values")
+			assert.LessOrEqual(t, maxBytes, int32(math.MaxInt32), "MaxBytes should never exceed MaxInt32")
+		})
+	}
+}
