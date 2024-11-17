@@ -17,9 +17,17 @@ func SlogFromGoKit(logger log.Logger) *slog.Logger {
 
 var _ slog.Handler = goKitHandler{}
 
+// For tests only:
+// Enable this to skip adding slog's default timestamp kv pair into the kv
+// pairs passed to the handler's underlying go-kit logger. This is needed so
+// that non-deterministic output can be stripped from the log calls and play
+// nicely with Mock.
+var dropTimestamp = false
+
 type goKitHandler struct {
-	logger log.Logger
-	group  string
+	logger       log.Logger
+	preformatted []any
+	group        string
 }
 
 func (h goKitHandler) Enabled(_ context.Context, level slog.Level) bool {
@@ -54,38 +62,38 @@ func (h goKitHandler) Handle(_ context.Context, record slog.Record) error {
 		logger = level.Debug(h.logger)
 	}
 
-	if h.group == "" {
-		pairs := make([]any, 0, record.NumAttrs()+2)
-		pairs = append(pairs, "msg", record.Message)
-		record.Attrs(func(attr slog.Attr) bool {
-			pairs = append(pairs, attr.Key, attr.Value)
-			return true
-		})
-		return logger.Log(pairs...)
+	// 1 slog.Attr == 1 key and 1 value, set capacity >= (2 * num attrs).
+	//
+	// Note: this could probably be (micro)-optimized further -- we know we
+	// need to also append on a timestamp from the record, the message, the
+	// preformatted vals, all things we more or less know the size of at
+	// creation time here.
+	pairs := make([]any, 0, (2 * record.NumAttrs()))
+	if !record.Time.IsZero() && !dropTimestamp {
+		pairs = append(pairs, "time", record.Time)
 	}
+	pairs = append(pairs, "msg", record.Message)
+	pairs = append(pairs, h.preformatted...)
 
-	pairs := make([]any, 0, record.NumAttrs())
-	record.Attrs(func(attr slog.Attr) bool {
-		pairs = append(pairs, attr.Key, attr.Value)
+	record.Attrs(func(a slog.Attr) bool {
+		pairs = appendPair(pairs, h.group, a)
 		return true
 	})
-	g := slog.Group(h.group, pairs...)
-	pairs = []any{"msg", record.Message, g.Key, g.Value}
+
 	return logger.Log(pairs...)
 }
 
 func (h goKitHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	pairs := make([]any, 0, len(attrs))
-	for _, attr := range attrs {
-		pairs = append(pairs, attr.Key, attr.Value)
+	pairs := make([]any, 0, 2*len(attrs))
+	for _, a := range attrs {
+		pairs = appendPair(pairs, h.group, a)
 	}
 
-	if h.group == "" {
-		return goKitHandler{logger: log.With(h.logger, pairs...)}
+	if h.preformatted != nil {
+		pairs = append(h.preformatted, pairs...)
 	}
 
-	g := slog.Group(h.group, pairs...)
-	return goKitHandler{logger: log.With(h.logger, g.Key, g.Value)}
+	return goKitHandler{logger: h.logger, preformatted: pairs, group: h.group}
 }
 
 func (h goKitHandler) WithGroup(name string) slog.Handler {
@@ -93,6 +101,35 @@ func (h goKitHandler) WithGroup(name string) slog.Handler {
 		return h
 	}
 
-	h.group = name
-	return h
+	g := name
+	if h.group != "" {
+		g = h.group + "." + g
+	}
+
+	return goKitHandler{logger: h.logger, preformatted: h.preformatted, group: g}
+}
+
+func appendPair(pairs []any, groupPrefix string, attr slog.Attr) []any {
+	if attr.Equal(slog.Attr{}) {
+		return pairs
+	}
+
+	switch attr.Value.Kind() {
+	case slog.KindGroup:
+		if attr.Key != "" {
+			groupPrefix = groupPrefix + "." + attr.Key
+		}
+		for _, a := range attr.Value.Group() {
+			pairs = appendPair(pairs, groupPrefix, a)
+		}
+	default:
+		key := attr.Key
+		if groupPrefix != "" {
+			key = groupPrefix + "." + key
+		}
+
+		pairs = append(pairs, key, attr.Value)
+	}
+
+	return pairs
 }

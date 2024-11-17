@@ -11,6 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	// Remove timestamps from all test log calls to avoid non-deterministic
+	// output and play nicely with Mock.
+	dropTimestamp = true
+}
+
 func TestSlogFromGoKit(t *testing.T) {
 	var lvl dslog.Level
 	require.NoError(t, lvl.Set("debug"))
@@ -85,8 +91,9 @@ func TestSlogFromGoKit(t *testing.T) {
 		mLogger.On(
 			"Log",
 			level.Key(), level.DebugValue(),
+			"msg", "test",
 			"extra", slog.StringValue("attr"),
-			"msg", "test", "attr", slog.StringValue("value"),
+			"attr", slog.StringValue("value"),
 		).Times(1).Return(nil)
 
 		slogger.Debug("test", "attr", "value")
@@ -99,12 +106,11 @@ func TestSlogFromGoKit(t *testing.T) {
 		logger := newFilter(mLogger, lvl)
 		slogger := SlogFromGoKit(logger)
 
-		g := slog.Group("test-group", "attr", slog.StringValue("value"))
 		mLogger.On(
 			"Log",
 			level.Key(), level.DebugValue(),
 			"msg", "test",
-			"test-group", g.Value,
+			"test-group.attr", slog.StringValue("value"),
 		).Times(1).Return(nil)
 
 		slogger.WithGroup("test-group").Debug("test", "attr", "value")
