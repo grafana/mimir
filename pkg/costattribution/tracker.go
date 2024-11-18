@@ -232,6 +232,8 @@ func (t *Tracker) PurgeInactiveObservations(deadline int64) []*Observation {
 
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []uint64
+	t.obseveredMtx.Lock()
+	defer t.obseveredMtx.Unlock()
 	for labHash, ob := range t.observed {
 		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline {
 			invalidKeys = append(invalidKeys, labHash)
@@ -241,9 +243,6 @@ func (t *Tracker) PurgeInactiveObservations(deadline int64) []*Observation {
 	if len(invalidKeys) == 0 {
 		return nil
 	}
-
-	t.obseveredMtx.Lock()
-	defer t.obseveredMtx.Unlock()
 
 	// Cleanup inactive observations and return all invalid observations to clean up metrics for them
 	res := make([]*Observation, len(invalidKeys))

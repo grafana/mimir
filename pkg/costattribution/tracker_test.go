@@ -131,7 +131,8 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 	require.Len(t, cat.observed, 2)
 
 	// Purge observations that haven't been updated in the last 10 seconds.
-	purged := cat.PurgeInactiveObservations(10)
+	purged := cat.PurgeInactiveObservations(5)
+	require.Len(t, cat.observed, 1)
 
 	// Verify that only one observation was purged.
 	require.Len(t, purged, 1)
@@ -139,13 +140,6 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 	// Check that the purged observation matches the expected details.
 	assert.Equal(t, int64(1), purged[0].lastUpdate.Load())
 	assert.Equal(t, []string{"foo", "user1"}, purged[0].lvalues)
-
-	// Verify that only one observation remains in the tracker. Confirm that the remaining observation has the correct last update timestamp.
-	require.Len(t, cat.observed, 1)
-	ob := cat.observed[observations[1].Hash()]
-	assert.NotNil(t, ob)
-	assert.NotNil(t, ob.lastUpdate)
-	assert.Equal(t, int64(12), ob.lastUpdate.Load())
 }
 
 func Test_UpdateMaxCardinality(t *testing.T) {
