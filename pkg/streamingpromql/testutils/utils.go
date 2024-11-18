@@ -59,8 +59,8 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 			actualSeries := actualMatrix[i]
 
 			require.Equal(t, expectedSeries.Metric, actualSeries.Metric)
-			require.Lenf(t, actualSeries.Floats, len(expectedSeries.Floats), "expected result %v", expectedSeries.Floats)
-			require.Lenf(t, actualSeries.Histograms, len(expectedSeries.Histograms), "expected result %v", expectedSeries.Histograms)
+			require.Lenf(t, actualSeries.Floats, len(expectedSeries.Floats), "expected result %v for series %v", expectedSeries.Floats, expectedSeries.Metric)
+			require.Lenf(t, actualSeries.Histograms, len(expectedSeries.Histograms), "expected result %v for series %v", expectedSeries.Histograms, expectedSeries.Metric)
 
 			for j, expectedPoint := range expectedSeries.Floats {
 				actualPoint := actualSeries.Floats[j]
