@@ -90,7 +90,7 @@ require (
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
 	golang.org/x/term v0.26.0
 	google.golang.org/api v0.196.0
-	google.golang.org/protobuf v1.35.1
+	google.golang.org/protobuf v1.35.2
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
 
