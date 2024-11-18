@@ -1970,6 +1970,77 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "" (1:1)`,
 			},
 		},
+		"binary addition between two floats": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="float"} + ignoring(type) metric{type="float"}`,
+		},
+		"binary subtraction between two floats": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="float"} - ignoring(type) metric{type="float"}`,
+		},
+		"binary multiplication between two floats": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="float"} * ignoring(type) metric{type="float"}`,
+		},
+		"binary division between two floats": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="float"} / ignoring(type) metric{type="float"}`,
+		},
+		"binary addition between two histograms": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="histogram"} + ignoring(type) metric{type="histogram"}`,
+		},
+		"binary subtraction between two histograms": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="histogram"} - ignoring(type) metric{type="histogram"}`,
+		},
+		"binary multiplication between two histograms": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="histogram"} * ignoring(type) metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "*": histogram * histogram (1:1)`},
+		},
+		"binary division between two histograms": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="histogram"} / ignoring(type) metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "/": histogram / histogram (1:1)`},
+		},
+		"binary addition between a float on the left side and a histogram on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="float"} + ignoring(type) metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "+": float + histogram (1:1)`},
+		},
+		"binary subtraction between a float on the left side and a histogram on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="float"} - ignoring(type) metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "-": float - histogram (1:1)`},
+		},
+		"binary multiplication between a float on the left side and a histogram on the right": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="float"} * ignoring(type) metric{type="histogram"}`,
+		},
+		"binary division between a float on the left side and a histogram on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="float"} / ignoring(type) metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "/": float / histogram (1:1)`},
+		},
+		"binary addition between a histogram on the left side and a float on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="histogram"} + ignoring(type) metric{type="float"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "+": histogram + float (1:1)`},
+		},
+		"binary subtraction between a histogram on the left side and a float on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="histogram"} - ignoring(type) metric{type="float"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "-": histogram - float (1:1)`},
+		},
+		"binary multiplication between a histogram on the left side and a float on the right": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="histogram"} * ignoring(type) metric{type="float"}`,
+		},
+		"binary division between a histogram on the left side and a float on the right": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="histogram"} / ignoring(type) metric{type="float"}`,
+		},
 
 		"multiple annotations from different operators": {
 			data: `
@@ -2257,9 +2328,20 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 
 			// Same thing again, this time with grouping.
 			binaryExpr = fmt.Sprintf(`series{label="%s"}`, labels[0])
-			for _, label := range labels[1:] {
-				binaryExpr += fmt.Sprintf(` %s on (group) series{label="%s"}`, op, label)
+			for i, label := range labels[1:] {
+				binaryExpr += fmt.Sprintf(` %s ignoring (label, group) `, op)
+
+				if i == 0 && len(labels) > 2 {
+					binaryExpr += "("
+				}
+
+				binaryExpr += fmt.Sprintf(`{label="%s"}`, label)
 			}
+
+			if len(labels) > 2 {
+				binaryExpr += ")"
+			}
+
 			expressions = append(expressions, binaryExpr)
 		}
 	}
