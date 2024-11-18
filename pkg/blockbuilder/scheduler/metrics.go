@@ -8,9 +8,10 @@ import (
 )
 
 type schedulerMetrics struct {
-	updateScheduleDuration prometheus.Histogram
-	partitionStartOffset   *prometheus.GaugeVec
-	partitionEndOffset     *prometheus.GaugeVec
+	updateScheduleDuration   prometheus.Histogram
+	partitionStartOffset     *prometheus.GaugeVec
+	partitionCommittedOffset *prometheus.GaugeVec
+	partitionEndOffset       *prometheus.GaugeVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -28,6 +29,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		partitionEndOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_partition_end_offset",
 			Help: "The observed end offset of each partition.",
+		}, []string{"partition"}),
+		partitionCommittedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
+			Help: "The observed committed offset of each partition.",
 		}, []string{"partition"}),
 	}
 }

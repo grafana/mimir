@@ -25,9 +25,8 @@
     ingest_storage_ingester_autoscaling_ingester_annotations_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
 
     // Make label selector in ReplicaTemplate configurable. This mostly doesn't matter, but from our experience if the selector
-    // doesn't match correct pods, HPA in GKE will display wrong usage in "kubectl describe hpa". This is harmless, but can
-    // easily be fixed by using name=ingester-zone-a. (We will roll out that change internally, and then upstream).
-    ingest_storage_replica_template_label_selector: 'name=unused',
+    // doesn't match correct pods, HPA in GKE will display wrong usage in "kubectl describe hpa".
+    ingest_storage_replica_template_label_selector: 'name=ingester-zone-a',
 
     // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
     ingest_storage_ingester_autoscaling_triggers: [

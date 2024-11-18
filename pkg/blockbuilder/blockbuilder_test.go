@@ -688,7 +688,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 		name           string
 		lag            kadm.GroupMemberLag
 		fallbackMillis int64
-		wantState      partitionState
+		wantState      PartitionState
 	}{
 		{
 			name: "no commit",
@@ -698,7 +698,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 				Commit:    kadm.Offset{},
 			},
 			fallbackMillis: testTime.UnixMilli(),
-			wantState: partitionState{
+			wantState: PartitionState{
 				Commit:                kadm.Offset{},
 				CommitRecordTimestamp: testTime,
 				LastSeenOffset:        0,
@@ -713,7 +713,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 				Commit:    testKafkaOffset,
 			},
 			fallbackMillis: testTime.UnixMilli(),
-			wantState: partitionState{
+			wantState: PartitionState{
 				Commit:                testKafkaOffset,
 				CommitRecordTimestamp: commitRecTs,
 				LastSeenOffset:        lastRecOffset,
@@ -724,7 +724,7 @@ func TestPartitionStateFromLag(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			state := partitionStateFromLag(log.NewNopLogger(), tc.lag, tc.fallbackMillis)
+			state := PartitionStateFromLag(log.NewNopLogger(), tc.lag, tc.fallbackMillis)
 			require.Equal(t, tc.wantState, state)
 		})
 	}

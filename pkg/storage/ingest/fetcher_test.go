@@ -3,9 +3,11 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,6 +156,20 @@ func TestHandleKafkaFetchErr(t *testing.T) {
 			expectedBackoff:         true,
 			expectedMetadataRefresh: true,
 		},
+		"BrokerNotAvailable": {
+			err: kerr.BrokerNotAvailable,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedBackoff:         true,
+			expectedMetadataRefresh: true,
+		},
 		"errUnknownPartitionLeader": {
 			err: errUnknownPartitionLeader,
 			lso: 5,
@@ -267,13 +284,29 @@ func TestFranzGoErrorStrings(t *testing.T) {
 	assert.ErrorContains(t, unknownBrokerError, unknownBroker)
 }
 
+type noopReaderMetricsSource struct {
+}
+
+func (n noopReaderMetricsSource) BufferedBytes() int64   { return 0 }
+func (n noopReaderMetricsSource) BufferedRecords() int64 { return 0 }
+func (n noopReaderMetricsSource) BytesPerRecord() int64  { return 0 }
+
 func TestConcurrentFetchers(t *testing.T) {
 	const (
-		topicName       = "test-topic"
-		partitionID     = 1
-		recordsPerFetch = 3
-		concurrency     = 2
+		topicName   = "test-topic"
+		partitionID = 1
+		concurrency = 2
 	)
+
+	waitForStableBufferedRecords := func(t *testing.T, f fetcher) {
+		previousBufferedRecords := int64(0)
+		assert.Eventually(t, func() bool {
+			bufferedRecords := f.BufferedRecords()
+			stabilized := bufferedRecords == previousBufferedRecords
+			previousBufferedRecords = bufferedRecords
+			return stabilized
+		}, 2*time.Second, 100*time.Millisecond)
+	}
 
 	t.Run("respect context cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -282,16 +315,19 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		// This should not block forever now
 		fetches, fetchCtx := fetchers.PollFetches(ctx)
 
 		assert.Zero(t, fetches.NumRecords())
 		assert.Error(t, fetchCtx.Err(), "Expected context to be cancelled")
+		assert.Zero(t, fetchers.BufferedRecords())
 	})
 
 	t.Run("cold replay", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -303,20 +339,25 @@ func TestConcurrentFetchers(t *testing.T) {
 			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 		}
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		fetches, _ := fetchers.PollFetches(ctx)
 		assert.Equal(t, fetches.NumRecords(), 5)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fetch records produced after startup", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		// Produce some records after starting the fetchers
 		for i := 0; i < 3; i++ {
@@ -325,6 +366,9 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		fetches, _ := fetchers.PollFetches(ctx)
 		assert.Equal(t, fetches.NumRecords(), 3)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("slow processing of fetches", func(t *testing.T) {
@@ -334,7 +378,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		// Produce some records
 		for i := 0; i < 5; i++ {
@@ -343,65 +387,83 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		var wg sync.WaitGroup
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
 			consumedRecords := 0
 			for consumedRecords < 10 {
 				fetches, _ := fetchers.PollFetches(ctx)
-				time.Sleep(1000 * time.Millisecond) // Simulate slow processing
 				consumedRecords += fetches.NumRecords()
+
+				// Simulate slow processing.
+				time.Sleep(200 * time.Millisecond)
 			}
 			assert.Equal(t, 10, consumedRecords)
 		}()
 
-		// Produce more records while processing is slow
-		for i := 5; i < 10; i++ {
-			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
-		}
+		// Slowly produce more records while processing is slow too. This increase the chances
+		// of progressive fetches done by the consumer.
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for i := 5; i < 10; i++ {
+				produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+				time.Sleep(200 * time.Millisecond)
+			}
+		}()
 
 		wg.Wait()
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fast processing of fetches", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		// Produce some records
 		for i := 0; i < 10; i++ {
 			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 		}
 
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			consumedRecords := 0
-			for consumedRecords < 10 {
-				fetches, _ := fetchers.PollFetches(ctx)
-				consumedRecords += fetches.NumRecords()
-				// no processing delay
-			}
-			assert.Equal(t, 10, consumedRecords)
-		}()
+		// Consume all expected records.
+		consumedRecords := 0
+		for consumedRecords < 10 {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		assert.Equal(t, 10, consumedRecords)
 
-		wg.Wait()
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fetch with different concurrency levels", func(t *testing.T) {
+		t.Parallel()
+
 		for _, concurrency := range []int{1, 2, 4} {
+			concurrency := concurrency
+
 			t.Run(fmt.Sprintf("concurrency-%d", concurrency), func(t *testing.T) {
+				t.Parallel()
+
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 
 				_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 				client := newKafkaProduceClient(t, clusterAddr)
 
-				fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 2)
+				fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 				// Produce some records
 				for i := 0; i < 20; i++ {
@@ -415,11 +477,16 @@ func TestConcurrentFetchers(t *testing.T) {
 				}
 
 				assert.Equal(t, 20, totalRecords)
+
+				// We expect no more records returned by PollFetches() and no buffered records.
+				pollFetchesAndAssertNoRecords(t, fetchers)
 			})
 		}
 	})
 
 	t.Run("start from mid-stream offset", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -435,7 +502,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		lastOffset := produceRecord(ctx, t, client, topicName, partitionID, []byte("last-initial-record"))
 
 		// Start fetchers from the offset after the initial records
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, 0)
 
 		// Produce some more records
 		for i := 0; i < 3; i++ {
@@ -458,16 +525,21 @@ func TestConcurrentFetchers(t *testing.T) {
 			"new-record-1",
 			"new-record-2",
 		}, fetchedRecordsContents)
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("synchronous produce and fetch", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		for round := 0; round < 3; round++ {
 			t.Log("starting round", round)
@@ -493,10 +565,15 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			// Verify fetched records
 			assert.Equal(t, expectedRecords, fetchedRecords, "Fetched records in round %d do not match expected", round)
+
+			// We expect no more records returned by PollFetches() and no buffered records.
+			pollFetchesAndAssertNoRecords(t, fetchers)
 		}
 	})
 
 	t.Run("concurrency can be updated", func(t *testing.T) {
+		t.Parallel()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		rec1 := []byte("record-1")
@@ -505,7 +582,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		produceRecordAndAssert := func(record []byte) {
 			producedOffset := produceRecord(ctx, t, client, topicName, partitionID, record)
@@ -525,19 +602,22 @@ func TestConcurrentFetchers(t *testing.T) {
 		produceRecordAndAssert(rec1)
 
 		// Now, update the concurrency.
-		fetchers.Update(ctx, 1, 1)
+		fetchers.Update(ctx, 1)
 
 		// Ensure that the fetchers work with the updated concurrency.
 		produceRecordAndAssert(rec2)
 
 		// Update and verify again.
-		fetchers.Update(ctx, 10, 10)
+		fetchers.Update(ctx, 10)
 		produceRecordAndAssert(rec3)
 
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("update concurrency with continuous production", func(t *testing.T) {
 		t.Parallel()
+
 		const (
 			testDuration       = 10 * time.Second
 			produceInterval    = 10 * time.Millisecond
@@ -567,12 +647,13 @@ func TestConcurrentFetchers(t *testing.T) {
 				case <-ticker.C:
 					count := producedCount.Inc()
 					record := fmt.Sprintf("record-%d", count)
-					produceRecord(produceCtx, t, client, topicName, partitionID, []byte(record))
+					// Use context.Background() so that we don't race with the test context being cancelled.
+					produceRecord(context.Background(), t, client, topicName, partitionID, []byte(record))
 				}
 			}
 		}()
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, initialConcurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, initialConcurrency, 0)
 
 		fetchedRecords := make([]*kgo.Record, 0)
 		fetchedCount := atomic.NewInt64(0)
@@ -593,12 +674,12 @@ func TestConcurrentFetchers(t *testing.T) {
 		initialFetched := fetchedCount.Load()
 
 		// Update to higher concurrency
-		fetchers.Update(ctx, 4, recordsPerFetch)
+		fetchers.Update(ctx, 4)
 		fetchRecords(3 * time.Second)
 		highConcurrencyFetched := fetchedCount.Load() - initialFetched
 
 		// Update to lower concurrency
-		fetchers.Update(ctx, 1, recordsPerFetch)
+		fetchers.Update(ctx, 1)
 		fetchRecords(3 * time.Second)
 
 		cancelProduce()
@@ -619,6 +700,9 @@ func TestConcurrentFetchers(t *testing.T) {
 				"Record %d has unexpected content: %s", i, string(record.Value))
 		}
 
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
+
 		// Log some statistics
 		t.Logf("Total produced: %d, Total fetched: %d", totalProduced, totalFetched)
 		t.Logf("Fetched with initial concurrency: %d", initialFetched)
@@ -628,6 +712,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 	t.Run("consume from end and update immediately", func(t *testing.T) {
 		t.Parallel()
+
 		const (
 			initialRecords     = 100
 			additionalRecords  = 50
@@ -647,10 +732,10 @@ func TestConcurrentFetchers(t *testing.T) {
 		}
 
 		// Start concurrent fetchers from the end
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, kafkaOffsetEnd, initialConcurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, kafkaOffsetEnd, initialConcurrency, 0)
 
 		// Immediately update concurrency
-		fetchers.Update(ctx, updatedConcurrency, recordsPerFetch)
+		fetchers.Update(ctx, updatedConcurrency)
 
 		// Produce additional records
 		for i := 0; i < additionalRecords; i++ {
@@ -680,93 +765,34 @@ func TestConcurrentFetchers(t *testing.T) {
 				"Record %d has unexpected content: %s", i, string(record.Value))
 		}
 
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
+
 		// Log some statistics
 		t.Logf("Total records produced: %d", initialRecords+additionalRecords)
 		t.Logf("Records produced after start: %d", additionalRecords)
 		t.Logf("Records fetched: %d", len(fetchedRecords))
 	})
 
-	t.Run("staggered production with exact multiple of concurrency and records per fetch", func(t *testing.T) {
+	t.Run("staggered production", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		const (
-			topicName       = "test-topic"
-			partitionID     = 1
-			concurrency     = 2
-			recordsPerFetch = 3
+			topicName   = "test-topic"
+			partitionID = 1
+			concurrency = 2
 		)
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
-		// Produce exactly as many records as is the multiple of concurrency and records per fetch.
-		// This will give each fetcher exactly as many records as they're supposed to fetch.
-		const initiallyProducedRecords = concurrency * recordsPerFetch
-		var producedRecordsBytes [][]byte
-		for i := 0; i < initiallyProducedRecords; i++ {
-			record := []byte(fmt.Sprintf("record-%d", i+1))
-			produceRecord(ctx, t, client, topicName, partitionID, record)
-			producedRecordsBytes = append(producedRecordsBytes, record)
-		}
-
-		// Expect that we've received all records.
-		var fetchedRecordsBytes [][]byte
-		for len(fetchedRecordsBytes) < initiallyProducedRecords {
-			fetches, _ := fetchers.PollFetches(ctx)
-			assert.NoError(t, fetches.Err())
-			fetches.EachRecord(func(r *kgo.Record) {
-				fetchedRecordsBytes = append(fetchedRecordsBytes, r.Value)
-			})
-		}
-
-		// Produce a few more records
-		const additionalRecords = 3
-		for i := 0; i < additionalRecords; i++ {
-			record := []byte(fmt.Sprintf("additional-record-%d", i+1))
-			produceRecord(ctx, t, client, topicName, partitionID, record)
-			producedRecordsBytes = append(producedRecordsBytes, record)
-		}
-
-		// Fetchers shouldn't be stalled and should continue fetching as the HWM moves forward.
-		for len(fetchedRecordsBytes) < initiallyProducedRecords+additionalRecords {
-			fetches, _ := fetchers.PollFetches(ctx)
-			assert.NoError(t, fetches.Err())
-			fetches.EachRecord(func(r *kgo.Record) {
-				fetchedRecordsBytes = append(fetchedRecordsBytes, r.Value)
-			})
-		}
-
-		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes)
-	})
-
-	t.Run("staggered production with one less than multiple of concurrency and records per fetch", func(t *testing.T) {
-		// This test is the same as "staggered production with exact multiple of concurrency and records per fetch"
-		// but covers an off-by-one error.
-		t.Parallel()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		const (
-			topicName       = "test-topic"
-			partitionID     = 1
-			concurrency     = 2
-			recordsPerFetch = 3
-		)
-
-		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-		client := newKafkaProduceClient(t, clusterAddr)
-
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
-
-		// Produce exactly as many records as is the multiple of concurrency and records per fetch.
-		// This will give each fetcher exactly as many records as they're supposed to fetch.
-		const initiallyProducedRecords = concurrency*recordsPerFetch - 1
+		// Produce enough records to saturate each fetcher.
+		const initiallyProducedRecords = concurrency * 10
 		var producedRecordsBytes [][]byte
 		for i := 0; i < initiallyProducedRecords; i++ {
 			record := []byte(fmt.Sprintf("record-%d", i+1))
@@ -803,12 +829,8 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes)
 
-		// Mock Kafka to fail the Fetch request.
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-
-			return nil, errors.New("mocked error"), true
-		})
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 
 	t.Run("fetchers do not request offset beyond high watermark", func(t *testing.T) {
@@ -820,11 +842,10 @@ func TestConcurrentFetchers(t *testing.T) {
 		defer cancel()
 
 		const (
-			topicName       = "test-topic"
-			partitionID     = 1
-			concurrency     = 2
-			recordsPerFetch = 3
-			initialRecords  = 8
+			topicName      = "test-topic"
+			partitionID    = 1
+			concurrency    = 2
+			initialRecords = 8
 		)
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
@@ -833,7 +854,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		fetchRequestCount := atomic.NewInt64(0)
 		maxRequestedOffset := atomic.NewInt64(-1)
 
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
 
 		// Produce initial records
 		var producedRecordsBytes [][]byte
@@ -884,13 +905,249 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		// Verify the number and content of fetched records
 		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes, "Should fetch all produced records")
+
+		// We expect no more records returned by PollFetches() and no buffered records.
+		pollFetchesAndAssertNoRecords(t, fetchers)
+	})
+
+	t.Run("starting to run against a broken broker fails creating the fetchers", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		mockErr := kerr.BrokerNotAvailable
+		cluster.ControlKey(kmsg.Metadata.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			respTopic := kmsg.NewMetadataResponseTopic()
+			topicName := topicName // can't take the address of a const, so we first write it to a variable
+			respTopic.Topic = &topicName
+			respTopic.TopicID = [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+			respTopic.ErrorCode = mockErr.Code
+
+			resp := kmsg.NewPtrMetadataResponse()
+			resp.Topics = append(resp.Topics, respTopic)
+			resp.Version = 12
+			return resp, nil, true
+		})
+
+		logger := log.NewNopLogger()
+		reg := prometheus.NewPedanticRegistry()
+		metrics := newReaderMetrics(partitionID, reg, noopReaderMetricsSource{})
+
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// This instantiates the fields of kprom.
+		// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
+		metrics.kprom.OnNewClient(client)
+
+		offsetReader := newPartitionOffsetClient(client, topicName, reg, logger)
+
+		startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
+			return offsetReader.FetchPartitionStartOffset(ctx, partitionID)
+		}, time.Second, logger)
+
+		_, err := newConcurrentFetchers(
+			ctx,
+			client,
+			logger,
+			topicName,
+			partitionID,
+			0,
+			concurrency,
+			0,
+			false,
+			time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
+			offsetReader,
+			startOffsetsReader,
+			&metrics,
+		)
+		assert.ErrorContains(t, err, "failed to find topic ID")
+		assert.ErrorIs(t, err, mockErr)
+	})
+
+	t.Run("should reset the buffered records count when stopping", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+
+		// Produce some records.
+		for i := 0; i < 10; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
+		}
+
+		// We are not consuming the records, so we expect the count of buffered records to increase.
+		// The actual number of buffered records may change due to concurrency, so we just check
+		// that there are some buffered records.
+		test.Poll(t, time.Second, true, func() interface{} {
+			return fetchers.BufferedRecords() > 0
+		})
+
+		// Stop the fetchers.
+		fetchers.Stop()
+
+		// Even if there were some buffered records we expect the count to be reset to 0 when stopping
+		// because the Stop() intentionally discard any buffered record.
+		require.Zero(t, fetchers.BufferedRecords())
+	})
+
+	t.Run("respect maximum buffered bytes limit", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			topicName        = "test-topic"
+			partitionID      = 1
+			concurrency      = 3
+			maxInflightBytes = 10_000_000
+
+			recordSizeBytes      = 100_000 // sizable records so that our lower limit of 1MB per fetch request doesn't just include all records
+			totalProducedRecords = 6000    // produce a lot of records so that the client is forced to split them into multiple fetches
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Produce records
+		recordValue := bytes.Repeat([]byte{'a'}, recordSizeBytes)
+		for i := 0; i < totalProducedRecords; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, recordValue)
+		}
+
+		// Create fetchers with tracking of uncompressed bytes
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes)
+
+		// Wait for buffered records to stabilize, we expect that they stabilize because the limit is in effect.
+		waitForStableBufferedRecords(t, fetchers)
+
+		// Assert that we don't buffer more than maxInflightBytes
+		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of records", maxInflightBytes)
+
+		// Consume one batch of records
+		fetches, _ := fetchers.PollFetches(ctx)
+		totalConsumedRecords := fetches.NumRecords()
+		require.Greater(t, totalConsumedRecords, 0, "Should have received some records")
+
+		// Allow time for more fetches
+		waitForStableBufferedRecords(t, fetchers)
+
+		// Assert again that buffered bytes remain under limit
+		assert.LessOrEqualf(t, fetchers.BufferedRecords(), int64(maxInflightBytes), "Should still not buffer more than %d bytes after consuming some records", maxInflightBytes)
+
+		// Consume all remaining records and verify total
+		for totalConsumedRecords < totalProducedRecords {
+			fetches, _ = fetchers.PollFetches(ctx)
+			totalConsumedRecords += fetches.NumRecords()
+		}
+
+		// Allow time for more fetches
+		waitForStableBufferedRecords(t, fetchers)
+
+		pollFetchesAndAssertNoRecords(t, fetchers)
+		assert.Equal(t, totalProducedRecords, totalConsumedRecords, "Should have received all records eventually")
+	})
+
+	t.Run("respect maximum buffered bytes limit with varying record sizes", func(t *testing.T) {
+		// This test makes sure that the buffer doesn't become inefficient when the size estimations change (from large records we switch to small records).
+		t.Parallel()
+
+		const (
+			topicName        = "test-topic"
+			partitionID      = 1
+			concurrency      = 30
+			maxInflightBytes = 5_000_000
+
+			largeRecordsCount = 100
+			largeRecordSize   = 100_000
+			smallRecordsCount = 10_000
+			smallRecordSize   = 1000
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Create fetchers early to ensure we don't miss any records
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes)
+
+		// Produce large records
+		largeValue := bytes.Repeat([]byte{'a'}, largeRecordSize)
+		for i := 0; i < largeRecordsCount; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, largeValue)
+		}
+
+		t.Logf("Produced %d large records", largeRecordsCount)
+
+		waitForStableBufferedRecords(t, fetchers)
+		t.Log("Buffered records stabilized")
+
+		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of large records", maxInflightBytes)
+		// Consume all large records
+		consumedRecords := 0
+		for consumedRecords < largeRecordsCount {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+
+		pollFetchesAndAssertNoRecords(t, fetchers)
+		t.Log("Consumed all large records")
+
+		// Produce small records
+		smallValue := bytes.Repeat([]byte{'b'}, smallRecordSize)
+		for i := 0; i < smallRecordsCount; i++ {
+			produceRecord(ctx, t, client, topicName, partitionID, smallValue)
+		}
+
+		t.Logf("Produced %d small records", smallRecordsCount)
+
+		// Consume half of the small records. This should be enough to stabilize the records size estimation.
+		for consumedRecords < largeRecordsCount+smallRecordsCount/2 {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		t.Log("Consumed half of the small records")
+
+		// Assert that the buffer is well utilized.
+		waitForStableBufferedRecords(t, fetchers)
+		t.Log("Buffered records stabilized")
+
+		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of small records", maxInflightBytes)
+		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(maxInflightBytes/2), "Should still buffer a decent number of records")
+
+		// Consume the rest of the small records.
+		const totalProducedRecords = largeRecordsCount + smallRecordsCount
+		for consumedRecords < totalProducedRecords {
+			fetches, _ := fetchers.PollFetches(ctx)
+			consumedRecords += fetches.NumRecords()
+		}
+		t.Log("Consumed rest of the small records")
+
+		// Verify we received correct number of records
+		assert.Equal(t, totalProducedRecords, consumedRecords, "Should have consumed all records")
+
+		// Verify no more records are buffered. First wait for the buffered records to stabilize.
+		waitForStableBufferedRecords(t, fetchers)
+
+		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
 }
 
-func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int) *concurrentFetchers {
+func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newReaderMetrics(partition, reg)
+	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
@@ -910,8 +1167,8 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		partition,
 		startOffset,
 		concurrency,
-		recordsPerFetch,
-		false,
+		maxInflightBytes,
+		true,        // kfake uses compression and behaves similar to apache kafka
 		time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 		offsetReader,
 		startOffsetsReader,
@@ -923,6 +1180,41 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	return f
 }
 
+// pollFetchesAndAssertNoRecords ensures that PollFetches() returns 0 records and there are
+// no buffered records in fetchers. Since some records are discarded in the PollFetches(),
+// we may have to call it multiple times to process all buffered records that need to be
+// discarded.
+func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// If there are no buffered records, we can skip the polling at all.
+	if fetchers.BufferedRecords() == 0 {
+		return
+	}
+
+	for {
+		fetches, returnCtx := fetchers.PollFetches(ctx)
+		if errors.Is(returnCtx.Err(), context.DeadlineExceeded) {
+			break
+		}
+
+		// We always expect that PollFetches() returns zero records.
+		require.Len(t, fetches.Records(), 0)
+
+		// If there are no buffered records, we're good. We can end the assertion.
+		if fetchers.BufferedRecords() == 0 {
+			return
+		}
+	}
+
+	// We stopped polling fetches. We have to make sure there are no buffered records.
+	if !assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records") {
+		fetches, _ := fetchers.PollFetches(ctx)
+		t.Logf("%#v", fetches)
+	}
+}
+
 type waiterFunc func()
 
 func (w waiterFunc) Wait() { w() }
@@ -930,3 +1222,103 @@ func (w waiterFunc) Wait() { w() }
 type refresherFunc func()
 
 func (r refresherFunc) ForceMetadataRefresh() { r() }
+
+func TestFetchWant_MaxBytes(t *testing.T) {
+	testCases := map[string]struct {
+		fw       fetchWant
+		expected int32
+	}{
+		"small fetch": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               10,
+				estimatedBytesPerRecord: 100,
+			},
+			expected: 1_000_000, // minimum fetch size
+		},
+		"medium fetch": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               1000,
+				estimatedBytesPerRecord: 1000,
+			},
+			expected: 1_050_000, // 1000 * 1000 * 1.05
+		},
+		"huge fetch with huge bytes per record; overflow risk": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               2 << 31,
+				estimatedBytesPerRecord: 2 << 30,
+			},
+			expected: math.MaxInt32,
+		},
+		"negative product due to overflow": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               math.MaxInt64,
+				estimatedBytesPerRecord: math.MaxInt32,
+			},
+			expected: math.MaxInt32,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			result := tc.fw.MaxBytes()
+			assert.Equal(t, tc.expected, result)
+			assert.GreaterOrEqual(t, result, int32(0), "MaxBytes should never return negative values")
+		})
+	}
+}
+
+func TestFetchWant_UpdateBytesPerRecord(t *testing.T) {
+	baseWant := fetchWant{
+		startOffset:             100,
+		endOffset:               200,
+		estimatedBytesPerRecord: 1000,
+	}
+
+	testCases := map[string]struct {
+		lastFetchBytes         int
+		lastFetchRecords       int
+		expectedBytesPerRecord int
+	}{
+		"similar to estimate": {
+			lastFetchBytes:         10000,
+			lastFetchRecords:       10,
+			expectedBytesPerRecord: 1000,
+		},
+		"much larger than estimate": {
+			lastFetchBytes:         100000,
+			lastFetchRecords:       10,
+			expectedBytesPerRecord: 2800,
+		},
+		"much smaller than estimate": {
+			lastFetchBytes:         1000,
+			lastFetchRecords:       10,
+			expectedBytesPerRecord: 820,
+		},
+		"risk of overflow": {
+			lastFetchBytes:         math.MaxInt64,
+			lastFetchRecords:       1,
+			expectedBytesPerRecord: math.MaxInt64/5 + int(float64(baseWant.estimatedBytesPerRecord)*0.8),
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			result := baseWant.UpdateBytesPerRecord(tc.lastFetchBytes, tc.lastFetchRecords)
+
+			assert.Equal(t, baseWant.startOffset, result.startOffset, "startOffset should not change")
+			assert.Equal(t, baseWant.endOffset, result.endOffset, "endOffset should not change")
+
+			// Check the new bytes per record estimation. Because of large numbers and floats we allow for 0.1% error.
+			assert.InEpsilon(t, tc.expectedBytesPerRecord, result.estimatedBytesPerRecord, 0.001)
+
+			// Verify MaxBytes() doesn't overflow or return negative values
+			maxBytes := result.MaxBytes()
+			assert.GreaterOrEqual(t, maxBytes, int32(0), "MaxBytes should never return negative values")
+			assert.LessOrEqual(t, maxBytes, int32(math.MaxInt32), "MaxBytes should never exceed MaxInt32")
+		})
+	}
+}

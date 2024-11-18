@@ -26,6 +26,7 @@ type Subquery struct {
 	rangeMilliseconds int64
 	floats            *types.FPointRingBuffer
 	histograms        *types.HPointRingBuffer
+	stepData          *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
 }
 
 var _ types.RangeVectorOperator = &Subquery{}
@@ -49,6 +50,7 @@ func NewSubquery(
 		rangeMilliseconds:    subqueryRange.Milliseconds(),
 		floats:               types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:           types.NewHPointRingBuffer(memoryConsumptionTracker),
+		stepData:             &types.RangeVectorStepData{},
 	}
 }
 
@@ -72,13 +74,14 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (s *Subquery) NextStepSamples() (types.RangeVectorStepData, error) {
+func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	if s.nextStepT > s.ParentQueryTimeRange.EndT {
-		return types.RangeVectorStepData{}, types.EOS
+		return nil, types.EOS
 	}
 
-	stepT := s.nextStepT
-	rangeEnd := stepT
+	s.stepData.StepT = s.nextStepT
+	rangeEnd := s.nextStepT
+	s.nextStepT += s.ParentQueryTimeRange.IntervalMilliseconds
 
 	if s.SubqueryTimestamp != nil {
 		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
@@ -91,15 +94,12 @@ func (s *Subquery) NextStepSamples() (types.RangeVectorStepData, error) {
 	s.floats.DiscardPointsBefore(rangeStart)
 	s.histograms.DiscardPointsBefore(rangeStart)
 
-	s.nextStepT += s.ParentQueryTimeRange.IntervalMilliseconds
+	s.stepData.Floats = s.floats.ViewUntilSearchingForwards(rangeEnd, s.stepData.Floats)
+	s.stepData.Histograms = s.histograms.ViewUntilSearchingForwards(rangeEnd, s.stepData.Histograms)
+	s.stepData.RangeStart = rangeStart
+	s.stepData.RangeEnd = rangeEnd
 
-	return types.RangeVectorStepData{
-		Floats:     s.floats,
-		Histograms: s.histograms,
-		StepT:      stepT,
-		RangeStart: rangeStart,
-		RangeEnd:   rangeEnd,
-	}, nil
+	return s.stepData, nil
 }
 
 func (s *Subquery) StepCount() int {

@@ -81,7 +81,6 @@ ruler_storage:
 
 query_scheduler:
   service_discovery_mode: "ring"
-  prioritize_query_components: true
 
 alertmanager:
   data_dir: /data/alertmanager

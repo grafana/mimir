@@ -2,6 +2,8 @@
 
 package tree
 
+import "slices"
+
 type (
 	TenantID  string
 	QuerierID string
@@ -203,7 +205,7 @@ func (qa *TenantQuerierQueuingAlgorithm) dequeueSelectNode(node *Node) *Node {
 // dequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:
 //   - parent's queueMap,
 //   - tenantNodes
-//   - tenantIDOrder iff there are no other nodes by the same name in tenantNodes. If the child is at the end of
+//   - tenantIDOrder if there are no other nodes by the same name in tenantNodes. If the child is at the end of
 //     tenantIDOrder, it is removed outright; otherwise, it is replaced with an empty ("") element
 //
 // dequeueUpdateState would normally also handle incrementing the queue position after performing a dequeue, but
@@ -222,27 +224,43 @@ func (qa *TenantQuerierQueuingAlgorithm) dequeueUpdateState(node *Node, dequeued
 	// delete from shared tenantNodes
 	for i, tenantNode := range qa.tenantNodes[childName] {
 		if tenantNode == dequeuedFrom {
-			qa.tenantNodes[childName] = append(qa.tenantNodes[childName][:i], qa.tenantNodes[childName][i+1:]...)
+			qa.tenantNodes[childName] = slices.Delete(qa.tenantNodes[childName], i, i+1)
+
 		}
-	}
 
-	// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
-	// If the removed child is at the _end_ of tenantIDOrder, we remove it outright; otherwise,
-	// we replace it with an empty string. Removal of elements from anywhere other than the end of the slice
-	// would re-index all tenant IDs, resulting in skipped tenants when starting iteration from the
-	// querier-provided LastTenantIndex.
-	removeFromSharedQueueOrder := len(qa.tenantNodes[childName]) == 0
+		// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
+		removeFromSharedQueueOrder := len(qa.tenantNodes[childName]) == 0
 
-	if removeFromSharedQueueOrder {
-		for idx, name := range qa.tenantIDOrder {
-			if name == childName {
-				qa.tenantIDOrder[idx] = string(emptyTenantID)
+		// When tenantIDOrder is very long, removing tenants from the order is performance-sensitive
+		// when clearing & deleting many tenant queues at the same time due to rollout operations.
+		if removeFromSharedQueueOrder {
+
+			// First, just replace the tenantID with the emptyTenantID sentinel value.
+			for idx, name := range qa.tenantIDOrder {
+				if name == childName {
+					qa.tenantIDOrder[idx] = string(emptyTenantID)
+					// tenant ID should only appear once in the list
+					break
+				}
 			}
-		}
-		// clear all sequential empty elements from tenantIDOrder
-		lastElementIndex := len(qa.tenantIDOrder) - 1
-		for i := lastElementIndex; i >= 0 && qa.tenantIDOrder[i] == ""; i-- {
-			qa.tenantIDOrder = qa.tenantIDOrder[:i]
+
+			// Then, only shrink tenantIDOrder when we can remove emptyTenantID sentinel values from the end.
+			// Shrinking from the middle would re-index the tenant order and could cause us to skip tenants
+			// when starting iteration from the LastTenantIndex provided by a querier-worker.
+			//
+			// Because we wait to shrink tenantIDOrder until we can remove the last element from the end,
+			// there may be many consecutive emptyTenantIDs up to (last index - 1) waiting to be removed;
+			// count up the emptyTenantIDs at the end and remove all at once to avoid multiple slice resizes.
+			emptyTenantIDsAtEnd := 0
+			for i := len(qa.tenantIDOrder) - 1; i >= 0 && qa.tenantIDOrder[i] == ""; i-- {
+				emptyTenantIDsAtEnd++
+			}
+
+			qa.tenantIDOrder = slices.Delete(
+				qa.tenantIDOrder,
+				len(qa.tenantIDOrder)-emptyTenantIDsAtEnd,
+				len(qa.tenantIDOrder),
+			)
 		}
 	}
 }

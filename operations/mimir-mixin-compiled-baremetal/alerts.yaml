@@ -164,7 +164,11 @@ groups:
             message: Mimir ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has no tenants assigned.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterinstancehasnotenants
           expr: |
-            (min by(cluster, namespace, instance) (cortex_ingester_memory_users) == 0)
+            (
+              (min by(cluster, namespace, instance) (cortex_ingester_memory_users) == 0)
+              unless
+              (max by(cluster, namespace, instance) (cortex_lifecycler_read_only) > 0)
+            )
             and on (cluster, namespace)
             # Only if there are more timeseries than would be expected due to continuous testing load
             (
@@ -1099,8 +1103,7 @@ groups:
               rate(cortex_ingest_storage_reader_requests_total[5m])
             ) == 0)
             and
-            # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
-            (sum by (cluster, namespace, instance) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
+            (sum by (cluster, namespace, instance) (cortex_ingest_storage_reader_buffered_fetched_records) > 0)
           for: 5m
           labels:
             severity: critical

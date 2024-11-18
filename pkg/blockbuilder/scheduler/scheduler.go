@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,15 +13,16 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
 
+	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 type BlockBuilderScheduler struct {
 	services.Service
 
-	kafkaClient *kgo.Client
+	adminClient *kadm.Client
+	jobs        *jobQueue
 	cfg         Config
 	logger      log.Logger
 	register    prometheus.Registerer
@@ -33,6 +35,7 @@ func New(
 	reg prometheus.Registerer,
 ) (*BlockBuilderScheduler, error) {
 	s := &BlockBuilderScheduler{
+		jobs:     newJobQueue(cfg.JobLeaseExpiry, logger),
 		cfg:      cfg,
 		logger:   logger,
 		register: reg,
@@ -47,19 +50,17 @@ func (s *BlockBuilderScheduler) starting(context.Context) error {
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
 		s.logger,
-		kgo.ConsumerGroup(s.cfg.SchedulerConsumerGroup),
-		// The scheduler simply monitors partitions. We don't want it committing offsets.
-		kgo.DisableAutoCommit(),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
 	}
-	s.kafkaClient = kc
+
+	s.adminClient = kadm.NewClient(kc)
 	return nil
 }
 
 func (s *BlockBuilderScheduler) stopping(_ error) error {
-	s.kafkaClient.Close()
+	s.adminClient.Close()
 	return nil
 }
 
@@ -69,6 +70,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-updateTick.C:
+			s.jobs.clearExpiredLeases()
 			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
@@ -78,24 +80,88 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	startTime := time.Now()
-	// Eventually this will also include job computation. But for now, collect partition data.
-	admin := kadm.NewClient(s.kafkaClient)
+	defer func() {
+		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
+	}()
 
-	startOffsets, err := admin.ListStartOffsets(ctx, s.cfg.Kafka.Topic)
+	// TODO: Commit the offsets back to Kafka if dirty.
+
+	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list start offsets", "err", err)
+		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
+		return
 	}
-	endOffsets, err := admin.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
+
+	if ps, ok := lag[s.cfg.Kafka.Topic]; ok {
+		for part, gl := range ps {
+			partStr := fmt.Sprint(part)
+			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(gl.Start.Offset))
+			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
+			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
+		}
+	}
+
+	oldTime := time.Now().Add(-s.cfg.ConsumeInterval)
+	oldOffsets, err := s.adminClient.ListOffsetsAfterMilli(ctx, oldTime.UnixMilli(), s.cfg.Kafka.Topic)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
+		level.Warn(s.logger).Log("msg", "failed to obtain old offsets", "err", err)
+		return
 	}
 
-	s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
+	// See if the group-committed offset per partition is behind our "old" offsets.
 
-	startOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionStartOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
+	oldOffsets.Each(func(o kadm.ListedOffset) {
+		if o.Err != nil {
+			level.Warn(s.logger).Log("msg", "failed to get old offset", "partition", o.Partition, "err", o.Err)
+			return
+		}
+		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
+			if l.Commit.At < o.Offset {
+				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
+
+				// The job is uniquely identified by {topic, partition, consumption start offset}.
+				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
+				partState := blockbuilder.PartitionStateFromLag(s.logger, l, 0)
+				s.jobs.addOrUpdate(jobID, jobSpec{
+					topic:          o.Topic,
+					partition:      o.Partition,
+					startOffset:    l.Commit.At,
+					endOffset:      l.End.Offset,
+					commitRecTs:    partState.CommitRecordTimestamp,
+					lastSeenOffset: partState.LastSeenOffset,
+					lastBlockEndTs: partState.LastBlockEnd,
+				})
+			}
+		}
 	})
-	endOffsets.Each(func(o kadm.ListedOffset) {
-		s.metrics.partitionEndOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.Offset))
-	})
+}
+
+// assignJob returns an assigned job for the given workerID.
+// (This is a temporary method for unit tests until we have RPCs.)
+func (s *BlockBuilderScheduler) assignJob(workerID string) (string, jobSpec, error) {
+	return s.jobs.assign(workerID)
+}
+
+// updateJob takes a job update from the client and records it, if necessary.
+// (This is a temporary method for unit tests until we have RPCs.)
+func (s *BlockBuilderScheduler) updateJob(jobID, workerID string, complete bool, _ jobSpec) error {
+	// TODO: Right here we should ignore the update if the job isn't beyond
+	// what's in our local snapshot of committed offsets.
+
+	if complete {
+		if err := s.jobs.completeJob(jobID, workerID); err != nil {
+			// job not found is fine, as clients will be re-informing us.
+			if !errors.Is(err, errJobNotFound) {
+				return fmt.Errorf("complete job: %w", err)
+			}
+		}
+
+		// TODO: Move forward our local snapshot of committed offsets.
+	} else {
+		// It's an in-progress job whose lease we need to renew.
+		if err := s.jobs.renewLease(jobID, workerID); err != nil {
+			return fmt.Errorf("renew lease: %w", err)
+		}
+	}
+	return nil
 }

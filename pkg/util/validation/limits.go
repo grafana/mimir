@@ -169,16 +169,17 @@ type Limits struct {
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
-	MaxTotalQueryLength                    model.Duration  `yaml:"max_total_query_length" json:"max_total_query_length"`
-	ResultsCacheTTL                        model.Duration  `yaml:"results_cache_ttl" json:"results_cache_ttl"`
-	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration  `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
-	ResultsCacheTTLForCardinalityQuery     model.Duration  `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
-	ResultsCacheTTLForLabelsQuery          model.Duration  `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
-	ResultsCacheTTLForErrors               model.Duration  `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors" category:"experimental"`
-	ResultsCacheForUnalignedQueryEnabled   bool            `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
-	MaxQueryExpressionSizeBytes            int             `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
-	BlockedQueries                         []*BlockedQuery `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
-	AlignQueriesWithStep                   bool            `yaml:"align_queries_with_step" json:"align_queries_with_step"`
+	MaxTotalQueryLength                    model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
+	ResultsCacheTTL                        model.Duration         `yaml:"results_cache_ttl" json:"results_cache_ttl"`
+	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration         `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
+	ResultsCacheTTLForCardinalityQuery     model.Duration         `yaml:"results_cache_ttl_for_cardinality_query" json:"results_cache_ttl_for_cardinality_query"`
+	ResultsCacheTTLForLabelsQuery          model.Duration         `yaml:"results_cache_ttl_for_labels_query" json:"results_cache_ttl_for_labels_query"`
+	ResultsCacheTTLForErrors               model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors" category:"experimental"`
+	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
+	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
+	BlockedQueries                         []*BlockedQuery        `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
+	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -233,16 +234,16 @@ type Limits struct {
 	NotificationRateLimit               float64            `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
 	NotificationRateLimitPerIntegration LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
-	AlertmanagerMaxGrafanaConfigSizeBytes      int `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
-	AlertmanagerMaxConfigSizeBytes             int `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
-	AlertmanagerMaxGrafanaStateSizeBytes       int `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
-	AlertmanagerMaxSilencesCount               int `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
-	AlertmanagerMaxSilenceSizeBytes            int `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
-	AlertmanagerMaxTemplatesCount              int `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
-	AlertmanagerMaxTemplateSizeBytes           int `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
-	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
-	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
-	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
+	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
+	AlertmanagerMaxConfigSizeBytes             int           `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
+	AlertmanagerMaxGrafanaStateSizeBytes       flagext.Bytes `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
+	AlertmanagerMaxSilencesCount               int           `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
+	AlertmanagerMaxSilenceSizeBytes            int           `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
+	AlertmanagerMaxTemplatesCount              int           `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
+	AlertmanagerMaxTemplateSizeBytes           int           `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
+	AlertmanagerMaxDispatcherAggregationGroups int           `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
+	AlertmanagerMaxAlertsCount                 int           `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
+	AlertmanagerMaxAlertsSizeBytes             int           `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	// OpenTelemetry
 	OTelMetricSuffixesEnabled                bool `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
@@ -373,6 +374,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
+	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -388,9 +390,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
-	f.IntVar(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, 0, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
+	_ = l.AlertmanagerMaxGrafanaConfigSizeBytes.Set("0")
+	f.Var(&l.AlertmanagerMaxGrafanaConfigSizeBytes, AlertmanagerMaxGrafanaConfigSizeFlag, "Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.")
-	f.IntVar(&l.AlertmanagerMaxGrafanaStateSizeBytes, AlertmanagerMaxGrafanaStateSizeFlag, 0, "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.")
+	_ = l.AlertmanagerMaxGrafanaStateSizeBytes.Set("0")
+	f.Var(&l.AlertmanagerMaxGrafanaStateSizeBytes, AlertmanagerMaxGrafanaStateSizeFlag, "Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilencesCount, "alertmanager.max-silences-count", 0, "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxSilenceSizeBytes, "alertmanager.max-silence-size-bytes", 0, "Maximum silence size in bytes. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxTemplatesCount, "alertmanager.max-templates-count", 0, "Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.")
@@ -1051,11 +1055,11 @@ func (o *Overrides) NotificationBurstSize(user string, integration string) int {
 }
 
 func (o *Overrides) AlertmanagerMaxGrafanaStateSize(userID string) int {
-	return o.getOverridesForUser(userID).AlertmanagerMaxGrafanaStateSizeBytes
+	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaStateSizeBytes)
 }
 
 func (o *Overrides) AlertmanagerMaxGrafanaConfigSize(userID string) int {
-	return o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes
+	return int(o.getOverridesForUser(userID).AlertmanagerMaxGrafanaConfigSizeBytes)
 }
 
 func (o *Overrides) AlertmanagerMaxConfigSize(userID string) int {
@@ -1112,6 +1116,10 @@ func (o *Overrides) ResultsCacheTTLForErrors(user string) time.Duration {
 
 func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).ResultsCacheForUnalignedQueryEnabled
+}
+
+func (o *Overrides) EnabledPromQLExperimentalFunctions(userID string) []string {
+	return o.getOverridesForUser(userID).EnabledPromQLExperimentalFunctions
 }
 
 func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {

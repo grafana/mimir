@@ -278,11 +278,8 @@ func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 		}
 
 		f := functions.FunctionOverInstantVectorDefinition{
-			SeriesDataFunc: functions.Round,
-			// TODO(jhesketh): With the version of Prometheus vendored at the time of writing, round does not drop the
-			//                 __name__ label, and this is verified by our tests.
-			//                 We match this for consistency, but will  need to drop them once prometheus 3.0 is vendored in.
-			SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{},
+			SeriesDataFunc:         functions.Round,
+			SeriesMetadataFunction: functions.DropSeriesName,
 		}
 
 		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, memoryConsumptionTracker, f, expressionPosition), nil
@@ -302,6 +299,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
 	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
 	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"changes":           FunctionOverRangeVectorOperatorFactory("changes", functions.Changes),
 	"clamp":             ClampFunctionOperatorFactory(),
 	"clamp_max":         ClampMinMaxFunctionOperatorFactory("clamp_max", false),
 	"clamp_min":         ClampMinMaxFunctionOperatorFactory("clamp_min", true),
@@ -309,6 +307,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":   FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
 	"deg":               InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
+	"deriv":             FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
 	"exp":               InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
 	"floor":             InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
 	"histogram_count":   InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
@@ -324,6 +323,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"present_over_time": FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
 	"rad":               InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":              FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
+	"resets":            FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
 	"round":             RoundFunctionOperatorFactory(),
 	"sgn":               InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
 	"sin":               InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),

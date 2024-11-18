@@ -2465,7 +2465,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2524,7 +2524,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 3
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 3
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2643,7 +2643,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -10611,8 +10611,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
 			`,
 		},
 		"should soft fail on all histograms out of bound in a write request": {
@@ -10644,8 +10644,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 4
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 1
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 1
 			`,
 			nativeHistograms: true,
 		},
@@ -10679,8 +10679,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 12
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 3
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 12
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -10716,8 +10716,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {

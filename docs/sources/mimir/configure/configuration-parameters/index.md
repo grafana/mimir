@@ -1307,9 +1307,9 @@ push_circuit_breaker:
   # CLI flag: -ingester.push-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between an
-  # activation request and becoming effectively active. During that time both
-  # failures and successes will not be counted.
+  # (experimental) Duration, in seconds, after an initial request that an
+  # activated circuit breaker should wait before becoming effectively active.
+  # During this time, neither failures nor successes are counted.
   # CLI flag: -ingester.push-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
@@ -1344,9 +1344,9 @@ read_circuit_breaker:
   # CLI flag: -ingester.read-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between an
-  # activation request and becoming effectively active. During that time both
-  # failures and successes will not be counted.
+  # (experimental) Duration, in seconds, after an initial request that an
+  # activated circuit breaker should wait before becoming effectively active.
+  # During this time, neither failures nor successes are counted.
   # CLI flag: -ingester.read-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
@@ -1692,6 +1692,11 @@ results_cache:
 # evaluated immediately) in queries.
 # CLI flag: -query-frontend.prune-queries
 [prune_queries: <boolean> | default = false]
+
+# (experimental) True to control access to specific PromQL experimental
+# functions per tenant.
+# CLI flag: -query-frontend.block-promql-experimental-functions
+[block_promql_experimental_functions: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
@@ -3518,6 +3523,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
 
+# (experimental) Enable certain experimental PromQL functions, which are subject
+# to being changed or removed at any time, on a per-tenant basis. Defaults to
+# empty which means all experimental functions are disabled. Set to 'all' to
+# enable all experimental functions.
+# CLI flag: -query-frontend.enabled-promql-experimental-functions
+[enabled_promql_experimental_functions: <string> | default = ""]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
@@ -3718,7 +3730,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no
 # limit.
 # CLI flag: -alertmanager.max-grafana-config-size-bytes
-[alertmanager_max_grafana_config_size_bytes: <int> | default = 0]
+[alertmanager_max_grafana_config_size_bytes: <int> | default = 0B]
 
 # Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
@@ -3726,7 +3738,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-grafana-state-size-bytes
-[alertmanager_max_grafana_state_size_bytes: <int> | default = 0]
+[alertmanager_max_grafana_state_size_bytes: <int> | default = 0B]
 
 # Maximum number of silences, including expired silences, that a tenant can have
 # at once. 0 = no limit.
@@ -3924,12 +3936,6 @@ kafka:
   # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
   [startup_fetch_concurrency: <int> | default = 0]
 
-  # The number of records per fetch request that the ingester makes when reading
-  # data from Kafka during startup. Depends on
-  # ingest-storage.kafka.startup-fetch-concurrency being greater than 0.
-  # CLI flag: -ingest-storage.kafka.startup-records-per-fetch
-  [startup_records_per_fetch: <int> | default = 2500]
-
   # The number of concurrent fetch requests that the ingester makes when reading
   # data continuously from Kafka after startup. Is disabled unless
   # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to
@@ -3937,18 +3943,17 @@ kafka:
   # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
   [ongoing_fetch_concurrency: <int> | default = 0]
 
-  # The number of records per fetch request that the ingester makes when reading
-  # data continuously from Kafka after startup. Depends on
-  # ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0.
-  # CLI flag: -ingest-storage.kafka.ongoing-records-per-fetch
-  [ongoing_records_per_fetch: <int> | default = 30]
-
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
   # using uncompressed bytes. Different Kafka implementations interpret MaxBytes
   # differently.
   # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
   [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+  # The maximum number of buffered records ready to be processed. This limit
+  # applies to the sum of all inflight requests. Set to 0 to disable the limit.
+  # CLI flag: -ingest-storage.kafka.max-buffered-bytes
+  [max_buffered_bytes: <int> | default = 100000000]
 
   # The maximum number of concurrent ingestion streams to the TSDB head. Every
   # tenant has their own set of streams. 0 to disable.

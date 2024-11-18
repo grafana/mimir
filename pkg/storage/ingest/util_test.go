@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
@@ -129,32 +131,101 @@ func TestResultPromise(t *testing.T) {
 }
 
 func TestSetDefaultNumberOfPartitionsForAutocreatedTopics(t *testing.T) {
-	cluster, err := kfake.NewCluster(kfake.NumBrokers(1))
-	require.NoError(t, err)
-	t.Cleanup(cluster.Close)
+	createKafkaCluster := func(t *testing.T) (string, *kfake.Cluster) {
+		cluster, err := kfake.NewCluster(kfake.NumBrokers(1))
+		require.NoError(t, err)
+		t.Cleanup(cluster.Close)
 
-	addrs := cluster.ListenAddrs()
-	require.Len(t, addrs, 1)
+		addrs := cluster.ListenAddrs()
+		require.Len(t, addrs, 1)
 
-	cfg := KafkaConfig{
-		Address:                          addrs[0],
-		AutoCreateTopicDefaultPartitions: 100,
+		return addrs[0], cluster
 	}
 
-	cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
-		r := request.(*kmsg.AlterConfigsRequest)
+	t.Run("should create the partitions", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
 
-		require.Len(t, r.Resources, 1)
-		res := r.Resources[0]
-		require.Equal(t, kmsg.ConfigResourceTypeBroker, res.ResourceType)
-		require.Len(t, res.Configs, 1)
-		cfg := res.Configs[0]
-		require.Equal(t, "num.partitions", cfg.Name)
-		require.NotNil(t, *cfg.Value)
-		require.Equal(t, "100", *cfg.Value)
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.AlterConfigsRequest)
 
-		return &kmsg.AlterConfigsResponse{}, nil, true
+			require.Len(t, r.Resources, 1)
+			res := r.Resources[0]
+			require.Equal(t, kmsg.ConfigResourceTypeBroker, res.ResourceType)
+			require.Len(t, res.Configs, 1)
+			cfg := res.Configs[0]
+			require.Equal(t, "num.partitions", cfg.Name)
+			require.NotNil(t, *cfg.Value)
+			require.Equal(t, "100", *cfg.Value)
+
+			return &kmsg.AlterConfigsResponse{
+				Version: r.Version,
+			}, nil, true
+		})
+
+		logs := concurrency.SyncBuffer{}
+		logger := log.NewLogfmtLogger(&logs)
+
+		setDefaultNumberOfPartitionsForAutocreatedTopics(cfg, logger)
+		require.NotContains(t, logs.String(), "err")
 	})
 
-	setDefaultNumberOfPartitionsForAutocreatedTopics(cfg, log.NewNopLogger())
+	t.Run("should log an error if the request fails", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
+
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+			return &kmsg.AlterConfigsResponse{}, errors.New("failed request"), true
+		})
+
+		logs := concurrency.SyncBuffer{}
+		logger := log.NewLogfmtLogger(&logs)
+
+		setDefaultNumberOfPartitionsForAutocreatedTopics(cfg, logger)
+		require.Contains(t, logs.String(), "err")
+	})
+
+	t.Run("should log an error if the request succeed but the response contains an error", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
+
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(kReq kmsg.Request) (kmsg.Response, error, bool) {
+			req := kReq.(*kmsg.AlterConfigsRequest)
+			require.Len(t, req.Resources, 1)
+
+			return &kmsg.AlterConfigsResponse{
+				Version: req.Version,
+				Resources: []kmsg.AlterConfigsResponseResource{
+					{
+						ResourceType: req.Resources[0].ResourceType,
+						ResourceName: req.Resources[0].ResourceName,
+						ErrorCode:    kerr.InvalidRequest.Code,
+						ErrorMessage: pointerOf(kerr.InvalidRequest.Message),
+					},
+				},
+			}, nil, true
+		})
+
+		logs := concurrency.SyncBuffer{}
+		logger := log.NewLogfmtLogger(&logs)
+
+		setDefaultNumberOfPartitionsForAutocreatedTopics(cfg, logger)
+		require.Contains(t, logs.String(), "err")
+	})
+
 }

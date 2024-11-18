@@ -14,7 +14,7 @@ import (
 
 const (
 	maxExpectedPointsPerSeries  = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
-	pointsPerSeriesBucketFactor = 2.0
+	pointsPerSeriesBucketFactor = 2
 
 	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory bytes limit.
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.

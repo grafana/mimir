@@ -251,9 +251,9 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
-  -alertmanager.max-grafana-config-size-bytes int
+  -alertmanager.max-grafana-config-size-bytes value
     	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
-  -alertmanager.max-grafana-state-size-bytes int
+  -alertmanager.max-grafana-state-size-bytes value
     	Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
   -alertmanager.max-recv-msg-size int
     	Maximum size (bytes) of an accepted HTTP request body. (default 104857600)
@@ -1527,12 +1527,12 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
   -ingest-storage.kafka.last-produced-offset-retry-timeout duration
     	How long to retry a failed request to get the last produced offset. (default 10s)
+  -ingest-storage.kafka.max-buffered-bytes int
+    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
   -ingest-storage.kafka.ongoing-fetch-concurrency int
     	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to disable.
-  -ingest-storage.kafka.ongoing-records-per-fetch int
-    	The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0. (default 30)
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
@@ -1543,8 +1543,6 @@ Usage of ./cmd/mimir/mimir:
     	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.startup-fetch-concurrency int
     	The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.
-  -ingest-storage.kafka.startup-records-per-fetch int
-    	The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on ingest-storage.kafka.startup-fetch-concurrency being greater than 0. (default 2500)
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string
@@ -1720,7 +1718,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-circuit-breaker.failure-threshold-percentage uint
     	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
   -ingester.push-circuit-breaker.initial-delay duration
-    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+    	[experimental] Duration, in seconds, after an initial request that an activated circuit breaker should wait before becoming effectively active. During this time, neither failures nor successes are counted.
   -ingester.push-circuit-breaker.request-timeout duration
     	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
   -ingester.push-circuit-breaker.thresholding-period duration
@@ -1736,7 +1734,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.failure-threshold-percentage uint
     	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
   -ingester.read-circuit-breaker.initial-delay duration
-    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+    	[experimental] Duration, in seconds, after an initial request that an activated circuit breaker should wait before becoming effectively active. During this time, neither failures nor successes are counted.
   -ingester.read-circuit-breaker.request-timeout duration
     	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
   -ingester.read-circuit-breaker.thresholding-period duration
@@ -2205,6 +2203,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
+  -query-frontend.block-promql-experimental-functions
+    	[experimental] True to control access to specific PromQL experimental functions per tenant.
   -query-frontend.cache-errors
     	[experimental] Cache non-transient errors from queries.
   -query-frontend.cache-results
@@ -2213,6 +2213,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache requests that are not step-aligned.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
+  -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
+    	[experimental] Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-frontend.grpc-client-config.backoff-min-period duration

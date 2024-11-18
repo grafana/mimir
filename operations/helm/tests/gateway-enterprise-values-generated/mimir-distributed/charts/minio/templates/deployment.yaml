@@ -6,7 +6,7 @@ metadata:
   name: gateway-enterprise-values-minio
   labels:
     app: minio
-    chart: minio-5.2.0
+    chart: minio-5.3.0
     release: gateway-enterprise-values
     heritage: Helm
 spec:
@@ -27,14 +27,15 @@ spec:
         app: minio
         release: gateway-enterprise-values
       annotations:
-        checksum/secrets: 4634e8fa4e88b28d0589ae2969f508011cb59399aa38602a36718dec4e6aee31
-        checksum/config: 17e9e037408100f3834c8e6c5773e6faf41c970f97beec11f7e82b65d41ed99a
+        checksum/secrets: 023137cd340c11d4a9636d7930f0cc890e8208dc1276374277636d79e7f237f3
+        checksum/config: 88c7ebffd4c826a33f1c946f2c362224ff23d17a217d56a0ec9ddbc3cc79e266
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

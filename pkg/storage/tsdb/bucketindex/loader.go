@@ -133,7 +133,7 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 
 	elapsedTime := time.Since(startTime)
 	l.loadDuration.Observe(elapsedTime.Seconds())
-	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "duration", elapsedTime)
+	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "updatedAt", idx.UpdatedAt, "duration", elapsedTime)
 	return idx, nil
 }
 
@@ -208,6 +208,12 @@ func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
 	// is when a tenant has rules configured but hasn't started remote writing yet. Rules will be evaluated and
 	// bucket index loaded by the ruler.
 	l.indexesMx.Lock()
+	userIdx := l.indexes[userID]
+	if idx != nil {
+		if userIdx == nil || (userIdx.index != nil && userIdx.index.UpdatedAt != idx.UpdatedAt) {
+			level.Debug(l.logger).Log("msg", "loaded bucket index", "user", userID, "updatedAt", idx.UpdatedAt)
+		}
+	}
 	l.indexes[userID].index = idx
 	l.indexes[userID].err = err
 	l.indexes[userID].setUpdatedAt(startTime)

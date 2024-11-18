@@ -23,7 +23,7 @@ mimir {
       with_ready_trigger=with_ready_trigger,
       weight=weight,
       container_name=container,
-      pod_regex=pod_regex
+      extra_matchers=(if pod_regex != '' then 'pod=~"%s"' % pod_regex else '')
     )
   for with_cortex_prefix in [false, true]
   for with_ready_trigger in [false, true]

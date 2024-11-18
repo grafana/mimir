@@ -10,72 +10,60 @@ load 5m
 	http_requests{path="/biz"}	0 0 0 0 0 1 1 1 1 1
 
 # Tests for resets().
-# Unsupported by streaming engine.
-# eval instant at 50m resets(http_requests[5m])
-# 	{path="/foo"} 0
-# 	{path="/bar"} 0
-# 	{path="/biz"} 0
+eval instant at 50m resets(http_requests[5m])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m resets(http_requests[300])
-# 	{path="/foo"} 0
-# 	{path="/bar"} 0
-# 	{path="/biz"} 0
+eval instant at 50m resets(http_requests[300])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m resets(http_requests[20m])
-# 	{path="/foo"} 1
-# 	{path="/bar"} 0
-# 	{path="/biz"} 0
+eval instant at 50m resets(http_requests[20m])
+	{path="/foo"} 1
+	{path="/bar"} 0
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m resets(http_requests[30m])
-# 	{path="/foo"} 2
-# 	{path="/bar"} 1
-# 	{path="/biz"} 0
+eval instant at 50m resets(http_requests[30m])
+	{path="/foo"} 2
+	{path="/bar"} 1
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m resets(http_requests[50m])
-# 	{path="/foo"} 3
-# 	{path="/bar"} 1
-# 	{path="/biz"} 0
+eval instant at 50m resets(http_requests[50m])
+	{path="/foo"} 3
+	{path="/bar"} 1
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m resets(nonexistent_metric[50m])
+eval instant at 50m resets(nonexistent_metric[50m])
 
 # Tests for changes().
-# Unsupported by streaming engine.
-# eval instant at 50m changes(http_requests[5m])
-# 	{path="/foo"} 0
-# 	{path="/bar"} 0
-# 	{path="/biz"} 0
+eval instant at 50m changes(http_requests[5m])
+	{path="/foo"} 0
+	{path="/bar"} 0
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m changes(http_requests[20m])
-# 	{path="/foo"} 3
-# 	{path="/bar"} 3
-# 	{path="/biz"} 0
+eval instant at 50m changes(http_requests[20m])
+	{path="/foo"} 3
+	{path="/bar"} 3
+	{path="/biz"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m changes(http_requests[30m])
-# 	{path="/foo"} 4
-# 	{path="/bar"} 5
-# 	{path="/biz"} 1
+eval instant at 50m changes(http_requests[30m])
+	{path="/foo"} 4
+	{path="/bar"} 5
+	{path="/biz"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m changes(http_requests[50m])
-# 	{path="/foo"} 8
-# 	{path="/bar"} 9
-# 	{path="/biz"} 1
+eval instant at 50m changes(http_requests[50m])
+	{path="/foo"} 8
+	{path="/bar"} 9
+	{path="/biz"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m changes((http_requests[50m]))
-# 	{path="/foo"} 8
-# 	{path="/bar"} 9
-# 	{path="/biz"} 1
+eval instant at 50m changes((http_requests[50m]))
+	{path="/foo"} 8
+	{path="/bar"} 9
+	{path="/biz"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m changes(nonexistent_metric[50m])
+eval instant at 50m changes(nonexistent_metric[50m])
 
 clear
 
@@ -83,10 +71,9 @@ load 5m
   x{a="b"} NaN NaN NaN
   x{a="c"} 0 NaN 0
 
-# Unsupported by streaming engine.
-# eval instant at 15m changes(x[15m])
-#   {a="b"} 0
-#   {a="c"} 2
+eval instant at 15m changes(x[15m])
+  {a="b"} 0
+  {a="c"} 2
 
 clear
 
@@ -242,14 +229,12 @@ load 5m
 eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m])
-# 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # deriv should return correct result.
-# Unsupported by streaming engine.
-# eval instant at 50m deriv(testcounter_reset_middle[100m])
-# 	{} 0.010606060606060607
+eval instant at 50m deriv(testcounter_reset_middle[100m])
+	{} 0.010606060606060607
 
 # predict_linear should return correct result.
 # X/s = [  0, 300, 600, 900,1200,1500,1800,2100,2400,2700,3000]
