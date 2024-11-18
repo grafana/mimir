@@ -3086,6 +3086,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				delta := f - group.floatMean
 				group.floatMean += delta / group.groupCount
 				group.floatValue += delta * (f - group.floatMean)
+			} else {
 				if op == parser.STDVAR {
 					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("stdvar", e.Expr.PositionRange()))
 				} else {
