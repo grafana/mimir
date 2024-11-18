@@ -509,7 +509,9 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		level.Warn(a.logger).Log(
 			"msg", "list rules API skipped some rule groups, because missing when loading them after listing the storage (this could be due to rule groups deleted between listing the storage and getting rule groups content)",
 			"listed_rule_groups", len(rgs),
-			"missing_rule_groups", len(missing))
+			"missing_rule_groups", len(missing),
+			// Logging all rule groups may excessive, but logging at least 1 may give some hints.
+			"first_missing_rule_group", fmt.Sprintf("user=%s namespace=%s group=%s", missing[0].User, missing[0].Namespace, missing[0].Name))
 
 		// Filter out missing rule groups, so they're not returned by the API (they haven't been loaded,
 		// so their content is empty).
@@ -518,7 +520,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 
 		var tenantFound bool
 		rgs, tenantFound = tenantRuleGroups[userID]
-		if !tenantFound {
+		if !tenantFound && len(missing) < len(rgs) {
 			// This should never happen, unless a bug.
 			http.Error(w, "an error occurred when filtering missing rule groups", http.StatusInternalServerError)
 			return

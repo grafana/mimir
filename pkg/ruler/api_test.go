@@ -294,6 +294,37 @@ func TestRuler_ListRules(t *testing.T) {
 			},
 			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
 		},
+		"should succeed if all rule groups were missing when loading it, because the rule group could have just been deleted between listing and loading": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				// Include the missing rule groups to make sure they will be filtered out by the API.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules:      map[string][]rulefmt.RuleGroup{},
+			expectLogsContain:  []string{skippedMissingRuleGroupsMsg},
+		},
 	}
 
 	for name, tc := range testCases {
