@@ -102,12 +102,11 @@ func (m *Manager) deleteUserTracer(userID string) {
 	}
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	if _, exists := m.trackersByUserID[userID]; !exists {
-		return
+	if _, exists := m.trackersByUserID[userID]; exists {
+		// clean up tracker metrics and delete the tracker
+		m.trackersByUserID[userID].cleanupTracker(userID)
+		delete(m.trackersByUserID, userID)
 	}
-	// clean up tracker metrics and delete the tracker
-	m.trackersByUserID[userID].cleanupTracker(userID)
-	delete(m.trackersByUserID, userID)
 }
 
 func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
@@ -125,7 +124,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 	// Iterate over all userIDs and purge inactive attributions of each user
 	for _, userID := range userIDs {
 		// if cost attribution is not enabled for the user, delete the user tracker and continue
-		if len(m.limits.CostAttributionLabels(userID)) == 0 || m.limits.MaxCostAttributionCardinalityPerUser(userID) <= 0 {
+		if !m.EnabledForUser(userID) {
 			m.deleteUserTracer(userID)
 			continue
 		}
@@ -163,10 +162,6 @@ func CompareCALabels(a, b []string) bool {
 }
 
 func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64) []*Observation {
-	if m == nil {
-		return nil
-	}
-
 	cat := m.TrackerForUser(userID)
 	if cat == nil {
 		return nil
@@ -186,10 +181,11 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 		m.mtx.Unlock()
 	} else {
 		maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
-		cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
 		if cat.MaxCardinality() != maxCardinality {
 			cat.UpdateMaxCardinality(maxCardinality)
 		}
+
+		cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
 		if cooldown != cat.CooldownDuration() {
 			cat.UpdateCooldownDuration(cooldown)
 		}

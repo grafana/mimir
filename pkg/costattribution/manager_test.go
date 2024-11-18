@@ -133,6 +133,19 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		`
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
+
+	t.Run("When cost attribution get overflowed, all metrics are purged except overflow metrics", func(t *testing.T) {
+		// user3 has maximum cardinality of 2, so adding 3rd attribution should trigger overflow
+		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings("team", "bar", "feature", "bar"), 1, time.Unix(15, 0))
+		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings("team", "baz", "feature", "baz"), 1, time.Unix(16, 0))
+		manager.TrackerForUser("user3").IncrementReceivedSamples(labels.FromStrings("team", "foo", "feature", "foo"), 1, time.Unix(17, 0))
+		expectedMetrics := `
+		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_received_attributed_samples_total counter
+		cortex_received_attributed_samples_total{feature="__overflow__",team="__overflow__",tenant="user3",tracker="custom_attribution"} 2
+		`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+	})
 }
 
 func Test_PurgeInactiveAttributionsUntil(t *testing.T) {

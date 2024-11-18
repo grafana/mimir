@@ -127,7 +127,11 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 		return
 	}
 	vals := t.getKeyValues(lbs, now.Unix())
-	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
+	if t.isOverflow {
+		t.activeSeriesPerUserAttribution.WithLabelValues(overflowValue).Set(1)
+	} else {
+		t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
+	}
 }
 
 func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
@@ -135,7 +139,11 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
 		return
 	}
 	vals := t.getKeyValues(lbs, now.Unix())
-	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
+	if t.isOverflow {
+		t.activeSeriesPerUserAttribution.WithLabelValues(overflowValue).Set(1)
+	} else {
+		t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
+	}
 }
 
 func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
@@ -219,6 +227,7 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 	// the origin labels ovserved time is not updated, but the overflow hash is updated.
 	if !t.isOverflow && len(t.observed) > t.maxCardinality {
 		t.isOverflow = true
+		t.cleanupTracker(t.userID)
 		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
 	}
 
