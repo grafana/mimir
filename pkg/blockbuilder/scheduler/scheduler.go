@@ -131,12 +131,13 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 		return
 	}
 
-	if err := s.observations.finalize(s.committed, newJobs); err != nil {
+	s.jobs = newJobs
+
+	if err := s.finalizeObservations(); err != nil {
 		level.Warn(s.logger).Log("msg", "failed to compute state from observations", "err", err)
 		// (what to do here?)
 	}
 
-	s.jobs = newJobs
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -146,8 +147,6 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	defer func() {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
-
-	// TODO: Commit the offsets back to Kafka if dirty.
 
 	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
 	if err != nil {
@@ -252,7 +251,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	defer s.mu.Unlock()
 
 	if !s.observationComplete {
-		if err := s.observations.update(key, workerID, complete, j); err != nil {
+		if err := s.updateObservation(key, workerID, complete, j); err != nil {
 			return fmt.Errorf("observe update: %w", err)
 		}
 
@@ -289,20 +288,10 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	return nil
 }
 
-type obsMap map[string]*observation
-
-type observation struct {
-	key      jobKey
-	spec     jobSpec
-	workerID string
-	complete bool
-}
-
-// update records an observation of a job update.
-func (m obsMap) update(key jobKey, workerID string, complete bool, j jobSpec) error {
-	rj, ok := m[key.id]
+func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, complete bool, j jobSpec) error {
+	rj, ok := s.observations[key.id]
 	if !ok {
-		m[key.id] = &observation{
+		s.observations[key.id] = &observation{
 			key:      key,
 			spec:     j,
 			workerID: workerID,
@@ -324,21 +313,21 @@ func (m obsMap) update(key jobKey, workerID string, complete bool, j jobSpec) er
 	return nil
 }
 
-// finalize considers the observations and offsets from Kafka, rectifying them into
+// finalizeObservations considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
-func (m obsMap) finalize(kafkaOffsets kadm.Offsets, newQueue *jobQueue) error {
-	for _, rj := range m {
+func (s *BlockBuilderScheduler) finalizeObservations() error {
+	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			if o, ok := kafkaOffsets.Lookup(rj.spec.topic, rj.spec.partition); ok {
+			if o, ok := s.committed.Lookup(rj.spec.topic, rj.spec.partition); ok {
 				if rj.spec.endOffset > o.At {
 					// Completed jobs can push forward the offsets we've learned from Kafka.
 					o.At = rj.spec.endOffset
 					o.Metadata = "{}" // TODO: take the new meta from the completion message.
-					kafkaOffsets[rj.spec.topic][rj.spec.partition] = o
+					s.committed[rj.spec.topic][rj.spec.partition] = o
 				}
 			} else {
-				kafkaOffsets.Add(kadm.Offset{
+				s.committed.Add(kadm.Offset{
 					Topic:     rj.spec.topic,
 					Partition: rj.spec.partition,
 					At:        rj.spec.endOffset,
@@ -348,11 +337,20 @@ func (m obsMap) finalize(kafkaOffsets kadm.Offsets, newQueue *jobQueue) error {
 		} else {
 			// An in-progress job.
 			// These don't affect offsets (yet), they just get added to the job queue.
-			if err := newQueue.importJob(rj.key, rj.workerID, rj.spec); err != nil {
+			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
 				return fmt.Errorf("import job: %w", err)
 			}
 		}
 	}
 
 	return nil
+}
+
+type obsMap map[string]*observation
+
+type observation struct {
+	key      jobKey
+	spec     jobSpec
+	workerID string
+	complete bool
 }

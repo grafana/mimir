@@ -191,7 +191,8 @@ func TestObservations(t *testing.T) {
 
 	{
 		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
-		err := sched.observations.finalize(sched.committed, nq)
+		sched.jobs = nq
+		err := sched.finalizeObservations()
 		require.NoError(t, err)
 		require.Len(t, nq.jobs, 0, "No observations, no jobs")
 	}
