@@ -86,7 +86,7 @@ func NewVectorScalarBinaryOperation(
 			//
 			// We deliberately ignore the histogram value as we need to treat it as if it were a float with value 0,
 			// pending the resolution of the discussion in https://github.com/prometheus/prometheus/issues/13934#issuecomment-2372947976.
-			return vectorF, nil, ok, err
+			return vectorF, vectorH, ok, err
 		}
 	} else {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
