@@ -298,6 +298,128 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "with OAuth2",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:     "oauth2-client-id",
+									ClientSecret: "test",
+									TokenURL:     "https://oauth2-token-endpoint.local/token",
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with OAuth2 and optional scopes",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSlice([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:     "oauth2-client-id",
+									ClientSecret: "test",
+									TokenURL:     "https://oauth2-token-endpoint.local/token",
+									Scopes:       []string{"action-1", "action-2"},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with OAuth2 and proxy_url simultaneously, inheriting proxy",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSlice([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:     "oauth2-client-id",
+									ClientSecret: "test",
+									TokenURL:     "https://oauth2-token-endpoint.local/token",
+									Scopes:       []string{"action-1", "action-2"},
+									ProxyConfig: config_util.ProxyConfig{
+										ProxyURL: config_util.URL{URL: urlMustParse(t, "http://my-proxy.proxy-namespace.svc.cluster.local.:1234")},
+									},
+								},
+								ProxyConfig: config_util.ProxyConfig{
+									ProxyURL: config_util.URL{URL: urlMustParse(t, "http://my-proxy.proxy-namespace.svc.cluster.local.:1234")},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "with DNS service discovery and missing scheme",
 			cfg: &Config{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
