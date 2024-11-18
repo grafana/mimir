@@ -1529,7 +1529,6 @@ How to **investigate**:
   - If the call exists and it's waiting on a lock then there may be a deadlock.
   - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
 
-
 ### MimirIngesterMissedRecordsFromKafka
 
 This alert fires when an ingester has missed processing some records from Kafka. In other words, there has been a gap in offsets.
@@ -1546,7 +1545,7 @@ How to **investigate**:
 
 - Verify that there have been no deleted records in your Kafka cluster by humans or other applications.
 - Verify that the ingester hasn't been down for longer than the retention on the Kafka partition.
-- Report a bug. 
+- Report a bug.
 
 ### MimirStrongConsistencyEnforcementFailed
 
