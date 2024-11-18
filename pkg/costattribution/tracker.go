@@ -40,7 +40,7 @@ type Tracker struct {
 	cooldownDuration int64
 }
 
-func newTracker(userID string, trackedLabels []string, limit int) (*Tracker, error) {
+func newTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration) (*Tracker, error) {
 	// keep tracked labels sorted for consistent metric labels
 	sort.Slice(trackedLabels, func(i, j int) bool {
 		return trackedLabels[i] < trackedLabels[j]
@@ -173,7 +173,10 @@ func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []s
 		values[len(values)-1] = *reason
 	}
 	var stream uint64
-	stream, t.hashBuffer = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
+	stream, _ = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
+	if reason == nil {
+		values = values[:len(values)-1]
+	}
 	if t.overflow(stream, values, ts) {
 		// Omit last label.
 		for i := range values[:len(values)-2] {
@@ -181,9 +184,6 @@ func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []s
 		}
 	}
 
-	if reason == nil {
-		return values[:len(values)-1]
-	}
 	return values
 }
 
@@ -201,12 +201,10 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 
 	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
 		o.lastUpdate.Store(ts)
-	} else {
-		if !t.isOverflow {
-			t.observed[stream] = &Observation{
-				lvalues:    values,
-				lastUpdate: atomic.NewInt64(ts),
-			}
+	} else if len(t.observed) <= t.maxCardinality {
+		t.observed[stream] = &Observation{
+			lvalues:    values,
+			lastUpdate: atomic.NewInt64(ts),
 		}
 	}
 

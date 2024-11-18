@@ -74,7 +74,7 @@ func (m *Manager) TrackerForUser(userID string) *Tracker {
 
 	// if not exists, create a new tracker
 	if _, exists := m.trackersByUserID[userID]; !exists {
-		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
+		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID))
 	}
 	return m.trackersByUserID[userID]
 }
@@ -183,13 +183,16 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 	// if they are different, we need to update the tracker, we don't mind, just reinitialized the tracker
 	if !CompareCALabels(cat.CALabels(), newTrackedLabels) {
 		m.mtx.Lock()
-		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID))
+		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID))
 		// update the tracker with the new tracker
 		cat = m.trackersByUserID[userID]
 		m.mtx.Unlock()
-	} else if maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID); cat.MaxCardinality() != maxCardinality {
-		// if the maxCardinality is different, update the tracker
-		cat.UpdateMaxCardinality(maxCardinality)
+	} else {
+		maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+		// cooldown := m.limits.CostAttributionCooldown(userID)
+		if cat.MaxCardinality() != maxCardinality {
+			cat.UpdateMaxCardinality(maxCardinality)
+		}
 	}
 
 	return cat.PurgeInactiveObservations(deadline)
