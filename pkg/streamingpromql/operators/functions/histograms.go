@@ -26,6 +26,7 @@ import (
 
 // HistogramFunctionOverInstantVector performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
+// At the moment, it only supports histogram_quantile
 type HistogramFunctionOverInstantVector struct {
 	phArg                    types.ScalarOperator // for histogram_quantile
 	inner                    types.InstantVectorOperator
@@ -331,7 +332,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 		}
 	}
 
-	// Return any retained native histogram to the pull
+	// Return any retained native histogram to the pool
 	if g.nativeHistograms != nil {
 		types.HPointSlicePool.Put(*g.nativeHistograms, h.memoryConsumptionTracker)
 	}
