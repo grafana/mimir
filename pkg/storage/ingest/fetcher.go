@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -374,14 +375,7 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			if firstOffset := f.Records[0].Offset; firstOffset > r.lastReturnedOffset+1 {
-				r.metrics.missedRecords.Add(float64(firstOffset - r.lastReturnedOffset - 1))
-				level.Error(r.logger).Log(
-					"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
-					"next_available_offset", firstOffset,
-					"last_returned_offset", r.lastReturnedOffset,
-				)
-			}
+			instrumentGaps(findGapsInRecords(f.Records, r.lastReturnedOffset), r.metrics.missedRecords, r.logger)
 			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
@@ -394,6 +388,41 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 			},
 		}}, f.ctx
 	}
+}
+
+func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.Logger) {
+	for _, gap := range gaps {
+		level.Error(logger).Log(
+			"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
+			"gap_start_inclusive", gap.start,
+			"gap_end_inclusive", gap.end,
+		)
+		records.Add(float64(gap.numOffsets()))
+		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
+	}
+}
+
+type offsetRange struct {
+	// start is inclusive
+	start int64
+
+	// end is exclusive
+	end int64
+}
+
+func (g offsetRange) numOffsets() int64 {
+	return g.end - g.start
+}
+
+func findGapsInRecords(records []*kgo.Record, lastReturnedOffset int64) []offsetRange {
+	var gaps []offsetRange
+	for _, r := range records {
+		if r.Offset != lastReturnedOffset+1 {
+			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
+		}
+		lastReturnedOffset = r.Offset
+	}
+	return gaps
 }
 
 func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
