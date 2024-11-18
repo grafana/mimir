@@ -56,6 +56,8 @@ std.manifestYamlDoc({
         '-ingest-storage.kafka.consume-from-timestamp-at-startup=0',
         '-ingest-storage.kafka.startup-fetch-concurrency=15',
         '-ingest-storage.kafka.ongoing-fetch-concurrency=2',
+        '-ingest-storage.kafka.ingestion-concurrency-max=2',
+        '-ingest-storage.kafka.ingestion-concurrency-batch-size=150',
       ],
       extraVolumes: ['.data-mimir-write-zone-c-61:/data:delegated'],
     }),
