@@ -95,7 +95,14 @@ func (t *Tracker) cleanupTrackerAttribution(vals []string) {
 	}
 	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
 	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
-	t.discardedSampleAttribution.DeleteLabelValues(vals...)
+
+	// except for discarded sample metrics, there is reason label that is not part of the key, we need to delete all partial matches
+	filter := prometheus.Labels{}
+	for i := 0; i < len(t.caLabels); i++ {
+		filter[t.caLabels[i]] = vals[i]
+	}
+	filter[TenantLabel] = vals[len(vals)-1]
+	t.discardedSampleAttribution.DeletePartialMatch(filter)
 }
 
 func (t *Tracker) cleanupTracker(userID string) {
@@ -112,7 +119,7 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix(), nil)
+	vals := t.getKeyValues(lbs, now.Unix())
 	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
 }
 
@@ -120,7 +127,7 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix(), nil)
+	vals := t.getKeyValues(lbs, now.Unix())
 	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
 }
 
@@ -128,7 +135,12 @@ func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, re
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix(), &reason)
+	vals := t.getKeyValues(lbs, now.Unix())
+	if t.isOverflow {
+		vals = append(vals, overflowValue)
+	} else {
+		vals = append(vals, reason)
+	}
 	t.discardedSampleAttribution.WithLabelValues(vals...).Add(value)
 }
 
@@ -136,7 +148,7 @@ func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix(), nil)
+	vals := t.getKeyValues(lbs, now.Unix())
 	t.receivedSamplesAttribution.WithLabelValues(vals...).Add(value)
 }
 
@@ -157,33 +169,27 @@ func (t *Tracker) Describe(chan<- *prometheus.Desc) {
 	}
 }
 
-func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64, reason *string) []string {
+func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64) []string {
 	if t == nil {
 		return nil
 	}
-	values := make([]string, len(t.caLabels)+2)
+	values := make([]string, len(t.caLabels)+1)
 	for i, l := range t.caLabels {
 		values[i] = lbls.Get(l)
 		if values[i] == "" {
 			values[i] = missingValue
 		}
 	}
-	values[len(values)-2] = t.userID
-	if reason != nil {
-		values[len(values)-1] = *reason
-	}
+	values[len(values)-1] = t.userID
 	var stream uint64
 	stream, _ = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
-	if reason == nil {
-		values = values[:len(values)-1]
-	}
+
 	if t.overflow(stream, values, ts) {
 		// Omit last label.
-		for i := range values[:len(values)-2] {
+		for i := range values[:len(values)-1] {
 			values[i] = overflowValue
 		}
 	}
-
 	return values
 }
 

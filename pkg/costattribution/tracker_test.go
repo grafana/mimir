@@ -66,7 +66,6 @@ func Test_CreateCleanupTracker(t *testing.T) {
 
 	// Clean up the metrics with label values platform="foo" tenant="user1"
 	cat.cleanupTrackerAttribution([]string{"foo", "user4"})
-	cat.cleanupTrackerAttribution([]string{"foo", "user4", "sample-out-of-order"})
 
 	expectedMetrics = `
 	# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
@@ -84,17 +83,16 @@ func Test_GetKeyValues(t *testing.T) {
 	cat := newTestManager().TrackerForUser("user3")
 
 	// Test initial key values and overflow states
-	keyVal1 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar"), 1, nil)
+	keyVal1 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar"), 1)
 	assert.Equal(t, []string{"foo", "bar", "user3"}, keyVal1, "First call, expecting values as-is")
 
-	keyVal2 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "baz"), 2, nil)
+	keyVal2 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "baz"), 2)
 	assert.Equal(t, []string{"foo", "baz", "user3"}, keyVal2, "Second call, expecting values as-is")
 
-	reason := "sample out of order"
-	keyVal3 := cat.getKeyValues(labels.FromStrings("department", "foo"), 3, &reason)
-	assert.Equal(t, []string{"foo", "__missing__", "user3", "sample out of order"}, keyVal3, "Service missing, should return '__missing__'")
+	keyVal3 := cat.getKeyValues(labels.FromStrings("department", "foo"), 3)
+	assert.Equal(t, []string{"foo", "__missing__", "user3"}, keyVal3, "Service missing, should return '__missing__'")
 
-	keyVal4 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar", "team", "a"), 4, nil)
+	keyVal4 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar", "team", "a"), 4)
 	assert.Equal(t, []string{"__overflow__", "__overflow__", "user3"}, keyVal4, "Overflow state expected")
 }
 
@@ -140,7 +138,7 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 
 	// Check that the purged observation matches the expected details.
 	assert.Equal(t, int64(1), purged[0].lastUpdate.Load())
-	assert.Equal(t, []string{"foo", "user1", "invalid-metrics-name"}, purged[0].lvalues)
+	assert.Equal(t, []string{"foo", "user1"}, purged[0].lvalues)
 
 	// Verify that only one observation remains in the tracker. Confirm that the remaining observation has the correct last update timestamp.
 	require.Len(t, cat.observed, 1)
