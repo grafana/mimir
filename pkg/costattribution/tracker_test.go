@@ -142,8 +142,10 @@ func Test_PurgeInactiveObservations(t *testing.T) {
 
 	// Verify that only one observation remains in the tracker. Confirm that the remaining observation has the correct last update timestamp.
 	require.Len(t, cat.observed, 1)
-	assert.NotNil(t, cat.observed[observations[1].Hash()].lastUpdate)
-	assert.Equal(t, int64(12), cat.observed[observations[1].Hash()].lastUpdate.Load())
+	ob := cat.observed[observations[1].Hash()]
+	assert.NotNil(t, ob)
+	assert.NotNil(t, ob.lastUpdate)
+	assert.Equal(t, int64(12), ob.lastUpdate.Load())
 }
 
 func Test_UpdateMaxCardinality(t *testing.T) {
