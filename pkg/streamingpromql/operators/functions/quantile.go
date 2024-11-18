@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-// NOTE(jhesketh): This is copied from Promethues as the functions are not
+// NOTE(jhesketh): This is copied from Prometheus as the functions are not
 // exported. They may be exported in the future:
 // https://github.com/prometheus/prometheus/pull/15190
 
@@ -15,7 +15,6 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/almost"
 )
 
@@ -40,13 +39,6 @@ const smallDeltaTolerance = 1e-12
 
 // Helpers to calculate quantiles.
 
-// excludedLabels are the labels to exclude from signature calculation for
-// quantiles.
-var excludedLabels = []string{
-	labels.MetricName,
-	labels.BucketLabel,
-}
-
 type bucket struct {
 	upperBound float64
 	count      float64
@@ -54,11 +46,6 @@ type bucket struct {
 
 // buckets implements sort.Interface.
 type buckets []bucket
-
-type metricWithBuckets struct {
-	metric  labels.Labels
-	buckets buckets
-}
 
 // bucketQuantile calculates the quantile 'q' based on the given buckets. The
 // buckets will be sorted by upperBound by this function (i.e. no sorting
@@ -258,100 +245,6 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 
 	// TODO(codesome): Use a better estimation than linear.
 	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
-}
-
-// histogramFraction calculates the fraction of observations between the
-// provided lower and upper bounds, based on the provided histogram.
-//
-// histogramFraction is in a certain way the inverse of histogramQuantile.  If
-// histogramQuantile(0.9, h) returns 123.4, then histogramFraction(-Inf, 123.4, h)
-// returns 0.9.
-//
-// The same notes (and TODOs) with regard to interpolation and assumptions about
-// the zero bucket boundaries apply as for histogramQuantile.
-//
-// Whether either boundary is inclusive or exclusive doesn’t actually matter as
-// long as interpolation has to be performed anyway. In the case of a boundary
-// coinciding with a bucket boundary, the inclusive or exclusive nature of the
-// boundary determines the exact behavior of the threshold. With the current
-// implementation, that means that lower is exclusive for positive values and
-// inclusive for negative values, while upper is inclusive for positive values
-// and exclusive for negative values.
-//
-// Special cases:
-//
-// If the histogram has 0 observations, NaN is returned.
-//
-// Use a lower bound of -Inf to get the fraction of all observations below the
-// upper bound.
-//
-// Use an upper bound of +Inf to get the fraction of all observations above the
-// lower bound.
-//
-// If lower or upper is NaN, NaN is returned.
-//
-// If lower >= upper and the histogram has at least 1 observation, zero is returned.
-func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
-	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
-		return math.NaN()
-	}
-	if lower >= upper {
-		return 0
-	}
-
-	var (
-		rank, lowerRank, upperRank float64
-		lowerSet, upperSet         bool
-		it                         = h.AllBucketIterator()
-	)
-	for it.Next() {
-		b := it.At()
-		if b.Lower < 0 && b.Upper > 0 {
-			switch {
-			case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
-				// This is the zero bucket and the histogram has only
-				// positive buckets. So we consider 0 to be the lower
-				// bound.
-				b.Lower = 0
-			case len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0:
-				// This is in the zero bucket and the histogram has only
-				// negative buckets. So we consider 0 to be the upper
-				// bound.
-				b.Upper = 0
-			}
-		}
-		if !lowerSet && b.Lower >= lower {
-			lowerRank = rank
-			lowerSet = true
-		}
-		if !upperSet && b.Lower >= upper {
-			upperRank = rank
-			upperSet = true
-		}
-		if lowerSet && upperSet {
-			break
-		}
-		if !lowerSet && b.Lower < lower && b.Upper > lower {
-			lowerRank = rank + b.Count*(lower-b.Lower)/(b.Upper-b.Lower)
-			lowerSet = true
-		}
-		if !upperSet && b.Lower < upper && b.Upper > upper {
-			upperRank = rank + b.Count*(upper-b.Lower)/(b.Upper-b.Lower)
-			upperSet = true
-		}
-		if lowerSet && upperSet {
-			break
-		}
-		rank += b.Count
-	}
-	if !lowerSet || lowerRank > h.Count {
-		lowerRank = h.Count
-	}
-	if !upperSet || upperRank > h.Count {
-		upperRank = h.Count
-	}
-
-	return (upperRank - lowerRank) / h.Count
 }
 
 // coalesceBuckets merges buckets with the same upper bound.
