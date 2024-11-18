@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 	"time"
 
@@ -265,6 +266,38 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "with service discovery URL, basic auth, and proxy URL",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								BasicAuth: &config_util.BasicAuth{Username: "marco", Password: "hunter2"},
+								ProxyConfig: config_util.ProxyConfig{
+									ProxyURL: config_util.URL{URL: urlMustParse(t, "http://my-proxy.proxy-namespace.svc.cluster.local.:1234")},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "with DNS service discovery and missing scheme",
 			cfg: &Config{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
@@ -285,6 +318,16 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 			err: errors.New("invalid DNS service discovery prefix \"dnsserv\""),
 		},
+		{
+			name: "misspelled proxy URL",
+			cfg: &Config{
+				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					ProxyURL: "http://example.local" + string(rune(0x7f)),
+				},
+			},
+			err: errors.New("parse \"http://example.local\\x7f\": net/url: invalid control character in URL"),
+		},
 	}
 
 	for _, tt := range tests {
@@ -298,4 +341,11 @@ func TestBuildNotifierConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func urlMustParse(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
 }
