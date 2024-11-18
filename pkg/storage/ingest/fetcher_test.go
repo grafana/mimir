@@ -647,7 +647,8 @@ func TestConcurrentFetchers(t *testing.T) {
 				case <-ticker.C:
 					count := producedCount.Inc()
 					record := fmt.Sprintf("record-%d", count)
-					produceRecord(produceCtx, t, client, topicName, partitionID, []byte(record))
+					// Use context.Background() so that we don't race with the test context being cancelled.
+					produceRecord(context.Background(), t, client, topicName, partitionID, []byte(record))
 				}
 			}
 		}()
