@@ -335,16 +335,6 @@ rollout_operator:
     runAsUser: null
 ```
 
-> **Note**: When using `mimir-distributed` as a subchart, setting Helm values to `null` requires a workaround due to [a bug in Helm](https://github.com/helm/helm/issues/9027).
-> To set the PodSecurityContext fields to `null`, in addition to the YAML, set the values to `null` via the command line
-> when using `helm`. For example, to use `helm tempalte`:
->
-> ```bash
-> helm template grafana/mimir-distributed -f values.yaml \
->   --set 'mimir-distributed.rbac.podSecurityContext.fsGroup=null' \
->   --set 'mimir-distributed.rbac.podSecurityContext.runAsUser=null' \
->   --set 'mimir-distributed.rbac.podSecurityContext.runAsGroup=null' \
->   --set 'mimir-distributed.rollout_operator.podSecurityContext.fsGroup=null' \
->   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsUser=null' \
->   --set 'mimir-distributed.rollout_operator.podSecurityContext.runAsGroup=null'
-> ```
+{{< admonition type="caution" >}}
+In Helm versions 3.13 and earlier, you might experience a known issue overriding default values when using the `mimir-distributed` Helm chart as a dependency. To view examples and possible workarounds, refer to [this issue on GitHub](https://github.com/grafana/mimir/issues/8059). If your specific situation isn't addressed, open an [issue in the Mimir repository](https://github.com/grafana/mimir/issues).
+{{< /admonition >}}

@@ -1795,33 +1795,44 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testing.T) {
 	const (
-		topicName   = "test"
-		partitionID = 1
+		topicName        = "test"
+		partitionID      = 1
+		maxBufferedBytes = 2_000_000
 	)
 
 	tc := map[string]struct {
 		concurrencyVariant                []readerTestCfgOpt
 		expectedBufferedRecords           int
+		expectedBufferedBytes             int
 		expectedBufferedRecordsFromClient int
 	}{
 		"without concurrency": {
 			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(0), withOngoingConcurrency(0)},
 			expectedBufferedRecords:           1,
+			expectedBufferedBytes:             8,
 			expectedBufferedRecordsFromClient: 1,
 		},
 		"with startup concurrency": {
 			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(0)},
 			expectedBufferedRecords:           1,
+			expectedBufferedBytes:             8,
 			expectedBufferedRecordsFromClient: 1,
 		},
 		"with startup and ongoing concurrency": {
-			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(2)},
-			expectedBufferedRecords:           1,
+			concurrencyVariant:      []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(2)},
+			expectedBufferedRecords: 1,
+			// only one fetcher is active because we don't fetch over the HWM.
+			// That fetcher should fetch 1MB. It's padded with 5% to account for underestimation of the record size.
+			// The expected buffered bytes are 1.05MB
+			expectedBufferedBytes:             1_050_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
 		"with startup and ongoing concurrency (different settings)": {
-			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(4)},
-			expectedBufferedRecords:           1,
+			concurrencyVariant:      []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(4)},
+			expectedBufferedRecords: 1,
+			// There is one fetcher fetching. That fetcher should fetch 500KB.
+			// But we clamp the MaxBytes to at least 1MB, so that we don't underfetch when the absolute volume of data is low.
+			expectedBufferedBytes:             1_000_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
 	}
@@ -1882,6 +1893,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
 				withRegistry(reg),
 				withLogger(log.NewLogfmtLogger(logs)),
+				withMaxBufferedBytes(maxBufferedBytes),
 			}, concurrencyVariant...)
 
 			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
@@ -1920,7 +1932,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
 
-        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
         		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
         		cortex_ingest_storage_reader_buffered_fetched_records 0
 			`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
@@ -1946,10 +1958,14 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} %d
 
-        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
         		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
         		cortex_ingest_storage_reader_buffered_fetched_records %d
-			`, tt.expectedBufferedRecordsFromClient, tt.expectedBufferedRecords)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
+
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_bytes The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.
+        		# TYPE cortex_ingest_storage_reader_buffered_fetched_bytes gauge
+        		cortex_ingest_storage_reader_buffered_fetched_bytes %d
+			`, tt.expectedBufferedRecordsFromClient, tt.expectedBufferedRecords, tt.expectedBufferedBytes)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records", "cortex_ingest_storage_reader_buffered_fetched_bytes")
 			})
 
 			// With that assertion done, we can unblock records consumption.
@@ -1977,7 +1993,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
 
-        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the kafka client but not yet processed.
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
         		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
         		cortex_ingest_storage_reader_buffered_fetched_records 0
 			`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
@@ -2394,6 +2410,12 @@ func withStartupConcurrency(i int) readerTestCfgOpt {
 func withOngoingConcurrency(i int) readerTestCfgOpt {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.OngoingFetchConcurrency = i
+	}
+}
+
+func withMaxBufferedBytes(i int) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.MaxBufferedBytes = i
 	}
 }
 

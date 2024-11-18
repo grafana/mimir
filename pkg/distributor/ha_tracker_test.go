@@ -70,6 +70,68 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 	})
 }
 
+func TestHATrackerCacheSyncOnStart(t *testing.T) {
+	const cluster = "c1"
+	const replicaOne = "r1"
+	const replicaTwo = "r2"
+
+	var c *haTracker
+	var err error
+	var now time.Time
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mockCountingClient := kv.NewMockCountingClient(kvStore)
+	c, err = newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mockCountingClient},
+		UpdateTimeout:          time.Millisecond * 100,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// KV Store empty: The sync should try fetching the Keys only
+	// client.List: 1
+	// client.Get: 0
+	assert.Equal(t, 1, int(mockCountingClient.ListCalls.Load()))
+	assert.Equal(t, 0, int(mockCountingClient.GetCalls.Load()))
+
+	now = time.Now()
+	err = c.checkReplica(context.Background(), "user", cluster, replicaOne, now)
+	assert.NoError(t, err)
+
+	err = services.StopAndAwaitTerminated(context.Background(), c)
+	assert.NoError(t, err)
+
+	// Initializing a New Client to set calls to zero
+	mockCountingClient = kv.NewMockCountingClient(kvStore)
+	c, err = newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mockCountingClient},
+		UpdateTimeout:          time.Millisecond * 100,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Millisecond * 2,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
+
+	// KV Store has one entry: The sync should try fetching the Keys and updating the cache
+	// client.List: 1
+	// client.Get: 1
+	assert.Equal(t, 1, int(mockCountingClient.ListCalls.Load()))
+	assert.Equal(t, 1, int(mockCountingClient.GetCalls.Load()))
+
+	now = time.Now()
+	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
+}
+
 func TestHATrackerConfig_Validate(t *testing.T) {
 	t.Parallel()
 

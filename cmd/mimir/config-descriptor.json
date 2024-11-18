@@ -4308,6 +4308,17 @@
         },
         {
           "kind": "field",
+          "name": "enabled_promql_experimental_functions",
+          "required": false,
+          "desc": "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -6415,6 +6426,17 @@
         },
         {
           "kind": "field",
+          "name": "block_promql_experimental_functions",
+          "required": false,
+          "desc": "True to control access to specific PromQL experimental functions per tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.block-promql-experimental-functions",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -6715,32 +6737,12 @@
             },
             {
               "kind": "field",
-              "name": "startup_records_per_fetch",
-              "required": false,
-              "desc": "The number of records per fetch request that the ingester makes when reading data from Kafka during startup. Depends on ingest-storage.kafka.startup-fetch-concurrency being greater than 0.",
-              "fieldValue": null,
-              "fieldDefaultValue": 2500,
-              "fieldFlag": "ingest-storage.kafka.startup-records-per-fetch",
-              "fieldType": "int"
-            },
-            {
-              "kind": "field",
               "name": "ongoing_fetch_concurrency",
               "required": false,
               "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to disable.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.ongoing-fetch-concurrency",
-              "fieldType": "int"
-            },
-            {
-              "kind": "field",
-              "name": "ongoing_records_per_fetch",
-              "required": false,
-              "desc": "The number of records per fetch request that the ingester makes when reading data continuously from Kafka after startup. Depends on ingest-storage.kafka.ongoing-fetch-concurrency being greater than 0.",
-              "fieldValue": null,
-              "fieldDefaultValue": 30,
-              "fieldFlag": "ingest-storage.kafka.ongoing-records-per-fetch",
               "fieldType": "int"
             },
             {
@@ -6752,6 +6754,16 @@
               "fieldDefaultValue": true,
               "fieldFlag": "ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "ingest-storage.kafka.max-buffered-bytes",
+              "fieldType": "int"
             },
             {
               "kind": "field",

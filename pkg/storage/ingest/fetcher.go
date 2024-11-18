@@ -43,48 +43,59 @@ type fetcher interface {
 	// record and use the returned context when doing something that is common to all records.
 	PollFetches(context.Context) (kgo.Fetches, context.Context)
 
-	// Update updates the fetcher with the given concurrency and records.
-	Update(ctx context.Context, concurrency, records int)
+	// Update updates the fetcher with the given concurrency.
+	Update(ctx context.Context, concurrency int)
 
 	// Stop stops the fetcher.
 	Stop()
 
 	// BufferedRecords returns the number of records that have been fetched but not yet consumed.
 	BufferedRecords() int64
+
+	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
+	BufferedBytes() int64
+
+	// BytesPerRecord returns the current estimation for how many bytes each record is.
+	BytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
 // Based on a given number of records, it tries to estimate how many bytes we need to fetch, given there's no support for fetching offsets directly.
 // fetchWant also contains the channel on which to send the fetched records for the offset range.
 type fetchWant struct {
-	startOffset    int64 // inclusive
-	endOffset      int64 // exclusive
-	bytesPerRecord int
+	startOffset             int64 // inclusive
+	endOffset               int64 // exclusive
+	estimatedBytesPerRecord int
+	targetMaxBytes          int
 
 	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
 	result chan fetchResult
 }
 
-func fetchWantFrom(offset int64, recordsPerFetch int) fetchWant {
+func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fetchWant {
+	estimatedBytesPerRecord = max(estimatedBytesPerRecord, 1)
+	estimatedNumberOfRecords := max(1, targetMaxBytes/estimatedBytesPerRecord)
 	return fetchWant{
-		startOffset: offset,
-		endOffset:   offset + int64(recordsPerFetch),
-		result:      make(chan fetchResult),
+		startOffset:             offset,
+		endOffset:               offset + int64(estimatedNumberOfRecords),
+		targetMaxBytes:          targetMaxBytes,
+		estimatedBytesPerRecord: estimatedBytesPerRecord,
+		result:                  make(chan fetchResult),
 	}
 }
 
 // Next returns the fetchWant for the next numRecords starting from the last known offset.
-func (w fetchWant) Next(numRecords int) fetchWant {
-	n := fetchWantFrom(w.endOffset, numRecords)
-	n.bytesPerRecord = w.bytesPerRecord
-	return n.trimIfTooBig()
+func (w fetchWant) Next() fetchWant {
+	n := fetchWantFrom(w.endOffset, w.targetMaxBytes, w.estimatedBytesPerRecord)
+	n.estimatedBytesPerRecord = w.estimatedBytesPerRecord
+	return n
 }
 
 // MaxBytes returns the maximum number of bytes we can fetch in a single request.
 // It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MB.
 func (w fetchWant) MaxBytes() int32 {
 	fetchBytes := w.expectedBytes()
-	if fetchBytes > math.MaxInt32 {
+	if fetchBytes > math.MaxInt32 || fetchBytes < 0 {
 		// This shouldn't happen because w should have been trimmed before sending the request.
 		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
 		return math.MaxInt32
@@ -101,30 +112,18 @@ func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRec
 	const currentEstimateWeight = 0.8
 
 	actualBytesPerRecord := float64(lastFetchBytes) / float64(lastFetchNumberOfRecords)
-	w.bytesPerRecord = int(currentEstimateWeight*float64(w.bytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
+	w.estimatedBytesPerRecord = int(currentEstimateWeight*float64(w.estimatedBytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
 
-	return w.trimIfTooBig()
+	return w
 }
 
-// expectedBytes returns how many bytes we'd need to accommodate the range of offsets using bytesPerRecord.
+// expectedBytes returns how many bytes we'd need to accommodate the range of offsets using estimatedBytesPerRecord.
 // They may be more than the kafka protocol supports (> MaxInt32). Use MaxBytes.
-func (w fetchWant) expectedBytes() int {
+func (w fetchWant) expectedBytes() int64 {
 	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
 	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
 	const overFetchBytesFactor = 1.05
-	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
-}
-
-// trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
-// It's capped at math.MaxInt32 bytes.
-func (w fetchWant) trimIfTooBig() fetchWant {
-	if w.expectedBytes() <= math.MaxInt32 {
-		return w
-	}
-	// We are overflowing, so we need to trim the end offset.
-	// We do this by calculating how many records we can fetch with the max bytes, and then setting the end offset to that.
-	w.endOffset = w.startOffset + int64(math.MaxInt32/w.bytesPerRecord)
-	return w
+	return int64(overFetchBytesFactor * float64(int64(w.estimatedBytesPerRecord)*(w.endOffset-w.startOffset)))
 }
 
 type fetchResult struct {
@@ -232,9 +231,12 @@ type concurrentFetchers struct {
 	startOffsets       *genericOffsetReader[int64]
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
-	trackCompressedBytes bool
+	trackCompressedBytes  bool
+	maxBufferedBytesLimit int32
 
-	bufferedFetchedRecords *atomic.Int64
+	bufferedFetchedRecords  *atomic.Int64
+	bufferedFetchedBytes    *atomic.Int64
+	estimatedBytesPerRecord *atomic.Int64
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -246,7 +248,7 @@ func newConcurrentFetchers(
 	partition int32,
 	startOffset int64,
 	concurrency int,
-	recordsPerFetch int,
+	maxBufferedBytesLimit int32,
 	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
@@ -267,20 +269,27 @@ func newConcurrentFetchers(
 	if err != nil {
 		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
 	}
+
+	if maxBufferedBytesLimit <= 0 {
+		maxBufferedBytesLimit = math.MaxInt32
+	}
 	f := &concurrentFetchers{
-		bufferedFetchedRecords: atomic.NewInt64(0),
-		client:                 client,
-		logger:                 logger,
-		topicName:              topic,
-		partitionID:            partition,
-		metrics:                metrics,
-		minBytesWaitTime:       minBytesWaitTime,
-		lastReturnedRecord:     startOffset - 1,
-		startOffsets:           startOffsetsReader,
-		trackCompressedBytes:   trackCompressedBytes,
-		tracer:                 recordsTracer(),
-		orderedFetches:         make(chan fetchResult),
-		done:                   make(chan struct{}),
+		bufferedFetchedRecords:  atomic.NewInt64(0),
+		bufferedFetchedBytes:    atomic.NewInt64(0),
+		estimatedBytesPerRecord: atomic.NewInt64(0),
+		client:                  client,
+		logger:                  logger,
+		topicName:               topic,
+		partitionID:             partition,
+		metrics:                 metrics,
+		minBytesWaitTime:        minBytesWaitTime,
+		lastReturnedRecord:      startOffset - 1,
+		startOffsets:            startOffsetsReader,
+		trackCompressedBytes:    trackCompressedBytes,
+		maxBufferedBytesLimit:   maxBufferedBytesLimit,
+		tracer:                  recordsTracer(),
+		orderedFetches:          make(chan fetchResult),
+		done:                    make(chan struct{}),
 	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
@@ -296,7 +305,7 @@ func newConcurrentFetchers(
 	f.topicID = topics[topic].ID
 
 	f.wg.Add(1)
-	go f.start(ctx, startOffset, concurrency, recordsPerFetch)
+	go f.start(ctx, startOffset, concurrency)
 
 	return f, nil
 }
@@ -304,6 +313,15 @@ func newConcurrentFetchers(
 // BufferedRecords implements fetcher.
 func (r *concurrentFetchers) BufferedRecords() int64 {
 	return r.bufferedFetchedRecords.Load()
+}
+
+// BufferedBytes implements fetcher.
+func (r *concurrentFetchers) BufferedBytes() int64 {
+	return r.bufferedFetchedBytes.Load()
+}
+
+func (r *concurrentFetchers) BytesPerRecord() int64 {
+	return r.estimatedBytesPerRecord.Load()
 }
 
 // Stop implements fetcher.
@@ -323,17 +341,18 @@ func (r *concurrentFetchers) Stop() {
 	// When the fetcher is stopped, buffered records are intentionally dropped. For this reason,
 	// we do reset the counter of buffered records here.
 	r.bufferedFetchedRecords.Store(0)
+	r.bufferedFetchedBytes.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
 }
 
 // Update implements fetcher
-func (r *concurrentFetchers) Update(ctx context.Context, concurrency, records int) {
+func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
 	r.Stop()
 	r.done = make(chan struct{})
 
 	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedRecord+1, concurrency, records)
+	go r.start(ctx, r.lastReturnedRecord+1, concurrency)
 }
 
 // PollFetches implements fetcher
@@ -383,15 +402,35 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
 	r.metrics.fetchWaitDuration.Observe(waitDuration.Seconds())
 
-	doubleFetchedBytes := 0
+	var (
+		doubleFetchedBytes             = 0
+		skippedRecordsCount            = 0
+		firstSkippedRecordOffset int64 = -1
+		lastSkippedRecordOffset  int64 = -1
+	)
+
 	for i, record := range f.Records {
 		if i < firstReturnedRecordIndex {
 			doubleFetchedBytes += len(record.Value)
-			spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
+
+			// Keep track of first/last skipped record offsets, just for debugging purposes.
+			skippedRecordsCount++
+			lastSkippedRecordOffset = record.Offset
+			if firstSkippedRecordOffset < 0 {
+				firstSkippedRecordOffset = record.Offset
+			}
 		}
 		r.tracer.OnFetchRecordUnbuffered(record, true)
 	}
 	r.metrics.fetchedDiscardedRecordBytes.Add(float64(doubleFetchedBytes))
+
+	if skippedRecordsCount > 0 {
+		spanlogger.FromContext(f.Records[0].Context, r.logger).DebugLog(
+			"msg", "skipped records because it is already returned",
+			"skipped_records_count", skippedRecordsCount,
+			"first_skipped_offset", firstSkippedRecordOffset,
+			"last_skipped_offset", lastSkippedRecordOffset)
+	}
 }
 
 // fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
@@ -610,11 +649,51 @@ func casHWM(highWwatermark *atomic.Int64, newHWM int64) {
 	}
 }
 
-func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency, recordsPerFetch int) {
-	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "recordsPerFetch", recordsPerFetch)
+type inflightFetchWants struct {
+	// wants is the list of all fetchResult of all inflight fetch operations. Pending results
+	// are ordered in the same order these results should be returned to PollFetches(), so the first one
+	// in the list is the next one that should be returned.
+	wants list.List
+
+	// bytes is the sum of the MaxBytes of all fetchWants that are currently inflight.
+	bytes *atomic.Int64
+}
+
+// peekNextResult is the channel where we expect a worker will write the result of the next fetch
+// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
+// records ordering. The channel can be closed. In this case you are expected to call removeNextResult.
+func (w *inflightFetchWants) peekNextResult() chan fetchResult {
+	if w.wants.Len() == 0 {
+		return nil
+	}
+	return w.wants.Front().Value.(fetchWant).result
+}
+
+func (w *inflightFetchWants) count() int {
+	return w.wants.Len()
+}
+
+func (w *inflightFetchWants) append(nextFetch fetchWant) {
+	w.bytes.Add(int64(nextFetch.MaxBytes()))
+	w.wants.PushBack(nextFetch)
+}
+
+func (w *inflightFetchWants) removeNextResult() {
+	head := w.wants.Front()
+	// The MaxBytes of the fetchWant might have changed as it was being fetched (e.g. UpdateBytesPerRecord).
+	// But we don't care about that here because we're only interested in the MaxBytes when the fetchWant was added to the inflight fetchWants.
+	w.bytes.Sub(int64(head.Value.(fetchWant).MaxBytes()))
+	w.wants.Remove(head)
+}
+
+func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
+	const initialBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
+
+	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
+	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
 
 	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
-	// A value of 0 doesn't prevent progress because we ensure there is at least one dispatched fetchWant.
+	// A value of 0 doesn't prevent progress because we ensure there is at least one inflight fetchWant.
 	highWatermark := atomic.NewInt64(0)
 
 	wants := make(chan fetchWant)
@@ -631,19 +710,10 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	var (
 		// nextFetch is the next records fetch operation we want to issue to one of the running workers.
 		// It contains the offset range to fetch and a channel where the result should be written to.
-		nextFetch = fetchWantFrom(startOffset, recordsPerFetch)
+		nextFetch = fetchWantFrom(startOffset, targetBytesPerFetcher, initialBytesPerRecord)
 
-		// nextResult is the channel where we expect a worker will write the result of the next fetch
-		// operation. This result is the next result that will be returned to PollFetches(), guaranteeing
-		// records ordering.
-		nextResult chan fetchResult
-
-		// pendingResults is the list of all fetchResult of all inflight fetch operations. Pending results
-		// are ordered in the same order these results should be returned to PollFetches(), so the first one
-		// in the list is the next one that should be returned, unless nextResult is valued (if nextResult
-		// is valued, then nextResult is the next and the first item in the pendingResults list is the
-		// 2nd next one).
-		pendingResults = list.New()
+		// inflight is the list of all fetchWants that are currently in flight.
+		inflight = inflightFetchWants{bytes: r.bufferedFetchedBytes}
 
 		// bufferedResult is the next fetch that should be polled by PollFetches().
 		bufferedResult fetchResult
@@ -654,22 +724,28 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 		// are some ordered buffered records ready.
 		//
 		// It is guaranteed that this channel is non-nil when bufferedResult is non-empty.
+		//
+		// The idea is that we don't want to block the main loop when we have records ready to be consumed.
 		readyBufferedResults chan fetchResult
 	)
-	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
 
 	for {
-		refillBufferedResult := nextResult
+		// refillBufferedResult is the channel of the next fetch result. This variable is valued (non-nil) only when
+		// we're ready to actually read the result, so that we don't try to read the next result if we're not ready.
+		refillBufferedResult := inflight.peekNextResult()
 		if readyBufferedResults != nil {
 			// We have a single result that's still not consumed.
 			// So we don't try to get new results from the fetchers.
 			refillBufferedResult = nil
 		}
 		dispatchNextWant := chan fetchWant(nil)
-		if nextResult == nil || nextFetch.startOffset <= highWatermark.Load() {
+		wouldExceedInflightBytesLimit := inflight.bytes.Load()+int64(nextFetch.MaxBytes()) > int64(r.maxBufferedBytesLimit)
+		if inflight.count() == 0 || (!wouldExceedInflightBytesLimit && nextFetch.startOffset <= highWatermark.Load()) {
 			// In Warpstream fetching past the end induced more delays than MinBytesWaitTime.
 			// So we dispatch a fetch only if it's fetching an existing offset.
 			// This shouldn't noticeably affect performance with Apache Kafka, after all franz-go only has a concurrency of 1 per partition.
+			//
+			// We also don't want to have too many fetches in flight, so we only dispatch a fetch if it wouldn't exceed the memory limit.
 			//
 			// At the same time we don't want to reach a deadlock where the HWM is not updated and there are no fetches in flight.
 			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
@@ -682,22 +758,12 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			return
 
 		case dispatchNextWant <- nextFetch:
-			pendingResults.PushBack(nextFetch.result)
-			if nextResult == nil {
-				// In case we previously exhausted pendingResults, we just created
-				nextResult = pendingResults.Front().Value.(chan fetchResult)
-				pendingResults.Remove(pendingResults.Front())
-			}
-			nextFetch = nextFetch.Next(recordsPerFetch)
+			inflight.append(nextFetch)
+			nextFetch = nextFetch.Next()
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
-				if pendingResults.Len() > 0 {
-					nextResult = pendingResults.Front().Value.(chan fetchResult)
-					pendingResults.Remove(pendingResults.Front())
-				} else {
-					nextResult = nil
-				}
+				inflight.removeNextResult()
 				continue
 			}
 			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))

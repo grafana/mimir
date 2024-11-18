@@ -298,7 +298,7 @@ Wait the next TSDB head compaction for ingesters (2 hours).
 You must follow the shutdown ingester procedure to avoid data loss.
 {{< /admonition >}}
 
-Follow the procedure for [shutting down ingesters]({{< relref "../../manage/run-production-environment/scaling-out.md#scaling-down-ingesters-deployed-in-multiple-zones" >}}) in `ingester-zone-a`.
+Follow the procedure for [shutting down ingesters]({{< relref "../../manage/run-production-environment/scaling-out.md#scaling-down-ingesters" >}}) in `ingester-zone-a`.
 
 Scale down zone-a replicas (this can be done before waiting for step 4 in the shutdown procedure):
 

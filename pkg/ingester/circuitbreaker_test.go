@@ -922,7 +922,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 }
 
 func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
-	pushTimeout := 100 * time.Millisecond
+	pushTimeout := 1 * time.Second
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		t.Run(fmt.Sprintf("test slow push with initial delay %s", initialDelayStatus), func(t *testing.T) {
 			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
