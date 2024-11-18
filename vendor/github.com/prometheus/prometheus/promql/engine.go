@@ -2608,6 +2608,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		floatValue, histogramValue, keep, err := vectorElemBinop(op, fl, fr, hl, hr, pos)
 		if err != nil {
 			lastErr = err
+			continue
 		}
 		switch {
 		case returnBool:
