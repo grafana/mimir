@@ -70,7 +70,7 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
 		}, append(trackedLabels, TenantLabel)),
 		hashBuffer:       make([]byte, 0, 1024),
-		cooldownDuration: int64((time.Minute * 20).Seconds()),
+		cooldownDuration: int64(cooldown.Seconds()),
 	}
 	return m, nil
 }
