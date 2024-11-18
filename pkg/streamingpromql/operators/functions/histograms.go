@@ -53,7 +53,7 @@ type groupWithLabels struct {
 
 type bucketGroup struct {
 	groupedMetricName    string           // The metric name of the group. May be duplicate between groups.
-	pointBuckets         []promql.Buckets // Buckets for the grouped series at each step
+	pointBuckets         []buckets        // Buckets for the grouped series at each step
 	nativeHistograms     *[]promql.HPoint // Histograms should only ever exist once per group
 	remainingSeriesCount uint             // The number of series remaining before this group is fully collated.
 }
@@ -131,7 +131,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 			g.labels = lb.Labels()
 			g.group = bucketGroupPool.Get()
 			g.group.groupedMetricName = series.Labels.Get(labels.MetricName)
-			g.group.pointBuckets = make([]promql.Buckets, h.timeRange.StepCount)
+			g.group.pointBuckets = make([]buckets, h.timeRange.StepCount)
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
@@ -150,7 +150,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 			g.labels = lb.Labels()
 			g.group = bucketGroupPool.Get()
 			g.group.groupedMetricName = series.Labels.Get(labels.MetricName)
-			g.group.pointBuckets = make([]promql.Buckets, h.timeRange.StepCount)
+			g.group.pointBuckets = make([]buckets, h.timeRange.StepCount)
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
@@ -242,9 +242,9 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 				pointIdx := h.timeRange.PointIndex(f.T)
 				g.pointBuckets[pointIdx] = append(
 					g.pointBuckets[pointIdx],
-					promql.Bucket{
-						UpperBound: upperBound,
-						Count:      f.F,
+					bucket{
+						upperBound: upperBound,
+						count:      f.F,
 					},
 				)
 			}
@@ -307,7 +307,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 		}
 
 		if len(g.pointBuckets[pointIdx]) > 0 {
-			res, forcedMonotonicity, _ := promql.BucketQuantile(ph, g.pointBuckets[pointIdx])
+			res, forcedMonotonicity, _ := bucketQuantile(ph, g.pointBuckets[pointIdx])
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,
@@ -323,7 +323,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 		}
 
 		if currentHPoint != nil && h.timeRange.PointIndex(currentHPoint.T) == int64(pointIdx) {
-			res := promql.HistogramQuantile(ph, currentHPoint.H)
+			res := histogramQuantile(ph, currentHPoint.H)
 
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),

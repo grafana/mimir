@@ -1,17 +1,13 @@
-// Copyright 2015 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/quantile.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
-package promql
+// NOTE(jhesketh): This is copied from Promethues as the functions are not
+// exported. They may be exported in the future:
+// https://github.com/prometheus/prometheus/pull/15190
+
+package functions
 
 import (
 	"math"
@@ -430,35 +426,4 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 		prev = curr
 	}
 	return forcedMonotonic, fixedPrecision
-}
-
-// quantile calculates the given quantile of a vector of samples.
-//
-// The Vector will be sorted.
-// If 'values' has zero elements, NaN is returned.
-// If q==NaN, NaN is returned.
-// If q<0, -Inf is returned.
-// If q>1, +Inf is returned.
-func quantile(q float64, values vectorByValueHeap) float64 {
-	if len(values) == 0 || math.IsNaN(q) {
-		return math.NaN()
-	}
-	if q < 0 {
-		return math.Inf(-1)
-	}
-	if q > 1 {
-		return math.Inf(+1)
-	}
-	sort.Sort(values)
-
-	n := float64(len(values))
-	// When the quantile lies between two samples,
-	// we use a weighted average of the two samples.
-	rank := q * (n - 1)
-
-	lowerIndex := math.Max(0, math.Floor(rank))
-	upperIndex := math.Min(n-1, lowerIndex+1)
-
-	weight := rank - math.Floor(rank)
-	return values[int(lowerIndex)].F*(1-weight) + values[int(upperIndex)].F*weight
 }
