@@ -295,7 +295,7 @@ func TestOurTestCases(t *testing.T) {
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours/*.test")
+	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
 	require.NoError(t, err)
 
 	for _, testFile := range testFiles {
@@ -1894,8 +1894,8 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 						require.NoError(t, res.Err)
 						results = append(results, res)
 
-						_, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-						//require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
+						warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+						require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
 						require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
 					}
 
@@ -1931,7 +1931,7 @@ func TestAnnotations(t *testing.T) {
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
 			expr:                       "sum by (series) (metric)",
-			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)`},
 		},
 		"sum() with floats and native histograms for different output series at the same step": {
 			data: mixedFloatHistogramData,
@@ -1949,7 +1949,7 @@ func TestAnnotations(t *testing.T) {
 		"avg() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
 			expr:                       "avg by (series) (metric)",
-			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)`},
 		},
 		"avg() with floats and native histograms for different output series at the same step": {
 			data: mixedFloatHistogramData,
@@ -2196,43 +2196,43 @@ func TestClassicHistogramAnnotations(t *testing.T) {
 		"bad bucket label warning": {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="c"})`,
-			expectedWarningAnnotations: []string{"PromQL warning: bucket label \"le\" is missing or has a malformed value of \"abc\" for metric name \"series\" (1:25)"},
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" for metric name "series" (1:25)`},
 		},
 		"invalid quantile warning": {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(2, series{host="d"})`,
-			expectedWarningAnnotations: []string{"PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"},
+			expectedWarningAnnotations: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)`},
 		},
 		"mixed classic and native histogram warning": {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="a"})`,
-			expectedWarningAnnotations: []string{"PromQL warning: vector contains a mix of classic and native histograms for metric name \"series\" (1:25)"},
+			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
 		},
 		"forced monotonicity info": {
 			data:                               mixedClassicHistograms,
 			expr:                               `histogram_quantile(0.5, series{host="d"})`,
-			expectedInfoAnnotations:            []string{"PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name \"series\" (1:25)"},
+			expectedInfoAnnotations:            []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
 			skipComparisonWithPrometheusReason: "Prometheus does not output any series name: https://github.com/prometheus/prometheus/issues/15411",
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
 			expr: `histogram_quantile(9, series{host="a"})`,
 			expectedWarningAnnotations: []string{
-				"PromQL warning: vector contains a mix of classic and native histograms for metric name \"series\" (1:23)",
-				"PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)",
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:23)`,
+				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
 			},
 		},
 		"forced monotonicity info is not emitted when quantile is invalid": {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(2, series{host="d"})`,
-			expectedWarningAnnotations: []string{"PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"},
+			expectedWarningAnnotations: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)`},
 		},
 	}
 
 	runAnnotationTests(t, testCases)
 }
 
-func getMixedMetricsForTests(includeClassicHistograms bool) ([]string, int, string) {
+func getMixedMetricsForTests() ([]string, int, string) {
 	// We're loading series with the following combinations of values. This is difficult to visually see in the actual
 	// data loaded, so it is represented in a table here.
 	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale, i = infinity
@@ -2289,12 +2289,10 @@ func getMixedMetricsForTests(includeClassicHistograms bool) ([]string, int, stri
 		series{label="q", le="+Inf", group="a"} 9 _ 2 3 NaN 5 _
 		series{label="q", group="a"} 1 _ 2 {{schema:1 sum:10 count:5 buckets:[1 2]}} stale 5 _
 	`
-	// TODO add series with malformed le?
 
 	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
-	if includeClassicHistograms {
-		labelsToUse = append(labelsToUse, []string{"p", "q"}...)
-	}
+	// Include classic histograms:
+	labelsToUse = append(labelsToUse, []string{"p", "q"}...)
 
 	return labelsToUse, pointsPerSeries, samples
 }
@@ -2327,10 +2325,6 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 		{loadStep: 6, interval: 5 * time.Minute},
 	}
 
-	// Because we test a huge amount of combinations, if we get a failure, stop running the other tests.
-	// This will reduce the output to make it easier to manage.
-	shouldStop := false
-
 	for _, tr := range timeRanges {
 		start := timestamp.Time(0)
 		end := start.Add(time.Duration(pointsPerSeries*tr.loadStep) * time.Minute) // Deliberately queries 1 step past the final loaded point
@@ -2341,9 +2335,6 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 		for _, expr := range expressions {
 			testName := fmt.Sprintf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
 			t.Run(testName, func(t *testing.T) {
-				if shouldStop {
-					return
-				}
 				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 				require.NoError(t, err)
 				defer q.Close()
@@ -2354,16 +2345,14 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 				defer q.Close()
 				mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t,
-					expr, expectedResults, mimirResults)
-				shouldStop = shouldStop || !t.Failed()
+				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults)
 			})
 		}
 	}
 }
 
 func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2384,7 +2373,7 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
 	labelCombinations := testutils.Combinations(labelsToUse, 2)
@@ -2413,7 +2402,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2441,7 +2430,7 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2466,7 +2455,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
