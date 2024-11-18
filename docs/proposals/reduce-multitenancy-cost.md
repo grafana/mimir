@@ -92,7 +92,7 @@ This is not tenant-related, it could be forwarded from the backend.
 
 This is not tenant-related, it could be forwarded from the backend.
 
-#### sample-out-of-bounds
+#### sample-timestamp-too-old
 
 This is not tenant-related, it could be forwarded from the backend.
 

@@ -420,7 +420,7 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 }
 
 type discardedMetrics struct {
-	sampleOutOfBounds      *prometheus.CounterVec
+	sampleTimestampTooOld  *prometheus.CounterVec
 	sampleOutOfOrder       *prometheus.CounterVec
 	sampleTooOld           *prometheus.CounterVec
 	sampleTooFarInFuture   *prometheus.CounterVec
@@ -432,7 +432,7 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:      validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleTimestampTooOld:  validation.DiscardedSamplesCounter(r, reasonSampleTimestampTooOld),
 		sampleOutOfOrder:       validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
 		sampleTooOld:           validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
 		sampleTooFarInFuture:   validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
@@ -444,7 +444,7 @@ func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 }
 
 func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
-	m.sampleOutOfBounds.DeletePartialMatch(filter)
+	m.sampleTimestampTooOld.DeletePartialMatch(filter)
 	m.sampleOutOfOrder.DeletePartialMatch(filter)
 	m.sampleTooOld.DeletePartialMatch(filter)
 	m.sampleTooFarInFuture.DeletePartialMatch(filter)
@@ -455,7 +455,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
-	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
+	m.sampleTimestampTooOld.DeleteLabelValues(userID, group)
 	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
 	m.sampleTooOld.DeleteLabelValues(userID, group)
 	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
