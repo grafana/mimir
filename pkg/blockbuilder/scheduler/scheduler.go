@@ -122,8 +122,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 }
 
 func (s *BlockBuilderScheduler) completeObservationMode() {
-	newJobs := newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -131,7 +129,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 		return
 	}
 
-	s.jobs = newJobs
+	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
 
 	if err := s.finalizeObservations(); err != nil {
 		level.Warn(s.logger).Log("msg", "failed to compute state from observations", "err", err)
