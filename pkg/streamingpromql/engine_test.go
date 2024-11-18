@@ -2041,6 +2041,43 @@ func TestAnnotations(t *testing.T) {
 			data: mixedFloatHistogramData,
 			expr: `metric{type="histogram"} / ignoring(type) metric{type="float"}`,
 		},
+		"binary addition between a scalar on the left side and a histogram on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `2 + metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "+": float + histogram (1:1)`},
+		},
+		"binary subtraction between a scalar on the left side and a histogram on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `2 - metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "-": float - histogram (1:1)`},
+		},
+		"binary multiplication between a scalar on the left side and a histogram on the right": {
+			data: mixedFloatHistogramData,
+			expr: `2 * metric{type="histogram"}`,
+		},
+		"binary division between a scalar on the left side and a histogram on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `2 / metric{type="histogram"}`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "/": float / histogram (1:1)`},
+		},
+		"binary addition between a histogram on the left side and a scalar on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="histogram"} + 2`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "+": histogram + float (1:1)`},
+		},
+		"binary subtraction between a histogram on the left side and a scalar on the right": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `metric{type="histogram"} - 2`,
+			expectedInfoAnnotations: []string{`PromQL info: incompatible sample types encountered for binary operator "-": histogram - float (1:1)`},
+		},
+		"binary multiplication between a histogram on the left side and a scalar on the right": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="histogram"} * 2`,
+		},
+		"binary division between a histogram on the left side and a scalar on the right": {
+			data: mixedFloatHistogramData,
+			expr: `metric{type="histogram"} / 2`,
+		},
 
 		"multiple annotations from different operators": {
 			data: `

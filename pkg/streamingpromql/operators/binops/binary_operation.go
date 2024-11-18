@@ -5,8 +5,11 @@ package binops
 import (
 	"slices"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -96,4 +99,16 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 	}
 
 	return filteredData, nil
+}
+
+func emitIncompatibleTypesAnnotation(a *annotations.Annotations, op parser.ItemType, lH *histogram.FloatHistogram, rH *histogram.FloatHistogram, expressionPosition posrange.PositionRange) {
+	a.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition))
+}
+
+func sampleTypeDescription(h *histogram.FloatHistogram) string {
+	if h == nil {
+		return "float"
+	}
+
+	return "histogram"
 }
