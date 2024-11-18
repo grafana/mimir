@@ -258,7 +258,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	prometheus := q.Exec(context.Background())
 	q.Close()
 
-	testutils.RequireEqualResults(t, expr, prometheus, mimir)
+	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
@@ -1174,7 +1174,7 @@ func TestSubqueries(t *testing.T) {
 				require.NoError(t, err)
 
 				res := qry.Exec(context.Background())
-				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
 			}
 
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
@@ -1903,7 +1903,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					if len(results) == 2 {
 						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
 						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1])
+						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
 					}
 				})
 			}
@@ -2232,7 +2232,7 @@ func TestClassicHistogramAnnotations(t *testing.T) {
 	runAnnotationTests(t, testCases)
 }
 
-func getMixedMetricsForTests() ([]string, int, string) {
+func getMixedMetricsForTests(includeClassicHistograms bool) ([]string, int, string) {
 	// We're loading series with the following combinations of values. This is difficult to visually see in the actual
 	// data loaded, so it is represented in a table here.
 	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale, i = infinity
@@ -2291,13 +2291,14 @@ func getMixedMetricsForTests() ([]string, int, string) {
 	`
 
 	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
-	// Include classic histograms:
-	labelsToUse = append(labelsToUse, []string{"p", "q"}...)
+	if includeClassicHistograms {
+		labelsToUse = append(labelsToUse, []string{"p", "q"}...)
+	}
 
 	return labelsToUse, pointsPerSeries, samples
 }
 
-func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries int, samples string) {
+func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries int, samples string, skipAnnotationComparison bool) {
 	// Although most tests are covered with the promql test files (both ours and upstream),
 	// there is a lot of repetition around a few edge cases.
 	// This is not intended to be comprehensive, but instead check for some common edge cases
@@ -2345,14 +2346,14 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 				defer q.Close()
 				mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults)
+				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults, skipAnnotationComparison)
 			})
 		}
 	}
 }
 
 func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2366,14 +2367,17 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
 		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(0.8, series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(series{label="i"}, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	// We skip comparing the annotation results as Prometheus does not output any series name
+	// for forced monotonicity: https://github.com/prometheus/prometheus/issues/15411
+
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, true)
 }
 
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(false)
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
 	labelCombinations := testutils.Combinations(labelsToUse, 2)
@@ -2398,11 +2402,11 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2426,11 +2430,11 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2451,11 +2455,11 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2485,5 +2489,5 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
