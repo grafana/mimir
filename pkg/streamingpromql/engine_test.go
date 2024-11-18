@@ -969,6 +969,22 @@ func TestSubqueries(t *testing.T) {
 			Start: time.Unix(35, 0),
 		},
 		{
+			Query: "metric[20s:5s]",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
 			Query: "metric[20s:5s] offset 5s",
 			Result: promql.Result{
 				Value: promql.Matrix{
