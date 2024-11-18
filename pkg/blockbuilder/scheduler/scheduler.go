@@ -32,7 +32,9 @@ type BlockBuilderScheduler struct {
 	register    prometheus.Registerer
 	metrics     schedulerMetrics
 
-	mu                  sync.Mutex
+	mu sync.Mutex
+	// committed is our local notion of the committed offsets.
+	// It is learned from Kafka at startup, but only updated by the completion of jobs.
 	committed           kadm.Offsets
 	observations        obsMap
 	observationComplete bool
