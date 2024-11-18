@@ -77,9 +77,9 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
-	// The first thing we do when starting up is to complete the startup process where we:
+	// The startup process for block-builder-scheduler entails learning the state of the world:
 	//  1. obtain an initial set of offset info from Kafka
-	//  2. listen to worker updates for a while to learn the state of the world
+	//  2. listen to worker updates for a while to learn what the previous scheduler knew
 	// When both of those are complete, we transition from observation mode to normal operation.
 
 	var wg sync.WaitGroup
