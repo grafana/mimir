@@ -920,7 +920,7 @@ func filterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 
 			if _, isMissing := missingLookup[lookupKey]; isMissing {
 				level.Info(logger).Log(
-					"msg", "filtered out rule group because not found in the object storage (may be temporarily caused by ruler storage caching)",
+					"msg", "filtered out rule group because not found in the object storage (may be temporarily caused by ruler storage caching or the rule group being deleted after listing the storage)",
 					"user", group.GetUser(),
 					"namespace", group.GetNamespace(),
 					"group", group.GetName())

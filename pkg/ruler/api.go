@@ -500,9 +500,29 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if len(missing) > 0 {
-		// This API is expected to be strongly consistent, so it's an error if any rule group was missing.
-		http.Error(w, fmt.Sprintf("an error occurred while loading %d rule groups", len(missing)), http.StatusInternalServerError)
-		return
+		// This API is expected to be strongly consistent, but we expect the object storage to be strongly
+		// consistent too. This means that if a rule group existed when we listed the storage but doesn't exist
+		// (it's missing) when we load it, then it could have been deleted in the meanwhile.
+		//
+		// We don't want to consider this condition a failure, so we don't return an error in this case, but we
+		// just log a warning because it could be of interest for an operator to further investigate it.
+		level.Warn(a.logger).Log(
+			"msg", "list rules API skipped some rule groups, because missing when loading them after listing the storage (this could be due to rule groups deleted between listing the storage and getting rule groups content)",
+			"listed_rule_groups", len(rgs),
+			"missing_rule_groups", len(missing))
+
+		// Filter out missing rule groups, so they're not returned by the API (they haven't been loaded,
+		// so their content is empty).
+		tenantRuleGroups := map[string]rulespb.RuleGroupList{userID: rgs}
+		tenantRuleGroups = filterRuleGroupsByNotMissing(tenantRuleGroups, missing, a.logger)
+
+		var tenantFound bool
+		rgs, tenantFound = tenantRuleGroups[userID]
+		if !tenantFound {
+			// This should never happen, unless a bug.
+			http.Error(w, "an error occurred when filtering missing rule groups", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	numRules := 0

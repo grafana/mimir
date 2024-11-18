@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -36,17 +37,20 @@ import (
 
 func TestRuler_ListRules(t *testing.T) {
 	const (
-		userID   = "user1"
-		interval = time.Minute
+		userID                      = "user1"
+		interval                    = time.Minute
+		skippedMissingRuleGroupsMsg = "list rules API skipped some rule groups, because missing when loading them after listing the storage"
 	)
 
 	testCases := map[string]struct {
-		requestPath        string
-		configuredRules    rulespb.RuleGroupList
-		missingRules       rulespb.RuleGroupList
-		expectedStatusCode int
-		expectedRules      map[string][]rulefmt.RuleGroup
-		expectedErr        string
+		requestPath          string
+		configuredRules      rulespb.RuleGroupList
+		missingRules         rulespb.RuleGroupList
+		expectedStatusCode   int
+		expectedRules        map[string][]rulefmt.RuleGroup
+		expectedErr          string
+		expectLogsContain    []string
+		expectLogsNotContain []string
 	}{
 		"should list all rule groups of an user if the namespace parameter is missing": {
 			requestPath: "/prometheus/config/v1/rules",
@@ -87,6 +91,7 @@ func TestRuler_ListRules(t *testing.T) {
 					}),
 				},
 			},
+			expectLogsNotContain: []string{skippedMissingRuleGroupsMsg},
 		},
 		"should list all rule groups of an user belonging to the input namespace": {
 			requestPath: "/prometheus/config/v1/rules/namespace1",
@@ -118,10 +123,19 @@ func TestRuler_ListRules(t *testing.T) {
 					}),
 				},
 			},
+			expectLogsNotContain: []string{skippedMissingRuleGroupsMsg},
 		},
-		"should fail if some rule groups were missing when loading them": {
+		"should succeed if a rule group was missing when loading it, because the rule group could have just been deleted between listing and loading (missing rule group at the beginning of the list)": {
 			requestPath: "/prometheus/config/v1/rules",
 			configuredRules: rulespb.RuleGroupList{
+				// Include the missing rule group to make sure it will be filtered out by the API.
+				// Keep it at the beginning of the list in this test.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+
 				&rulespb.RuleGroupDesc{
 					Name:      "group1",
 					Namespace: "namespace1",
@@ -144,8 +158,141 @@ func TestRuler_ListRules(t *testing.T) {
 					User:      userID,
 				},
 			},
-			expectedStatusCode: http.StatusInternalServerError,
-			expectedErr:        "an error occurred while loading 1 rule groups",
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
+		},
+		"should succeed if a rule group was missing when loading it, because the rule group could have just been deleted between listing and loading (missing rule group in the middle of the list)": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+
+				// Include the missing rule group to make sure it will be filtered out by the API.
+				// Keep it in the middle the list in this test.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
+		},
+		"should succeed if a rule group was missing when loading it, because the rule group could have just been deleted between listing and loading (missing rule group at the end of the list)": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+
+				// Include the missing rule group to make sure it will be filtered out by the API.
+				// Keep it at the end of the list in this test.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
 		},
 	}
 
@@ -162,8 +309,9 @@ func TestRuler_ListRules(t *testing.T) {
 			store := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: tc.configuredRules})
 			store.setMissingRuleGroups(tc.missingRules)
 
+			logs := &concurrency.SyncBuffer{}
 			r := prepareRuler(t, cfg, store, withStart())
-			a := NewAPI(r, r.store, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewLogfmtLogger(logs))
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules").Methods("GET").HandlerFunc(a.ListRules)
@@ -183,6 +331,14 @@ func TestRuler_ListRules(t *testing.T) {
 				require.YAMLEq(t, string(expectedYAML), string(body))
 			} else {
 				require.Contains(t, string(body), tc.expectedErr)
+			}
+
+			// Check logs.
+			for _, expect := range tc.expectLogsContain {
+				require.Contains(t, logs.String(), expect)
+			}
+			for _, expect := range tc.expectLogsNotContain {
+				require.NotContains(t, logs.String(), expect)
 			}
 		})
 
