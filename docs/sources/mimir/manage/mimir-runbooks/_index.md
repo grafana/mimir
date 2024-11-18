@@ -1411,6 +1411,17 @@ How to **investigate** and **fix** it:
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
+##### Persistent Volume Resizing Prequisite - store-gateways
+
+In case persistent volume resizing is needed for store-gateways, ensure the following steps are taken before proceeding, if automatic downscaling and/or autoscaling, have been enabled:
+
+- Disable automatic downscaling for store-gateways.
+- Set autoscaling min/max limits for the Zone-A Horizontal Pod Autoscaler (HPA) based on current usage to ensure that the minimum number of replicas matches the current count and does not decrease.
+
+Both of these steps are necessary to prevent any downscaling issues during the resizing process.
+
+After the resizing process is finished, revert above changes
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
