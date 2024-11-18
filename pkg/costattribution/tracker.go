@@ -89,6 +89,13 @@ func (t *Tracker) MaxCardinality() int {
 	return t.maxCardinality
 }
 
+func (t *Tracker) CooldownDuration() int64 {
+	if t == nil {
+		return 0
+	}
+	return t.cooldownDuration
+}
+
 func (t *Tracker) cleanupTrackerAttribution(vals []string) {
 	if t == nil {
 		return
@@ -198,20 +205,21 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 		return false
 	}
 
-	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
-	// the origin labels ovserved time is not updated, but the overflow hash is updated.
-	if len(t.observed) > t.maxCardinality {
-		t.isOverflow = true
-		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
-	}
-
+	// we store up to 2 * maxCardinality observations, if we have seen the stream before, we update the last update time
 	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
 		o.lastUpdate.Store(ts)
-	} else if len(t.observed) <= t.maxCardinality {
+	} else if len(t.observed) < t.maxCardinality*2 {
 		t.observed[stream] = &Observation{
 			lvalues:    values,
 			lastUpdate: atomic.NewInt64(ts),
 		}
+	}
+
+	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
+	// the origin labels ovserved time is not updated, but the overflow hash is updated.
+	if !t.isOverflow && len(t.observed) > t.maxCardinality {
+		t.isOverflow = true
+		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
 	}
 
 	return t.isOverflow
@@ -260,4 +268,11 @@ func (t *Tracker) UpdateMaxCardinality(limit int) {
 		return
 	}
 	t.maxCardinality = limit
+}
+
+func (t *Tracker) UpdateCooldownDuration(cooldownDuration int64) {
+	if t == nil {
+		return
+	}
+	t.cooldownDuration = cooldownDuration
 }

@@ -138,12 +138,9 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 
 		// if the tracker is no longer overflowed, and it is currently in overflow state, check the cooldown and create new tracker
 		cat := m.TrackerForUser(userID)
-		if cat != nil && cat.isOverflow {
-			if len(cat.observed) < cat.MaxCardinality() {
-				if cat.cooldownUntil.Load() < deadline {
-					m.deleteUserTracer(userID)
-					continue
-				}
+		if cat != nil && cat.cooldownUntil != nil && cat.cooldownUntil.Load() < deadline {
+			if len(cat.observed) <= cat.MaxCardinality() {
+				m.deleteUserTracer(userID)
 			} else {
 				cat.cooldownUntil.Store(deadline + cat.cooldownDuration)
 			}
@@ -189,9 +186,12 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 		m.mtx.Unlock()
 	} else {
 		maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
-		// cooldown := m.limits.CostAttributionCooldown(userID)
+		cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
 		if cat.MaxCardinality() != maxCardinality {
 			cat.UpdateMaxCardinality(maxCardinality)
+		}
+		if cooldown != cat.CooldownDuration() {
+			cat.UpdateCooldownDuration(cooldown)
 		}
 	}
 

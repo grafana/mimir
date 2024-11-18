@@ -86,13 +86,13 @@ func Test_GetKeyValues(t *testing.T) {
 	keyVal1 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar"), 1)
 	assert.Equal(t, []string{"foo", "bar", "user3"}, keyVal1, "First call, expecting values as-is")
 
-	keyVal2 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "baz"), 2)
-	assert.Equal(t, []string{"foo", "baz", "user3"}, keyVal2, "Second call, expecting values as-is")
+	keyVal2 := cat.getKeyValues(labels.FromStrings("department", "foo"), 3)
+	assert.Equal(t, []string{"foo", "__missing__", "user3"}, keyVal2, "Service missing, should return '__missing__'")
 
-	keyVal3 := cat.getKeyValues(labels.FromStrings("department", "foo"), 3)
-	assert.Equal(t, []string{"foo", "__missing__", "user3"}, keyVal3, "Service missing, should return '__missing__'")
+	keyVal3 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "baz", "team", "a"), 4)
+	assert.Equal(t, []string{"__overflow__", "__overflow__", "user3"}, keyVal3, "Overflow state expected")
 
-	keyVal4 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar", "team", "a"), 4)
+	keyVal4 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar"), 5)
 	assert.Equal(t, []string{"__overflow__", "__overflow__", "user3"}, keyVal4, "Overflow state expected")
 }
 
@@ -109,9 +109,9 @@ func Test_Overflow(t *testing.T) {
 
 	assert.False(t, cat.overflow(stream1, []string{"foo", "bar", "user1"}, 1), "First observation, should not overflow")
 	assert.False(t, cat.overflow(stream2, []string{"bar", "baz", "user1"}, 2), "Second observation, should not overflow")
-	assert.False(t, cat.overflow(stream3, []string{"baz", "foo", "user1"}, 3), "Third observation, should not overflow")
-	assert.True(t, cat.overflow(stream3, []string{"baz", "foo", "user1"}, 4), "Fourth observation, should overflow")
-	assert.Equal(t, int64(4+cat.cooldownDuration), cat.cooldownUntil.Load(), "CooldownUntil should be updated correctly")
+	assert.True(t, cat.overflow(stream3, []string{"baz", "foo", "user1"}, 3), "Third observation didn't seen before, should overflow")
+	assert.True(t, cat.overflow(stream3, []string{"baz", "foo", "user1"}, 4), "Fourth observation, should stay overflow")
+	assert.Equal(t, int64(3+cat.cooldownDuration), cat.cooldownUntil.Load(), "CooldownUntil should be updated correctly")
 }
 
 func Test_PurgeInactiveObservations(t *testing.T) {
