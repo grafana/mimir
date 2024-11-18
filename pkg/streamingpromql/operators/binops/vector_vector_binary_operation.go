@@ -52,7 +52,7 @@ type VectorVectorBinaryOperation struct {
 	opFunc          binaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	emitAnnotation     types.EmitAnnotationFunc
+	annotations        *annotations.Annotations
 }
 
 var _ types.InstantVectorOperator = &VectorVectorBinaryOperation{}
@@ -97,6 +97,7 @@ func NewVectorVectorBinaryOperation(
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
 		expressionPosition: expressionPosition,
+		annotations:        annotations,
 	}
 
 	if returnBool {
@@ -107,10 +108,6 @@ func NewVectorVectorBinaryOperation(
 
 	if b.opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
-	}
-
-	b.emitAnnotation = func(generator types.AnnotationGenerator) {
-		annotations.Add(generator("", expressionPosition))
 	}
 
 	return b, nil
@@ -493,7 +490,7 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 	// We also don't know if the output will be exclusively floats or histograms, so we'll use the same size slice for both.
 	// We only assign the slices once we see the associated point type so it shouldn't be common that we allocate both.
 	//
-	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
+	// FIXME: this is not safe to do for one-to-many or many-to-one matching, as we may need the input series for later output series.
 	canReturnLeftFPointSlice, canReturnLeftHPointSlice, canReturnRightFPointSlice, canReturnRightHPointSlice := true, true, true, true
 	leftPoints := len(left.Floats) + len(left.Histograms)
 	rightPoints := len(right.Floats) + len(right.Histograms)
@@ -565,18 +562,21 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 	// denoted by lOk or rOk being false.
 	for lOk && rOk {
 		if lT == rT {
-			// Timestamps match at this step
+			// We have samples on both sides at this timestep.
 			resultFloat, resultHist, ok, err := b.opFunc(lF, rF, lH, rH)
+
 			if err != nil {
 				err = functions.NativeHistogramErrorToAnnotation(err, b.emitAnnotation)
-				if err == nil {
-					// Error was converted to an annotation, continue without emitting a sample here.
-					ok = false
-				} else {
+				if err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
-			}
-			if ok {
+
+				// Else: error was converted to an annotation, continue without emitting a sample here.
+
+			} else if !ok && isArithmeticOperation(b.Op) {
+				b.emitIncompatibleTypesAnnotation(lH, rH)
+
+			} else if ok {
 				if resultHist != nil {
 					if hPoints == nil {
 						if err = prepareHSlice(); err != nil {
@@ -600,7 +600,8 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 				}
 			}
 		}
-		// Move the iterator with the lower timestamp, or both if equal
+
+		// Advance the iterator with the lower timestamp, or both if equal
 		if lT == rT {
 			lT, lF, lH, lOk = b.leftIterator.Next()
 			rT, rF, rH, rOk = b.rightIterator.Next()
@@ -631,6 +632,18 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 	}, nil
 }
 
+func (b *VectorVectorBinaryOperation) emitIncompatibleTypesAnnotation(lH *histogram.FloatHistogram, rH *histogram.FloatHistogram) {
+	b.annotations.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), b.Op.String(), sampleTypeDescription(rH), b.expressionPosition))
+}
+
+func sampleTypeDescription(h *histogram.FloatHistogram) string {
+	if h == nil {
+		return "float"
+	}
+
+	return "histogram"
+}
+
 func (b *VectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
@@ -652,12 +665,20 @@ func (b *VectorVectorBinaryOperation) Close() {
 	}
 }
 
+func (b *VectorVectorBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
+	b.annotations.Add(generator("", b.expressionPosition))
+}
+
 type binaryOperationFunc func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
 
 // FIXME(jhesketh): Investigate avoiding copying histograms for binary ops.
 // We would need nil-out the retained FloatHistogram instances in their original HPoint slices, to avoid them being modified when the slice is returned to the pool.
 var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.ADD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs == nil && hrhs == nil {
+			return lhs + rhs, nil, true, nil
+		}
+
 		if hlhs != nil && hrhs != nil {
 			res, err := hlhs.Copy().Add(hrhs)
 			if err != nil {
@@ -665,9 +686,14 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 			}
 			return 0, res.Compact(0), true, nil
 		}
-		return lhs + rhs, nil, true, nil
+
+		return 0, nil, false, nil
 	},
 	parser.SUB: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs == nil && hrhs == nil {
+			return lhs - rhs, nil, true, nil
+		}
+
 		if hlhs != nil && hrhs != nil {
 			res, err := hlhs.Copy().Sub(hrhs)
 			if err != nil {
@@ -675,22 +701,34 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 			}
 			return 0, res.Compact(0), true, nil
 		}
-		return lhs - rhs, nil, true, nil
+
+		return 0, nil, false, nil
 	},
 	parser.MUL: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs == nil && hrhs == nil {
+			return lhs * rhs, nil, true, nil
+		}
+
 		if hlhs != nil && hrhs == nil {
 			return 0, hlhs.Copy().Mul(rhs), true, nil
 		}
+
 		if hlhs == nil && hrhs != nil {
 			return 0, hrhs.Copy().Mul(lhs), true, nil
 		}
-		return lhs * rhs, nil, true, nil
+
+		return 0, nil, false, nil
 	},
 	parser.DIV: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs == nil && hrhs == nil {
+			return lhs / rhs, nil, true, nil
+		}
+
 		if hlhs != nil && hrhs == nil {
 			return 0, hlhs.Copy().Div(rhs), true, nil
 		}
-		return lhs / rhs, nil, true, nil
+
+		return 0, nil, false, nil
 	},
 	parser.POW: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Pow(lhs, rhs), nil, true, nil
@@ -788,4 +826,8 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, true, nil
 	},
+}
+
+func isArithmeticOperation(op parser.ItemType) bool {
+	return op == parser.ADD || op == parser.SUB || op == parser.MUL || op == parser.DIV
 }
