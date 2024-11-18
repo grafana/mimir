@@ -450,6 +450,39 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 			err: errors.New("parse \"http://example.local\\x7f\": net/url: invalid control character in URL"),
 		},
+		{
+			name: "basic auth and oauth provided at the same time",
+			cfg: &Config{
+				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					BasicAuth: util.BasicAuth{
+						Username: "test-user",
+					},
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSlice([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			err: errRulerSimultaneousBasicAuthAndOAuth,
+		},
+		{
+			name: "basic auth via URL and oauth provided at the same time",
+			cfg: &Config{
+				AlertmanagerURL: "http://marco:hunter2@alertmanager.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSlice([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			err: errRulerSimultaneousBasicAuthAndOAuth,
+		},
 	}
 
 	for _, tt := range tests {

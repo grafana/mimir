@@ -28,7 +28,10 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-var errRulerNotifierStopped = cancellation.NewErrorf("rulerNotifier stopped")
+var (
+	errRulerNotifierStopped               = cancellation.NewErrorf("rulerNotifier stopped")
+	errRulerSimultaneousBasicAuthAndOAuth = errors.New("cannot use both Basic Auth and OAuth2 simultaneously")
+)
 
 type NotifierConfig struct {
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
@@ -210,6 +213,10 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 
 	// Whether to use OAuth2 or not.
 	if rulerConfig.Notifier.OAuth2.IsEnabled() {
+		if amConfig.HTTPClientConfig.BasicAuth != nil {
+			return nil, errRulerSimultaneousBasicAuthAndOAuth
+		}
+
 		amConfig.HTTPClientConfig.OAuth2 = &config_util.OAuth2{
 			ClientID:     rulerConfig.Notifier.OAuth2.ClientID,
 			ClientSecret: config_util.Secret(rulerConfig.Notifier.OAuth2.ClientSecret.String()),
