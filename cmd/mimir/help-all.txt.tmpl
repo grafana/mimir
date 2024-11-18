@@ -3301,6 +3301,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.cost-attribution-cooldown duration
+    	[experimental] Cooldown period for cost attribution labels. This specifies how long the cost attribution tracker remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown will be extended. Set to 0 to disable the cooldown period.
   -validation.cost-attribution-labels comma-separated-list-of-strings
     	[experimental] List of labels used to define the cost attribution. This label will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total. Set to an empty string to disable cost attribution.
   -validation.create-grace-period duration
@@ -3309,6 +3311,8 @@ Usage of ./cmd/mimir/mimir:
     	Enforce every metadata has a metric name. (default true)
   -validation.max-cost-attribution-cardinality-per-user int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
+  -validation.max-cost-attribution-labels-per-user int
+    	[experimental] Maximum number of cost attribution labels allowed per user. 0 to disable. (default 2)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

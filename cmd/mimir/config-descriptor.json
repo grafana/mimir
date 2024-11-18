@@ -4371,6 +4371,17 @@
         },
         {
           "kind": "field",
+          "name": "max_cost_attribution_labels_per_user",
+          "required": false,
+          "desc": "Maximum number of cost attribution labels allowed per user. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_cost_attribution_cardinality_per_user",
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
@@ -4378,6 +4389,17 @@
           "fieldDefaultValue": 10000,
           "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_cooldown",
+          "required": false,
+          "desc": "Cooldown period for cost attribution labels. This specifies how long the cost attribution tracker remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown will be extended. Set to 0 to disable the cooldown period.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.cost-attribution-cooldown",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {

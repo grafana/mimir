@@ -3560,10 +3560,22 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 
+# (experimental) Maximum number of cost attribution labels allowed per user. 0
+# to disable.
+# CLI flag: -validation.max-cost-attribution-labels-per-user
+[max_cost_attribution_labels_per_user: <int> | default = 2]
+
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
 # CLI flag: -validation.max-cost-attribution-cardinality-per-user
 [max_cost_attribution_cardinality_per_user: <int> | default = 10000]
+
+# (experimental) Cooldown period for cost attribution labels. This specifies how
+# long the cost attribution tracker remains in overflow before attempting a
+# reset. If the tracker is still in overflow after this period, the cooldown
+# will be extended. Set to 0 to disable the cooldown period.
+# CLI flag: -validation.cost-attribution-cooldown
+[cost_attribution_cooldown: <duration> | default = 0s]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
