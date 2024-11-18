@@ -574,7 +574,7 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 				// Else: error was converted to an annotation, continue without emitting a sample here.
 
 			} else if !ok && isArithmeticOperation(b.Op) {
-				b.emitIncompatibleTypesAnnotation(lH, rH)
+				emitIncompatibleTypesAnnotation(b.annotations, b.Op, lH, rH, b.expressionPosition)
 
 			} else if ok {
 				if resultHist != nil {
@@ -630,18 +630,6 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 		Floats:     fPoints,
 		Histograms: hPoints,
 	}, nil
-}
-
-func (b *VectorVectorBinaryOperation) emitIncompatibleTypesAnnotation(lH *histogram.FloatHistogram, rH *histogram.FloatHistogram) {
-	b.annotations.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), b.Op.String(), sampleTypeDescription(rH), b.expressionPosition))
-}
-
-func sampleTypeDescription(h *histogram.FloatHistogram) string {
-	if h == nil {
-		return "float"
-	}
-
-	return "histogram"
 }
 
 func (b *VectorVectorBinaryOperation) Close() {

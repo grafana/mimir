@@ -31,7 +31,7 @@ type VectorScalarBinaryOperation struct {
 	opFunc    vectorScalarBinaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	emitAnnotation     types.EmitAnnotationFunc
+	annotations        *annotations.Annotations
 	scalarData         types.ScalarData
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
@@ -70,11 +70,8 @@ func NewVectorScalarBinaryOperation(
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
 		timeRange:          timeRange,
+		annotations:        annotations,
 		expressionPosition: expressionPosition,
-	}
-
-	b.emitAnnotation = func(generator types.AnnotationGenerator) {
-		annotations.Add(generator("", expressionPosition))
 	}
 
 	if !b.ScalarIsLeftSide {
@@ -195,33 +192,43 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 			err = functions.NativeHistogramErrorToAnnotation(err, v.emitAnnotation)
 			if err == nil {
 				// Error was converted to an annotation, continue without emitting a sample here.
-				ok = false
-			} else {
-				return types.InstantVectorSeriesData{}, err
+				continue
 			}
+
+			return types.InstantVectorSeriesData{}, err
 		}
 
-		if ok {
-			if h != nil {
-				if hPoints == nil {
-					// First histogram for this series, get a slice for it.
-					if err := prepareHPointSlice(); err != nil {
-						return types.InstantVectorSeriesData{}, err
-					}
+		if !ok {
+			if isArithmeticOperation(v.Op) {
+				if v.ScalarIsLeftSide {
+					emitIncompatibleTypesAnnotation(v.annotations, v.Op, nil, vectorH, v.expressionPosition)
+				} else {
+					emitIncompatibleTypesAnnotation(v.annotations, v.Op, vectorH, nil, v.expressionPosition)
 				}
-
-				hPoints = append(hPoints, promql.HPoint{T: t, H: h})
-			} else {
-				// We have a float value.
-				if fPoints == nil {
-					// First float for this series, get a slice for it.
-					if err := prepareFPointSlice(); err != nil {
-						return types.InstantVectorSeriesData{}, err
-					}
-				}
-
-				fPoints = append(fPoints, promql.FPoint{T: t, F: f})
 			}
+
+			continue
+		}
+
+		if h != nil {
+			if hPoints == nil {
+				// First histogram for this series, get a slice for it.
+				if err := prepareHPointSlice(); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+
+			hPoints = append(hPoints, promql.HPoint{T: t, H: h})
+		} else {
+			// We have a float value.
+			if fPoints == nil {
+				// First float for this series, get a slice for it.
+				if err := prepareFPointSlice(); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+
+			fPoints = append(fPoints, promql.FPoint{T: t, F: f})
 		}
 	}
 
@@ -247,6 +254,10 @@ func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
 	types.FPointSlicePool.Put(v.scalarData.Samples, v.MemoryConsumptionTracker)
+}
+
+func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
+	v.annotations.Add(generator("", v.expressionPosition))
 }
 
 var _ types.InstantVectorOperator = &VectorScalarBinaryOperation{}
