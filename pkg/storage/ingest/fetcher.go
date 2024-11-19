@@ -394,8 +394,8 @@ func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.L
 	for _, gap := range gaps {
 		level.Error(logger).Log(
 			"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
-			"gap_start_inclusive", gap.start,
-			"gap_end_inclusive", gap.end,
+			"records_offset_gap_start_inclusive", gap.start,
+			"records_offset_gap_end_exclusive", gap.end,
 		)
 		records.Add(float64(gap.numOffsets()))
 		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
