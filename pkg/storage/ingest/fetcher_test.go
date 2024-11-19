@@ -927,11 +927,13 @@ func TestConcurrentFetchers(t *testing.T) {
 		var wg sync.WaitGroup
 		producedCount := atomic.NewInt64(0)
 		fetchedCount := atomic.NewInt64(0)
+		producingDone := make(chan struct{})
 
 		// Producer goroutine
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer close(producingDone)
 			ticker := time.NewTicker(baseInterval)
 			defer ticker.Stop()
 
@@ -955,7 +957,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			defer wg.Done()
 			for {
 				select {
-				case <-ctx.Done():
+				case <-producingDone:
 					if fetchedCount.Load() == producedCount.Load() {
 						return
 					}
