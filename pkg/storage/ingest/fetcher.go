@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -227,7 +228,7 @@ type concurrentFetchers struct {
 	// ordering.
 	orderedFetches chan fetchResult
 
-	lastReturnedRecord int64
+	lastReturnedOffset int64
 	startOffsets       *genericOffsetReader[int64]
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
@@ -283,7 +284,7 @@ func newConcurrentFetchers(
 		partitionID:             partition,
 		metrics:                 metrics,
 		minBytesWaitTime:        minBytesWaitTime,
-		lastReturnedRecord:      startOffset - 1,
+		lastReturnedOffset:      startOffset - 1,
 		startOffsets:            startOffsetsReader,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
@@ -343,7 +344,7 @@ func (r *concurrentFetchers) Stop() {
 	r.bufferedFetchedRecords.Store(0)
 	r.bufferedFetchedBytes.Store(0)
 
-	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
+	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_offset", r.lastReturnedOffset)
 }
 
 // Update implements fetcher
@@ -352,7 +353,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
 	r.done = make(chan struct{})
 
 	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedRecord+1, concurrency)
+	go r.start(ctx, r.lastReturnedOffset+1, concurrency)
 }
 
 // PollFetches implements fetcher
@@ -369,12 +370,13 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 		// PollFetches() calls).
 		r.bufferedFetchedRecords.Sub(int64(len(f.Records)))
 
-		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
+		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedOffset)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			r.lastReturnedRecord = f.Records[len(f.Records)-1].Offset
+			instrumentGaps(findGapsInRecords(f.Records, r.lastReturnedOffset), r.metrics.missedRecords, r.logger)
+			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
 		return kgo.Fetches{{
@@ -386,6 +388,41 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 			},
 		}}, f.ctx
 	}
+}
+
+func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.Logger) {
+	for _, gap := range gaps {
+		level.Error(logger).Log(
+			"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
+			"records_offset_gap_start_inclusive", gap.start,
+			"records_offset_gap_end_exclusive", gap.end,
+		)
+		records.Add(float64(gap.numOffsets()))
+		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
+	}
+}
+
+type offsetRange struct {
+	// start is inclusive
+	start int64
+
+	// end is exclusive
+	end int64
+}
+
+func (g offsetRange) numOffsets() int64 {
+	return g.end - g.start
+}
+
+func findGapsInRecords(records []*kgo.Record, lastReturnedOffset int64) []offsetRange {
+	var gaps []offsetRange
+	for _, r := range records {
+		if r.Offset != lastReturnedOffset+1 {
+			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
+		}
+		lastReturnedOffset = r.Offset
+	}
+	return gaps
 }
 
 func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {

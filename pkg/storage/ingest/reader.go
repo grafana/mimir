@@ -1007,6 +1007,7 @@ type readerMetrics struct {
 	lastConsumedOffset               prometheus.Gauge
 	consumeLatency                   prometheus.Histogram
 	kprom                            *kprom.Metrics
+	missedRecords                    prometheus.Counter
 }
 
 type readerMetricsSource interface {
@@ -1083,6 +1084,10 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
 		lastConsumedOffset:               lastConsumedOffset,
 		kprom:                            NewKafkaReaderClientMetrics(component, reg),
+		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_missed_records_total",
+			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",
+		}),
 	}
 
 	m.Service = services.NewTimerService(100*time.Millisecond, nil, func(context.Context) error {

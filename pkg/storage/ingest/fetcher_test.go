@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -1149,6 +1151,15 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
 
+	t.Cleanup(func() {
+		// Assuming none of the tests intentionally create gaps in offsets, there should be no missed records.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+        	# TYPE cortex_ingest_storage_reader_missed_records_total counter
+        	cortex_ingest_storage_reader_missed_records_total 0
+		`), "cortex_ingest_storage_reader_missed_records_total"))
+	})
+
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
 	metrics.kprom.OnNewClient(client)
@@ -1319,6 +1330,81 @@ func TestFetchWant_UpdateBytesPerRecord(t *testing.T) {
 			maxBytes := result.MaxBytes()
 			assert.GreaterOrEqual(t, maxBytes, int32(0), "MaxBytes should never return negative values")
 			assert.LessOrEqual(t, maxBytes, int32(math.MaxInt32), "MaxBytes should never exceed MaxInt32")
+		})
+	}
+}
+
+func TestFindGapsInRecords(t *testing.T) {
+	tests := map[string]struct {
+		records            []*kgo.Record
+		lastReturnedOffset int64
+		want               []offsetRange
+	}{
+		"no gaps": {
+			records: []*kgo.Record{
+				{Offset: 1},
+				{Offset: 2},
+				{Offset: 3},
+			},
+			lastReturnedOffset: 0,
+			want:               nil,
+		},
+		"single gap": {
+			records: []*kgo.Record{
+				{Offset: 5},
+			},
+			lastReturnedOffset: 2,
+			want: []offsetRange{
+				{start: 3, end: 5},
+			},
+		},
+		"multiple gaps": {
+			records: []*kgo.Record{
+				{Offset: 3},
+				{Offset: 7},
+				{Offset: 10},
+			},
+			lastReturnedOffset: 1,
+			want: []offsetRange{
+				{start: 2, end: 3},
+				{start: 4, end: 7},
+				{start: 8, end: 10},
+			},
+		},
+		"empty records": {
+			records:            []*kgo.Record{},
+			lastReturnedOffset: 5,
+			want:               nil,
+		},
+		"gap at start": {
+			records: []*kgo.Record{
+				{Offset: 10},
+				{Offset: 11},
+			},
+			lastReturnedOffset: 5,
+			want: []offsetRange{
+				{start: 6, end: 10},
+			},
+		},
+		"gap at start and middle": {
+			records: []*kgo.Record{
+				{Offset: 10},
+				{Offset: 11},
+				{Offset: 15},
+				{Offset: 16},
+			},
+			lastReturnedOffset: 5,
+			want: []offsetRange{
+				{start: 6, end: 10},
+				{start: 12, end: 15},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := findGapsInRecords(tc.records, tc.lastReturnedOffset)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
