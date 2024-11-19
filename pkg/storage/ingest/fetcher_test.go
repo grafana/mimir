@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -885,10 +887,101 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Verify the number and content of fetched records
 		assert.Equal(t, producedRecordsBytes, fetchedRecordsBytes, "Should fetch all produced records")
 	})
+
+	t.Run("fetch with random error injection", func(t *testing.T) {
+		t.Parallel()
+		const (
+			testDuration     = 15 * time.Second
+			baseInterval     = time.Millisecond
+			maxJitter        = 500 * time.Microsecond
+			concurrency      = 12
+			recordsPerFetch  = 1000
+			errorProbability = 0.1
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		// Track if error was injected
+		errorInjected := atomic.NewBool(false)
+		seed := time.Now().UnixNano()
+		rand.Seed(seed)
+		t.Log("Random seed", seed)
+
+		// Set up error injection for random fetch requests
+		cluster.ControlKey(int16(kmsg.Fetch), func(req kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			if rand.Float64() < errorProbability {
+				errorInjected.Store(true)
+				t.Log("injected an error")
+				return nil, errors.New(unknownBroker), true
+			}
+			return nil, nil, false
+		})
+
+		fetchers := createConcurrentFetchers(context.Background(), t, client, topicName, partitionID, 0, concurrency, recordsPerFetch)
+
+		var wg sync.WaitGroup
+		producedCount := atomic.NewInt64(0)
+		fetchedCount := atomic.NewInt64(0)
+
+		// Producer goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticker := time.NewTicker(baseInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					// Add random jitter
+					time.Sleep(time.Duration(rand.Int63n(int64(maxJitter))))
+					count := producedCount.Inc()
+					record := fmt.Sprintf("record-%d", count)
+					produceRecord(context.Background(), t, client, topicName, partitionID, []byte(record))
+				}
+			}
+		}()
+
+		// Consumer goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					if fetchedCount.Load() == producedCount.Load() {
+						return
+					}
+					// there's still some records to fetch, so we wait for them
+				default:
+				}
+				fetches, _ := fetchers.PollFetches(ctx)
+				if fetches.Err() != nil {
+					t.Log("Fetch error:", fetches.Err())
+				}
+				fetches.EachRecord(func(r *kgo.Record) {
+					assert.Equal(t, fmt.Sprintf("record-%d", fetchedCount.Inc()), string(r.Value))
+				})
+			}
+		}()
+
+		// Wait for test duration
+		wg.Wait()
+
+		assert.True(t, errorInjected.Load(), "Expected an error to be injected")
+		assert.Equal(t, producedCount.Load(), fetchedCount.Load(), "Fetched records should match produced records")
+	})
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency, recordsPerFetch int) *concurrentFetchers {
-	logger := log.NewNopLogger()
+	logger := log.NewLogfmtLogger(os.Stdout)
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg)
 
