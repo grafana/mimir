@@ -1006,7 +1006,6 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "clamp", args: []string{"5", "10"}},
 		{fn: "clamp_max", args: []string{"5"}},
 		{fn: "clamp_min", args: []string{"5"}},
-		{fn: "round", args: []string{"20"}},
 		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
 	}
@@ -1025,6 +1024,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "log2"},
 		{fn: "max_over_time", rangeQuery: true},
 		{fn: "min_over_time", rangeQuery: true},
+		{fn: "round", args: []string{"20"}},
 		{fn: "sqrt"},
 		{fn: "deg"},
 		{fn: "asinh"},
