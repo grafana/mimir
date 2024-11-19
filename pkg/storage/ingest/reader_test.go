@@ -2025,7 +2025,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 
 	cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 	client := newKafkaProduceClient(t, clusterAddr)
@@ -2213,7 +2213,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	})
 
 	// Wait until all produced have been consumed.
-	test.Poll(t, 30*time.Second, totalProducedRecords, func() interface{} {
+	test.Poll(t, 30*time.Second, int64(totalProducedRecords), func() interface{} {
 		return totalConsumedRecords.Load()
 	})
 

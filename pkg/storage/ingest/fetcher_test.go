@@ -1257,6 +1257,7 @@ func TestTODO(t *testing.T) {
 		fetchResponseByRequestedOffset[offset] = res
 	}
 
+	require.Equal(t, totalProducedRecords, len(fetchResponseByRequestedOffset))
 	t.Logf("Collected raw Fetch responses for all expected offsets")
 
 	//
