@@ -54,6 +54,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1843,11 +1844,11 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		numSeriesPerRequest = 1000
 	)
 	ctx := user.InjectOrgID(context.Background(), "user")
-
 	tests := map[string]struct {
-		prepareConfig func(limits *validation.Limits)
-		prepareSeries func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample)
-		expectedErr   string
+		prepareConfig  func(limits *validation.Limits)
+		prepareSeries  func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample)
+		expectedErr    string
+		customRegistry *prometheus.Registry
 	}{
 		"all samples successfully pushed": {
 			prepareConfig: func(*validation.Limits) {},
@@ -1856,7 +1857,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1866,6 +1867,26 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				return metrics, samples
 			},
 			expectedErr: "",
+		},
+		"all samples successfully pushed with cost attribution enabled": {
+			// we should have the cost attribution on team, attribution crosee team 0, 1, 2, 3
+			prepareConfig: func(limits *validation.Limits) {
+				limits.CostAttributionLabels = []string{"team"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+				for i := 0; i < numSeriesPerRequest; i++ {
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+				return metrics, samples
+			},
+			customRegistry: prometheus.NewRegistry(),
 		},
 		"ingestion rate limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -1877,7 +1898,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1897,7 +1918,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(31)
+					metrics[i] = mkLabels(30, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2047,8 +2068,15 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(b, err)
 
+			var cam *costattribution.Manager
+			if testData.customRegistry != nil {
+				cam = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides)
+				err := testData.customRegistry.Register(cam)
+				require.NoError(b, err)
+			}
+
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
