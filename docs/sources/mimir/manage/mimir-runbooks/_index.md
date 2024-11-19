@@ -724,6 +724,9 @@ How to **fix** it:
   -compactor.cleanup-interval=5m
   ```
 
+> [!NOTE]
+> These mitigations may be especially helpful if you are concurrently seeing queries for this tenant fail consistency checks.
+
 ### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
