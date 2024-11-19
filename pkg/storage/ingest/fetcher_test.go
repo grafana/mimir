@@ -1333,3 +1333,78 @@ func TestFetchWant_UpdateBytesPerRecord(t *testing.T) {
 		})
 	}
 }
+
+func TestFindGapsInRecords(t *testing.T) {
+	tests := map[string]struct {
+		records            []*kgo.Record
+		lastReturnedOffset int64
+		want               []offsetRange
+	}{
+		"no gaps": {
+			records: []*kgo.Record{
+				{Offset: 1},
+				{Offset: 2},
+				{Offset: 3},
+			},
+			lastReturnedOffset: 0,
+			want:               nil,
+		},
+		"single gap": {
+			records: []*kgo.Record{
+				{Offset: 5},
+			},
+			lastReturnedOffset: 2,
+			want: []offsetRange{
+				{start: 3, end: 5},
+			},
+		},
+		"multiple gaps": {
+			records: []*kgo.Record{
+				{Offset: 3},
+				{Offset: 7},
+				{Offset: 10},
+			},
+			lastReturnedOffset: 1,
+			want: []offsetRange{
+				{start: 2, end: 3},
+				{start: 4, end: 7},
+				{start: 8, end: 10},
+			},
+		},
+		"empty records": {
+			records:            []*kgo.Record{},
+			lastReturnedOffset: 5,
+			want:               nil,
+		},
+		"gap at start": {
+			records: []*kgo.Record{
+				{Offset: 10},
+				{Offset: 11},
+			},
+			lastReturnedOffset: 5,
+			want: []offsetRange{
+				{start: 6, end: 10},
+			},
+		},
+		"gap at start and middle": {
+			records: []*kgo.Record{
+				{Offset: 10},
+				{Offset: 11},
+				{Offset: 15},
+				{Offset: 16},
+			},
+			lastReturnedOffset: 5,
+			want: []offsetRange{
+				{start: 6, end: 10},
+				{start: 12, end: 15},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := findGapsInRecords(tc.records, tc.lastReturnedOffset)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
