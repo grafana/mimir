@@ -1415,7 +1415,16 @@ How to **investigate** and **fix** it:
 
 If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, it must be disabled before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone.
 
-Disable automatic downscaling for store-gateways by setting `store_gateway_automated_downscale_enabled` equal to `false`.
+Disable automatic downscaling for store-gateways by setting `$._config.store_gateway_automated_downscale_enabled` equal to `false`. Example:
+
+```jsonnet
+{
+    _config+:
+    {
+        store_gateway_automated_downscale_enabled: false
+    }
+}
+```
 
 After the resizing process is finished, revert above change.
 
