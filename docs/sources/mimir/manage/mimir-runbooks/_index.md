@@ -1543,6 +1543,7 @@ How it **works**:
 
 How to **investigate**:
 
+- Find the offsets which were missed. The ingester logs them along with the message `there is a gap in consumed offsets`.
 - Verify that there have been no deleted records in your Kafka cluster.
 - Verify that the ingester hasn't been down for longer than the retention on the Kafka partition.
 - Report a bug.
