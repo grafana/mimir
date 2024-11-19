@@ -202,8 +202,10 @@ func (fr *fetchResult) Merge(older fetchResult) fetchResult {
 
 func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
 	return fetchResult{
-		ctx:            ctx,
-		fetchedBytes:   0,
+		ctx:          ctx,
+		fetchedBytes: 0,
+
+		// TODO this is dangerous: we set Err and the Partition is the zero value, which is a valid partition ID
 		FetchPartition: kgo.FetchPartition{Err: err},
 	}
 }
@@ -578,7 +580,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 			f := r.fetchSingle(ctx, w)
 
-			// TODO f.Err could be valued!
+			// TODO f.Err could be valued, but then we merge previousResult on a response that has Err set
 
 			// We increase the count of buffered records as soon as we fetch them.
 			r.bufferedFetchedRecords.Add(int64(len(f.Records)))
