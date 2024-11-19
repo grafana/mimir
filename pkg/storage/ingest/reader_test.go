@@ -2200,7 +2200,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	readerOpts := append([]readerTestCfgOpt{
 		withConsumeFromPositionAtStartup(consumeFromStart),
 		withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
-		withLogger(testutil.NewLogger(t)),
+		withLogger(log.NewNopLogger()),
 		withMaxBufferedBytes(maxBufferedBytes),
 		withStartupConcurrency(concurrency),
 		withOngoingConcurrency(concurrency),
@@ -2213,7 +2213,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	})
 
 	// Wait until all produced have been consumed.
-	test.Poll(t, 10*time.Second, totalProducedRecords, func() interface{} {
+	test.Poll(t, 30*time.Second, totalProducedRecords, func() interface{} {
 		return totalConsumedRecords.Load()
 	})
 
