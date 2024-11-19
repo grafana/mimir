@@ -578,6 +578,8 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 			f := r.fetchSingle(ctx, w)
 
+			// TODO f.Err could be valued!
+
 			// We increase the count of buffered records as soon as we fetch them.
 			r.bufferedFetchedRecords.Add(int64(len(f.Records)))
 
