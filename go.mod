@@ -1,10 +1,10 @@
 module github.com/grafana/mimir
 
-go 1.22.0
+go 1.22.7
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
-toolchain go1.22.5
+toolchain go1.23.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.1
@@ -91,7 +91,7 @@ require (
 	golang.org/x/term v0.26.0
 	google.golang.org/api v0.196.0
 	google.golang.org/protobuf v1.35.2
-	sigs.k8s.io/kustomize/kyaml v0.16.0
+	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
 require (
@@ -256,7 +256,7 @@ require (
 	github.com/sercand/kuberesolver/v5 v5.1.1 // indirect
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
-	github.com/spf13/cobra v1.7.0 // indirect
+	github.com/spf13/cobra v1.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
