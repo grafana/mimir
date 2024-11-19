@@ -36,7 +36,7 @@ type VectorScalarBinaryOperation struct {
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
 
-type vectorScalarBinaryOperationFunc func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
+type vectorScalarBinaryOperationFunc func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error)
 
 func NewVectorScalarBinaryOperation(
 	scalar types.ScalarOperator,
@@ -75,21 +75,21 @@ func NewVectorScalarBinaryOperation(
 	}
 
 	if !b.ScalarIsLeftSide {
-		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
 			return f(vectorF, scalar, vectorH, nil)
 		}
 	} else if op.IsComparisonOperator() && !returnBool {
-		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-			_, _, ok, err := f(scalar, vectorF, nil, vectorH)
+		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
+			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH)
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
 			//
 			// We deliberately ignore the histogram value as we need to treat it as if it were a float with value 0,
 			// pending the resolution of the discussion in https://github.com/prometheus/prometheus/issues/13934#issuecomment-2372947976.
-			return vectorF, vectorH, ok, err
+			return vectorF, vectorH, keep, valid, err
 		}
 	} else {
-		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
 			return f(scalar, vectorF, nil, vectorH)
 		}
 	}
@@ -177,9 +177,9 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	v.vectorIterator.Reset(series)
 
 	for {
-		t, vectorF, vectorH, ok := v.vectorIterator.Next()
+		t, vectorF, vectorH, keep := v.vectorIterator.Next()
 
-		if !ok {
+		if !keep {
 			// We are done.
 			break
 		}
@@ -187,7 +187,7 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 		scalarIdx := (t - v.timeRange.StartT) / v.timeRange.IntervalMilliseconds // Scalars always have a value at every step, so we can just compute the index of the corresponding scalar value from the timestamp.
 		scalarValue := v.scalarData.Samples[scalarIdx].F
 
-		f, h, ok, err := v.opFunc(scalarValue, vectorF, vectorH)
+		f, h, keep, valid, err := v.opFunc(scalarValue, vectorF, vectorH)
 		if err != nil {
 			err = functions.NativeHistogramErrorToAnnotation(err, v.emitAnnotation)
 			if err == nil {
@@ -198,15 +198,15 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		if !ok {
-			if isArithmeticOperation(v.Op) {
-				if v.ScalarIsLeftSide {
-					emitIncompatibleTypesAnnotation(v.annotations, v.Op, nil, vectorH, v.expressionPosition)
-				} else {
-					emitIncompatibleTypesAnnotation(v.annotations, v.Op, vectorH, nil, v.expressionPosition)
-				}
+		if !valid {
+			if v.ScalarIsLeftSide {
+				emitIncompatibleTypesAnnotation(v.annotations, v.Op, nil, vectorH, v.expressionPosition)
+			} else {
+				emitIncompatibleTypesAnnotation(v.annotations, v.Op, vectorH, nil, v.expressionPosition)
 			}
+		}
 
+		if !keep {
 			continue
 		}
 

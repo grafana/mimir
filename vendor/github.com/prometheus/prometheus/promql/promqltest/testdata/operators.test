@@ -7,7 +7,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
-	http_requests_histogram{job="app-server", instance="1", group="production"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}x11
+    http_requests_histogram{job="app-server", instance="1", group="production"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}x11
 
 load 5m
 	vector_matching_a{l="x"} 0+1x100
