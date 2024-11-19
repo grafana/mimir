@@ -1535,15 +1535,15 @@ This alert fires when an ingester has missed processing some records from Kafka.
 
 How it **works**:
 
-- Ingester reads records from Kafka, and processes them sequentially. It keeps track of the offset of the last record it processed.
-- Upon fetching the next batch of records, it checks if the first available record has an offset one greater than the last processed offset. If the first available offset is larger than that, then the ingester has missed some records.
-- Kafka doesn't guarantee sequential offsets. If a record has been manually deleted from Kafka or the records have been produced in a transaction and the transaction was aborted, then there may be a gap.
+- The ingester reads records from Kafka and processes them sequentially. It keeps track of the offset of the last record it's processed.
+- Upon fetching the next batch of records, it checks if the first available record has an offset of one greater than the last processed offset. If the first available offset is larger than that, then the ingester has missed some records.
+- Kafka doesn't guarantee sequential offsets. If a record has been manually deleted from Kafka or if the records have been produced in a transaction and the transaction was aborted, then there may be a gap.
 - Mimir doesn't produce in transactions and does not delete records.
-- When the ingester starts up, it will attempt to resume from the last offset it processed. If the ingester has been unavailable for long enough that the next record is already removed due to retention, then the ingester will miss some records.
+- When the ingester starts, it attempts to resume from the last offset it processed. If the ingester has been unavailable for long enough that the next record is already removed due to retention, then the ingester misses some records.
 
 How to **investigate**:
 
-- Verify that there have been no deleted records in your Kafka cluster by humans or other applications.
+- Verify that there have been no deleted records in your Kafka cluster.
 - Verify that the ingester hasn't been down for longer than the retention on the Kafka partition.
 - Report a bug.
 
