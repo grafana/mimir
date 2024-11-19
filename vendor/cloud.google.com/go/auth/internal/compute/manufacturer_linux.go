@@ -1,4 +1,4 @@
-// Copyright 2021 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
-// +build linux
+package compute
 
-package metadata
+import "os"
 
-import (
-	"errors"
-	"syscall"
-)
+const linuxProductNameFile = "/sys/class/dmi/id/product_name"
 
-func init() {
-	// Initialize syscallRetryable to return true on transient socket-level
-	// errors. These errors are specific to Linux.
-	syscallRetryable = func(err error) bool {
-		return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED)
-	}
+func manufacturer() ([]byte, error) {
+	return os.ReadFile(linuxProductNameFile)
 }
