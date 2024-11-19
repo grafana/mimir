@@ -2074,7 +2074,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 
 	fetchResponseByRequestedOffset := map[int64]*kmsg.FetchResponse{}
 
-	for offset := int64(0); offset < totalProducedRecords; offset++ {
+	for offset := int64(0); offset < totalProducedRecords+1; offset++ {
 		// Build a Fetch request.
 		req := kmsg.NewFetchRequest()
 		req.MinBytes = 1
@@ -2171,7 +2171,11 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 			return res, nil, true
 		}
 
-		return nil, errors.New("the offset requested has not been found among the ones we previously fetched"), true
+		if req.Topics[0].Partitions[0].FetchOffset < totalProducedRecords {
+			return nil, errors.New("the offset requested has not been found among the ones we previously fetched"), true
+		}
+
+		return nil, nil, false
 	})
 
 	//
