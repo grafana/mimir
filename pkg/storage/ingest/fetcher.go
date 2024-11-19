@@ -562,6 +562,10 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 	})
 
 	for w := range wants {
+		// TODO DEBUG
+		fmt.Println("fetchWant - startOffset:", w.startOffset, "endOffset:", w.endOffset)
+		//time.Sleep(time.Second)
+
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
 		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)

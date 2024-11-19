@@ -5,6 +5,7 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"math"
@@ -1142,6 +1143,218 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		pollFetchesAndAssertNoRecords(t, fetchers)
 	})
+
+	t.Run("TODO", func(t *testing.T) {
+		t.Parallel()
+
+		const (
+			topicName   = "test-topic"
+			partitionID = 1
+			concurrency = 5
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		fetchSingleRecordsBatch := func(topicName string, topicID [16]byte, partitionID int32, offset int64) (*kmsg.FetchResponse, error) {
+			req := kmsg.NewFetchRequest()
+			req.MinBytes = 1
+			req.Version = 13
+			req.MaxWaitMillis = 100
+			req.MaxBytes = math.MaxInt32 // TODO ?
+
+			reqTopic := kmsg.NewFetchRequestTopic()
+			reqTopic.Topic = topicName
+			reqTopic.TopicID = topicID
+
+			reqPartition := kmsg.NewFetchRequestTopicPartition()
+			reqPartition.Partition = partitionID
+			reqPartition.FetchOffset = offset
+			reqPartition.PartitionMaxBytes = 1
+			reqPartition.CurrentLeaderEpoch = 0 // TODO needed?
+
+			reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
+			req.Topics = append(req.Topics, reqTopic)
+
+			kres, err := client.Request(context.Background(), &req)
+			if err != nil {
+				return nil, err
+			}
+
+			res := kres.(*kmsg.FetchResponse)
+			if len(res.Topics) != 1 {
+				return nil, fmt.Errorf("expected 1 topic, got %d", len(res.Topics))
+			}
+			if len(res.Topics[0].Partitions) != 1 {
+				return nil, fmt.Errorf("expected 1 partition, got %d", len(res.Topics[0].Partitions))
+			}
+			// TODO check that we really read a single batch
+
+			return res, nil
+		}
+
+		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := kreq.(*kmsg.FetchRequest)
+
+			// We expect only 1 partition.
+			if len(req.Topics) != 1 {
+				return nil, fmt.Errorf("expected 1 topic, got %d", len(req.Topics)), true
+			}
+			if len(req.Topics[0].Partitions) != 1 {
+				return nil, fmt.Errorf("expected 1 partition, got %d", len(req.Topics[0].Partitions)), true
+			}
+			// TODO add assertion to ensure PartitionMaxBytes is close to the expected one
+
+			// TODO DEBUG
+			topicReq := req.Topics[0].Partitions[0]
+			fmt.Println("FetchOffset:", topicReq.FetchOffset, "max bytes:", topicReq.PartitionMaxBytes)
+
+			fmt.Println("fetchSingleRecordsBatch()")
+			batchRes, err := fetchSingleRecordsBatch(req.Topics[0].Topic, req.Topics[0].TopicID, topicReq.Partition, topicReq.FetchOffset)
+			fmt.Println("fetchSingleRecordsBatch() response > batchRes:", batchRes, "err:", err)
+			if err != nil {
+				return nil, err, true
+			}
+
+			return batchRes, nil, true
+			/*
+				res := &kmsg.FetchResponse{
+					Version:        req.Version,
+					ThrottleMillis: 0,
+					ErrorCode:      0,
+					Topics: []kmsg.FetchResponseTopic{
+						{
+							Topic:   req.Topics[0].Topic,
+							TopicID: req.Topics[0].TopicID,
+							Partitions: []kmsg.FetchResponseTopicPartition{
+								{
+									Partition:        req.Topics[0].Partitions[0].Partition,
+									ErrorCode:        0,
+									HighWatermark:    2, // TODO
+									LastStableOffset: 2,
+									LogStartOffset:   -1,
+									RecordBatches:    []byte{},
+								},
+							},
+						},
+					},
+				}
+				return res, nil, true
+			*/
+
+			return nil, nil, false
+		})
+
+		const recordSizeBytes = 10_000  // TODO export initialBytesPerRecord and reuse it
+		const minFetchBytes = 1_000_000 // TODO set in fetchWant.MaxBytes() -> move it to a constant
+		const recordsPerFetch = minFetchBytes / recordSizeBytes
+		const maxInflightBytes = concurrency * recordsPerFetch * recordSizeBytes
+
+		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, int32(maxInflightBytes))
+
+		// Produce enough records so that we'll fetch concurrently.
+		const totalProducedRecords = concurrency * recordsPerFetch
+
+		for i := 0; i < totalProducedRecords; i++ {
+			// Fill the record with random data, in order to reduce the compression ratio and get the compressed
+			// record byte size as close as possible to the uncompressed one.
+			// TODO we should probably change all tests accordingly
+			randomData := make([]byte, recordSizeBytes)
+			_, err := rand.Read(randomData)
+			require.NoError(t, err)
+
+			recordValue := append([]byte(fmt.Sprintf("record-%05d", i)), randomData...)
+			produceRecord(ctx, t, client, topicName, partitionID, recordValue)
+		}
+		t.Logf("Produced %d records", totalProducedRecords)
+
+		// Consume records.
+		totalConsumedRecords := 0
+		consumedOffsets := map[int64]struct{}{}
+
+		for totalConsumedRecords < totalProducedRecords {
+			fetches, _ := fetchers.PollFetches(ctx)
+			totalConsumedRecords += fetches.NumRecords()
+
+			fetches.EachRecord(func(record *kgo.Record) {
+				consumedOffsets[record.Offset] = struct{}{}
+			})
+		}
+
+		require.Equal(t, totalProducedRecords, len(consumedOffsets), "Should have consumed all records")
+	})
+
+	/*
+		t.Run("TODO", func(t *testing.T) {
+			t.Parallel()
+
+			const (
+				topicName   = "test-topic"
+				partitionID = 1
+				concurrency = 3
+
+				recordSizeBytes      = 1000
+				totalProducedRecords = 6000
+			)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+			client := newKafkaProduceClient(t, clusterAddr)
+
+			cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+				req := kreq.(*kmsg.FetchRequest)
+
+				// TODO DEBUG
+				fmt.Println("FetchOffset:", req.Topics[0].Partitions[0].FetchOffset)
+
+				return nil, nil, false
+			})
+
+			fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+
+			// Run a producer.
+			go func() {
+				defer wg.Done()
+
+				recordValue := bytes.Repeat([]byte{'a'}, recordSizeBytes)
+				for i := 0; i < totalProducedRecords; i++ {
+					produceRecord(ctx, t, client, topicName, partitionID, recordValue)
+				}
+			}()
+
+			// Run a consumer
+			totalConsumedRecords := 0
+			consumedOffsets := make(map[int64]struct{}, totalProducedRecords)
+
+			go func() {
+				defer wg.Done()
+
+				for totalConsumedRecords < totalProducedRecords {
+					fetches, _ := fetchers.PollFetches(ctx)
+					totalConsumedRecords += fetches.NumRecords()
+
+					fetches.EachRecord(func(record *kgo.Record) {
+						consumedOffsets[record.Offset] = struct{}{}
+					})
+				}
+			}()
+
+			// Wait until both producers and consumers have done.
+			wg.Wait()
+
+			require.Equal(t, totalProducedRecords, len(consumedOffsets), "Should have consumed all records")
+		})
+	*/
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
