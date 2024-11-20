@@ -2115,7 +2115,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 		}
 
 		rawPartitionResp := res.Topics[0].Partitions[0]
-		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(m kgo.FetchBatchMetrics) {})
+		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(_ kgo.FetchBatchMetrics) {})
 
 		// Ensure we got a low number of records, otherwise the premise of this test is wrong
 		// because we want a single fetchWatch to be fulfilled in many Fetch requests.
@@ -2202,14 +2202,14 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	})
 
 	// Create and start the reader.
-	readerOpts := append([]readerTestCfgOpt{
+	readerOpts := []readerTestCfgOpt{
 		withConsumeFromPositionAtStartup(consumeFromStart),
 		withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
 		withLogger(log.NewNopLogger()),
 		withMaxBufferedBytes(maxBufferedBytes),
 		withStartupConcurrency(concurrency),
 		withOngoingConcurrency(concurrency),
-	})
+	}
 
 	reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
 	require.NoError(t, reader.StartAsync(ctx))
