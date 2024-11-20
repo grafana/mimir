@@ -517,13 +517,21 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 
 		// Filter out missing rule groups, so they're not returned by the API (they haven't been loaded,
 		// so their content is empty).
+		numRuleGroupsBeforeFiltering := len(rgs)
 		tenantRuleGroups := map[string]rulespb.RuleGroupList{userID: rgs}
 		tenantRuleGroups = filterRuleGroupsByNotMissing(tenantRuleGroups, missing, a.logger)
 
 		var tenantFound bool
 		rgs, tenantFound = tenantRuleGroups[userID]
+
 		if !tenantFound && len(missing) < len(rgs) {
 			// This should never happen, unless a bug.
+			level.Error(logger).Log(
+				"msg", "list rules API has filtered out more rule groups than expected when removing missing rule groups from the response",
+				"user", userID,
+				"rule_groups_before_filtering", numRuleGroupsBeforeFiltering,
+				"rule_groups_to_filter", len(missing))
+
 			http.Error(w, "an error occurred when filtering missing rule groups", http.StatusInternalServerError)
 			return
 		}
