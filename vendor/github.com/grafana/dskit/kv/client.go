@@ -42,9 +42,10 @@ var (
 // Consul, Etcd, Memberlist or MultiClient. It was extracted from Config to keep
 // single-client config separate from final client-config (with all the wrappers)
 type StoreConfig struct {
-	Consul consul.Config `yaml:"consul"`
-	Etcd   etcd.Config   `yaml:"etcd"`
-	Multi  MultiConfig   `yaml:"multi"`
+	Consul             consul.Config       `yaml:"consul"`
+	Etcd               etcd.Config         `yaml:"etcd"`
+	MemberlistKVConfig memberlist.KVConfig `yaml:"memberlist"`
+	Multi              MultiConfig         `yaml:"multi"`
 
 	// Function that returns memberlist.KV store to use. By using a function, we can delay
 	// initialization of memberlist.KV until it is actually required.
@@ -74,6 +75,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(flagsPrefix, defaultPrefix string, f 
 	cfg.Consul.RegisterFlags(f, flagsPrefix)
 	cfg.Etcd.RegisterFlagsWithPrefix(f, flagsPrefix)
 	cfg.Multi.RegisterFlagsWithPrefix(f, flagsPrefix)
+	cfg.MemberlistKVConfig.RegisterFlagsWithPrefix(f, flagsPrefix)
 
 	if flagsPrefix == "" {
 		flagsPrefix = "ring."
