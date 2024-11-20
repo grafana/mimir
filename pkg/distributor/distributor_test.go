@@ -1929,6 +1929,29 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "received a series whose number of labels exceeds the limit",
 		},
+		"too many labels limit reached with cost attribution enabled": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxLabelNamesPerSeries = 30
+				limits.CostAttributionLabels = []string{"team"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					metrics[i] = mkLabels(30, "team", strconv.Itoa(i%4))
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			customRegistry: prometheus.NewRegistry(),
+			expectedErr:    "received a series whose number of labels exceeds the limit",
+		},
 		"max label name length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MaxLabelNameLength = 200
