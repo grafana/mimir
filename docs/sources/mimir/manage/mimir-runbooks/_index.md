@@ -1408,11 +1408,28 @@ How to **investigate** and **fix** it:
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
+
   - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
   - If you suspect this may be an issue:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
+
+- Check if the persistent volume is nearing its limit and determine if it needs to be increased.
+
+  - If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, you must disable it before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone. To disable automatic downscaling for store-gateways,
+    set `$._config.store_gateway_automated_downscale_enabled = false`.
+
+  ```jsonnet
+  {
+    _config+:
+    {
+      store_gateway_automated_downscale_enabled: false
+    }
+  }
+  ```
+
+  - After the resizing process finishes, revert this change.
 
 ## Mimir ingest storage (experimental)
 
