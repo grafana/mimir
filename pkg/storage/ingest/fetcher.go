@@ -32,6 +32,14 @@ const (
 
 	// chosenBrokerDied duplicates a constant from franz-go because it isn't exported.
 	chosenBrokerDied = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
+
+	// initialBytesPerRecord is the initial number of estimated bytes per record.
+	// We start with an estimation, we will update it as we consume.
+	initialBytesPerRecord = 10_000
+
+	// forcedMinValueForMaxBytes is the lowest value we set in Fetch request's MaxBytes.
+	// When we're fetching few records, we can afford to over-fetch to avoid more requests.
+	forcedMinValueForMaxBytes = 1_000_000
 )
 
 type fetcher interface {
@@ -100,7 +108,7 @@ func (w fetchWant) MaxBytes() int32 {
 		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
 		return math.MaxInt32
 	}
-	fetchBytes = max(1_000_000, fetchBytes) // when we're fetching few records, we can afford to over-fetch to avoid more requests.
+	fetchBytes = max(forcedMinValueForMaxBytes, fetchBytes)
 	return int32(fetchBytes)
 }
 
@@ -186,8 +194,18 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
-// Merge merges other with an older fetchResult. Merge keeps most of the fields of fr and assumes they are more up-to-date than older.
+// Merge merges older with into fr. Merge keeps most of the fields of fr and assumes they
+// are more up-to-date than older.
+//
+// This function panics if one of the two fetchResult has Err set (errors MUST not be merged).
 func (fr *fetchResult) Merge(older fetchResult) fetchResult {
+	if fr.Err != nil {
+		panic("fetchResult.Merge() has been called on a fetchResult with Err set")
+	}
+	if older.Err != nil {
+		panic("fetchResult.Merge() has been called with older fetchResult with Err set")
+	}
+
 	if older.ctx != nil {
 		level.Debug(spanlogger.FromContext(older.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
 	}
@@ -250,6 +268,10 @@ type concurrentFetchers struct {
 	lastReturnedRecord int64
 	startOffsets       *genericOffsetReader[int64]
 
+	// fetchBackoffConfig is the config to use for the backoff in case of Fetch errors.
+	// We set it here so that tests can override it run faster.
+	fetchBackoffConfig backoff.Config
+
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
 	trackCompressedBytes  bool
 	maxBufferedBytesLimit int32
@@ -273,8 +295,17 @@ func newConcurrentFetchers(
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
 	startOffsetsReader *genericOffsetReader[int64],
+	fetchBackoffConfig backoff.Config,
 	metrics *readerMetrics,
 ) (*concurrentFetchers, error) {
+	if fetchBackoffConfig.MaxBackoff == 0 {
+		// Ensure it's not the zero value, which means we haven't got the backoff config due to a bug.
+		return nil, errors.New("fetchBackoffConfig.MaxBackoff has not been set")
+	}
+	if fetchBackoffConfig.MaxRetries != 0 {
+		// It's critical for concurrentFetchers that failed Fetch requests are retried forever.
+		return nil, errors.New("fetchBackoffConfig.MaxRetries must be 0")
+	}
 
 	var err error
 	switch startOffset {
@@ -310,6 +341,7 @@ func newConcurrentFetchers(
 		tracer:                  recordsTracer(),
 		orderedFetches:          make(chan fetchResult),
 		done:                    make(chan struct{}),
+		fetchBackoffConfig:      fetchBackoffConfig,
 	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
@@ -590,46 +622,42 @@ func sumRecordLengths(records []*kgo.Record) (sum int) {
 func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger, highWatermark *atomic.Int64) {
 	defer r.wg.Done()
 
-	errBackoff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 250 * time.Millisecond,
-		MaxBackoff: 2 * time.Second,
-		MaxRetries: 0, // retry forever
-	})
+	errBackoff := backoff.New(ctx, r.fetchBackoffConfig)
 
 	for w := range wants {
-		// TODO DEBUG
-		fmt.Println("fetchWant - startOffset:", w.startOffset, "endOffset:", w.endOffset)
-		//time.Sleep(time.Second)
-
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
 		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
-		var previousResult fetchResult
+		// This current buffered fetchResult that has not been sent to the result channel yet.
+		// This is empty at the beginning, then we merge records as soon as we receive them
+		// from the Fetch response(s).
+		var bufferedResult fetchResult
+
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
 			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
-			f := r.fetchSingle(ctx, w)
+			// Run a single Fetch request.
+			if res := r.fetchSingle(ctx, w); res.Err != nil {
+				// We got an error. We handle it and then discard this fetch result content.
+				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
+			} else {
+				// We increase the count of buffered records as soon as we fetch them.
+				r.bufferedFetchedRecords.Add(int64(len(res.Records)))
 
-			// TODO f.Err could be valued, but then we merge previousResult on a response that has Err set
-			if f.Err != nil {
-				fmt.Println("fetchSingle() returned err:", f.Err)
+				// Update the high watermark.
+				if hwm := res.HighWatermark; hwm >= 0 {
+					casHWM(highWatermark, hwm)
+				}
+
+				// Merge the last fetch result if the previous buffered result (if any).
+				// Keep non-mergeable fields from res, because the last response is the most updated one.
+				bufferedResult = res.Merge(bufferedResult)
 			}
 
-			// We increase the count of buffered records as soon as we fetch them.
-			r.bufferedFetchedRecords.Add(int64(len(f.Records)))
-
-			f = f.Merge(previousResult)
-			previousResult = f
-			if f.Err != nil {
-				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
-			}
-			if hwm := f.HighWatermark; hwm >= 0 {
-				casHWM(highWatermark, hwm)
-			}
-			if len(f.Records) == 0 {
+			if len(bufferedResult.Records) == 0 {
 				// Typically if we had an error, then there wouldn't be any records.
 				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
 				attemptSpan.Finish()
@@ -645,9 +673,10 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 				continue
 			}
+
 			// Next attempt will be from the last record onwards.
-			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
-			w = w.UpdateBytesPerRecord(f.fetchedBytes, len(f.Records)) // This takes into account the previousFetch too. This should give us a better average than using just the records from the last attempt.
+			w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
+			w = w.UpdateBytesPerRecord(bufferedResult.fetchedBytes, len(bufferedResult.Records)) // This takes into account the previous fetch too. This should give us a better average than using just the records from the last attempt.
 
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
 			// We don't want to slow down until we hit a larger error.
@@ -659,21 +688,21 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				attemptSpan.Finish()
 				close(w.result)
 				return
-			case w.result <- f:
-				previousResult = fetchResult{}
+			case w.result <- bufferedResult:
+				bufferedResult = fetchResult{}
 			case <-ctx.Done():
 			default:
 				if w.startOffset >= w.endOffset {
 					// We've fetched all we were asked for the whole batch is ready, and we definitely have to wait to send on the channel now.
-					f.startWaitingForConsumption()
+					bufferedResult.startWaitingForConsumption()
 					select {
 					case <-r.done:
 						wantSpan.Finish()
 						attemptSpan.Finish()
 						close(w.result)
 						return
-					case w.result <- f:
-						previousResult = fetchResult{}
+					case w.result <- bufferedResult:
+						bufferedResult = fetchResult{}
 					case <-ctx.Done():
 					}
 				}
@@ -731,8 +760,6 @@ func (w *inflightFetchWants) removeNextResult() {
 }
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
-	const initialBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
-
 	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
 
@@ -849,7 +876,6 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 	var errString string
 	if err != nil {
 		errString = err.Error()
-
 	}
 
 	switch {

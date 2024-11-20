@@ -2017,21 +2017,31 @@ func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t
 	require.Zero(t, reader.BufferedRecords())
 }
 
+// This test is critical because it reproduces a bug that caused data loss. This test has been designed to
+// *not* mock PartitionReader or concurrentFetchers, and just mock responses from Kafka to reproduce a scenario
+// where *both* conditions are met:
+// 1. Fetch request failures
+// 2. Fetch responses containing less records than requested
 func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailuresWithConcurrentFetcherIsUsed(t *testing.T) {
+	t.Parallel()
+
 	const (
 		topicName   = "test-topic"
 		partitionID = 1
 		concurrency = 5
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
 
 	cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 	client := newKafkaProduceClient(t, clusterAddr)
 
-	const recordSizeBytes = 10_000  // TODO export initialBytesPerRecord and reuse it
-	const minFetchBytes = 1_000_000 // TODO set in fetchWant.MaxBytes() -> move it to a constant
+	// We generate records that match the initialBytesPerRecord expectation, so that
+	// we get concurrent Fetch requests since the beginning (a part from the very first
+	// Fetch request which is sequential because we don't have the HWM yet).
+	const recordSizeBytes = initialBytesPerRecord
+	const minFetchBytes = forcedMinValueForMaxBytes
 	const recordsPerFetch = minFetchBytes / recordSizeBytes
 	const maxBufferedBytes = concurrency * recordsPerFetch * recordSizeBytes
 
@@ -2040,17 +2050,8 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 
 	// Produce enough records so that we'll fetch concurrently.
 	const totalProducedRecords = concurrency * recordsPerFetch
-
 	for i := 0; i < totalProducedRecords; i++ {
-		// Fill the record with random data, in order to reduce the compression ratio and get the compressed
-		// record byte size as close as possible to the uncompressed one.
-		// TODO we should probably change all tests accordingly
-		randomData := make([]byte, recordSizeBytes)
-		_, err := crypto_rand.Read(randomData)
-		require.NoError(t, err)
-
-		recordValue := append([]byte(fmt.Sprintf("record-%05d", i)), randomData...)
-		produceRecord(ctx, t, client, topicName, partitionID, recordValue)
+		produceRandomRecord(ctx, t, client, topicName, partitionID, recordSizeBytes, fmt.Sprintf("record-%05d", i))
 	}
 
 	t.Logf("Produced %d records", totalProducedRecords)
@@ -2184,7 +2185,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 
 	var (
 		totalConsumedRecords = atomic.NewInt64(0)
-		consumedRecordIDs    = map[int64]struct{}{}
+		consumedRecordIDs    = sync.Map{}
 	)
 
 	consumer := consumerFunc(func(_ context.Context, records []record) error {
@@ -2194,7 +2195,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 			// Parse the record ID from the actual record data.
 			recordID, err := strconv.ParseInt(string(rec.content[7:12]), 10, 64)
 			require.NoError(t, err)
-			consumedRecordIDs[recordID] = struct{}{}
+			consumedRecordIDs.Store(recordID, struct{}{})
 		}
 
 		return nil
@@ -2217,18 +2218,15 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 	})
 
 	// Wait until all produced have been consumed.
-	test.Poll(t, 30*time.Second, int64(totalProducedRecords), func() interface{} {
+	test.Poll(t, 60*time.Second, int64(totalProducedRecords), func() interface{} {
 		return totalConsumedRecords.Load()
 	})
 
 	// Ensure that the actual records content match the expected one.
-	require.Equal(t, totalProducedRecords, len(consumedRecordIDs))
 	for i := int64(0); i < totalProducedRecords; i++ {
-		_, found := consumedRecordIDs[i]
+		_, found := consumedRecordIDs.Load(i)
 		require.Truef(t, found, "Expected to find a consumed record with ID %d", i)
 	}
-
-	// TODO assert no buffered records
 }
 
 func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
@@ -2556,6 +2554,17 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 	require.NoError(t, produceResult.FirstErr())
 
 	return rec.Offset
+}
+
+// produceRandomRecord produces a record with random data, in order to reduce the compression ratio and
+// get the compressed record byte size as close as possible to the uncompressed one.
+func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, dataSize int, dataPrefix string) {
+	randomData := make([]byte, dataSize-len(dataPrefix))
+	_, err := crypto_rand.Read(randomData)
+	require.NoError(t, err)
+
+	recordValue := append([]byte(dataPrefix), randomData...)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, recordValue)
 }
 
 type readerTestCfg struct {
