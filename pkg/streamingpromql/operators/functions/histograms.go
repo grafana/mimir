@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -55,7 +56,10 @@ type bucketGroup struct {
 	pointBuckets         []buckets       // Buckets for the grouped series at each step
 	nativeHistograms     []promql.HPoint // Histograms should only ever exist once per group
 	remainingSeriesCount uint            // The number of series remaining before this group is fully collated.
-	firstInputSeriesIdx  int             // All the input series should have the same Metric name (from innerSeriesMetricNames). We just need one index to determine the group name, so we take the first series.
+
+	// All the input series should have the same Metric name (from innerSeriesMetricNames).
+	// We just need one index to determine the group name, so we take the last series, as we also use that to sort the groups by.
+	lastInputSeriesIdx int
 }
 
 // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
@@ -136,7 +140,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		if !groupExists {
 			g.labels = series.Labels
 			g.group = bucketGroupPool.Get()
-			g.group.firstInputSeriesIdx = innerIdx
+			g.group.lastInputSeriesIdx = innerIdx
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
@@ -152,7 +156,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 				lb.Del(labels.BucketLabel)
 				g.labels = lb.Labels()
 				g.group = bucketGroupPool.Get()
-				g.group.firstInputSeriesIdx = innerIdx
+				g.group.lastInputSeriesIdx = innerIdx
 				groups[string(b)] = g
 			}
 			g.group.remainingSeriesCount++
@@ -166,6 +170,10 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
 		h.remainingGroups = append(h.remainingGroups, g.group)
 	}
+
+	// Sort the groups by the last series within them. This helps finish a group
+	// as soon as possible when accumulating them.
+	sort.Sort(bucketGroupSorter{seriesMetadata, h.remainingGroups})
 
 	return seriesMetadata, nil
 }
@@ -182,7 +190,7 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 	defer func() {
 		// Reset the group before returning to the pool
 		//thisGroup.groupedMetricName = ""
-		thisGroup.firstInputSeriesIdx = 0
+		thisGroup.lastInputSeriesIdx = 0
 		thisGroup.pointBuckets = nil
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
@@ -307,7 +315,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
-				h.innerSeriesMetricNames.GetMetricNameForSeries(g.firstInputSeriesIdx), h.inner.ExpressionPosition(),
+				h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
 			))
 			continue
 		}
@@ -322,7 +330,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 				// Currently Prometheus does not correctly place the metric name onto this annotation.
 				// See: https://github.com/prometheus/prometheus/issues/15411
 				h.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-					h.innerSeriesMetricNames.GetMetricNameForSeries(g.firstInputSeriesIdx), h.inner.ExpressionPosition(),
+					h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
 				))
 			}
 			continue
@@ -350,4 +358,22 @@ func (h *HistogramFunctionOverInstantVector) Close() {
 	h.inner.Close()
 	h.phArg.Close()
 	types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)
+}
+
+type bucketGroupSorter struct {
+	metadata []types.SeriesMetadata
+	groups   []*bucketGroup
+}
+
+func (g bucketGroupSorter) Len() int {
+	return len(g.metadata)
+}
+
+func (g bucketGroupSorter) Less(i, j int) bool {
+	return g.groups[i].lastInputSeriesIdx < g.groups[j].lastInputSeriesIdx
+}
+
+func (g bucketGroupSorter) Swap(i, j int) {
+	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
+	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
 }
