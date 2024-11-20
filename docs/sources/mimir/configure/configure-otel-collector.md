@@ -17,7 +17,7 @@ When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector
 
 ## Use the OpenTelemetry protocol
 
-Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter and native Mimir endpoint. For example:
+Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter and the native Mimir endpoint. For example:
 
 ```yaml
 exporters:
