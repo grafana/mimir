@@ -1341,6 +1341,87 @@ func TestTODO(t *testing.T) {
 	}
 }
 
+func TestConcurrentFetchers_parseFetchResponse(t *testing.T) {
+	const (
+		topic       = "test-topic"
+		partitionID = 1
+	)
+
+	var (
+		ctx            = context.Background()
+		_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
+		client         = newKafkaProduceClient(t, clusterAddr)
+		fetchers       = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+	)
+
+	t.Run("should return error if the response does not contain any topic", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{})
+		require.Error(t, res.Err)
+	})
+
+	t.Run("should return error if the response contains an error at the response level", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{ErrorCode: kerr.UnknownServerError.Code})
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "received error")
+	})
+
+	t.Run("should return error if the response contains more than 1 topic", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{
+			{TopicID: fetchers.topicID},
+			{TopicID: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+		}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected number of topics")
+	})
+
+	t.Run("should return error if the response contains 1 topic but the topic ID is not the expected one", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{
+			{TopicID: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+		}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected topic ID")
+	})
+
+	t.Run("should return error if the response contains 1 topic with more than 1 partition", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{{
+			TopicID: fetchers.topicID,
+			Partitions: []kmsg.FetchResponseTopicPartition{
+				{Partition: 0},
+				{Partition: 1},
+			},
+		}}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected number of partitions")
+	})
+
+	t.Run("should return error if the response contains 1 topic with 1 partition but the partition is not the expected one", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{{
+			TopicID: fetchers.topicID,
+			Partitions: []kmsg.FetchResponseTopicPartition{
+				{Partition: 12345},
+			},
+		}}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected partition ID")
+	})
+
+	t.Run("should return error if the response contains an error for the partition", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{{
+			TopicID: fetchers.topicID,
+			Partitions: []kmsg.FetchResponseTopicPartition{
+				{Partition: fetchers.partitionID, ErrorCode: kerr.UnknownServerError.Code},
+			},
+		}}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, kerr.ErrorForCode(kerr.UnknownServerError.Code).Error())
+	})
+}
+
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()

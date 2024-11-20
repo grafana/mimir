@@ -487,15 +487,33 @@ func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) 
 }
 
 func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset int64, resp *kmsg.FetchResponse) fetchResult {
-	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
-	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
+	// We ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest,
+	// so the broker _probably_ doesn't have a recommended replica for us.
+
+	// Ensure we got the expected partition and no error occurred. If we get something we didn't expect, maybe we're sending
+	// the wrong request or there's a bug in the kafka implementation. Even in case of errors we get the topic partition.
+	if resp.ErrorCode != 0 {
+		// The FetchResponse.ErrorCode should be never set for our use case. This error code was added for support for KIP-227
+		// and is only set if we're using fetch sessions. We don't use fetch sessions. However, we check it anyway to make
+		// in case it will change in future (or some Kafka-compatible backends set it even when sessions are not in use).
+		return newEmptyFetchResult(ctx, fmt.Errorf("received error code %d", resp.ErrorCode))
+	}
 
 	// Sanity check for the response we get.
-	// If we get something we didn't expect, maybe we're sending the wrong request or there's a bug in the kafka implementation.
-	// Even in case of errors we get the topic partition.
-	err := assertResponseContainsPartition(resp, r.topicID, r.partitionID)
-	if err != nil {
-		return newEmptyFetchResult(ctx, err)
+	if expected, actual := 1, len(resp.Topics); expected != actual {
+		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected number of topics in the Fetch response (expected: %d got: %d)", expected, actual))
+	}
+	if expected, actual := r.topicID, resp.Topics[0].TopicID; expected != actual {
+		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected topic ID in the Fetch response (expected: %s got %s)", expected, actual))
+	}
+	if expected, actual := 1, len(resp.Topics[0].Partitions); expected != actual {
+		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected number of partitions in the Fetch response (expected: %d got: %d)", expected, actual))
+	}
+	if expected, actual := r.partitionID, resp.Topics[0].Partitions[0].Partition; expected != actual {
+		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected partition ID in the Fetch response (expected: %d got %d)", expected, actual))
+	}
+	if code := resp.Topics[0].Partitions[0].ErrorCode; code != 0 {
+		return newEmptyFetchResult(ctx, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
 	parseOptions := kgo.ProcessFetchPartitionOptions{
@@ -527,24 +545,6 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		FetchPartition: partition,
 		fetchedBytes:   fetchedBytes,
 	}
-}
-
-func assertResponseContainsPartition(resp *kmsg.FetchResponse, topicID kadm.TopicID, partitionID int32) error {
-	if topics := resp.Topics; len(topics) < 1 || topics[0].TopicID != topicID {
-		receivedTopicID := kadm.TopicID{}
-		if len(topics) > 0 {
-			receivedTopicID = topics[0].TopicID
-		}
-		return fmt.Errorf("didn't find expected topic %s in fetch response; received topic %s", topicID, receivedTopicID)
-	}
-	if partitions := resp.Topics[0].Partitions; len(partitions) < 1 || partitions[0].Partition != partitionID {
-		receivedPartitionID := int32(-1)
-		if len(partitions) > 0 {
-			receivedPartitionID = partitions[0].Partition
-		}
-		return fmt.Errorf("didn't find expected partition %d in fetch response; received partition %d", partitionID, receivedPartitionID)
-	}
-	return nil
 }
 
 func sumRecordLengths(records []*kgo.Record) (sum int) {
