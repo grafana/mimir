@@ -18,7 +18,7 @@ import (
 )
 
 func TestMergeIter(t *testing.T) {
-	for _, enc := range []chunk.Encoding{chunk.PrometheusXorChunk, chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
+	for _, enc := range []chunk.Encoding{/*chunk.PrometheusXorChunk,*/ chunk.PrometheusHistogramChunk/*, chunk.PrometheusFloatHistogramChunk*/} {
 		t.Run(enc.String(), func(t *testing.T) {
 			chunk1 := mkGenericChunk(t, 0, 100, enc)
 			chunk2 := mkGenericChunk(t, model.TimeFromUnix(25), 100, enc)

@@ -92,7 +92,7 @@ func TestBatchStream_Merge(t *testing.T) {
 			s.batches = tc.batches
 
 			for i := range tc.newBatches {
-				s.merge(&tc.newBatches[i], chunk.BatchSize)
+				s.merge(&tc.newBatches[i], chunk.BatchSize, 0)
 			}
 
 			require.Equal(t, len(tc.output), len(s.batches))
