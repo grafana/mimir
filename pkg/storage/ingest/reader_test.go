@@ -4,9 +4,12 @@ package ingest
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"errors"
 	"fmt"
+	"math/rand"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -2014,6 +2017,218 @@ func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t
 	require.Zero(t, reader.BufferedRecords())
 }
 
+// This test is critical because it reproduces a bug that caused data loss. This test has been designed to
+// *not* mock PartitionReader or concurrentFetchers, and just mock responses from Kafka to reproduce a scenario
+// where *both* conditions are met:
+// 1. Fetch request failures
+// 2. Fetch responses containing less records than requested
+func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailuresWithConcurrentFetcherIsUsed(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName   = "test-topic"
+		partitionID = 1
+		concurrency = 5
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	t.Cleanup(cancel)
+
+	cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+	client := newKafkaProduceClient(t, clusterAddr)
+
+	// We generate records that match the initialBytesPerRecord expectation, so that
+	// we get concurrent Fetch requests since the beginning (a part from the very first
+	// Fetch request which is sequential because we don't have the HWM yet).
+	const recordSizeBytes = initialBytesPerRecord
+	const minFetchBytes = forcedMinValueForMaxBytes
+	const recordsPerFetch = minFetchBytes / recordSizeBytes
+	const maxBufferedBytes = concurrency * recordsPerFetch * recordSizeBytes
+
+	// We expect that fetchers will fetch more than 50 records per Fetch request.
+	require.Greater(t, recordsPerFetch, 50)
+
+	// Produce enough records so that we'll fetch concurrently.
+	const totalProducedRecords = concurrency * recordsPerFetch
+	for i := 0; i < totalProducedRecords; i++ {
+		produceRandomRecord(ctx, t, client, topicName, partitionID, recordSizeBytes, fmt.Sprintf("record-%05d", i))
+	}
+
+	t.Logf("Produced %d records", totalProducedRecords)
+
+	//
+	// Get topic ID.
+	//
+
+	topics, err := kadm.NewClient(client).ListTopics(ctx, topicName)
+	require.NoError(t, err)
+	require.NoError(t, topics.Error())
+	require.True(t, topics.Has(topicName))
+	topicID := topics[topicName].ID
+
+	t.Logf("Fetched topic ID")
+
+	//
+	// Fetch the raw record batches for each offset, so that it's easier to later mock the Kafka
+	// server and control the returned batches.
+	//
+
+	fetchResponseByRequestedOffset := map[int64]*kmsg.FetchResponse{}
+
+	for offset := int64(0); offset < totalProducedRecords+1; offset++ {
+		// Build a Fetch request.
+		req := kmsg.NewFetchRequest()
+		req.MinBytes = 1
+		req.Version = 13
+		req.MaxWaitMillis = 1000
+		req.MaxBytes = 1 // Request the minimum amount of bytes.
+
+		reqTopic := kmsg.NewFetchRequestTopic()
+		reqTopic.Topic = topicName
+		reqTopic.TopicID = topicID
+
+		reqPartition := kmsg.NewFetchRequestTopicPartition()
+		reqPartition.Partition = partitionID
+		reqPartition.FetchOffset = offset
+		reqPartition.PartitionMaxBytes = 1  // Request the minimum amount of bytes.
+		reqPartition.CurrentLeaderEpoch = 0 // Not needed here.
+
+		reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
+		req.Topics = append(req.Topics, reqTopic)
+
+		// Issue the Fetch request.
+		kres, err := client.Request(context.Background(), &req)
+		require.NoError(t, err)
+
+		res := kres.(*kmsg.FetchResponse)
+		require.Equal(t, int16(0), res.ErrorCode)
+		require.Equal(t, 1, len(res.Topics))
+		require.Equal(t, 1, len(res.Topics[0].Partitions))
+
+		// Parse the response, just to check how many records we got.
+		parseOptions := kgo.ProcessFetchPartitionOptions{
+			KeepControlRecords: false,
+			Offset:             offset,
+			IsolationLevel:     kgo.ReadUncommitted(),
+			Topic:              topicName,
+			Partition:          partitionID,
+		}
+
+		rawPartitionResp := res.Topics[0].Partitions[0]
+		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(_ kgo.FetchBatchMetrics) {})
+
+		// Ensure we got a low number of records, otherwise the premise of this test is wrong
+		// because we want a single fetchWatch to be fulfilled in many Fetch requests.
+		require.LessOrEqual(t, len(partition.Records), 5)
+
+		// Keep track of the raw response.
+		fetchResponseByRequestedOffset[offset] = res
+	}
+
+	t.Logf("Collected raw Fetch responses for all expected offsets")
+
+	//
+	// Mock the Kafka server to intercept Fetch requests, return less records than requested and
+	// inject random failures.
+	//
+
+	cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+
+		req := kreq.(*kmsg.FetchRequest)
+
+		// We expect only 1 partition.
+		if len(req.Topics) != 1 {
+			return nil, fmt.Errorf("expected 1 topic, got %d", len(req.Topics)), true
+		}
+		if len(req.Topics[0].Partitions) != 1 {
+			return nil, fmt.Errorf("expected 1 partition, got %d", len(req.Topics[0].Partitions)), true
+		}
+
+		// Simulate a 10% networking error rate.
+		if rand.Int()%10 == 0 {
+			return nil, errors.New("mocked error"), true
+		}
+
+		// Simulate a 10% Kafka error rate.
+		if rand.Int()%10 == 0 {
+			return &kmsg.FetchResponse{
+				Version:   req.Version,
+				ErrorCode: kerr.UnknownServerError.Code,
+				Topics: []kmsg.FetchResponseTopic{{
+					Topic:   req.Topics[0].Topic,
+					TopicID: req.Topics[0].TopicID,
+					Partitions: []kmsg.FetchResponseTopicPartition{{
+						Partition: req.Topics[0].Partitions[0].Partition,
+						ErrorCode: kerr.UnknownServerError.Code,
+					}},
+				}},
+			}, nil, true
+		}
+
+		// Lookup the response among the ones we previously fetched with a small "MaxBytes".
+		res := fetchResponseByRequestedOffset[req.Topics[0].Partitions[0].FetchOffset]
+		if res != nil {
+			return res, nil, true
+		}
+
+		if req.Topics[0].Partitions[0].FetchOffset < totalProducedRecords {
+			return nil, errors.New("the offset requested has not been found among the ones we previously fetched"), true
+		}
+
+		return nil, nil, false
+	})
+
+	//
+	// Consume all the records using the PartitionReader.
+	//
+
+	var (
+		totalConsumedRecords = atomic.NewInt64(0)
+		consumedRecordIDs    = sync.Map{}
+	)
+
+	consumer := consumerFunc(func(_ context.Context, records []record) error {
+		for _, rec := range records {
+			totalConsumedRecords.Inc()
+
+			// Parse the record ID from the actual record data.
+			recordID, err := strconv.ParseInt(string(rec.content[7:12]), 10, 64)
+			require.NoError(t, err)
+			consumedRecordIDs.Store(recordID, struct{}{})
+		}
+
+		return nil
+	})
+
+	// Create and start the reader.
+	readerOpts := []readerTestCfgOpt{
+		withConsumeFromPositionAtStartup(consumeFromStart),
+		withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+		withLogger(log.NewNopLogger()),
+		withMaxBufferedBytes(maxBufferedBytes),
+		withStartupConcurrency(concurrency),
+		withOngoingConcurrency(concurrency),
+	}
+
+	reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+	require.NoError(t, reader.StartAsync(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	})
+
+	// Wait until all produced have been consumed.
+	test.Poll(t, 60*time.Second, int64(totalProducedRecords), func() interface{} {
+		return totalConsumedRecords.Load()
+	})
+
+	// Ensure that the actual records content match the expected one.
+	for i := int64(0); i < totalProducedRecords; i++ {
+		_, found := consumedRecordIDs.Load(i)
+		require.Truef(t, found, "Expected to find a consumed record with ID %d", i)
+	}
+}
+
 func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 	const (
 		topicName   = "test"
@@ -2339,6 +2554,17 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 	require.NoError(t, produceResult.FirstErr())
 
 	return rec.Offset
+}
+
+// produceRandomRecord produces a record with random data, in order to reduce the compression ratio and
+// get the compressed record byte size as close as possible to the uncompressed one.
+func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, dataSize int, dataPrefix string) {
+	randomData := make([]byte, dataSize-len(dataPrefix))
+	_, err := crypto_rand.Read(randomData)
+	require.NoError(t, err)
+
+	recordValue := append([]byte(dataPrefix), randomData...)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, recordValue)
 }
 
 type readerTestCfg struct {

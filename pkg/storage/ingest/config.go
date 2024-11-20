@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 )
 
@@ -39,6 +40,12 @@ var (
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
+
+	defaultFetchBackoffConfig = backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 0, // Retry forever. Do NOT change!
+	}
 )
 
 type Config struct {
@@ -125,6 +132,10 @@ type KafkaConfig struct {
 	// IngestionConcurrencyEstimatedBytesPerSample is the estimated number of bytes per sample.
 	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
+
+	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
+	// is just used to change the default backoff in tests.
+	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -132,6 +143,8 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.concurrentFetchersFetchBackoffConfig = defaultFetchBackoffConfig
+
 	f.StringVar(&cfg.Address, prefix+".address", "", "The Kafka backend address.")
 	f.StringVar(&cfg.Topic, prefix+".topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")
