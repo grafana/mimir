@@ -34,7 +34,7 @@ type HistogramFunctionOverInstantVector struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
 
-	Annotations            *annotations.Annotations
+	annotations            *annotations.Annotations
 	phValues               types.ScalarData
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
@@ -52,10 +52,10 @@ type groupWithLabels struct {
 }
 
 type bucketGroup struct {
-	groupedMetricName    string           // The metric name of the group. May be duplicate between groups.
-	pointBuckets         []buckets        // Buckets for the grouped series at each step
-	nativeHistograms     *[]promql.HPoint // Histograms should only ever exist once per group
-	remainingSeriesCount uint             // The number of series remaining before this group is fully collated.
+	pointBuckets         []buckets       // Buckets for the grouped series at each step
+	nativeHistograms     []promql.HPoint // Histograms should only ever exist once per group
+	remainingSeriesCount uint            // The number of series remaining before this group is fully collated.
+	firstInputSeriesIdx  int             // All the input series should have the same Metric name (from innerSeriesMetricNames). We just need one index to determine the group name, so we take the first series.
 }
 
 var bucketGroupPool = zeropool.New(func() *bucketGroup {
@@ -74,7 +74,7 @@ func NewHistogramFunctionOverInstantVector(
 		phArg:                    phArg,
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations,
+		annotations:              annotations,
 		innerSeriesMetricNames:   &operators.MetricNames{},
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
@@ -114,8 +114,9 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		return nil, err
 	}
 	b := make([]byte, 0, 1024)
+	lb := labels.NewBuilder(nil)
 
-	for _, series := range innerSeries {
+	for innerIdx, series := range innerSeries {
 		// Each series belongs to two groups
 		seriesGroupPair := make([]*bucketGroup, 2)
 
@@ -127,11 +128,9 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		b = series.Labels.Bytes(b)
 		g, groupExists := groups[string(b)]
 		if !groupExists {
-			lb := labels.NewBuilder(series.Labels)
-			g.labels = lb.Labels()
+			g.labels = series.Labels
 			g.group = bucketGroupPool.Get()
-			g.group.groupedMetricName = series.Labels.Get(labels.MetricName)
-			g.group.pointBuckets = make([]buckets, h.timeRange.StepCount)
+			g.group.firstInputSeriesIdx = innerIdx
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
@@ -145,12 +144,11 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		g, groupExists = groups[string(b)]
 
 		if !groupExists {
-			lb := labels.NewBuilder(series.Labels)
+			lb.Reset(series.Labels)
 			lb.Del(labels.BucketLabel)
 			g.labels = lb.Labels()
 			g.group = bucketGroupPool.Get()
-			g.group.groupedMetricName = series.Labels.Get(labels.MetricName)
-			g.group.pointBuckets = make([]buckets, h.timeRange.StepCount)
+			g.group.firstInputSeriesIdx = innerIdx
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
@@ -179,7 +177,8 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 	h.remainingGroups = h.remainingGroups[1:]
 	defer func() {
 		// Reset the group before returning to the pool
-		thisGroup.groupedMetricName = ""
+		//thisGroup.groupedMetricName = ""
+		thisGroup.firstInputSeriesIdx = 0
 		thisGroup.pointBuckets = nil
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
@@ -232,12 +231,15 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 		upperBound, err := strconv.ParseFloat(h.bucketValues[h.currentInnerSeriesIndex], 64)
 		if err != nil {
 			// The le label was invalid. Record it:
-			h.Annotations.Add(annotations.NewBadBucketLabelWarning(
+			h.annotations.Add(annotations.NewBadBucketLabelWarning(
 				h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
 				h.bucketValues[h.currentInnerSeriesIndex],
 				h.inner.ExpressionPosition(),
 			))
 		} else {
+			if g.pointBuckets == nil {
+				g.pointBuckets = make([]buckets, h.timeRange.StepCount)
+			}
 			for _, f := range fPoints {
 				pointIdx := h.timeRange.PointIndex(f.T)
 				g.pointBuckets[pointIdx] = append(
@@ -265,7 +267,7 @@ func (h *HistogramFunctionOverInstantVector) saveNativeHistogramsToGroup(hPoints
 		if g.nativeHistograms != nil {
 			panic("We should never see more than one native histogram per group")
 		}
-		g.nativeHistograms = &hPoints
+		g.nativeHistograms = hPoints
 	}
 	// hPoint's are returned to the pool after computeOutputSeriesForGroup is finished with them
 	g.remainingSeriesCount--
@@ -285,28 +287,28 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 		if math.IsNaN(ph) || ph < 0 || ph > 1 {
 			// Even when ph is invalid we still return a series as BucketQuantile will return +/-Inf.
 			// So don't skip/continue the series, just emit a warning.
-			h.Annotations.Add(annotations.NewInvalidQuantileWarning(ph, h.phArg.ExpressionPosition()))
+			h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, h.phArg.ExpressionPosition()))
 		}
 
 		// Get the HPoint if it exists at this step
-		if g.nativeHistograms != nil && histogramIndex < len(*g.nativeHistograms) {
-			nextHPoint := &(*g.nativeHistograms)[histogramIndex]
+		if g.nativeHistograms != nil && histogramIndex < len(g.nativeHistograms) {
+			nextHPoint := &g.nativeHistograms[histogramIndex]
 			if h.timeRange.PointIndex(nextHPoint.T) == int64(pointIdx) {
 				currentHPoint = nextHPoint
 				histogramIndex++
 			}
 		}
 
-		if len(g.pointBuckets[pointIdx]) > 0 && currentHPoint != nil && h.timeRange.PointIndex(currentHPoint.T) == int64(pointIdx) {
+		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 && currentHPoint != nil && h.timeRange.PointIndex(currentHPoint.T) == int64(pointIdx) {
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
-			h.Annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
-				g.groupedMetricName, h.inner.ExpressionPosition(),
+			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
+				h.innerSeriesMetricNames.GetMetricNameForSeries(g.firstInputSeriesIdx), h.inner.ExpressionPosition(),
 			))
 			continue
 		}
 
-		if len(g.pointBuckets[pointIdx]) > 0 {
+		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
 			res, forcedMonotonicity, _ := bucketQuantile(ph, g.pointBuckets[pointIdx])
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
@@ -315,8 +317,8 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 			if forcedMonotonicity {
 				// Currently Prometheus does not correctly place the metric name onto this annotation.
 				// See: https://github.com/prometheus/prometheus/issues/15411
-				h.Annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-					g.groupedMetricName, h.inner.ExpressionPosition(),
+				h.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
+					h.innerSeriesMetricNames.GetMetricNameForSeries(g.firstInputSeriesIdx), h.inner.ExpressionPosition(),
 				))
 			}
 			continue
@@ -334,7 +336,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 
 	// Return any retained native histogram to the pool
 	if g.nativeHistograms != nil {
-		types.HPointSlicePool.Put(*g.nativeHistograms, h.memoryConsumptionTracker)
+		types.HPointSlicePool.Put(g.nativeHistograms, h.memoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
