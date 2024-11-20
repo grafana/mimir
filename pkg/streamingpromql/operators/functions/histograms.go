@@ -142,23 +142,22 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		g.group.remainingSeriesCount++
 		h.seriesGroupPairs[innerIdx].nativeHistogramGroup = g.group
 
-		// Now, ignore `le` and create a group with the rest of the labels.
-		// We do this even if we don't have an `le` label. This is so we can detect
-		// where native histograms exist alongside classic histograms.
-		// So seriesGroupPair[0] could be the same as seriesGroupPair[1]
-		b = series.Labels.BytesWithoutLabels(b, labels.BucketLabel)
-		g, groupExists = groups[string(b)]
+		// If `le` exists, also get the group without that label
+		if le != "" {
+			b = series.Labels.BytesWithoutLabels(b, labels.BucketLabel)
+			g, groupExists = groups[string(b)]
 
-		if !groupExists {
-			lb.Reset(series.Labels)
-			lb.Del(labels.BucketLabel)
-			g.labels = lb.Labels()
-			g.group = bucketGroupPool.Get()
-			g.group.firstInputSeriesIdx = innerIdx
-			groups[string(b)] = g
+			if !groupExists {
+				lb.Reset(series.Labels)
+				lb.Del(labels.BucketLabel)
+				g.labels = lb.Labels()
+				g.group = bucketGroupPool.Get()
+				g.group.firstInputSeriesIdx = innerIdx
+				groups[string(b)] = g
+			}
+			g.group.remainingSeriesCount++
+			h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
 		}
-		g.group.remainingSeriesCount++
-		h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
 	}
 
 	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
@@ -219,7 +218,13 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 		// It is also possible that both series groups are the same.
 		// The conflict in points is then detected in computeOutputSeriesForGroup.
 		h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups.nativeHistogramGroup)
-		h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
+		if thisSeriesGroups.classicHistogramGroup != nil {
+			h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
+		}
+
+		// We are done with the fPoints, so return these now
+		// hPoint's are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
+		types.FPointSlicePool.Put(s.Floats, h.memoryConsumptionTracker)
 		h.currentInnerSeriesIndex++
 	}
 	return nil
@@ -252,8 +257,6 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 			}
 		}
 	}
-	// We are done with the fPoints, so return these now
-	types.FPointSlicePool.Put(fPoints, h.memoryConsumptionTracker)
 	g.remainingSeriesCount--
 }
 
@@ -269,7 +272,6 @@ func (h *HistogramFunctionOverInstantVector) saveNativeHistogramsToGroup(hPoints
 		}
 		g.nativeHistograms = hPoints
 	}
-	// hPoint's are returned to the pool after computeOutputSeriesForGroup is finished with them
 	g.remainingSeriesCount--
 }
 
