@@ -333,6 +333,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -alertmanager.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -alertmanager.sharding-ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -alertmanager.sharding-ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -alertmanager.sharding-ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -alertmanager.sharding-ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -alertmanager.sharding-ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -alertmanager.sharding-ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -alertmanager.sharding-ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -alertmanager.sharding-ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -alertmanager.sharding-ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -alertmanager.sharding-ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -alertmanager.sharding-ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -alertmanager.sharding-ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -alertmanager.sharding-ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -alertmanager.sharding-ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -alertmanager.sharding-ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -alertmanager.sharding-ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -alertmanager.sharding-ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -alertmanager.sharding-ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -alertmanager.sharding-ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -alertmanager.sharding-ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -alertmanager.sharding-ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -alertmanager.sharding-ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -alertmanager.sharding-ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -alertmanager.sharding-ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -alertmanager.sharding-ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -alertmanager.sharding-ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -alertmanager.sharding-ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -alertmanager.sharding-ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -alertmanager.sharding-ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -alertmanager.sharding-ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -alertmanager.sharding-ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -alertmanager.sharding-ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -alertmanager.sharding-ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager.sharding-ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -alertmanager.sharding-ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -alertmanager.sharding-ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -alertmanager.sharding-ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager.sharding-ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -alertmanager.sharding-ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -alertmanager.sharding-ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -alertmanager.sharding-ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -alertmanager.sharding-ring.multi.mirror-timeout duration
@@ -1253,6 +1333,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -compactor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -compactor.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -compactor.ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -compactor.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -compactor.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -compactor.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -compactor.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -compactor.ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -compactor.ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -compactor.ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -compactor.ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -compactor.ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -compactor.ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -compactor.ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -compactor.ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -compactor.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -compactor.ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -compactor.ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -compactor.ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -compactor.ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -compactor.ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -compactor.ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -compactor.ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -compactor.ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -compactor.ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -compactor.ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -compactor.ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -compactor.ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -compactor.ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -compactor.ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -compactor.ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -compactor.ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -compactor.ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -compactor.ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -compactor.ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -compactor.ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -compactor.ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -compactor.ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -compactor.ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -compactor.ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -compactor.ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -compactor.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -compactor.ring.multi.mirror-timeout duration
@@ -1341,6 +1501,86 @@ Usage of ./cmd/mimir/mimir:
     	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
+  -distributor.ha-tracker.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -distributor.ha-tracker.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -distributor.ha-tracker.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -distributor.ha-tracker.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -distributor.ha-tracker.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -distributor.ha-tracker.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -distributor.ha-tracker.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -distributor.ha-tracker.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -distributor.ha-tracker.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -distributor.ha-tracker.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -distributor.ha-tracker.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -distributor.ha-tracker.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -distributor.ha-tracker.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -distributor.ha-tracker.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -distributor.ha-tracker.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -distributor.ha-tracker.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -distributor.ha-tracker.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -distributor.ha-tracker.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -distributor.ha-tracker.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -distributor.ha-tracker.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -distributor.ha-tracker.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -distributor.ha-tracker.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -distributor.ha-tracker.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -distributor.ha-tracker.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -distributor.ha-tracker.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -distributor.ha-tracker.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -distributor.ha-tracker.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -distributor.ha-tracker.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -distributor.ha-tracker.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -distributor.ha-tracker.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -distributor.ha-tracker.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -distributor.ha-tracker.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -distributor.ha-tracker.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.ha-tracker.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -distributor.ha-tracker.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -distributor.ha-tracker.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -distributor.ha-tracker.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -distributor.ha-tracker.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -distributor.ha-tracker.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -distributor.ha-tracker.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -distributor.ha-tracker.multi.mirror-enabled
     	Mirror writes to secondary store.
   -distributor.ha-tracker.multi.mirror-timeout duration
@@ -1457,6 +1697,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -distributor.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -distributor.ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -distributor.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -distributor.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -distributor.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -distributor.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -distributor.ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -distributor.ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -distributor.ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -distributor.ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -distributor.ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -distributor.ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -distributor.ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -distributor.ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -distributor.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -distributor.ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -distributor.ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -distributor.ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -distributor.ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -distributor.ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -distributor.ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -distributor.ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -distributor.ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -distributor.ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -distributor.ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -distributor.ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -distributor.ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -distributor.ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -distributor.ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -distributor.ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -distributor.ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -distributor.ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -distributor.ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -distributor.ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -distributor.ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -distributor.ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -distributor.ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -distributor.ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -distributor.ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -distributor.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -distributor.ring.multi.mirror-timeout duration
@@ -1689,6 +2009,86 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.partition-ring.etcd.username string
     	Etcd username.
+  -ingester.partition-ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -ingester.partition-ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -ingester.partition-ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -ingester.partition-ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -ingester.partition-ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -ingester.partition-ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -ingester.partition-ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -ingester.partition-ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -ingester.partition-ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -ingester.partition-ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -ingester.partition-ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -ingester.partition-ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -ingester.partition-ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -ingester.partition-ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -ingester.partition-ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -ingester.partition-ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -ingester.partition-ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -ingester.partition-ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -ingester.partition-ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -ingester.partition-ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -ingester.partition-ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -ingester.partition-ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -ingester.partition-ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -ingester.partition-ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -ingester.partition-ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -ingester.partition-ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -ingester.partition-ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -ingester.partition-ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -ingester.partition-ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -ingester.partition-ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -ingester.partition-ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -ingester.partition-ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ingester.partition-ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.partition-ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ingester.partition-ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -ingester.partition-ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ingester.partition-ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ingester.partition-ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ingester.partition-ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ingester.partition-ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -ingester.partition-ring.min-partition-owners-count int
     	Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE. (default 1)
   -ingester.partition-ring.min-partition-owners-duration duration
@@ -1799,6 +2199,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ingester.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -ingester.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -ingester.ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -ingester.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -ingester.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -ingester.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -ingester.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -ingester.ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -ingester.ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -ingester.ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -ingester.ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -ingester.ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -ingester.ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -ingester.ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -ingester.ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -ingester.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -ingester.ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -ingester.ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -ingester.ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -ingester.ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -ingester.ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -ingester.ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -ingester.ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -ingester.ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -ingester.ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -ingester.ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -ingester.ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -ingester.ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -ingester.ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -ingester.ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -ingester.ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -ingester.ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -ingester.ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ingester.ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ingester.ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -ingester.ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ingester.ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ingester.ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ingester.ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ingester.ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -ingester.ring.min-ready-duration duration
     	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
   -ingester.ring.multi.mirror-enabled
@@ -1993,6 +2473,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -overrides-exporter.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -overrides-exporter.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -overrides-exporter.ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -overrides-exporter.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -overrides-exporter.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -overrides-exporter.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -overrides-exporter.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -overrides-exporter.ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -overrides-exporter.ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -overrides-exporter.ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -overrides-exporter.ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -overrides-exporter.ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -overrides-exporter.ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -overrides-exporter.ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -overrides-exporter.ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -overrides-exporter.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -overrides-exporter.ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -overrides-exporter.ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -overrides-exporter.ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -overrides-exporter.ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -overrides-exporter.ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -overrides-exporter.ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -overrides-exporter.ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -overrides-exporter.ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -overrides-exporter.ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -overrides-exporter.ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -overrides-exporter.ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -overrides-exporter.ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -overrides-exporter.ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -overrides-exporter.ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -overrides-exporter.ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -overrides-exporter.ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -overrides-exporter.ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -overrides-exporter.ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -overrides-exporter.ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -overrides-exporter.ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -overrides-exporter.ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -overrides-exporter.ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -overrides-exporter.ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -overrides-exporter.ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -overrides-exporter.ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -overrides-exporter.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -overrides-exporter.ring.multi.mirror-timeout duration
@@ -2523,6 +3083,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -query-scheduler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -query-scheduler.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -query-scheduler.ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -query-scheduler.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -query-scheduler.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -query-scheduler.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -query-scheduler.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -query-scheduler.ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -query-scheduler.ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -query-scheduler.ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -query-scheduler.ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -query-scheduler.ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -query-scheduler.ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -query-scheduler.ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -query-scheduler.ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -query-scheduler.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -query-scheduler.ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -query-scheduler.ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -query-scheduler.ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -query-scheduler.ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -query-scheduler.ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -query-scheduler.ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -query-scheduler.ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -query-scheduler.ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -query-scheduler.ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -query-scheduler.ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -query-scheduler.ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -query-scheduler.ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -query-scheduler.ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -query-scheduler.ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -query-scheduler.ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -query-scheduler.ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -query-scheduler.ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-scheduler.ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-scheduler.ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -query-scheduler.ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -query-scheduler.ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-scheduler.ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -query-scheduler.ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -query-scheduler.ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -query-scheduler.ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -query-scheduler.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -query-scheduler.ring.multi.mirror-timeout duration
@@ -3033,6 +3673,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ruler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -ruler.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -ruler.ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -ruler.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -ruler.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -ruler.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -ruler.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -ruler.ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -ruler.ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -ruler.ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -ruler.ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -ruler.ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -ruler.ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -ruler.ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -ruler.ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -ruler.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -ruler.ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -ruler.ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -ruler.ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -ruler.ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -ruler.ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -ruler.ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -ruler.ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -ruler.ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -ruler.ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -ruler.ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -ruler.ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -ruler.ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -ruler.ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -ruler.ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -ruler.ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -ruler.ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -ruler.ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler.ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ruler.ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -ruler.ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler.ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler.ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ruler.ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler.ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -ruler.ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -ruler.ring.multi.mirror-timeout duration
@@ -3217,6 +3937,86 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -store-gateway.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -store-gateway.sharding-ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -store-gateway.sharding-ring.memberlist.acquire-writer-timeout duration
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+  -store-gateway.sharding-ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -store-gateway.sharding-ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -store-gateway.sharding-ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -store-gateway.sharding-ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -store-gateway.sharding-ring.memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
+  -store-gateway.sharding-ring.memberlist.cluster-label string
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+  -store-gateway.sharding-ring.memberlist.cluster-label-verification-disabled
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+  -store-gateway.sharding-ring.memberlist.compression-enabled
+    	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
+  -store-gateway.sharding-ring.memberlist.dead-node-reclaim-time duration
+    	How soon can dead node's name be reclaimed with new address. 0 to disable.
+  -store-gateway.sharding-ring.memberlist.gossip-interval duration
+    	How often to gossip. (default 200ms)
+  -store-gateway.sharding-ring.memberlist.gossip-nodes int
+    	How many nodes to gossip to. (default 3)
+  -store-gateway.sharding-ring.memberlist.gossip-to-dead-nodes-time duration
+    	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
+  -store-gateway.sharding-ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -store-gateway.sharding-ring.memberlist.leave-timeout duration
+    	Timeout for leaving memberlist cluster. (default 20s)
+  -store-gateway.sharding-ring.memberlist.left-ingesters-timeout duration
+    	How long to keep LEFT ingesters in the ring. (default 5m0s)
+  -store-gateway.sharding-ring.memberlist.max-concurrent-writes int
+    	Maximum number of concurrent writes to other nodes. (default 3)
+  -store-gateway.sharding-ring.memberlist.max-join-backoff duration
+    	Max backoff duration to join other cluster members. (default 1m0s)
+  -store-gateway.sharding-ring.memberlist.max-join-retries int
+    	Max number of retries to join other cluster members. (default 10)
+  -store-gateway.sharding-ring.memberlist.message-history-buffer-bytes int
+    	How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.
+  -store-gateway.sharding-ring.memberlist.min-join-backoff duration
+    	Min backoff duration to join other cluster members. (default 1s)
+  -store-gateway.sharding-ring.memberlist.nodename string
+    	Name of the node in memberlist cluster. Defaults to hostname.
+  -store-gateway.sharding-ring.memberlist.notify-interval duration
+    	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -store-gateway.sharding-ring.memberlist.packet-dial-timeout duration
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
+  -store-gateway.sharding-ring.memberlist.packet-write-timeout duration
+    	Timeout for writing 'packet' data. (default 5s)
+  -store-gateway.sharding-ring.memberlist.pullpush-interval duration
+    	How often to use pull/push sync. (default 30s)
+  -store-gateway.sharding-ring.memberlist.randomize-node-name
+    	Add random suffix to the node name. (default true)
+  -store-gateway.sharding-ring.memberlist.rejoin-interval duration
+    	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
+  -store-gateway.sharding-ring.memberlist.retransmit-factor int
+    	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -store-gateway.sharding-ring.memberlist.stream-timeout duration
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
+  -store-gateway.sharding-ring.memberlist.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -store-gateway.sharding-ring.memberlist.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -store-gateway.sharding-ring.memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -store-gateway.sharding-ring.memberlist.tls-enabled
+    	Enable TLS on the memberlist transport layer.
+  -store-gateway.sharding-ring.memberlist.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -store-gateway.sharding-ring.memberlist.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -store-gateway.sharding-ring.memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -store-gateway.sharding-ring.memberlist.tls-server-name string
+    	Override the expected name on the server certificate.
+  -store-gateway.sharding-ring.memberlist.transport-debug
+    	Log debug transport messages. Note: global log.level must be at debug level as well.
   -store-gateway.sharding-ring.multi.mirror-enabled
     	Mirror writes to secondary store.
   -store-gateway.sharding-ring.multi.mirror-timeout duration

@@ -119,6 +119,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -alertmanager.sharding-ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -alertmanager.sharding-ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -alertmanager.sharding-ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -alertmanager.sharding-ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -alertmanager.sharding-ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -alertmanager.sharding-ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -alertmanager.sharding-ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -alertmanager.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -alertmanager.storage.path string
@@ -335,6 +347,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -compactor.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -compactor.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -compactor.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -compactor.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -compactor.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -compactor.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -compactor.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -compactor.split-and-merge-shards int
@@ -361,6 +385,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
+  -distributor.ha-tracker.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -distributor.ha-tracker.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -distributor.ha-tracker.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -distributor.ha-tracker.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -distributor.ha-tracker.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -distributor.ha-tracker.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -distributor.ha-tracker.replica string
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
@@ -385,6 +421,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -distributor.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -distributor.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -distributor.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -distributor.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -distributor.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -distributor.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -distributor.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -h
@@ -475,6 +523,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd password.
   -ingester.partition-ring.etcd.username string
     	Etcd username.
+  -ingester.partition-ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -ingester.partition-ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -ingester.partition-ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -ingester.partition-ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -ingester.partition-ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -ingester.partition-ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -ingester.partition-ring.min-partition-owners-count int
     	Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE. (default 1)
   -ingester.partition-ring.min-partition-owners-duration duration
@@ -489,6 +549,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd password.
   -ingester.ring.etcd.username string
     	Etcd username.
+  -ingester.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -ingester.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -ingester.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -ingester.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -ingester.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -ingester.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string
@@ -529,6 +601,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -overrides-exporter.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -overrides-exporter.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -overrides-exporter.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -overrides-exporter.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -overrides-exporter.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -overrides-exporter.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -overrides-exporter.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -overrides-exporter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -print.config
@@ -617,6 +701,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -query-scheduler.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -query-scheduler.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -query-scheduler.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -query-scheduler.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -query-scheduler.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -query-scheduler.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -query-scheduler.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -query-scheduler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler-storage.azure.account-key string
@@ -743,6 +839,18 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -ruler.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -ruler.ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -ruler.ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -ruler.ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -ruler.ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -ruler.ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -ruler.ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
@@ -791,6 +899,18 @@ Usage of ./cmd/mimir/mimir:
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -store-gateway.sharding-ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -store-gateway.sharding-ring.memberlist.abort-if-join-fails
+    	If this node fails to join memberlist cluster, abort.
+  -store-gateway.sharding-ring.memberlist.advertise-addr string
+    	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
+  -store-gateway.sharding-ring.memberlist.advertise-port int
+    	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
+  -store-gateway.sharding-ring.memberlist.bind-addr string
+    	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
+  -store-gateway.sharding-ring.memberlist.bind-port int
+    	Port to listen on for gossip messages. (default 7946)
+  -store-gateway.sharding-ring.memberlist.join string
+    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -store-gateway.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -store-gateway.sharding-ring.tokens-file-path string
