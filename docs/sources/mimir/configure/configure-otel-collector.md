@@ -10,19 +10,14 @@ weight: 150
 # Configure the OpenTelemetry Collector to write metrics into Mimir
 
 {{% admonition type="note" %}}
-To send OTel data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+To send OpenTelemetry data to Grafana Cloud, refer to [Send data using OpenTelemetry Protocol (OTLP)](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
 {{% /admonition %}}
 
-When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can write metrics into Mimir using two options: `otlphttp` (preferred) and `prometheusremotewrite`.
+When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can use the OpenTelemetry protocol (OTLP) or the Prometheus remote write protocol to write metrics into Mimir. It's recommended that you use the OpenTelemetry protocol.
 
-Use each protocol's respective exporter and native Mimir endpoint. For example:
+## Use the OpenTelemetry protocol
 
-- OTel data: `otlphttp`
-- Prometheus data: `prometheusremotewrite`
-
-## OTLP
-
-Mimir supports native OTLP over HTTP. When possible, use this protocol to send OTLP data. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
+Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter and native Mimir endpoint. For example:
 
 ```yaml
 exporters:
@@ -65,9 +60,13 @@ service:
       exporters: [..., otlphttp]
 ```
 
-## Prometheus remote write
+## Use the Prometheus remote write protocol
 
-For remote write, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector.
+{{< admonition type="note" >}}
+Support for the Prometheus remote write protocol is an experimental feature in Mimir.
+{{< /admonition >}}
+
+To use the Prometheus remote write protocol to send metrics into Mimir, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector and the native Mimir endpoint.
 
 In the `exporters` section, add:
 
