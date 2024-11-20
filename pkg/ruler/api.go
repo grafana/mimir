@@ -506,12 +506,14 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		//
 		// We don't want to consider this condition a failure, so we don't return an error in this case, but we
 		// just log a warning because it could be of interest for an operator to further investigate it.
-		level.Warn(a.logger).Log(
+		level.Warn(logger).Log(
 			"msg", "list rules API skipped some rule groups, because missing when loading them after listing the storage (this could be due to rule groups deleted between listing the storage and getting rule groups content)",
+			"user", userID,
 			"listed_rule_groups", len(rgs),
 			"missing_rule_groups", len(missing),
 			// Logging all rule groups may excessive, but logging at least 1 may give some hints.
-			"first_missing_rule_group", fmt.Sprintf("user=%s namespace=%s group=%s", missing[0].User, missing[0].Namespace, missing[0].Name))
+			"first_missing_rule_group_namespace", missing[0].Namespace,
+			"first_missing_rule_group_name", missing[0].Name)
 
 		// Filter out missing rule groups, so they're not returned by the API (they haven't been loaded,
 		// so their content is empty).
