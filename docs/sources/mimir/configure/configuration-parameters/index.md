@@ -382,6 +382,11 @@ overrides_exporter:
       # overrides-exporter.ring
       [etcd: <etcd>]
 
+      # The memberlist block configures the Gossip memberlist.
+      # The CLI flags prefix for this block configuration is:
+      # overrides-exporter.ring
+      [memberlist: <memberlist>]
+
       multi:
         # (advanced) Primary backend storage used by multi-client.
         # CLI flag: -overrides-exporter.ring.multi.primary
@@ -827,6 +832,11 @@ ha_tracker:
     # distributor.ha-tracker
     [etcd: <etcd>]
 
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is:
+    # distributor.ha-tracker
+    [memberlist: <memberlist>]
+
     multi:
       # (advanced) Primary backend storage used by multi-client.
       # CLI flag: -distributor.ha-tracker.multi.primary
@@ -883,6 +893,10 @@ ring:
     # The etcd block configures the etcd client.
     # The CLI flags prefix for this block configuration is: distributor.ring
     [etcd: <etcd>]
+
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is: distributor.ring
+    [memberlist: <memberlist>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -991,6 +1005,10 @@ ring:
     # The etcd block configures the etcd client.
     # The CLI flags prefix for this block configuration is: ingester.ring
     [etcd: <etcd>]
+
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is: ingester.ring
+    [memberlist: <memberlist>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -1140,6 +1158,11 @@ partition_ring:
     # The CLI flags prefix for this block configuration is:
     # ingester.partition-ring
     [etcd: <etcd>]
+
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is:
+    # ingester.partition-ring
+    [memberlist: <memberlist>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -1767,6 +1790,10 @@ ring:
     # The CLI flags prefix for this block configuration is: query-scheduler.ring
     [etcd: <etcd>]
 
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [memberlist: <memberlist>]
+
     multi:
       # (advanced) Primary backend storage used by multi-client.
       # CLI flag: -query-scheduler.ring.multi.primary
@@ -1992,6 +2019,10 @@ ring:
     # The etcd block configures the etcd client.
     # The CLI flags prefix for this block configuration is: ruler.ring
     [etcd: <etcd>]
+
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is: ruler.ring
+    [memberlist: <memberlist>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -2239,6 +2270,11 @@ sharding_ring:
     # The CLI flags prefix for this block configuration is:
     # alertmanager.sharding-ring
     [etcd: <etcd>]
+
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is:
+    # alertmanager.sharding-ring
+    [memberlist: <memberlist>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
@@ -2922,102 +2958,116 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 
 ### memberlist
 
-The `memberlist` block configures the Gossip memberlist.
+The `memberlist` block configures the Gossip memberlist. The supported CLI flags `<prefix>` used to reference this configuration block are:
+
+- _no prefix_
+- `alertmanager.sharding-ring`
+- `compactor.ring`
+- `distributor.ha-tracker`
+- `distributor.ring`
+- `ingester.partition-ring`
+- `ingester.ring`
+- `overrides-exporter.ring`
+- `query-scheduler.ring`
+- `ruler.ring`
+- `store-gateway.sharding-ring`
+
+&nbsp;
 
 ```yaml
 # (advanced) Name of the node in memberlist cluster. Defaults to hostname.
-# CLI flag: -memberlist.nodename
+# CLI flag: -<prefix>.memberlist.nodename
 [node_name: <string> | default = ""]
 
 # (advanced) Add random suffix to the node name.
-# CLI flag: -memberlist.randomize-node-name
+# CLI flag: -<prefix>.memberlist.randomize-node-name
 [randomize_node_name: <boolean> | default = true]
 
 # (advanced) The timeout for establishing a connection with a remote node, and
 # for read/write operations.
-# CLI flag: -memberlist.stream-timeout
+# CLI flag: -<prefix>.memberlist.stream-timeout
 [stream_timeout: <duration> | default = 2s]
 
 # (advanced) Multiplication factor used when sending out messages (factor *
 # log(N+1)).
-# CLI flag: -memberlist.retransmit-factor
+# CLI flag: -<prefix>.memberlist.retransmit-factor
 [retransmit_factor: <int> | default = 4]
 
 # (advanced) How often to use pull/push sync.
-# CLI flag: -memberlist.pullpush-interval
+# CLI flag: -<prefix>.memberlist.pullpush-interval
 [pull_push_interval: <duration> | default = 30s]
 
 # (advanced) How often to gossip.
-# CLI flag: -memberlist.gossip-interval
+# CLI flag: -<prefix>.memberlist.gossip-interval
 [gossip_interval: <duration> | default = 200ms]
 
 # (advanced) How many nodes to gossip to.
-# CLI flag: -memberlist.gossip-nodes
+# CLI flag: -<prefix>.memberlist.gossip-nodes
 [gossip_nodes: <int> | default = 3]
 
 # (advanced) How long to keep gossiping to dead nodes, to give them chance to
 # refute their death.
-# CLI flag: -memberlist.gossip-to-dead-nodes-time
+# CLI flag: -<prefix>.memberlist.gossip-to-dead-nodes-time
 [gossip_to_dead_nodes_time: <duration> | default = 30s]
 
 # (advanced) How soon can dead node's name be reclaimed with new address. 0 to
 # disable.
-# CLI flag: -memberlist.dead-node-reclaim-time
+# CLI flag: -<prefix>.memberlist.dead-node-reclaim-time
 [dead_node_reclaim_time: <duration> | default = 0s]
 
 # (advanced) Enable message compression. This can be used to reduce bandwidth
 # usage at the cost of slightly more CPU utilization.
-# CLI flag: -memberlist.compression-enabled
+# CLI flag: -<prefix>.memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
 # (advanced) How frequently to notify watchers when a key changes. Can reduce
 # CPU activity in large memberlist deployments. 0 to notify without delay.
-# CLI flag: -memberlist.notify-interval
+# CLI flag: -<prefix>.memberlist.notify-interval
 [notify_interval: <duration> | default = 0s]
 
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
-# CLI flag: -memberlist.advertise-addr
+# CLI flag: -<prefix>.memberlist.advertise-addr
 [advertise_addr: <string> | default = ""]
 
 # Gossip port to advertise to other members in the cluster. Used for NAT
 # traversal.
-# CLI flag: -memberlist.advertise-port
+# CLI flag: -<prefix>.memberlist.advertise-port
 [advertise_port: <int> | default = 7946]
 
 # (advanced) The cluster label is an optional string to include in outbound
 # packets and gossip streams. Other members in the memberlist cluster will
 # discard any message whose label doesn't match the configured one, unless the
 # 'cluster-label-verification-disabled' configuration option is set to true.
-# CLI flag: -memberlist.cluster-label
+# CLI flag: -<prefix>.memberlist.cluster-label
 [cluster_label: <string> | default = ""]
 
 # (advanced) When true, memberlist doesn't verify that inbound packets and
 # gossip streams have the cluster label matching the configured one. This
 # verification should be disabled while rolling out the change to the configured
 # cluster label in a live memberlist cluster.
-# CLI flag: -memberlist.cluster-label-verification-disabled
+# CLI flag: -<prefix>.memberlist.cluster-label-verification-disabled
 [cluster_label_verification_disabled: <boolean> | default = false]
 
 # Other cluster members to join. Can be specified multiple times. It can be an
 # IP, hostname or an entry specified in the DNS Service Discovery format.
-# CLI flag: -memberlist.join
+# CLI flag: -<prefix>.memberlist.join
 [join_members: <list of strings> | default = []]
 
 # (advanced) Min backoff duration to join other cluster members.
-# CLI flag: -memberlist.min-join-backoff
+# CLI flag: -<prefix>.memberlist.min-join-backoff
 [min_join_backoff: <duration> | default = 1s]
 
 # (advanced) Max backoff duration to join other cluster members.
-# CLI flag: -memberlist.max-join-backoff
+# CLI flag: -<prefix>.memberlist.max-join-backoff
 [max_join_backoff: <duration> | default = 1m]
 
 # (advanced) Max number of retries to join other cluster members.
-# CLI flag: -memberlist.max-join-retries
+# CLI flag: -<prefix>.memberlist.max-join-retries
 [max_join_retries: <int> | default = 10]
 
 # If this node fails to join memberlist cluster, abort.
-# CLI flag: -memberlist.abort-if-join-fails
+# CLI flag: -<prefix>.memberlist.abort-if-join-fails
 [abort_if_cluster_join_fails: <boolean> | default = false]
 
 # (advanced) If not 0, how often to rejoin the cluster. Occasional rejoin can
@@ -3026,15 +3076,15 @@ The `memberlist` block configures the Gossip memberlist.
 # it's recommended to use rejoin. If -memberlist.join points to dynamic service
 # that resolves to all gossiping nodes (eg. Kubernetes headless service), then
 # rejoin is not needed.
-# CLI flag: -memberlist.rejoin-interval
+# CLI flag: -<prefix>.memberlist.rejoin-interval
 [rejoin_interval: <duration> | default = 0s]
 
 # (advanced) How long to keep LEFT ingesters in the ring.
-# CLI flag: -memberlist.left-ingesters-timeout
+# CLI flag: -<prefix>.memberlist.left-ingesters-timeout
 [left_ingesters_timeout: <duration> | default = 5m]
 
 # (advanced) Timeout for leaving memberlist cluster.
-# CLI flag: -memberlist.leave-timeout
+# CLI flag: -<prefix>.memberlist.leave-timeout
 [leave_timeout: <duration> | default = 20s]
 
 # (advanced) Timeout for broadcasting all remaining locally-generated updates to
@@ -3042,65 +3092,65 @@ The `memberlist` block configures the Gossip memberlist.
 # memberlist cluster, and only applies to locally-generated updates, not to
 # broadcast messages that are result of incoming gossip updates. 0 = no timeout,
 # wait until all locally-generated updates are sent.
-# CLI flag: -memberlist.broadcast-timeout-for-local-updates-on-shutdown
+# CLI flag: -<prefix>.memberlist.broadcast-timeout-for-local-updates-on-shutdown
 [broadcast_timeout_for_local_updates_on_shutdown: <duration> | default = 10s]
 
 # (advanced) How much space to use for keeping received and sent messages in
 # memory for troubleshooting (two buffers). 0 to disable.
-# CLI flag: -memberlist.message-history-buffer-bytes
+# CLI flag: -<prefix>.memberlist.message-history-buffer-bytes
 [message_history_buffer_bytes: <int> | default = 0]
 
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
-# CLI flag: -memberlist.bind-addr
+# CLI flag: -<prefix>.memberlist.bind-addr
 [bind_addr: <list of strings> | default = []]
 
 # Port to listen on for gossip messages.
-# CLI flag: -memberlist.bind-port
+# CLI flag: -<prefix>.memberlist.bind-port
 [bind_port: <int> | default = 7946]
 
 # (advanced) Timeout used when connecting to other nodes to send packet.
-# CLI flag: -memberlist.packet-dial-timeout
+# CLI flag: -<prefix>.memberlist.packet-dial-timeout
 [packet_dial_timeout: <duration> | default = 2s]
 
 # (advanced) Timeout for writing 'packet' data.
-# CLI flag: -memberlist.packet-write-timeout
+# CLI flag: -<prefix>.memberlist.packet-write-timeout
 [packet_write_timeout: <duration> | default = 5s]
 
 # (advanced) Maximum number of concurrent writes to other nodes.
-# CLI flag: -memberlist.max-concurrent-writes
+# CLI flag: -<prefix>.memberlist.max-concurrent-writes
 [max_concurrent_writes: <int> | default = 3]
 
 # (advanced) Timeout for acquiring one of the concurrent write slots. After this
 # time, the message will be dropped.
-# CLI flag: -memberlist.acquire-writer-timeout
+# CLI flag: -<prefix>.memberlist.acquire-writer-timeout
 [acquire_writer_timeout: <duration> | default = 250ms]
 
 # (advanced) Enable TLS on the memberlist transport layer.
-# CLI flag: -memberlist.tls-enabled
+# CLI flag: -<prefix>.memberlist.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
 # (advanced) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
-# CLI flag: -memberlist.tls-cert-path
+# CLI flag: -<prefix>.memberlist.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
 # (advanced) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
-# CLI flag: -memberlist.tls-key-path
+# CLI flag: -<prefix>.memberlist.tls-key-path
 [tls_key_path: <string> | default = ""]
 
 # (advanced) Path to the CA certificates to validate server certificate against.
 # If not set, the host's root CA certificates are used.
-# CLI flag: -memberlist.tls-ca-path
+# CLI flag: -<prefix>.memberlist.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
 # (advanced) Override the expected name on the server certificate.
-# CLI flag: -memberlist.tls-server-name
+# CLI flag: -<prefix>.memberlist.tls-server-name
 [tls_server_name: <string> | default = ""]
 
 # (advanced) Skip validating server certificate.
-# CLI flag: -memberlist.tls-insecure-skip-verify
+# CLI flag: -<prefix>.memberlist.tls-insecure-skip-verify
 [tls_insecure_skip_verify: <boolean> | default = false]
 
 # (advanced) Override the default cipher suite list (separated by commas).
@@ -3134,12 +3184,12 @@ The `memberlist` block configures the Gossip memberlist.
 # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
 # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
 # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-# CLI flag: -memberlist.tls-cipher-suites
+# CLI flag: -<prefix>.memberlist.tls-cipher-suites
 [tls_cipher_suites: <string> | default = ""]
 
 # (advanced) Override the default minimum TLS version. Allowed values:
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-# CLI flag: -memberlist.tls-min-version
+# CLI flag: -<prefix>.memberlist.tls-min-version
 [tls_min_version: <string> | default = ""]
 ```
 
@@ -4605,6 +4655,10 @@ sharding_ring:
     # The CLI flags prefix for this block configuration is: compactor.ring
     [etcd: <etcd>]
 
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is: compactor.ring
+    [memberlist: <memberlist>]
+
     multi:
       # (advanced) Primary backend storage used by multi-client.
       # CLI flag: -compactor.ring.multi.primary
@@ -4703,6 +4757,11 @@ sharding_ring:
     # The CLI flags prefix for this block configuration is:
     # store-gateway.sharding-ring
     [etcd: <etcd>]
+
+    # The memberlist block configures the Gossip memberlist.
+    # The CLI flags prefix for this block configuration is:
+    # store-gateway.sharding-ring
+    [memberlist: <memberlist>]
 
     multi:
       # (advanced) Primary backend storage used by multi-client.
