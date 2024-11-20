@@ -40,6 +40,7 @@ func TestChunksCaching(t *testing.T) {
 	}
 
 	name := "/test/chunks/000001"
+	hashedName := cachingKeyHash(name)
 
 	inmem := objstore.NewInMemBucket()
 	assert.NoError(t, inmem.Upload(context.Background(), name, bytes.NewReader(data)))
@@ -149,9 +150,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete first 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 0*subrangeSize, 1*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 1*subrangeSize, 2*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 2*subrangeSize, 3*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 0*subrangeSize, 1*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 1*subrangeSize, 2*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 2*subrangeSize, 3*subrangeSize)))
 			},
 		},
 
@@ -167,9 +168,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete last 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 7*subrangeSize, 8*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 8*subrangeSize, 9*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 9*subrangeSize, 10*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 7*subrangeSize, 8*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 8*subrangeSize, 9*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 9*subrangeSize, 10*subrangeSize)))
 			},
 		},
 
@@ -185,9 +186,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete 3 subranges in the middle.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 3*subrangeSize, 4*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 4*subrangeSize, 5*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 5*subrangeSize, 6*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 3*subrangeSize, 4*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 4*subrangeSize, 5*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, hashedName, 5*subrangeSize, 6*subrangeSize)))
 			},
 		},
 
@@ -206,7 +207,7 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, hashedName, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -228,7 +229,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, hashedName, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -249,7 +250,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, hashedName, i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
