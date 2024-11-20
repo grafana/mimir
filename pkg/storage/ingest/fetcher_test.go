@@ -1422,6 +1422,29 @@ func TestConcurrentFetchers_parseFetchResponse(t *testing.T) {
 	})
 }
 
+func TestNewEmptyFetchResult(t *testing.T) {
+	t.Run("should have no error set", func(t *testing.T) {
+		res := newEmptyFetchResult(context.Background(), 1)
+		require.Equal(t, int32(1), res.Partition)
+		require.NoError(t, res.Err)
+	})
+}
+
+func TestNewErrorFetchResult(t *testing.T) {
+	t.Run("should have error set", func(t *testing.T) {
+		err := errors.New("test error")
+		res := newErrorFetchResult(context.Background(), 1, err)
+		require.Equal(t, int32(1), res.Partition)
+		require.Equal(t, err, res.Err)
+	})
+
+	t.Run("should panic if no error is provided", func(t *testing.T) {
+		require.Panics(t, func() {
+			newErrorFetchResult(context.Background(), 1, nil)
+		})
+	})
+}
+
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()

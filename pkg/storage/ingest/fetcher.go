@@ -200,13 +200,31 @@ func (fr *fetchResult) Merge(older fetchResult) fetchResult {
 	return *fr
 }
 
-func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
+// newEmptyFetchResult creates a new fetchResult with empty partition and no error set.
+func newEmptyFetchResult(ctx context.Context, partitionID int32) fetchResult {
 	return fetchResult{
 		ctx:          ctx,
 		fetchedBytes: 0,
+		FetchPartition: kgo.FetchPartition{
+			Partition: partitionID,
+		},
+	}
+}
 
-		// TODO this is dangerous: we set Err and the Partition is the zero value, which is a valid partition ID
-		FetchPartition: kgo.FetchPartition{Err: err},
+// newEmptyFetchResult creates a new fetchResult with a partition with the input error set.
+// This function intentionally panics if the error is not provided (it's a logic bug).
+func newErrorFetchResult(ctx context.Context, partitionID int32, err error) fetchResult {
+	if err == nil {
+		panic("an error must be provided to newErrorFetchResult()")
+	}
+
+	return fetchResult{
+		ctx:          ctx,
+		fetchedBytes: 0,
+		FetchPartition: kgo.FetchPartition{
+			Partition: partitionID,
+			Err:       err,
+		},
 	}
 }
 
@@ -435,32 +453,43 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 	}
 }
 
-// fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
-// fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
+// fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request
+// to the leader to fetch the range of records requested in the input fetchWant. If the request is successful,
+// it then parses the responses.
+//
+// The returned fetchResult may be a success or failure. If it's a success, it may or may not fulfil the
+// entire fetchWant (only a subset of records may have been fetched, potentially even none of them). If it's
+// a failure, the fetchResult.Err is valued. This function guarantees that the returned fetchResult doesn't
+// contain any record in case an error is also returned.
+//
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
+// TODO unit test: If ctx is cancelled, fetchSingle will return an empty fetchResult without an error
+// TODO unit test: doesn't contain any record in case an error is also returned
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
 	defer func(fetchStartTime time.Time) {
 		fr.logCompletedFetch(fetchStartTime, fw)
 	}(time.Now())
 
+	// Lookup the leader broker for the topic partition.
 	leaderID, leaderEpoch, err := r.client.PartitionLeader(r.topicName, r.partitionID)
 	if err != nil || (leaderID == -1 && leaderEpoch == -1) {
 		if err != nil {
-			return newEmptyFetchResult(ctx, fmt.Errorf("finding leader for partition: %w", err))
+			return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("finding leader for partition: %w", err))
 		}
-		return newEmptyFetchResult(ctx, errUnknownPartitionLeader)
+		return newErrorFetchResult(ctx, r.partitionID, errUnknownPartitionLeader)
 	}
 
+	// Build and send the Fetch request to the leader broker.
 	req := r.buildFetchRequest(fw, leaderEpoch)
-
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return newEmptyFetchResult(ctx, nil)
+			return newEmptyFetchResult(ctx, r.partitionID)
 		}
-		return newEmptyFetchResult(ctx, fmt.Errorf("fetching from kafka: %w", err))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetching from kafka: %w", err))
 	}
 
+	// TODO guarantee no error and records at the same time.
 	return r.parseFetchResponse(ctx, fw.startOffset, resp)
 }
 
@@ -496,24 +525,24 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		// The FetchResponse.ErrorCode should be never set for our use case. This error code was added for support for KIP-227
 		// and is only set if we're using fetch sessions. We don't use fetch sessions. However, we check it anyway to make
 		// in case it will change in future (or some Kafka-compatible backends set it even when sessions are not in use).
-		return newEmptyFetchResult(ctx, fmt.Errorf("received error code %d", resp.ErrorCode))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("received error code %d", resp.ErrorCode))
 	}
 
 	// Sanity check for the response we get.
 	if expected, actual := 1, len(resp.Topics); expected != actual {
-		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected number of topics in the Fetch response (expected: %d got: %d)", expected, actual))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected number of topics in the Fetch response (expected: %d got: %d)", expected, actual))
 	}
 	if expected, actual := r.topicID, resp.Topics[0].TopicID; expected != actual {
-		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected topic ID in the Fetch response (expected: %s got %s)", expected, actual))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected topic ID in the Fetch response (expected: %s got %s)", expected, actual))
 	}
 	if expected, actual := 1, len(resp.Topics[0].Partitions); expected != actual {
-		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected number of partitions in the Fetch response (expected: %d got: %d)", expected, actual))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected number of partitions in the Fetch response (expected: %d got: %d)", expected, actual))
 	}
 	if expected, actual := r.partitionID, resp.Topics[0].Partitions[0].Partition; expected != actual {
-		return newEmptyFetchResult(ctx, fmt.Errorf("unexpected partition ID in the Fetch response (expected: %d got %d)", expected, actual))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected partition ID in the Fetch response (expected: %d got %d)", expected, actual))
 	}
 	if code := resp.Topics[0].Partitions[0].ErrorCode; code != 0 {
-		return newEmptyFetchResult(ctx, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
 	parseOptions := kgo.ProcessFetchPartitionOptions{
