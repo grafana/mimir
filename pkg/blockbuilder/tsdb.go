@@ -4,7 +4,6 @@ package blockbuilder
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,10 +15,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -34,10 +35,11 @@ import (
 type TSDBBuilder struct {
 	dataDir string
 
-	logger           log.Logger
-	limits           *validation.Overrides
-	blocksStorageCfg mimir_tsdb.BlocksStorageConfig
-	metrics          tsdbBuilderMetrics
+	logger                      log.Logger
+	limits                      *validation.Overrides
+	blocksStorageCfg            mimir_tsdb.BlocksStorageConfig
+	metrics                     tsdbBuilderMetrics
+	applyGlobalSeriesLimitUnder int
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -58,14 +60,15 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyGlobalSeriesLimitUnder int) *TSDBBuilder {
 	return &TSDBBuilder{
-		dataDir:          dataDir,
-		logger:           logger,
-		limits:           limits,
-		blocksStorageCfg: blocksStorageCfg,
-		metrics:          metrics,
-		tsdbs:            make(map[tsdbTenant]*userTSDB),
+		dataDir:                     dataDir,
+		logger:                      logger,
+		limits:                      limits,
+		blocksStorageCfg:            blocksStorageCfg,
+		metrics:                     metrics,
+		applyGlobalSeriesLimitUnder: applyGlobalSeriesLimitUnder,
+		tsdbs:                       make(map[tsdbTenant]*userTSDB),
 	}
 }
 
@@ -256,6 +259,15 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	userID := tenant.tenantID
 	userLogger := util_log.WithUserID(userID, b.logger)
 
+	udb := &userTSDB{
+		userID: userID,
+	}
+
+	userLimit := b.limits.MaxGlobalSeriesPerUser(userID)
+	if userLimit <= b.applyGlobalSeriesLimitUnder {
+		udb.maxGlobalSeries = userLimit
+	}
+
 	db, err := tsdb.Open(udir, userLogger, nil, &tsdb.Options{
 		RetentionDuration:           0,
 		MinBlockDuration:            2 * time.Hour.Milliseconds(),
@@ -272,6 +284,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		OutOfOrderCapMax:            int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
 		EnableNativeHistograms:      b.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:       nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
+		SeriesLifecycleCallback:     udb,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -279,10 +292,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 	db.DisableCompactions()
 
-	udb := &userTSDB{
-		DB:     db,
-		userID: userID,
-	}
+	udb.DB = db
 
 	return udb, nil
 }
@@ -406,8 +416,26 @@ type extendedAppender interface {
 
 type userTSDB struct {
 	*tsdb.DB
-	userID string
+	userID          string
+	maxGlobalSeries int
 }
+
+var (
+	errMaxInMemorySeriesReached = errors.New("max series for user reached")
+)
+
+func (u *userTSDB) PreCreation(labels.Labels) error {
+	// Global series limit.
+	if u.maxGlobalSeries > 0 && u.Head().NumSeries() >= uint64(u.maxGlobalSeries) {
+		return errors.Wrapf(errMaxInMemorySeriesReached, "limit of %d reached for user %s", u.maxGlobalSeries, u.userID)
+	}
+
+	return nil
+}
+
+func (u *userTSDB) PostCreation(labels.Labels) {}
+
+func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 func (u *userTSDB) compactEverything(ctx context.Context) error {
 	blockRange := 2 * time.Hour.Milliseconds()
