@@ -221,8 +221,10 @@ func (h *haTracker) syncHATrackerStateOnStart(ctx context.Context) error {
 		return nil
 	}
 
+	level.Info(h.logger).Log("msg", "sync HA state on start: Listing keys from KV Store")
 	keys, err := h.client.List(ctx, "")
 	if err != nil {
+		level.Error(h.logger).Log("msg", "sync HA state on start: failed to list the keys ", "err", err)
 		return err
 	}
 
