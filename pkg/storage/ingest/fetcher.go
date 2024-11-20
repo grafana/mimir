@@ -463,8 +463,6 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 // contain any record in case an error is also returned.
 //
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
-// TODO unit test: If ctx is cancelled, fetchSingle will return an empty fetchResult without an error
-// TODO unit test: doesn't contain any record in case an error is also returned
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
 	defer func(fetchStartTime time.Time) {
 		fr.logCompletedFetch(fetchStartTime, fw)
@@ -489,7 +487,6 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetching from kafka: %w", err))
 	}
 
-	// TODO guarantee no error and records at the same time.
 	return r.parseFetchResponse(ctx, fw.startOffset, resp)
 }
 
@@ -515,6 +512,7 @@ func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) 
 	return req
 }
 
+// This function guarantees that the returned fetchResult doesn't contain any record in case an error is also returned.
 func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset int64, resp *kmsg.FetchResponse) fetchResult {
 	// We ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest,
 	// so the broker _probably_ doesn't have a recommended replica for us.
@@ -559,6 +557,12 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	if partition.Err != nil {
+		// This should never happen because we already check the ErrorCode above, but we keep this double check
+		// in case Err will be set because of other reasons by kgo.ProcessRespPartition() in the future.
+		return newErrorFetchResult(ctx, r.partitionID, partition.Err)
+	}
+
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
 	partition.EachRecord(func(r *kgo.Record) {
 		spanlogger.FromContext(r.Context, log.NewNopLogger()).DebugLog("msg", "received record")

@@ -1341,6 +1341,101 @@ func TestTODO(t *testing.T) {
 	}
 }
 
+func TestConcurrentFetchers_fetchSingle(t *testing.T) {
+	const (
+		topic       = "test-topic"
+		partitionID = 1
+	)
+
+	var (
+		ctx                  = context.Background()
+		cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
+		client               = newKafkaProduceClient(t, clusterAddr)
+		fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+	)
+
+	// Produce some records.
+	produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
+	produceRecord(ctx, t, client, topic, partitionID, []byte("record-2"))
+	produceRecord(ctx, t, client, topic, partitionID, []byte("record-3"))
+
+	t.Run("should fetch records honoring the start offset", func(t *testing.T) {
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.NoError(t, res.Err)
+		require.Len(t, res.Records, 2)
+		require.Equal(t, "record-2", string(res.Records[0].Value))
+		require.Equal(t, "record-3", string(res.Records[1].Value))
+	})
+
+	t.Run("should return an empty non-error response if context is canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.NoError(t, res.Err)
+		require.Len(t, res.Records, 0)
+	})
+
+	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
+		// Control only the next request, then drop it.
+		cluster.ControlKey(kmsg.Fetch.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
+			return nil, errors.New("failed request"), true
+		})
+
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.Error(t, res.Err)
+		require.Len(t, res.Records, 0)
+	})
+
+	t.Run("should return an error response if the Fetch request contains an error", func(t *testing.T) {
+		// Control only the next request, then drop it.
+		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			req := kreq.(*kmsg.FetchRequest)
+
+			return &kmsg.FetchResponse{
+				Version: req.Version,
+				Topics: []kmsg.FetchResponseTopic{{
+					Topic:   req.Topics[0].Topic,
+					TopicID: req.Topics[0].TopicID,
+					Partitions: []kmsg.FetchResponseTopicPartition{{
+						Partition: req.Topics[0].Partitions[0].Partition,
+						ErrorCode: kerr.UnknownServerError.Code,
+					}},
+				}},
+			}, nil, true
+		})
+
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, kerr.UnknownServerError.Error())
+		require.Len(t, res.Records, 0)
+	})
+}
+
 func TestConcurrentFetchers_parseFetchResponse(t *testing.T) {
 	const (
 		topic       = "test-topic"
