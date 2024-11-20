@@ -72,6 +72,8 @@ type RuleStore interface {
 	//   not populated the rule groups with their actual rules.
 	// - If, and only if, a rule group can't be loaded because missing in the storage
 	//   then LoadRuleGroups() *MUST* not return error but return the missing rule groups.
+	//   This means that missing list *MUST* contain only rule groups that don't exist
+	//   in the storage, and not that we failed loading for other reasons.
 	LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (missing rulespb.RuleGroupList, err error)
 
 	GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error)
