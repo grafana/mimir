@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
@@ -130,6 +131,26 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, now)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
+}
+
+func TestHATrackerConfig_RegisterFlags_memberlist(t *testing.T) {
+	cfg := `
+enable_ha_tracker: false
+ha_tracker_update_timeout: 2s
+ha_tracker_update_timeout_jitter_max: 2s
+kvstore:
+ store: memberlist
+ memberlist:
+   node_name: testNode
+   randomize_node_name: true
+   stream_timeout: 2s
+`
+	config := HATrackerConfig{}
+	err := yaml.Unmarshal([]byte(cfg), &config)
+	assert.NoError(t, err)
+	assert.Equal(t, "testNode", config.KVStore.MemberlistKVConfig.NodeName)
+	assert.Equal(t, true, config.KVStore.MemberlistKVConfig.RandomizeNodeName)
+	assert.Equal(t, 2*time.Second, config.KVStore.MemberlistKVConfig.StreamTimeout)
 }
 
 func TestHATrackerConfig_Validate(t *testing.T) {
