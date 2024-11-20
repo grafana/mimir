@@ -658,11 +658,10 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			}
 
 			if len(bufferedResult.Records) == 0 {
-				// Typically if we had an error, then there wouldn't be any records.
-				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
+				// If we have no buffered records to try to send to the result channel then we retry with another
+				// Fetch attempt. However, before doing it, we check if we've been told to stop (if so, we should honor it).
 				attemptSpan.Finish()
 
-				// There is a chance we've been told to stop even when we have no records.
 				select {
 				case <-r.done:
 					wantSpan.Finish()
