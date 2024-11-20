@@ -13,6 +13,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -195,7 +196,7 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 		types.StringSlicePool.Put(h.bucketValues, h.memoryConsumptionTracker)
 	}
 
-	return h.computeOutputSeriesForGroup(ctx, thisGroup)
+	return h.computeOutputSeriesForGroup(thisGroup)
 }
 
 // accumulateUntilGroupComplete gathers all the series associated with the given bucketGroup
@@ -273,14 +274,15 @@ func (h *HistogramFunctionOverInstantVector) saveNativeHistogramsToGroup(hPoints
 	g.remainingSeriesCount--
 }
 
-func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ context.Context, g *bucketGroup) (types.InstantVectorSeriesData, error) {
+func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *bucketGroup) (types.InstantVectorSeriesData, error) {
 	floatPoints, err := types.FPointSlicePool.Get(h.timeRange.StepCount, h.memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
 	histogramIndex := 0
-	var currentHPoint *promql.HPoint
+	var currentHistogram *histogram.FloatHistogram
+	var currentHistogramPointIdx int64
 
 	for pointIdx := range h.timeRange.StepCount {
 		ph := h.phValues.Samples[pointIdx].F
@@ -292,14 +294,15 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 
 		// Get the HPoint if it exists at this step
 		if g.nativeHistograms != nil && histogramIndex < len(g.nativeHistograms) {
-			nextHPoint := &g.nativeHistograms[histogramIndex]
+			nextHPoint := g.nativeHistograms[histogramIndex]
 			if h.timeRange.PointIndex(nextHPoint.T) == int64(pointIdx) {
-				currentHPoint = nextHPoint
+				currentHistogram = nextHPoint.H
+				currentHistogramPointIdx = h.timeRange.PointIndex(nextHPoint.T)
 				histogramIndex++
 			}
 		}
 
-		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 && currentHPoint != nil && h.timeRange.PointIndex(currentHPoint.T) == int64(pointIdx) {
+		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 && currentHistogram != nil && currentHistogramPointIdx == int64(pointIdx) {
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
@@ -324,8 +327,8 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 			continue
 		}
 
-		if currentHPoint != nil && h.timeRange.PointIndex(currentHPoint.T) == int64(pointIdx) {
-			res := histogramQuantile(ph, currentHPoint.H)
+		if currentHistogram != nil && currentHistogramPointIdx == int64(pointIdx) {
+			res := histogramQuantile(ph, currentHistogram)
 
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
@@ -344,5 +347,6 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(_ conte
 
 func (h *HistogramFunctionOverInstantVector) Close() {
 	h.inner.Close()
+	h.phArg.Close()
 	types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)
 }
