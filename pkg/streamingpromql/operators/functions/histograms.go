@@ -40,9 +40,8 @@ type HistogramFunctionOverInstantVector struct {
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
 
-	seriesGroups    [][]*bucketGroup // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
-	remainingGroups []*bucketGroup   // One entry per group, in the order we want to return them.
-	bucketValues    []string         // One entry per series produced by inner. Contains the value of `le` for that series. An empty string ("") may mean no `le` label was present.
+	seriesGroupPairs []seriesGroupPair // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
+	remainingGroups  []*bucketGroup    // One entry per group, in the order we want to return them.
 }
 
 var _ types.InstantVectorOperator = &HistogramFunctionOverInstantVector{}
@@ -57,6 +56,13 @@ type bucketGroup struct {
 	nativeHistograms     []promql.HPoint // Histograms should only ever exist once per group
 	remainingSeriesCount uint            // The number of series remaining before this group is fully collated.
 	firstInputSeriesIdx  int             // All the input series should have the same Metric name (from innerSeriesMetricNames). We just need one index to determine the group name, so we take the first series.
+}
+
+// Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
+type seriesGroupPair struct {
+	bucketValue           string       // Contains the value of `le` for that series. An empty string ("") may mean no `le` label was present.
+	classicHistogramGroup *bucketGroup // The group for the input series without an `le` label
+	nativeHistogramGroup  *bucketGroup // The group for the input series with all labels
 }
 
 var bucketGroupPool = zeropool.New(func() *bucketGroup {
@@ -109,8 +115,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 
 	h.innerSeriesMetricNames.CaptureMetricNames(innerSeries)
 	groups := map[string]groupWithLabels{}
-	h.seriesGroups = make([][]*bucketGroup, 0, len(innerSeries))
-	h.bucketValues, err = types.StringSlicePool.Get(len(innerSeries), h.memoryConsumptionTracker)
+	h.seriesGroupPairs = make([]seriesGroupPair, len(innerSeries))
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +123,12 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 	lb := labels.NewBuilder(nil)
 
 	for innerIdx, series := range innerSeries {
-		// Each series belongs to two groups
-		seriesGroupPair := make([]*bucketGroup, 2)
+		// Each series belongs to two groups, one without the `le` label, and one with all labels.
+		// Sometimes these are the same group.
 
 		// Store the le label. If it doesn't exist, it'll be an empty string
 		le := series.Labels.Get(labels.BucketLabel)
-		h.bucketValues = append(h.bucketValues, le)
+		h.seriesGroupPairs[innerIdx].bucketValue = le
 
 		// First get the group with all labels
 		b = series.Labels.Bytes(b)
@@ -135,7 +140,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
-		seriesGroupPair[0] = g.group
+		h.seriesGroupPairs[innerIdx].nativeHistogramGroup = g.group
 
 		// Now, ignore `le` and create a group with the rest of the labels.
 		// We do this even if we don't have an `le` label. This is so we can detect
@@ -153,8 +158,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 			groups[string(b)] = g
 		}
 		g.group.remainingSeriesCount++
-		seriesGroupPair[1] = g.group
-		h.seriesGroups = append(h.seriesGroups, seriesGroupPair)
+		h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
 	}
 
 	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
@@ -191,11 +195,6 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if len(h.remainingGroups) == 0 {
-		// We no longer need the bucketValues strings
-		types.StringSlicePool.Put(h.bucketValues, h.memoryConsumptionTracker)
-	}
-
 	return h.computeOutputSeriesForGroup(thisGroup)
 }
 
@@ -212,29 +211,29 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 			}
 			return err
 		}
-		thisSeriesGroups := h.seriesGroups[h.currentInnerSeriesIndex]
+		thisSeriesGroups := h.seriesGroupPairs[h.currentInnerSeriesIndex]
 
 		// Native histograms only ever go to their original labelset.
 		// Floats only ever go to their group.
 		// It is possible that a series has both floats and histograms.
 		// It is also possible that both series groups are the same.
 		// The conflict in points is then detected in computeOutputSeriesForGroup.
-		h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups[0])
-		h.saveFloatsToGroup(s.Floats, thisSeriesGroups[1])
+		h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups.nativeHistogramGroup)
+		h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
 		h.currentInnerSeriesIndex++
 	}
 	return nil
 }
 
 // saveFloatsToGroup places each fPoint into a bucket with the upperBound set by the input series.
-func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.FPoint, g *bucketGroup) {
+func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.FPoint, le string, g *bucketGroup) {
 	if len(fPoints) > 0 {
-		upperBound, err := strconv.ParseFloat(h.bucketValues[h.currentInnerSeriesIndex], 64)
+		upperBound, err := strconv.ParseFloat(le, 64)
 		if err != nil {
 			// The le label was invalid. Record it:
 			h.annotations.Add(annotations.NewBadBucketLabelWarning(
 				h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
-				h.bucketValues[h.currentInnerSeriesIndex],
+				le,
 				h.inner.ExpressionPosition(),
 			))
 		} else {
