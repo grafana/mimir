@@ -26,7 +26,7 @@ type Config struct {
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
 	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
 
-	ApplyGlobalSeriesLimitUnder int `yaml:"apply_global_series_limit_under" category:"advanced"`
+	ApplyGlobalSeriesLimitUnder int `yaml:"apply_global_series_limit_under" category:"experimental"`
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
