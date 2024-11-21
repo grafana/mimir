@@ -1012,9 +1012,19 @@ func BenchmarkCachingKey(b *testing.B) {
 				cachingKeyAttributes(bucketID, "/object")
 			},
 		},
+		"cachingKeyAttributes() hashed": {
+			run: func(bucketID string) {
+				cachingKeyAttributes(bucketID, cachingKeyHash("/object"))
+			},
+		},
 		"cachingKeyObjectSubrange()": {
 			run: func(bucketID string) {
 				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+			},
+		},
+		"cachingKeyObjectSubrange() hashed": {
+			run: func(bucketID string) {
+				cachingKeyObjectSubrange(bucketID, cachingKeyHash("/object"), 10, 20)
 			},
 		},
 		"cachingKeyIter()": {
@@ -1032,9 +1042,19 @@ func BenchmarkCachingKey(b *testing.B) {
 				cachingKeyExists(bucketID, "/object")
 			},
 		},
+		"cachingKeyExists() hashed": {
+			run: func(bucketID string) {
+				cachingKeyExists(bucketID, cachingKeyHash("/object"))
+			},
+		},
 		"cachingKeyContent()": {
 			run: func(bucketID string) {
 				cachingKeyContent(bucketID, "/object")
+			},
+		},
+		"cachingKeyContent() hashed": {
+			run: func(bucketID string) {
+				cachingKeyContent(bucketID, cachingKeyHash("/object"))
 			},
 		},
 	}
