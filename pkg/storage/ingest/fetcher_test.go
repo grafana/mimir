@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -1332,11 +1331,7 @@ func TestFetchResult_Merge(t *testing.T) {
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
-	//logger := log.NewNopLogger()
-
-	logger := log.NewLogfmtLogger(os.Stdout)
-	// add timestamp to logger
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
+	logger := log.NewNopLogger()
 
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
