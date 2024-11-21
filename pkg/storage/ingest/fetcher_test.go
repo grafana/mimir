@@ -1616,6 +1616,33 @@ func TestFindGapsInRecords(t *testing.T) {
 				{start: 12, end: 15},
 			},
 		},
+		"negative gap at start is ignored": {
+			records: []*kgo.Record{
+				{Offset: 5},
+				{Offset: 6},
+			},
+			lastReturnedOffset: 10,
+			want:               []offsetRange{},
+		},
+		"-1 start offset is ignored": {
+			records: []*kgo.Record{
+				{Offset: 5},
+				{Offset: 6},
+			},
+			lastReturnedOffset: -1,
+			want:               []offsetRange{},
+		},
+		"-1 start offset is ignored, but not the rest of the gaps": {
+			records: []*kgo.Record{
+				{Offset: 5},
+				{Offset: 6},
+				{Offset: 10},
+			},
+			lastReturnedOffset: -1,
+			want: []offsetRange{
+				{start: 7, end: 10},
+			},
+		},
 	}
 
 	for name, tc := range tests {
