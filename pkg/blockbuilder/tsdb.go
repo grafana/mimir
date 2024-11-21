@@ -156,7 +156,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 			if err != nil {
 				// Only abort the processing on a terminal error.
-				if !softErrProcessor.ProcessErr(err, 0, nil) {
+				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
 					return false, err
 				}
 				discardedSamples++
@@ -200,7 +200,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 			if err != nil {
 				// Only abort the processing on a terminal error.
-				if !softErrProcessor.ProcessErr(err, 0, nil) {
+				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
 					return false, err
 				}
 				discardedSamples++

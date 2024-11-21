@@ -159,7 +159,7 @@ func TestTSDBBuilder(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
 			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
+			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 
 			currEnd, lastEnd := tc.currEnd, tc.lastEnd
 			{ // Add float samples.
@@ -349,7 +349,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 
 	// Has a timeseries with no samples.
 	var rec kgo.Record
@@ -378,6 +378,79 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.True(t, allProcessed)
 
 	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].Close())
+}
+
+// TestTSDBBuilderLimits tests the correct enforcements of series limits and also
+// that series limit error does not cause the processing to fail (i.e. do not error out).
+func TestTSDBBuilderLimits(t *testing.T) {
+	var (
+		user1 = "user1"
+		user2 = "user2"
+		// Limits should be applied only if the limits is under 50
+		applyGlobalSeriesLimitUnder = 50
+	)
+
+	limits := map[string]*validation.Limits{
+		user1: {
+			MaxGlobalSeriesPerUser:           30,
+			NativeHistogramsIngestionEnabled: true,
+		},
+		user2: {
+			MaxGlobalSeriesPerUser:           150,
+			NativeHistogramsIngestionEnabled: true,
+		},
+	}
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	var (
+		processingRange = time.Hour.Milliseconds()
+		lastEnd         = 2 * processingRange
+		currEnd         = 3 * processingRange
+		ts              = lastEnd + (processingRange / 2)
+	)
+	createRequest := func(userID string, seriesID int) *kgo.Record {
+		var (
+			samples    []mimirpb.Sample
+			histograms []mimirpb.Histogram
+		)
+		if seriesID%2 == 0 {
+			samples = floatSample(ts, float64(seriesID))
+		} else {
+			histograms = histogramSample(ts)
+		}
+		return &kgo.Record{
+			Key:   []byte(userID),
+			Value: createWriteRequest(t, strconv.Itoa(seriesID), samples, histograms),
+		}
+	}
+
+	for seriesID := 1; seriesID <= 100; seriesID++ {
+		for userID := range limits {
+			rec := createRequest(userID, seriesID)
+			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+			require.NoError(t, err)
+			require.Equal(t, true, allProcessed)
+		}
+	}
+
+	// user1 had a limit of 30, which is less than applyGlobalSeriesLimitUnder.
+	// So the limit must be applied.
+	db, err := builder.getOrCreateTSDB(tsdbTenant{tenantID: user1})
+	require.NoError(t, err)
+	require.Equal(t, uint64(30), db.Head().NumSeries())
+
+	// user2 had a limit of 100, which is greather than applyGlobalSeriesLimitUnder.
+	// So the limit must not be applied.
+	db, err = builder.getOrCreateTSDB(tsdbTenant{tenantID: user2})
+	require.NoError(t, err)
+	require.Equal(t, uint64(100), db.Head().NumSeries())
 }
 
 func defaultLimitsTestConfig() validation.Limits {
