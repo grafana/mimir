@@ -573,6 +573,7 @@
 
 ### Documentation
 
+* [CHANGE] Note that the _Play with Grafana Mimir_ tutorial directory path changed after the release of the video. #8319
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
 * [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
 * [ENHANCEMENT] Document option server.log-source-ips-full. #8268
