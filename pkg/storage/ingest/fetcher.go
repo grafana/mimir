@@ -466,7 +466,7 @@ func (g offsetRange) numOffsets() int64 {
 
 func findGapsInRecords(records kgo.Fetches, lastSeenOffset int64) []offsetRange {
 	var gaps []offsetRange
-	if lastSeenOffset < 0 {
+	if lastSeenOffset < 0 && records.NumRecords() > 0 {
 		// The offset may be -1 when we haven't seen ANY offsets. In this case we don't know what's the first available offset.
 		// So we assume that the first record is the first offset from the ones we're being passed.
 		firstRecord := records.RecordIter().Next()
