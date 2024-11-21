@@ -886,7 +886,11 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
 						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
 						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
-					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+
+						# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+						# TYPE cortex_ingest_storage_reader_missed_records_total counter
+						cortex_ingest_storage_reader_missed_records_total 2
+					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_missed_records_total")
 				})
 			})
 		}
