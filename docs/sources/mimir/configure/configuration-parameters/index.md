@@ -4390,8 +4390,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 1000000]
 
-  # (advanced) When enabled, ingester will produce 24h blocks for the out of
-  # order data that is before the current day, instead of the usual 2h blocks.
+  # (experimental) When enabled, ingester produces 24h blocks for out-of-order
+  # data that is before the current day, instead of the usual 2h blocks.
   # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
   [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
