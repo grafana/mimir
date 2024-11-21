@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] helm: add `enabled` field for admin-api, compactor, distributor, gateway, ingester, querier, query-frontend and store-gateway components. This helps when deploying the GEM federation-frontend on its own. #9734
 * [BUGFIX] Fix PVC template in AlertManager to not show diff in ArgoCD. #9774
 * [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
+* [BUGFIX] Fix `extraObjects` linting with helm lint by padding with an extra new line. #9863
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler, also for zone aware Alertmanager #9851
 
 ## 5.5.1
