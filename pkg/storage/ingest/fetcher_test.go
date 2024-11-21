@@ -1414,7 +1414,7 @@ func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *concurrentFetchers) {
 		}
 
 		// We always expect that PollFetches() returns zero records.
-		require.Len(t, fetches.Records(), 0)
+		assert.Len(t, fetches.Records(), 0)
 
 		// If there are no buffered records, we're good. We can end the assertion.
 		if fetchers.BufferedRecords() == 0 {
