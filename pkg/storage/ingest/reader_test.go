@@ -841,6 +841,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withConsumeFromPositionAtStartup(consumeFromEnd),
 					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
 					withRegistry(reg),
+					withSkipMissedRecordsVerification(),
 				}, concurrencyVariant...)
 
 				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
@@ -2647,11 +2648,12 @@ func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Cli
 }
 
 type readerTestCfg struct {
-	kafka       KafkaConfig
-	partitionID int32
-	consumer    consumerFactory
-	registry    *prometheus.Registry
-	logger      log.Logger
+	kafka                         KafkaConfig
+	partitionID                   int32
+	consumer                      consumerFactory
+	registry                      *prometheus.Registry
+	logger                        log.Logger
+	skipMissedRecordsVerification bool
 }
 
 type readerTestCfgOpt func(cfg *readerTestCfg)
@@ -2724,6 +2726,12 @@ func withMaxBufferedBytes(i int) readerTestCfgOpt {
 	}
 }
 
+func withSkipMissedRecordsVerification() readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.skipMissedRecordsVerification = true
+	}
+}
+
 var testingLogger = mimirtest.NewTestingLogger(nil)
 
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
@@ -2742,6 +2750,17 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
+	}
+
+	if !cfg.skipMissedRecordsVerification {
+		t.Cleanup(func() {
+			// Assuming none of the tests intentionally create gaps in offsets, there should be no missed records.
+			assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+        	# TYPE cortex_ingest_storage_reader_missed_records_total counter
+        	cortex_ingest_storage_reader_missed_records_total 0
+		`), "cortex_ingest_storage_reader_missed_records_total"))
+		})
 	}
 
 	// Ensure the config is valid.
