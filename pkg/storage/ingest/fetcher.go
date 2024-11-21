@@ -427,7 +427,6 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			instrumentGaps(findGapsInRecords(f.Records, r.lastReturnedOffset), r.metrics.missedRecords, r.logger)
 			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
@@ -450,7 +449,6 @@ func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.L
 			"records_offset_gap_end_exclusive", gap.end,
 		)
 		records.Add(float64(gap.numOffsets()))
-		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
 	}
 }
 
@@ -466,14 +464,20 @@ func (g offsetRange) numOffsets() int64 {
 	return g.end - g.start
 }
 
-func findGapsInRecords(records []*kgo.Record, lastReturnedOffset int64) []offsetRange {
+func findGapsInRecords(records kgo.Fetches, lastSeenOffset int64) []offsetRange {
 	var gaps []offsetRange
-	for _, r := range records {
-		if r.Offset != lastReturnedOffset+1 {
-			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
-		}
-		lastReturnedOffset = r.Offset
+	if lastSeenOffset < 0 && records.NumRecords() > 0 {
+		// The offset may be -1 when we haven't seen ANY offsets. In this case we don't know what's the first available offset.
+		// So we assume that the first record is the first offset from the ones we're being passed.
+		firstRecord := records.RecordIter().Next()
+		lastSeenOffset = firstRecord.Offset
 	}
+	records.EachRecord(func(r *kgo.Record) {
+		if r.Offset > lastSeenOffset+1 {
+			gaps = append(gaps, offsetRange{start: lastSeenOffset + 1, end: r.Offset})
+		}
+		lastSeenOffset = r.Offset
+	})
 	return gaps
 }
 

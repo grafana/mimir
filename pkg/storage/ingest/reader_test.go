@@ -2744,6 +2744,15 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 		o(cfg)
 	}
 
+	t.Cleanup(func() {
+		// Assuming none of the tests intentionally create gaps in offsets, there should be no missed records.
+		assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+			# TYPE cortex_ingest_storage_reader_missed_records_total counter
+			cortex_ingest_storage_reader_missed_records_total 0
+		`), "cortex_ingest_storage_reader_missed_records_total"))
+	})
+
 	// Ensure the config is valid.
 	require.NoError(t, cfg.kafka.Validate())
 
