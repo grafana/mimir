@@ -1503,14 +1503,34 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 
 	meta := &BlockMeta{}
 	meta.Compaction.SetOutOfOrder()
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
-		mint, maxt := t, t+blockSize
+	runCompaction := func(mint, maxt int64) error {
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		ulids = append(ulids, uids...)
+		return nil
+	}
+
+	day := 24 * time.Hour.Milliseconds()
+	maxtFor24hBlock := day * (db.Head().MaxTime() / day)
+
+	// 24h blocks for data that is for the previous days
+	for t := day * (oooHeadMint / day); t < maxtFor24hBlock; t += day {
+		if err := runCompaction(t, t+day); err != nil {
+			return nil, err
+		}
+	}
+
+	oooStart := oooHeadMint
+	if oooStart < maxtFor24hBlock {
+		oooStart = maxtFor24hBlock
+	}
+	for t := blockSize * (oooStart / blockSize); t <= oooHeadMaxt; t += blockSize {
+		if err := runCompaction(t, t+blockSize); err != nil {
+			return nil, err
+		}
 	}
 
 	if len(ulids) == 0 {
