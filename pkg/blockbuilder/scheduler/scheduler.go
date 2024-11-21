@@ -130,12 +130,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 	}
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
-
-	if err := s.finalizeObservations(); err != nil {
-		level.Warn(s.logger).Log("msg", "failed to compute state from observations", "err", err)
-		// (what to do here?)
-	}
-
+	s.finalizeObservations()
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -313,7 +308,7 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 
 // finalizeObservations considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
-func (s *BlockBuilderScheduler) finalizeObservations() error {
+func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
@@ -336,12 +331,10 @@ func (s *BlockBuilderScheduler) finalizeObservations() error {
 			// An in-progress job.
 			// These don't affect offsets (yet), they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				return fmt.Errorf("import job: %w", err)
+				level.Warn(s.logger).Log("msg", "failed to import job", "key", rj.key, "worker", rj.workerID, "err", err)
 			}
 		}
 	}
-
-	return nil
 }
 
 type obsMap map[string]*observation
