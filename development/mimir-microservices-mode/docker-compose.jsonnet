@@ -112,9 +112,10 @@ std.manifestYamlDoc({
         target: 'querier',
         httpPort: 8005,
         extraArguments:
+          '-distributor.ha-tracker.enable=false ' +
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
-        extraVolumes: ['./config/mimir_override.yaml:/mimir/config/mimir.yaml'],
+          (if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else ''),
+        extraVolumes: [],
       }),
 
       'query-frontend': mimirService({
@@ -152,8 +153,9 @@ std.manifestYamlDoc({
       target: 'ruler',
       httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
-      extraArguments: if $._config.ruler_use_remote_execution then '-ruler.query-frontend.address=dns:///query-frontend:9007' else '',
-      extraVolumes: ['./config/mimir_override.yaml:/mimir/config/mimir.yaml'],
+      extraArguments: if $._config.ruler_use_remote_execution then '-ruler.query-frontend.address=dns:///query-frontend:9007' else '' +
+                                                                                                                                   '-distributor.ha-tracker.enable=false',
+      extraVolumes: [],
     })
     for id in std.range(1, count)
   },
