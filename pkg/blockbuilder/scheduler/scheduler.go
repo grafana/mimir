@@ -57,7 +57,7 @@ func New(
 	return s, nil
 }
 
-func (s *BlockBuilderScheduler) starting(context.Context) error {
+func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 	kc, err := ingest.NewKafkaReaderClient(
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
@@ -68,15 +68,7 @@ func (s *BlockBuilderScheduler) starting(context.Context) error {
 	}
 
 	s.adminClient = kadm.NewClient(kc)
-	return nil
-}
 
-func (s *BlockBuilderScheduler) stopping(_ error) error {
-	s.adminClient.Close()
-	return nil
-}
-
-func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	// The startup process for block-builder-scheduler entails learning the state of the world:
 	//  1. obtain an initial set of offset info from Kafka
 	//  2. listen to worker updates for a while to learn what the previous scheduler knew
@@ -96,8 +88,8 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		select {
-		case <-ctx.Done():
 		case <-time.After(s.cfg.StartupObserveTime):
+		case <-ctx.Done():
 		}
 	}()
 
@@ -108,9 +100,15 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 
 	s.completeObservationMode()
+	return nil
+}
 
-	// Now that that's done, we can start the main loop.
+func (s *BlockBuilderScheduler) stopping(_ error) error {
+	s.adminClient.Close()
+	return nil
+}
 
+func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
 	for {
