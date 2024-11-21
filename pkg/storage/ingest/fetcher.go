@@ -465,13 +465,13 @@ func (g offsetRange) numOffsets() int64 {
 	return g.end - g.start
 }
 
-func findGapsInRecords(records kgo.Fetches, lastReturnedOffset int64) []offsetRange {
+func findGapsInRecords(records kgo.Fetches, lastSeenOffset int64) []offsetRange {
 	var gaps []offsetRange
 	records.EachRecord(func(r *kgo.Record) {
-		if r.Offset > lastReturnedOffset+1 {
-			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
+		if r.Offset > lastSeenOffset+1 {
+			gaps = append(gaps, offsetRange{start: lastSeenOffset + 1, end: r.Offset})
 		}
-		lastReturnedOffset = r.Offset
+		lastSeenOffset = r.Offset
 	})
 	return gaps
 }
