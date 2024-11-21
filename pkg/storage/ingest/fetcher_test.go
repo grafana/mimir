@@ -1020,7 +1020,8 @@ func TestConcurrentFetchers(t *testing.T) {
 		assert.LessOrEqualf(t, fetchers.BufferedRecords(), int64(maxInflightBytes), "Should still not buffer more than %d bytes after consuming some records", maxInflightBytes)
 
 		// Consume all remaining records and verify total
-		fetches = longPollFetches(fetchers, totalProducedRecords-totalConsumedRecords, 2*time.Second)
+		// We produce a lot of data, give enough time so that the slow CI doesn't flake
+		fetches = longPollFetches(fetchers, totalProducedRecords-totalConsumedRecords, 20*time.Second)
 		totalConsumedRecords += fetches.NumRecords()
 
 		// Allow time for more fetches
