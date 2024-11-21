@@ -189,6 +189,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		return err
 	}
 
+	// lastConsumedOffset could be a special negative offset (e.g. partition start, or partition end).
 	r.lastSeenOffset = lastConsumedOffset
 	// Initialise the last consumed offset only if we've got an actual offset from the consumer group.
 	if lastConsumedOffset >= 0 {
