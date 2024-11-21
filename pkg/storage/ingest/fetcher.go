@@ -466,6 +466,10 @@ func (g offsetRange) numOffsets() int64 {
 
 func findGapsInRecords(records kgo.Fetches, lastSeenOffset int64) []offsetRange {
 	var gaps []offsetRange
+	if lastSeenOffset < 0 {
+		firstRecord := records.RecordIter().Next()
+		lastSeenOffset = firstRecord.Offset
+	}
 	records.EachRecord(func(r *kgo.Record) {
 		if r.Offset > lastSeenOffset+1 {
 			gaps = append(gaps, offsetRange{start: lastSeenOffset + 1, end: r.Offset})
