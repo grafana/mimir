@@ -468,7 +468,7 @@ func (g offsetRange) numOffsets() int64 {
 func findGapsInRecords(records kgo.Fetches, lastReturnedOffset int64) []offsetRange {
 	var gaps []offsetRange
 	records.EachRecord(func(r *kgo.Record) {
-		if r.Offset != lastReturnedOffset+1 {
+		if r.Offset > lastReturnedOffset+1 {
 			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
 		}
 		lastReturnedOffset = r.Offset
