@@ -160,6 +160,7 @@
 
 ### Documentation
 
+* [CHANGE] Note that the _Play with Grafana Mimir_ tutorial directory path changed after the release of the video. #8319
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
 * [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
 
@@ -389,7 +390,6 @@
 
 ### Documentation
 
-* [CHANGE] Note that the _Play with Grafana Mimir_ tutorial directory path changed after the release of the video. #8319
 * [CHANGE] No longer mark OTLP distributor endpoint as experimental. #7348
 * [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
 * [ENHANCEMENT] Add Grafana Cloud recommendations to OTLP documentation. #7375
