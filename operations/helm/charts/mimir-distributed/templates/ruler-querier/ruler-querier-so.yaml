@@ -18,6 +18,10 @@ spec:
       {{- end }}
   maxReplicaCount: {{ .Values.ruler_querier.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.ruler_querier.kedaAutoscaling.minReplicaCount }}
+  {{- with .Values.query_frontend.kedaAutoscaling.fallback }}
+  fallback:
+    {{ .toYaml . | nindent 4 }}
+  {{- end }}
   pollingInterval: {{ .Values.kedaAutoscaling.pollingInterval }}
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler-querier") }}
