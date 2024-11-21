@@ -1,5 +1,8 @@
 multitenancy_enabled: false
 
+server:
+  log_level: debug # for start ts debug messages 
+
 distributor:
   pool:
     health_check_ingesters: true
@@ -75,6 +78,8 @@ limits:
   native_histograms_ingestion_enabled: true
   max_global_exemplars_per_user: 100000
   otel_metric_suffixes_enabled: true
+  otel_created_timestamp_zero_ingestion_enabled: true
+  out_of_order_time_window: "2h"
 
 runtime_config:
   file: ./config/runtime.yaml
