@@ -449,7 +449,6 @@ func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.L
 			"records_offset_gap_end_exclusive", gap.end,
 		)
 		records.Add(float64(gap.numOffsets()))
-		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
 	}
 }
 
