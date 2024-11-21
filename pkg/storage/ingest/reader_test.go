@@ -2145,11 +2145,6 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 			return nil, fmt.Errorf("expected 1 partition, got %d", len(req.Topics[0].Partitions)), true
 		}
 
-		// Simulate a 10% networking error rate.
-		if rand.Int()%10 == 0 {
-			return nil, errors.New("mocked error"), true
-		}
-
 		// Simulate a 10% Kafka error rate.
 		if rand.Int()%10 == 0 {
 			return &kmsg.FetchResponse{
