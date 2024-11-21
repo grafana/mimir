@@ -8,15 +8,18 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -25,6 +28,14 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
+)
+
+var (
+	fastFetchBackoffConfig = backoff.Config{
+		MinBackoff: 10 * time.Millisecond,
+		MaxBackoff: 10 * time.Millisecond,
+		MaxRetries: 0,
+	}
 )
 
 func TestHandleKafkaFetchErr(t *testing.T) {
@@ -962,6 +973,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 			offsetReader,
 			startOffsetsReader,
+			fastFetchBackoffConfig,
 			&metrics,
 		)
 		assert.ErrorContains(t, err, "failed to find topic ID")
@@ -1144,10 +1156,236 @@ func TestConcurrentFetchers(t *testing.T) {
 	})
 }
 
+func TestConcurrentFetchers_fetchSingle(t *testing.T) {
+	const (
+		topic       = "test-topic"
+		partitionID = 1
+	)
+
+	var (
+		ctx                  = context.Background()
+		cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
+		client               = newKafkaProduceClient(t, clusterAddr)
+		fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+	)
+
+	// Produce some records.
+	produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
+	produceRecord(ctx, t, client, topic, partitionID, []byte("record-2"))
+	produceRecord(ctx, t, client, topic, partitionID, []byte("record-3"))
+
+	t.Run("should fetch records honoring the start offset", func(t *testing.T) {
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.NoError(t, res.Err)
+		require.Len(t, res.Records, 2)
+		require.Equal(t, "record-2", string(res.Records[0].Value))
+		require.Equal(t, "record-3", string(res.Records[1].Value))
+	})
+
+	t.Run("should return an empty non-error response if context is canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.NoError(t, res.Err)
+		require.Len(t, res.Records, 0)
+	})
+
+	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
+		// Control only the next request, then drop it.
+		cluster.ControlKey(kmsg.Fetch.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+			return nil, errors.New("failed request"), true
+		})
+
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.Error(t, res.Err)
+		require.Len(t, res.Records, 0)
+	})
+
+	t.Run("should return an error response if the Fetch request contains an error", func(t *testing.T) {
+		// Control only the next request, then drop it.
+		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			req := kreq.(*kmsg.FetchRequest)
+
+			return &kmsg.FetchResponse{
+				Version: req.Version,
+				Topics: []kmsg.FetchResponseTopic{{
+					Topic:   req.Topics[0].Topic,
+					TopicID: req.Topics[0].TopicID,
+					Partitions: []kmsg.FetchResponseTopicPartition{{
+						Partition: req.Topics[0].Partitions[0].Partition,
+						ErrorCode: kerr.UnknownServerError.Code,
+					}},
+				}},
+			}, nil, true
+		})
+
+		res := fetchers.fetchSingle(ctx, fetchWant{
+			startOffset:             1,
+			endOffset:               5,
+			estimatedBytesPerRecord: 100,
+			targetMaxBytes:          1000000,
+		})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, kerr.UnknownServerError.Error())
+		require.Len(t, res.Records, 0)
+	})
+}
+
+func TestConcurrentFetchers_parseFetchResponse(t *testing.T) {
+	const (
+		topic       = "test-topic"
+		partitionID = 1
+	)
+
+	var (
+		ctx            = context.Background()
+		_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
+		client         = newKafkaProduceClient(t, clusterAddr)
+		fetchers       = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+	)
+
+	t.Run("should return error if the response does not contain any topic", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{})
+		require.Error(t, res.Err)
+	})
+
+	t.Run("should return error if the response contains an error at the response level", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{ErrorCode: kerr.UnknownServerError.Code})
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "received error")
+	})
+
+	t.Run("should return error if the response contains more than 1 topic", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{
+			{TopicID: fetchers.topicID},
+			{TopicID: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+		}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected number of topics")
+	})
+
+	t.Run("should return error if the response contains 1 topic but the topic ID is not the expected one", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{
+			{TopicID: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+		}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected topic ID")
+	})
+
+	t.Run("should return error if the response contains 1 topic with more than 1 partition", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{{
+			TopicID: fetchers.topicID,
+			Partitions: []kmsg.FetchResponseTopicPartition{
+				{Partition: 0},
+				{Partition: 1},
+			},
+		}}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected number of partitions")
+	})
+
+	t.Run("should return error if the response contains 1 topic with 1 partition but the partition is not the expected one", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{{
+			TopicID: fetchers.topicID,
+			Partitions: []kmsg.FetchResponseTopicPartition{
+				{Partition: 12345},
+			},
+		}}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, "unexpected partition ID")
+	})
+
+	t.Run("should return error if the response contains an error for the partition", func(t *testing.T) {
+		res := fetchers.parseFetchResponse(ctx, 0, &kmsg.FetchResponse{Topics: []kmsg.FetchResponseTopic{{
+			TopicID: fetchers.topicID,
+			Partitions: []kmsg.FetchResponseTopicPartition{
+				{Partition: fetchers.partitionID, ErrorCode: kerr.UnknownServerError.Code},
+			},
+		}}})
+
+		require.Error(t, res.Err)
+		require.ErrorContains(t, res.Err, kerr.ErrorForCode(kerr.UnknownServerError.Code).Error())
+	})
+}
+
+func TestNewEmptyFetchResult(t *testing.T) {
+	t.Run("should have no error set", func(t *testing.T) {
+		res := newEmptyFetchResult(context.Background(), 1)
+		require.Equal(t, int32(1), res.Partition)
+		require.NoError(t, res.Err)
+	})
+}
+
+func TestNewErrorFetchResult(t *testing.T) {
+	t.Run("should have error set", func(t *testing.T) {
+		err := errors.New("test error")
+		res := newErrorFetchResult(context.Background(), 1, err)
+		require.Equal(t, int32(1), res.Partition)
+		require.Equal(t, err, res.Err)
+	})
+
+	t.Run("should panic if no error is provided", func(t *testing.T) {
+		require.Panics(t, func() {
+			newErrorFetchResult(context.Background(), 1, nil)
+		})
+	})
+}
+
+func TestFetchResult_Merge(t *testing.T) {
+	t.Run("should panic if the called fetchResult has Err set", func(t *testing.T) {
+		require.Panics(t, func() {
+			a := fetchResult{FetchPartition: kgo.FetchPartition{Err: errors.New("test error")}}
+			b := fetchResult{FetchPartition: kgo.FetchPartition{}}
+			a.Merge(b)
+		})
+	})
+
+	t.Run("should panic if the older fetchResult has Err set", func(t *testing.T) {
+		require.Panics(t, func() {
+			a := fetchResult{FetchPartition: kgo.FetchPartition{}}
+			b := fetchResult{FetchPartition: kgo.FetchPartition{Err: errors.New("test error")}}
+			a.Merge(b)
+		})
+	})
+}
+
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
+
+	t.Cleanup(func() {
+		// Assuming none of the tests intentionally create gaps in offsets, there should be no missed records.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+        	# TYPE cortex_ingest_storage_reader_missed_records_total counter
+        	cortex_ingest_storage_reader_missed_records_total 0
+		`), "cortex_ingest_storage_reader_missed_records_total"))
+	})
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.
@@ -1172,6 +1410,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
 		offsetReader,
 		startOffsetsReader,
+		fastFetchBackoffConfig,
 		&metrics,
 	)
 	require.NoError(t, err)
@@ -1319,6 +1558,81 @@ func TestFetchWant_UpdateBytesPerRecord(t *testing.T) {
 			maxBytes := result.MaxBytes()
 			assert.GreaterOrEqual(t, maxBytes, int32(0), "MaxBytes should never return negative values")
 			assert.LessOrEqual(t, maxBytes, int32(math.MaxInt32), "MaxBytes should never exceed MaxInt32")
+		})
+	}
+}
+
+func TestFindGapsInRecords(t *testing.T) {
+	tests := map[string]struct {
+		records            []*kgo.Record
+		lastReturnedOffset int64
+		want               []offsetRange
+	}{
+		"no gaps": {
+			records: []*kgo.Record{
+				{Offset: 1},
+				{Offset: 2},
+				{Offset: 3},
+			},
+			lastReturnedOffset: 0,
+			want:               nil,
+		},
+		"single gap": {
+			records: []*kgo.Record{
+				{Offset: 5},
+			},
+			lastReturnedOffset: 2,
+			want: []offsetRange{
+				{start: 3, end: 5},
+			},
+		},
+		"multiple gaps": {
+			records: []*kgo.Record{
+				{Offset: 3},
+				{Offset: 7},
+				{Offset: 10},
+			},
+			lastReturnedOffset: 1,
+			want: []offsetRange{
+				{start: 2, end: 3},
+				{start: 4, end: 7},
+				{start: 8, end: 10},
+			},
+		},
+		"empty records": {
+			records:            []*kgo.Record{},
+			lastReturnedOffset: 5,
+			want:               nil,
+		},
+		"gap at start": {
+			records: []*kgo.Record{
+				{Offset: 10},
+				{Offset: 11},
+			},
+			lastReturnedOffset: 5,
+			want: []offsetRange{
+				{start: 6, end: 10},
+			},
+		},
+		"gap at start and middle": {
+			records: []*kgo.Record{
+				{Offset: 10},
+				{Offset: 11},
+				{Offset: 15},
+				{Offset: 16},
+			},
+			lastReturnedOffset: 5,
+			want: []offsetRange{
+				{start: 6, end: 10},
+				{start: 12, end: 15},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := findGapsInRecords(tc.records, tc.lastReturnedOffset)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

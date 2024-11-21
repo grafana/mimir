@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -32,6 +33,14 @@ const (
 
 	// chosenBrokerDied duplicates a constant from franz-go because it isn't exported.
 	chosenBrokerDied = "the internal broker struct chosen to issue this request has died--either the broker id is migrating or no longer exists"
+
+	// initialBytesPerRecord is the initial number of estimated bytes per record.
+	// We start with an estimation, we will update it as we consume.
+	initialBytesPerRecord = 10_000
+
+	// forcedMinValueForMaxBytes is the lowest value we set in Fetch request's MaxBytes.
+	// When we're fetching few records, we can afford to over-fetch to avoid more requests.
+	forcedMinValueForMaxBytes = 1_000_000
 )
 
 type fetcher interface {
@@ -100,7 +109,7 @@ func (w fetchWant) MaxBytes() int32 {
 		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
 		return math.MaxInt32
 	}
-	fetchBytes = max(1_000_000, fetchBytes) // when we're fetching few records, we can afford to over-fetch to avoid more requests.
+	fetchBytes = max(forcedMinValueForMaxBytes, fetchBytes)
 	return int32(fetchBytes)
 }
 
@@ -186,8 +195,18 @@ func (fr *fetchResult) finishWaitingForConsumption() {
 	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
 }
 
-// Merge merges other with an older fetchResult. Merge keeps most of the fields of fr and assumes they are more up-to-date than older.
+// Merge merges older with into fr. Merge keeps most of the fields of fr and assumes they
+// are more up-to-date than older.
+//
+// This function panics if one of the two fetchResult has Err set (errors MUST not be merged).
 func (fr *fetchResult) Merge(older fetchResult) fetchResult {
+	if fr.Err != nil {
+		panic("fetchResult.Merge() has been called on a fetchResult with Err set")
+	}
+	if older.Err != nil {
+		panic("fetchResult.Merge() has been called with older fetchResult with Err set")
+	}
+
 	if older.ctx != nil {
 		level.Debug(spanlogger.FromContext(older.ctx, log.NewNopLogger())).Log("msg", "merged fetch result with the next result")
 	}
@@ -200,11 +219,31 @@ func (fr *fetchResult) Merge(older fetchResult) fetchResult {
 	return *fr
 }
 
-func newEmptyFetchResult(ctx context.Context, err error) fetchResult {
+// newEmptyFetchResult creates a new fetchResult with empty partition and no error set.
+func newEmptyFetchResult(ctx context.Context, partitionID int32) fetchResult {
 	return fetchResult{
-		ctx:            ctx,
-		fetchedBytes:   0,
-		FetchPartition: kgo.FetchPartition{Err: err},
+		ctx:          ctx,
+		fetchedBytes: 0,
+		FetchPartition: kgo.FetchPartition{
+			Partition: partitionID,
+		},
+	}
+}
+
+// newEmptyFetchResult creates a new fetchResult with a partition with the input error set.
+// This function intentionally panics if the error is not provided (it's a logic bug).
+func newErrorFetchResult(ctx context.Context, partitionID int32, err error) fetchResult {
+	if err == nil {
+		panic("an error must be provided to newErrorFetchResult()")
+	}
+
+	return fetchResult{
+		ctx:          ctx,
+		fetchedBytes: 0,
+		FetchPartition: kgo.FetchPartition{
+			Partition: partitionID,
+			Err:       err,
+		},
 	}
 }
 
@@ -227,8 +266,12 @@ type concurrentFetchers struct {
 	// ordering.
 	orderedFetches chan fetchResult
 
-	lastReturnedRecord int64
+	lastReturnedOffset int64
 	startOffsets       *genericOffsetReader[int64]
+
+	// fetchBackoffConfig is the config to use for the backoff in case of Fetch errors.
+	// We set it here so that tests can override it run faster.
+	fetchBackoffConfig backoff.Config
 
 	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
 	trackCompressedBytes  bool
@@ -253,8 +296,17 @@ func newConcurrentFetchers(
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
 	startOffsetsReader *genericOffsetReader[int64],
+	fetchBackoffConfig backoff.Config,
 	metrics *readerMetrics,
 ) (*concurrentFetchers, error) {
+	if fetchBackoffConfig.MaxBackoff == 0 {
+		// Ensure it's not the zero value, which means we haven't got the backoff config due to a bug.
+		return nil, errors.New("fetchBackoffConfig.MaxBackoff has not been set")
+	}
+	if fetchBackoffConfig.MaxRetries != 0 {
+		// It's critical for concurrentFetchers that failed Fetch requests are retried forever.
+		return nil, errors.New("fetchBackoffConfig.MaxRetries must be 0")
+	}
 
 	var err error
 	switch startOffset {
@@ -283,13 +335,14 @@ func newConcurrentFetchers(
 		partitionID:             partition,
 		metrics:                 metrics,
 		minBytesWaitTime:        minBytesWaitTime,
-		lastReturnedRecord:      startOffset - 1,
+		lastReturnedOffset:      startOffset - 1,
 		startOffsets:            startOffsetsReader,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
 		tracer:                  recordsTracer(),
 		orderedFetches:          make(chan fetchResult),
 		done:                    make(chan struct{}),
+		fetchBackoffConfig:      fetchBackoffConfig,
 	}
 
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
@@ -343,7 +396,7 @@ func (r *concurrentFetchers) Stop() {
 	r.bufferedFetchedRecords.Store(0)
 	r.bufferedFetchedBytes.Store(0)
 
-	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_record", r.lastReturnedRecord)
+	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_offset", r.lastReturnedOffset)
 }
 
 // Update implements fetcher
@@ -352,7 +405,7 @@ func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
 	r.done = make(chan struct{})
 
 	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedRecord+1, concurrency)
+	go r.start(ctx, r.lastReturnedOffset+1, concurrency)
 }
 
 // PollFetches implements fetcher
@@ -369,12 +422,13 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 		// PollFetches() calls).
 		r.bufferedFetchedRecords.Sub(int64(len(f.Records)))
 
-		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedRecord)
+		firstUnreturnedRecordIdx := recordIndexAfterOffset(f.Records, r.lastReturnedOffset)
 		r.recordOrderedFetchTelemetry(f, firstUnreturnedRecordIdx, waitStartTime)
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			r.lastReturnedRecord = f.Records[len(f.Records)-1].Offset
+			instrumentGaps(findGapsInRecords(f.Records, r.lastReturnedOffset), r.metrics.missedRecords, r.logger)
+			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
 		return kgo.Fetches{{
@@ -386,6 +440,41 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 			},
 		}}, f.ctx
 	}
+}
+
+func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.Logger) {
+	for _, gap := range gaps {
+		level.Error(logger).Log(
+			"msg", "there is a gap in consumed offsets; it is likely that there was data loss; see runbook for MimirIngesterMissedRecordsFromKafka",
+			"records_offset_gap_start_inclusive", gap.start,
+			"records_offset_gap_end_exclusive", gap.end,
+		)
+		records.Add(float64(gap.numOffsets()))
+		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
+	}
+}
+
+type offsetRange struct {
+	// start is inclusive
+	start int64
+
+	// end is exclusive
+	end int64
+}
+
+func (g offsetRange) numOffsets() int64 {
+	return g.end - g.start
+}
+
+func findGapsInRecords(records []*kgo.Record, lastReturnedOffset int64) []offsetRange {
+	var gaps []offsetRange
+	for _, r := range records {
+		if r.Offset != lastReturnedOffset+1 {
+			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
+		}
+		lastReturnedOffset = r.Offset
+	}
+	return gaps
 }
 
 func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
@@ -433,30 +522,38 @@ func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstRet
 	}
 }
 
-// fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
-// fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
+// fetchSingle attempts to find out the leader Kafka broker for a partition and then sends a fetch request
+// to the leader to fetch the range of records requested in the input fetchWant. If the request is successful,
+// it then parses the responses.
+//
+// The returned fetchResult may be a success or failure. If it's a success, it may or may not fulfil the
+// entire fetchWant (only a subset of records may have been fetched, potentially even none of them). If it's
+// a failure, the fetchResult.Err is valued. This function guarantees that the returned fetchResult doesn't
+// contain any record in case an error is also returned.
+//
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr fetchResult) {
 	defer func(fetchStartTime time.Time) {
 		fr.logCompletedFetch(fetchStartTime, fw)
 	}(time.Now())
 
+	// Lookup the leader broker for the topic partition.
 	leaderID, leaderEpoch, err := r.client.PartitionLeader(r.topicName, r.partitionID)
 	if err != nil || (leaderID == -1 && leaderEpoch == -1) {
 		if err != nil {
-			return newEmptyFetchResult(ctx, fmt.Errorf("finding leader for partition: %w", err))
+			return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("finding leader for partition: %w", err))
 		}
-		return newEmptyFetchResult(ctx, errUnknownPartitionLeader)
+		return newErrorFetchResult(ctx, r.partitionID, errUnknownPartitionLeader)
 	}
 
+	// Build and send the Fetch request to the leader broker.
 	req := r.buildFetchRequest(fw, leaderEpoch)
-
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return newEmptyFetchResult(ctx, nil)
+			return newEmptyFetchResult(ctx, r.partitionID)
 		}
-		return newEmptyFetchResult(ctx, fmt.Errorf("fetching from kafka: %w", err))
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetching from kafka: %w", err))
 	}
 
 	return r.parseFetchResponse(ctx, fw.startOffset, resp)
@@ -484,16 +581,35 @@ func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) 
 	return req
 }
 
+// This function guarantees that the returned fetchResult doesn't contain any record in case an error is also returned.
 func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset int64, resp *kmsg.FetchResponse) fetchResult {
-	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
-	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
+	// We ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest,
+	// so the broker _probably_ doesn't have a recommended replica for us.
+
+	// Ensure we got the expected partition and no error occurred. If we get something we didn't expect, maybe we're sending
+	// the wrong request or there's a bug in the kafka implementation. Even in case of errors we get the topic partition.
+	if resp.ErrorCode != 0 {
+		// The FetchResponse.ErrorCode should be never set for our use case. This error code was added for support for KIP-227
+		// and is only set if we're using fetch sessions. We don't use fetch sessions. However, we check it anyway to make
+		// in case it will change in future (or some Kafka-compatible backends set it even when sessions are not in use).
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("received error code %d", resp.ErrorCode))
+	}
 
 	// Sanity check for the response we get.
-	// If we get something we didn't expect, maybe we're sending the wrong request or there's a bug in the kafka implementation.
-	// Even in case of errors we get the topic partition.
-	err := assertResponseContainsPartition(resp, r.topicID, r.partitionID)
-	if err != nil {
-		return newEmptyFetchResult(ctx, err)
+	if expected, actual := 1, len(resp.Topics); expected != actual {
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected number of topics in the Fetch response (expected: %d got: %d)", expected, actual))
+	}
+	if expected, actual := r.topicID, resp.Topics[0].TopicID; expected != actual {
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected topic ID in the Fetch response (expected: %s got %s)", expected, actual))
+	}
+	if expected, actual := 1, len(resp.Topics[0].Partitions); expected != actual {
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected number of partitions in the Fetch response (expected: %d got: %d)", expected, actual))
+	}
+	if expected, actual := r.partitionID, resp.Topics[0].Partitions[0].Partition; expected != actual {
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("unexpected partition ID in the Fetch response (expected: %d got %d)", expected, actual))
+	}
+	if code := resp.Topics[0].Partitions[0].ErrorCode; code != 0 {
+		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
 	parseOptions := kgo.ProcessFetchPartitionOptions{
@@ -510,6 +626,12 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	if partition.Err != nil {
+		// This should never happen because we already check the ErrorCode above, but we keep this double check
+		// in case Err will be set because of other reasons by kgo.ProcessRespPartition() in the future.
+		return newErrorFetchResult(ctx, r.partitionID, partition.Err)
+	}
+
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
 	partition.EachRecord(func(r *kgo.Record) {
 		spanlogger.FromContext(r.Context, log.NewNopLogger()).DebugLog("msg", "received record")
@@ -527,24 +649,6 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 	}
 }
 
-func assertResponseContainsPartition(resp *kmsg.FetchResponse, topicID kadm.TopicID, partitionID int32) error {
-	if topics := resp.Topics; len(topics) < 1 || topics[0].TopicID != topicID {
-		receivedTopicID := kadm.TopicID{}
-		if len(topics) > 0 {
-			receivedTopicID = topics[0].TopicID
-		}
-		return fmt.Errorf("didn't find expected topic %s in fetch response; received topic %s", topicID, receivedTopicID)
-	}
-	if partitions := resp.Topics[0].Partitions; len(partitions) < 1 || partitions[0].Partition != partitionID {
-		receivedPartitionID := int32(-1)
-		if len(partitions) > 0 {
-			receivedPartitionID = partitions[0].Partition
-		}
-		return fmt.Errorf("didn't find expected partition %d in fetch response; received partition %d", partitionID, receivedPartitionID)
-	}
-	return nil
-}
-
 func sumRecordLengths(records []*kgo.Record) (sum int) {
 	for _, r := range records {
 		sum += len(r.Value)
@@ -555,11 +659,7 @@ func sumRecordLengths(records []*kgo.Record) (sum int) {
 func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger, highWatermark *atomic.Int64) {
 	defer r.wg.Done()
 
-	errBackoff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 250 * time.Millisecond,
-		MaxBackoff: 2 * time.Second,
-		MaxRetries: 0, // retry forever
-	})
+	errBackoff := backoff.New(ctx, r.fetchBackoffConfig)
 
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
@@ -567,30 +667,38 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
-		var previousResult fetchResult
+		// This current buffered fetchResult that has not been sent to the result channel yet.
+		// This is empty at the beginning, then we merge records as soon as we receive them
+		// from the Fetch response(s).
+		var bufferedResult fetchResult
+
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
 			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
-			f := r.fetchSingle(ctx, w)
+			// Run a single Fetch request.
+			if res := r.fetchSingle(ctx, w); res.Err != nil {
+				// We got an error. We handle it and then discard this fetch result content.
+				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
+			} else {
+				// We increase the count of buffered records as soon as we fetch them.
+				r.bufferedFetchedRecords.Add(int64(len(res.Records)))
 
-			// We increase the count of buffered records as soon as we fetch them.
-			r.bufferedFetchedRecords.Add(int64(len(f.Records)))
+				// Update the high watermark.
+				if hwm := res.HighWatermark; hwm >= 0 {
+					casHWM(highWatermark, hwm)
+				}
 
-			f = f.Merge(previousResult)
-			previousResult = f
-			if f.Err != nil {
-				w = handleKafkaFetchErr(f.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
+				// Merge the last fetch result if the previous buffered result (if any).
+				// Keep non-mergeable fields from res, because the last response is the most updated one.
+				bufferedResult = res.Merge(bufferedResult)
 			}
-			if hwm := f.HighWatermark; hwm >= 0 {
-				casHWM(highWatermark, hwm)
-			}
-			if len(f.Records) == 0 {
-				// Typically if we had an error, then there wouldn't be any records.
-				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
+
+			if len(bufferedResult.Records) == 0 {
+				// If we have no buffered records to try to send to the result channel then we retry with another
+				// Fetch attempt. However, before doing it, we check if we've been told to stop (if so, we should honor it).
 				attemptSpan.Finish()
 
-				// There is a chance we've been told to stop even when we have no records.
 				select {
 				case <-r.done:
 					wantSpan.Finish()
@@ -601,9 +709,10 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 				continue
 			}
+
 			// Next attempt will be from the last record onwards.
-			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
-			w = w.UpdateBytesPerRecord(f.fetchedBytes, len(f.Records)) // This takes into account the previousFetch too. This should give us a better average than using just the records from the last attempt.
+			w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
+			w = w.UpdateBytesPerRecord(bufferedResult.fetchedBytes, len(bufferedResult.Records)) // This takes into account the previous fetch too. This should give us a better average than using just the records from the last attempt.
 
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
 			// We don't want to slow down until we hit a larger error.
@@ -615,21 +724,21 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 				attemptSpan.Finish()
 				close(w.result)
 				return
-			case w.result <- f:
-				previousResult = fetchResult{}
+			case w.result <- bufferedResult:
+				bufferedResult = fetchResult{}
 			case <-ctx.Done():
 			default:
 				if w.startOffset >= w.endOffset {
 					// We've fetched all we were asked for the whole batch is ready, and we definitely have to wait to send on the channel now.
-					f.startWaitingForConsumption()
+					bufferedResult.startWaitingForConsumption()
 					select {
 					case <-r.done:
 						wantSpan.Finish()
 						attemptSpan.Finish()
 						close(w.result)
 						return
-					case w.result <- f:
-						previousResult = fetchResult{}
+					case w.result <- bufferedResult:
+						bufferedResult = fetchResult{}
 					case <-ctx.Done():
 					}
 				}
@@ -687,8 +796,6 @@ func (w *inflightFetchWants) removeNextResult() {
 }
 
 func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
-	const initialBytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
-
 	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
 	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
 
@@ -805,7 +912,6 @@ func handleKafkaFetchErr(err error, fw fetchWant, longBackoff waiter, partitionS
 	var errString string
 	if err != nil {
 		errString = err.Error()
-
 	}
 
 	switch {

@@ -46,8 +46,8 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg.IngesterRing.InstanceID = "localhost"
 	cfg.IngesterRing.FinalSleep = 0
 	cfg.IngesterRing.MinReadyDuration = 100 * time.Millisecond
+	cfg.IngesterRing.HeartbeatPeriod = defaultHeartbeatPeriod
 	cfg.ActiveSeriesMetrics.Enabled = true
-
 	return cfg
 }
 
