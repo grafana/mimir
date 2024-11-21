@@ -1631,7 +1631,17 @@ func TestFindGapsInRecords(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := findGapsInRecords(tc.records, tc.lastReturnedOffset)
+			fetches := kgo.Fetches{{
+				Topics: []kgo.FetchTopic{{
+					Topic: "t1",
+					Partitions: []kgo.FetchPartition{{
+						Partition: 1,
+						Records:   tc.records,
+					}},
+				}},
+			}}
+
+			got := findGapsInRecords(fetches, tc.lastReturnedOffset)
 			assert.Equal(t, tc.want, got)
 		})
 	}

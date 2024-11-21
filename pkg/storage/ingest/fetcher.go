@@ -427,7 +427,6 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			instrumentGaps(findGapsInRecords(f.Records, r.lastReturnedOffset), r.metrics.missedRecords, r.logger)
 			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
@@ -466,14 +465,14 @@ func (g offsetRange) numOffsets() int64 {
 	return g.end - g.start
 }
 
-func findGapsInRecords(records []*kgo.Record, lastReturnedOffset int64) []offsetRange {
+func findGapsInRecords(records kgo.Fetches, lastReturnedOffset int64) []offsetRange {
 	var gaps []offsetRange
-	for _, r := range records {
+	records.EachRecord(func(r *kgo.Record) {
 		if r.Offset != lastReturnedOffset+1 {
 			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
 		}
 		lastReturnedOffset = r.Offset
-	}
+	})
 	return gaps
 }
 
