@@ -95,7 +95,10 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}()
 	go func() {
 		defer wg.Done()
-		time.Sleep(s.cfg.StartupObserveTime)
+		select {
+		case <-ctx.Done():
+		case <-time.After(s.cfg.StartupObserveTime):
+		}
 	}()
 
 	wg.Wait()
