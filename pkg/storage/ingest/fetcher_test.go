@@ -1331,7 +1331,7 @@ func TestFetchResult_Merge(t *testing.T) {
 }
 
 func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) *concurrentFetchers {
-	logger := log.NewNopLogger()
+	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
