@@ -4770,7 +4770,7 @@
           "desc": "Optionally specify OTel resource attributes to promote to labels.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "distributor.promote-otel-resource-attributes",
+          "fieldFlag": "distributor.otel-promote-resource-attributes",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },

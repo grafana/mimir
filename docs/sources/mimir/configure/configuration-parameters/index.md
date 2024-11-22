@@ -3764,7 +3764,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Optionally specify OTel resource attributes to promote to
 # labels.
-# CLI flag: -distributor.promote-otel-resource-attributes
+# CLI flag: -distributor.otel-promote-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 
 # (experimental) The default consistency level to enforce for queries when using
