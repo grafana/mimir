@@ -486,6 +486,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
 		SkipVerify:    !cfg.Global.SMTPRequireTLS,
 		StaticHeaders: staticHeaders,
+		Version:       version.Version,
 	}
 	am.emailCfgMtx.Unlock()
 
@@ -622,6 +623,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
 		SkipVerify:    !gCfg.SMTPRequireTLS,
 		StaticHeaders: staticHeaders,
+		Version:       version.Version,
 	}
 
 	var gTmpl *template.Template
