@@ -101,6 +101,9 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 	return filteredData, nil
 }
 
+// emitIncompatibleTypesAnnotation adds an annotation to a given the presence of histograms on the left (lH) and right (rH) sides of op.
+// If lH is nil, this indicates that the left side was a float, and similarly for the right side and rH.
+// If lH is not nil, this indicates that the left side was a histogram, and similarly for the right side and rH.
 func emitIncompatibleTypesAnnotation(a *annotations.Annotations, op parser.ItemType, lH *histogram.FloatHistogram, rH *histogram.FloatHistogram, expressionPosition posrange.PositionRange) {
 	a.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition))
 }

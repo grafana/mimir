@@ -86,7 +86,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 		}
 
 		if !valid {
-			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) was not considered a valid operation, this should never happen", s.Op.String(), left.F, right.F))
+			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) is not considered a valid operation, this should never happen", s.Op.String(), left.F, right.F))
 		}
 
 		if h != nil {

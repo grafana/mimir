@@ -98,7 +98,8 @@ type RangeVectorStepData struct {
 	StepT int64
 
 	// RangeStart is the beginning of the time range selected by this time step.
-	// RangeStart is exclusive (ie. points with timestamp > RangeStart are included in the range).
+	// RangeStart is exclusive (ie. points with timestamp > RangeStart are included in the range,
+	// and the point with timestamp == RangeStart is excluded).
 	RangeStart int64
 
 	// RangeEnd is the end of the time range selected by this time step.
