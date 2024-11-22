@@ -179,6 +179,12 @@ type Distributor struct {
 	partitionsRing *ring.PartitionInstanceRing
 }
 
+// OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
+type OTelResourceAttributePromotionConfig interface {
+	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
+	PromoteOTelResourceAttributes(id string) []string
+}
+
 // Config contains the configuration required to
 // create a Distributor
 type Config struct {
@@ -227,6 +233,9 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+
+	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
+	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
