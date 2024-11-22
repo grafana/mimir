@@ -384,7 +384,6 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - "./config/mimir.yaml:/mimir/config/mimir.yaml"
   "query-frontend":
     "build":
       "context": "."
@@ -463,7 +462,6 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - "./config/mimir.yaml:/mimir/config/mimir.yaml"
   "ruler-2":
     "build":
       "context": "."
@@ -490,7 +488,6 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - "./config/mimir.yaml:/mimir/config/mimir.yaml"
   "store-gateway-1":
     "build":
       "context": "."
