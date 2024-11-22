@@ -131,6 +131,26 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
 
+          {{- if $.ctx.Values.memcached.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .port }}
+            initialDelaySeconds: {{ $.ctx.Values.memcached.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $.ctx.Values.memcached.readinessProbe.periodSeconds }}
+            successThreshold: {{ $.ctx.Values.memcached.readinessProbe.successThreshold }}
+            failureThreshold: {{ $.ctx.Values.memcached.readinessProbe.failureThreshold }}
+          {{- end }}
+      
+          {{- if $.ctx.Values.memcached.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .port }}
+            initialDelaySeconds: {{ $.ctx.Values.memcached.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $.ctx.Values.memcached.livenessProbe.periodSeconds }}
+            successThreshold: {{ $.ctx.Values.memcached.livenessProbe.successThreshold }}
+            failureThreshold: {{ $.ctx.Values.memcached.livenessProbe.failureThreshold }}
+          {{- end }}
+
       {{- if $.ctx.Values.memcachedExporter.enabled }}
         - name: exporter
           {{- with $.ctx.Values.memcachedExporter.image }}
