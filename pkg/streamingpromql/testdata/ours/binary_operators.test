@@ -271,22 +271,22 @@ clear
 # These tests are affected by https://github.com/prometheus/prometheus/issues/14172
 # whereby the histograms followed by a float are ignored and the lookback float value is used.
 # For example, in "another_mixed", at T=5m it has the lookback value of 10, and at T=5min the lookback value is _.
-load 5m
+load 1m
   mixed_metric{job="test"}  10 1                                            2                                             3                                            {{schema:0 sum:6 count:3 buckets:[1 2 3]}}     {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
   another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}}  {{schema:0 sum:12 count:6 buckets:[2 4 6]}}   4                                            5                                              {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
 #                           @0 @5m                                          @10m                                          @15m                                         @20m                                           @25m
 
-eval range from 0 to 25m step 5m mixed_metric + another_mixed
-  {job="test"}              20 _                                            _                                             7                                            _                                              {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
+eval range from 0 to 5m step 1m mixed_metric + another_mixed
+  {job="test"}              20 11                                           12                                            7                                            _                                              {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
 
-eval range from 0 to 25m step 5m mixed_metric - another_mixed
-  {job="test"}              0  _                                            _                                             -1                                           _                                              {{schema:0 sum:0 count:0}}
+eval range from 0 to 5m step 1m mixed_metric - another_mixed
+  {job="test"}              0  -9                                           -8                                            -1                                           _                                              {{schema:0 sum:0 count:0}}
 
-eval range from 0 to 25m step 5m mixed_metric * another_mixed
-  {job="test"}              100 _                                           _                                             12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} _
+eval range from 0 to 5m step 1m mixed_metric * another_mixed
+  {job="test"}              100 10                                          20                                            12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} _
 
-eval range from 0 to 25m step 5m mixed_metric / another_mixed
-  {job="test"}              1  _                                            _                                             0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} _
+eval range from 0 to 5m step 1m mixed_metric / another_mixed
+  {job="test"}              1  0.1                                          0.2                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} _
 
 clear
 
