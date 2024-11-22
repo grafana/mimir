@@ -3762,7 +3762,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
-# (experimental) Eventual OTel resource attributes to promote to labels.
+# (experimental) Optionally specify OTel resource attributes to promote to
+# labels.
 # CLI flag: -distributor.promote-otel-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 
