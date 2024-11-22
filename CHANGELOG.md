@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Query Frontend: Update Server-Timing `bytes_processed` format #9985
 * [CHANGE] Alertmanager: the following metrics are not exported for a given `user` when the metric value is zero: #9359
   * `cortex_alertmanager_alerts_received_total`
   * `cortex_alertmanager_alerts_invalid_total`
