@@ -181,7 +181,7 @@ func OTLPHandler(
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
-		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
 		if err != nil {
 			return err
 		}
