@@ -973,11 +973,11 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
-						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
 					},
 					promql.Series{
-						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
 						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
 					},
 				},
@@ -989,11 +989,11 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
-						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
 					},
 					promql.Series{
-						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
 						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
 					},
 				},
@@ -1037,6 +1037,18 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
+						Floats: []promql.FPoint{{F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
+						Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+					},
+				},
+			},
+			Start: time.Unix(10020, 0),
+		},
+		{ // Normal selector. Add 1ms to the range to see the legacy behavior of the previous test.
+			Query: `http_requests{group=~"pro.*",instance="0"}[30s1ms:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
 						Floats: []promql.FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
 						Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 					},
@@ -1073,6 +1085,35 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
+						Floats:   []promql.FPoint{{F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+						DropName: true,
+					},
+				},
+				Warnings: annotations.New().Add(annotations.NewPossibleNonCounterInfo("http_requests", posrange.PositionRange{Start: 5})),
+			},
+			Start: time.Unix(8000, 0),
+		},
+		{
+			Query: `rate(http_requests[1m])[15s1ms:5s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
 						Floats:   []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
 						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
 						DropName: true,
@@ -1102,7 +1143,7 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
-						Floats: []promql.FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+						Floats: []promql.FPoint{{F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
 						Metric: labels.EmptyLabels(),
 					},
 				},
@@ -1110,7 +1151,31 @@ func TestSubqueries(t *testing.T) {
 			Start: time.Unix(120, 0),
 		},
 		{
+			Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(121, 0), // 1s later doesn't change the result compared to above.
+		},
+		{
 			Query: `sum(http_requests)[40s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		{
+			Query: `sum(http_requests)[40s1ms:10s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
@@ -1123,6 +1188,18 @@ func TestSubqueries(t *testing.T) {
 		},
 		{
 			Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		{
+			Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s1ms:5s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
