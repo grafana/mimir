@@ -3590,10 +3590,32 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
+	costAttributionCases := []struct {
+		state          string
+		limitsCfg      func(*validation.Limits)
+		customRegistry *prometheus.Registry
+	}{
+		{
+			state:          "enabled",
+			limitsCfg:      func(*validation.Limits) {},
+			customRegistry: nil,
+		},
+		{
+			state: "disabled",
+			limitsCfg: func(limits *validation.Limits) {
+				if limits == nil {
+					return
+				}
+				limits.CostAttributionLabels = []string{"cpu"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+			customRegistry: prometheus.NewRegistry(),
+		},
+	}
+
 	tests := []struct {
-		name           string
-		limitsCfg      func() validation.Limits
-		customRegistry prometheus.Registerer
+		name      string
+		limitsCfg func() validation.Limits
 	}{
 		{
 			name: "ingester push succeeded",
@@ -3603,82 +3625,77 @@ func BenchmarkIngesterPush(b *testing.B) {
 				return limitsCfg
 			},
 		},
-		{
-			name: "ingester push succeeded with cost attribution enabled",
-			limitsCfg: func() validation.Limits {
-				limitsCfg := defaultLimitsTestConfig()
-				limitsCfg.NativeHistogramsIngestionEnabled = true
-				limitsCfg.CostAttributionLabels = []string{"cpu"}
-				limitsCfg.MaxCostAttributionCardinalityPerUser = 100
-				return limitsCfg
-			},
-			customRegistry: prometheus.NewRegistry(),
-		},
 	}
 
-	for _, t := range tests {
-		b.Run(t.name, func(b *testing.B) {
-			registry := prometheus.NewRegistry()
-			ctx := user.InjectOrgID(context.Background(), userID)
+	for _, caCase := range costAttributionCases {
+		b.Run(fmt.Sprintf("cost_attribution=%s", caCase.state), func(b *testing.B) {
+			for _, t := range tests {
+				b.Run(fmt.Sprintf("scenario=%s", t.name), func(b *testing.B) {
+					registry := prometheus.NewRegistry()
+					ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Create a mocked ingester
-			cfg := defaultIngesterTestConfig(b)
+					// Create a mocked ingester
+					cfg := defaultIngesterTestConfig(b)
 
-			limitCfg := t.limitsCfg()
-			overrides, err := validation.NewOverrides(limitCfg, nil)
-			require.NoError(b, err)
+					limitCfg := t.limitsCfg()
+					caCase.limitsCfg(&limitCfg)
 
-			var cam *costattribution.Manager
-			if t.customRegistry != nil {
-				cam = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides)
-				err = t.customRegistry.Register(cam)
-				require.NoError(b, err)
-			}
-
-			ingester, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(b, cfg, overrides, nil, "", "", registry, cam)
-			require.NoError(b, err)
-			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
-
-			b.Cleanup(func() {
-				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester))
-			})
-
-			// Wait until the ingester is healthy
-			test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
-				return ingester.lifecycler.HealthyInstancesCount()
-			})
-
-			// Push a single time series to set the TSDB min time.
-			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-			startTime := util.TimeToMillis(time.Now())
-
-			currTimeReq := mimirpb.ToWriteRequest(
-				metricLabelAdapters,
-				[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
-				nil,
-				nil,
-				mimirpb.API,
-			)
-			_, err = ingester.Push(ctx, currTimeReq)
-			require.NoError(b, err)
-
-			const (
-				series  = 10
-				samples = 1
-			)
-
-			allLabels, allSamples := benchmarkData(series)
-
-			b.ResetTimer()
-			for iter := 0; iter < b.N; iter++ {
-				// Bump the timestamp on each of our test samples each time round the loop
-				for j := 0; j < samples; j++ {
-					for i := range allSamples {
-						allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
-					}
-					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
+					overrides, err := validation.NewOverrides(limitCfg, nil)
 					require.NoError(b, err)
-				}
+
+					var cam *costattribution.Manager
+					if caCase.customRegistry != nil {
+						cam = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides)
+						err = caCase.customRegistry.Register(cam)
+						require.NoError(b, err)
+					}
+
+					ingester, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(b, cfg, overrides, nil, "", "", registry, cam)
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
+
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester))
+					})
+
+					// Wait until the ingester is healthy
+					test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+						return ingester.lifecycler.HealthyInstancesCount()
+					})
+
+					// Push a single time series to set the TSDB min time.
+					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+					startTime := util.TimeToMillis(time.Now())
+
+					currTimeReq := mimirpb.ToWriteRequest(
+						metricLabelAdapters,
+						[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
+						nil,
+						nil,
+						mimirpb.API,
+					)
+					_, err = ingester.Push(ctx, currTimeReq)
+					require.NoError(b, err)
+
+					const (
+						series  = 50
+						samples = 1
+					)
+
+					allLabels, allSamples := benchmarkData(series)
+
+					b.ResetTimer()
+					for iter := 0; iter < b.N; iter++ {
+						// Bump the timestamp on each of our test samples each time round the loop
+						for j := 0; j < samples; j++ {
+							for i := range allSamples {
+								allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
+							}
+							_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
+							require.NoError(b, err)
+						}
+					}
+				})
 			}
 		})
 	}
