@@ -116,7 +116,15 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-updateTick.C:
+			// These tasks are not prerequisites to updating the schedule, but
+			// we do them here rather than creating a ton of update tickers.
 			s.jobs.clearExpiredLeases()
+
+			if err := s.flushOffsetsToKafka(context.WithoutCancel(ctx)); err != nil {
+				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
+				// TODO: increment a metric.
+			}
+
 			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
@@ -224,6 +232,10 @@ func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 		}
 	}
 	return offsets
+}
+
+func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
+	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, s.committed)
 }
 
 // assignJob returns an assigned job for the given workerID.
