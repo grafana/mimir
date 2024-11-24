@@ -59,7 +59,7 @@ func New(
 	return s, nil
 }
 
-func (s *BlockBuilderScheduler) starting(context.Context) error {
+func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 	kc, err := ingest.NewKafkaReaderClient(
 		s.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
@@ -70,6 +70,38 @@ func (s *BlockBuilderScheduler) starting(context.Context) error {
 	}
 
 	s.adminClient = kadm.NewClient(kc)
+
+	// The startup process for block-builder-scheduler entails learning the state of the world:
+	//  1. obtain an initial set of offset info from Kafka
+	//  2. listen to worker updates for a while to learn what the previous scheduler knew
+	// When both of those are complete, we transition from observation mode to normal operation.
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		lag, err := s.fetchLag(ctx)
+		if err != nil {
+			panic(err)
+		}
+		s.committed = commitOffsetsFromLag(lag)
+	}()
+	go func() {
+		defer wg.Done()
+		select {
+		case <-time.After(s.cfg.StartupObserveTime):
+		case <-ctx.Done():
+		}
+	}()
+
+	wg.Wait()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.completeObservationMode()
 	return nil
 }
 
@@ -132,12 +164,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 	}
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
-
-	if err := s.finalizeObservations(); err != nil {
-		level.Warn(s.logger).Log("msg", "failed to compute state from observations", "err", err)
-		// (what to do here?)
-	}
-
+	s.finalizeObservations()
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -315,7 +342,7 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 
 // finalizeObservations considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
-func (s *BlockBuilderScheduler) finalizeObservations() error {
+func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
@@ -338,12 +365,10 @@ func (s *BlockBuilderScheduler) finalizeObservations() error {
 			// An in-progress job.
 			// These don't affect offsets (yet), they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				return fmt.Errorf("import job: %w", err)
+				level.Warn(s.logger).Log("msg", "failed to import job", "key", rj.key, "worker", rj.workerID, "err", err)
 			}
 		}
 	}
-
-	return nil
 }
 
 type obsMap map[string]*observation

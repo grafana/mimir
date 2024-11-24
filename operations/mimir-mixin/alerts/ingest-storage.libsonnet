@@ -161,6 +161,21 @@
           },
         },
 
+        // Alert firing is an ingester is reading from Kafka, there are buffered records to process, but processing is stuck.
+        {
+          alert: $.alertName('IngesterMissedRecordsFromKafka'),
+          expr: |||
+            # Alert if the ingester missed some records from Kafka.
+            increase(cortex_ingest_storage_reader_missed_records_total[%s]) > 0
+          ||| % $.alertRangeInterval(10),
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s missed processing records from Kafka. There may be data loss.' % $._config,
+          },
+        },
+
         // Alert firing if Mimir is failing to enforce strong read consistency.
         {
           alert: $.alertName('StrongConsistencyEnforcementFailed'),

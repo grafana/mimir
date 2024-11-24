@@ -1,7 +1,10 @@
 {
   _config+:: {
-    multi_zone_availability_zones: [],
+    // Allow to configure whether the distributor should be deployed in single or multi-zone.
+    // Multi-zone and single-zone can be enabled at the same time during migrations.
+    single_zone_distributor_enabled: !$._config.multi_zone_distributor_enabled,
     multi_zone_distributor_enabled: false,
+    multi_zone_availability_zones: [],
     multi_zone_distributor_replicas: std.length($._config.multi_zone_availability_zones),
   },
 
@@ -9,6 +12,7 @@
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
 
+  local isSingleZoneEnabled = $._config.single_zone_distributor_enabled,
   local isMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
   local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
@@ -83,8 +87,8 @@
     ]),
 
   // Remove single-zone deployment when multi-zone is enabled.
-  distributor_deployment: if isMultiZoneEnabled then null else super.distributor_deployment,
-  distributor_service: if isMultiZoneEnabled then null else super.distributor_service,
-  distributor_pdb: if isMultiZoneEnabled then null else super.distributor_pdb,
-  distributor_scaled_object: if isMultiZoneEnabled then null else super.distributor_scaled_object,
+  distributor_deployment: if !isSingleZoneEnabled then null else super.distributor_deployment,
+  distributor_service: if !isSingleZoneEnabled then null else super.distributor_service,
+  distributor_pdb: if !isSingleZoneEnabled then null else super.distributor_pdb,
+  distributor_scaled_object: if !isSingleZoneEnabled then null else super.distributor_scaled_object,
 }

@@ -12,7 +12,11 @@ weight: 10
 You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
 - **Imperatively**: The written instructions that follow contain commands to help you start a single Mimir process. You would need to perform the commands again to start another Mimir process.
-- **Declaratively**: The following video tutorial uses `docker-compose` to deploy multiple Mimir processes. Therefore, if you want to deploy multiple Mimir processes later, the majority of the configuration work will have already been done.
+- **Declaratively**: The following video tutorial uses `docker-compose` to deploy multiple Mimir processes.
+  Therefore, if you want to deploy multiple Mimir processes later, the majority of the configuration work will have already been done.
+  {{< admonition type="note" >}}
+  The tutorial directory path changed to `docs/sources/mimir/get-started/play-with-grafana-mimir` after the release of the video.
+  {{< /admonition >}}
 
   {{< vimeo 691947043 >}}
 

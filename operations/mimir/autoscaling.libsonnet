@@ -636,9 +636,10 @@
       }
     ),
 
+  local isDistributorSingleZoneEnabled = $._config.single_zone_distributor_enabled,
   local isDistributorMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
   local isDistributorAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
-  local isDistributorAutoscalingSingleZoneEnabled = !isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled,
+  local isDistributorAutoscalingSingleZoneEnabled = isDistributorSingleZoneEnabled && isDistributorAutoscalingEnabled,
   local isDistributorAutoscalingZoneAEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isDistributorAutoscalingZoneBEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isDistributorAutoscalingZoneCEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
