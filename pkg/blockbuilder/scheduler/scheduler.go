@@ -111,37 +111,6 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
-	// The first thing we do when starting up is to complete the startup process where we:
-	//  1. obtain an initial set of offset info from Kafka
-	//  2. listen to worker updates for a while to learn the state of the world
-	// When both of those are complete, we transition from observation mode to normal operation.
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		lag, err := s.fetchLag(ctx)
-		if err != nil {
-			panic(err)
-		}
-		s.committed = commitOffsetsFromLag(lag)
-	}()
-	go func() {
-		defer wg.Done()
-		time.Sleep(s.cfg.StartupObserveTime)
-	}()
-
-	wg.Wait()
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	s.completeObservationMode()
-
-	// Now that that's done, we can start the main loop.
-
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
 	for {
