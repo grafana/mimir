@@ -121,6 +121,8 @@
 
 ### Documentation
 
+* [FEATURE] Add tuning documentation. #9978
+
 ### Tools
 
 * [FEATURE] `splitblocks`: add new tool to split blocks larger than a specified duration into multiple blocks. #9517, #9779
