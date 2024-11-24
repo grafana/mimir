@@ -749,10 +749,10 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		zeroSeriesQueries = getZeroSeriesQueriesTotal()
 
 		const groupName4 = "good_rule_with_fetched_series_and_samples_and_non_series_selector"
-		const expression4 = `sum(metric{foo=~"1|2"}) + vector(1.2345)`
+		const expression4 = `sum(metric{foo=~"1|2"}) * vector(1.2345)`
 		addNewRuleAndWait(groupName4, expression4, false)
 
-		// Ensure that samples were not returned.
+		// Ensure that samples were returned.
 		require.Less(t, 0, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
