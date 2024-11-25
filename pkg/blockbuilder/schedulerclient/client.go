@@ -144,7 +144,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (scheduler.JobKey, schedul
 	return scheduler.JobKey{}, scheduler.JobSpec{}, lastErr
 }
 
-func (s *schedulerClient) CompleteJob(ctx context.Context, jobKey scheduler.JobKey) error {
+func (s *schedulerClient) CompleteJob(jobKey scheduler.JobKey) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
