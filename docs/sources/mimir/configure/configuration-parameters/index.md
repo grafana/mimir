@@ -1961,7 +1961,7 @@ alertmanager_client:
     # CLI flag: -ruler.alertmanager-client.oauth.client_secret
     [client_secret: <string> | default = ""]
 
-    # Endpoint used to fetch access token from.
+    # Endpoint used to fetch access token.
     # CLI flag: -ruler.alertmanager-client.oauth.token_url
     [token_url: <string> | default = ""]
 
@@ -1970,8 +1970,8 @@ alertmanager_client:
     [scopes: <list of strings> | default = []]
 
   # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
-  # requests through. Applies to all requests, including infra like oauth token
-  # requests.
+  # requests through. Applies to all requests, including auxiliary traffic such
+  # as OAuth token requests.
   # CLI flag: -ruler.alertmanager-client.proxy-url
   [proxy_url: <string> | default = ""]
 
