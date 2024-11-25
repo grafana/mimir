@@ -46,7 +46,7 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
 	cfg.OAuth2.RegisterFlagsWithPrefix("ruler.alertmanager-client.oauth.", f)
-	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including infra like oauth token requests.")
+	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic such as OAuth token requests.")
 }
 
 type OAuth2Config struct {
@@ -59,7 +59,7 @@ type OAuth2Config struct {
 func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.ClientID, prefix+"client_id", "", "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.")
 	f.Var(&cfg.ClientSecret, prefix+"client_secret", "OAuth2 client secret.")
-	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token from.")
+	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token.")
 	f.Var(&cfg.Scopes, prefix+"scopes", "Optional scopes to include with the token request.")
 }
 
