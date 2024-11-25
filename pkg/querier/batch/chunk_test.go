@@ -83,15 +83,15 @@ func mkGenericChunk(t require.TestingT, from model.Time, points int, encoding ch
 	return NewGenericChunk(int64(ck.From), int64(ck.Through), ck.Data.NewIterator)
 }
 
-type testIterOptions uint
+type testBatchOptions uint
 
 const (
 	// setNotCounterResetHintsAsUnknown can be used in cases where it's onerous to generate all the expected counter
 	// reset hints (e.g. merging lots of chunks together).
-	setNotCounterResetHintsAsUnknown testIterOptions = iota
+	setNotCounterResetHintsAsUnknown testBatchOptions = iota
 )
 
-func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, opts ...testIterOptions) {
+func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, opts ...testBatchOptions) {
 	nextExpectedTS := model.TimeFromUnix(0)
 	var assertPoint func(i int)
 	switch encoding {
@@ -150,7 +150,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	require.Equal(t, chunkenc.ValNone, iter.Next())
 }
 
-func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, opts ...testIterOptions) {
+func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, opts ...testBatchOptions) {
 	var assertPoint func(expectedTS int64, valType chunkenc.ValueType)
 	switch encoding {
 	case chunk.PrometheusXorChunk:

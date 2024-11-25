@@ -6,6 +6,9 @@
 package batch
 
 import (
+	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/prometheus/prometheus/model/histogram"
+	"strconv"
 	"testing"
 	"time"
 
@@ -62,6 +65,123 @@ func TestMergeHarder(t *testing.T) {
 			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
+}
+
+type histSample struct {
+	t    int64
+	v    int
+	hint histogram.CounterResetHint
+}
+
+func TestMergeHistogramCheckHints(t *testing.T) {
+	for _, enc := range []chunk.Encoding{chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
+		t.Run(enc.String(), func(t *testing.T) {
+			for _, tc := range []struct {
+				name            string
+				chunks          []GenericChunk
+				expectedSamples []histSample
+			}{
+				{
+					name: "no overlapping iterators",
+					chunks: []GenericChunk{
+						mkGenericChunk(t, 0, 5, enc),
+						mkGenericChunk(t, model.TimeFromUnix(5), 5, enc),
+					},
+					expectedSamples: []histSample{
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset},
+						{t: 1000, v: 1000, hint: histogram.NotCounterReset},
+						{t: 2000, v: 2000, hint: histogram.NotCounterReset},
+						{t: 3000, v: 3000, hint: histogram.NotCounterReset},
+						{t: 4000, v: 4000, hint: histogram.NotCounterReset},
+						{t: 5000, v: 5000, hint: histogram.UnknownCounterReset},
+						{t: 6000, v: 6000, hint: histogram.NotCounterReset},
+						{t: 7000, v: 7000, hint: histogram.NotCounterReset},
+						{t: 8000, v: 8000, hint: histogram.NotCounterReset},
+						{t: 9000, v: 9000, hint: histogram.NotCounterReset},
+					},
+				},
+				{
+					name: "duplicated chunks",
+					chunks: []GenericChunk{
+						mkGenericChunk(t, 0, 10, enc),
+						mkGenericChunk(t, 0, 10, enc),
+					},
+					expectedSamples: []histSample{
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset},       // 1 sample from c0
+						{t: 1000, v: 1000, hint: histogram.UnknownCounterReset}, // 1 sample from c1
+						{t: 2000, v: 2000, hint: histogram.UnknownCounterReset}, // 2 samples from c0
+						{t: 3000, v: 3000, hint: histogram.NotCounterReset},
+						{t: 4000, v: 4000, hint: histogram.UnknownCounterReset}, // 4 samples from c1
+						{t: 5000, v: 5000, hint: histogram.NotCounterReset},
+						{t: 6000, v: 6000, hint: histogram.NotCounterReset},
+						{t: 7000, v: 7000, hint: histogram.NotCounterReset},
+						{t: 8000, v: 8000, hint: histogram.UnknownCounterReset}, // 2 samples from c0
+						{t: 9000, v: 9000, hint: histogram.NotCounterReset},
+					},
+				},
+				//TODO: different sample values
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
+					for i, s := range tc.expectedSamples {
+						valType := iter.Next()
+						require.NotEqual(t, chunkenc.ValNone, valType)
+						require.Nil(t, iter.Err())
+						require.Equal(t, s.t, iter.AtT())
+						switch enc {
+						case chunk.PrometheusHistogramChunk:
+							expH := test.GenerateTestHistogram(s.v)
+							expH.CounterResetHint = s.hint
+							_, actH := iter.AtHistogram(nil)
+							test.RequireHistogramEqual(t, expH, actH, "expected sample %d does not match", i)
+						case chunk.PrometheusFloatHistogramChunk:
+							expH := test.GenerateTestFloatHistogram(s.v)
+							expH.CounterResetHint = s.hint
+							_, actH := iter.AtFloatHistogram(nil)
+							test.RequireFloatHistogramEqual(t, expH, actH, "expected sample with idx %d does not match", i)
+						default:
+							t.Errorf("checkHints - internal error, unhandled expected type: %T", s)
+						}
+					}
+					require.Equal(t, chunkenc.ValNone, iter.Next(), "iter has extra samples")
+					require.Nil(t, iter.Err())
+				})
+
+			}
+		})
+	}
+	//TODO: test seek should always return unknown
+}
+
+func testIterWithHints(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
+	nextExpectedTS := model.TimeFromUnix(0)
+	var assertPoint func(i int)
+	switch encoding {
+	case chunk.PrometheusHistogramChunk:
+		assertPoint = func(i int) {
+			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
+			ts, h := iter.AtHistogram(nil)
+			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
+			expH := test.GenerateTestHistogram(int(nextExpectedTS))
+			test.RequireHistogramEqual(t, expH, h, strconv.Itoa(i))
+			nextExpectedTS = nextExpectedTS.Add(step)
+		}
+	case chunk.PrometheusFloatHistogramChunk:
+		assertPoint = func(i int) {
+			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
+			ts, fh := iter.AtFloatHistogram(nil)
+			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
+			expFH := test.GenerateTestFloatHistogram(int(nextExpectedTS))
+			test.RequireFloatHistogramEqual(t, expFH, fh, strconv.Itoa(i))
+			nextExpectedTS = nextExpectedTS.Add(step)
+		}
+	default:
+		t.Errorf("testIterWithHints - unhandled encoding: %v", encoding)
+	}
+	for i := 0; i < points; i++ {
+		assertPoint(i)
+	}
+	require.Equal(t, chunkenc.ValNone, iter.Next())
 }
 
 // TestMergeIteratorSeek tests a bug while calling Seek() on mergeIterator.
