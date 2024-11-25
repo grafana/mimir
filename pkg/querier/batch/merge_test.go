@@ -183,7 +183,6 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 7, v: 4, hint: histogram.NotCounterReset},
 					},
 				},
-				//TODO: different sample values
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
