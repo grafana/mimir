@@ -3645,8 +3645,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 
 					var cam *costattribution.Manager
 					if caCase.customRegistry != nil {
-						cam = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides)
-						err = caCase.customRegistry.Register(cam)
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
 						require.NoError(b, err)
 					}
 

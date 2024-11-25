@@ -127,11 +127,7 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 		return
 	}
 	vals := t.getKeyValues(lbs, now.Unix())
-	if t.isOverflow {
-		t.activeSeriesPerUserAttribution.WithLabelValues(overflowValue).Set(1)
-	} else {
-		t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
-	}
+	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
 }
 
 func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
@@ -139,11 +135,7 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
 		return
 	}
 	vals := t.getKeyValues(lbs, now.Unix())
-	if t.isOverflow {
-		t.activeSeriesPerUserAttribution.WithLabelValues(overflowValue).Set(1)
-	} else {
-		t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
-	}
+	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
 }
 
 func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {

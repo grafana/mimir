@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -481,7 +480,6 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
 	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer, t.Overrides)
-
 	return nil, nil
 }
 
@@ -652,14 +650,11 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	// The cost attribution service is only initilized if the custom registry path is provided.
 	if t.Cfg.CostAttributionRegistryPath != "" {
-		t.CostAttributionManager = costattribution.NewManager(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides)
-		// if custom registry path is provided, create a custom registry and use it for cost attribution service
-		customRegistry := prometheus.NewRegistry()
-		// Register the custom registry with the provided URL.
-		// This allows users to expose custom metrics on a separate endpoint.
-		// This is useful when users want to expose metrics that are not part of the default Mimir metrics.
-		http.Handle(t.Cfg.CostAttributionRegistryPath, promhttp.HandlerFor(customRegistry, promhttp.HandlerOpts{Registry: customRegistry}))
-		err := customRegistry.Register(t.CostAttributionManager)
+		// If custom registry path is provided, create a custom registry and use it for cost attribution service only
+		reg := prometheus.NewRegistry()
+		var err error
+		t.CostAttributionManager, err = costattribution.NewManager(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
+		t.API.RegisterUsageMetricsRoute(t.Cfg.CostAttributionRegistryPath, reg)
 		return t.CostAttributionManager, err
 	}
 	return nil, nil
@@ -696,6 +691,7 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
 	}
 	t.API.RegisterIngester(ing)
+
 	return nil, nil
 }
 
@@ -1197,10 +1193,11 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                       {RuntimeConfig},
 		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, CostAttributionService, Vault},
-		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, CostAttributionService, Vault},
-		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
+		CostAttributionService:          {API, Overrides},
+		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		Flusher:                         {Overrides, API},
 		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
 		Querier:                         {TenantFederation, Vault},

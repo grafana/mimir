@@ -29,21 +29,26 @@ type Manager struct {
 	// mu protects the trackersByUserID map
 	mtx              sync.RWMutex
 	trackersByUserID map[string]*Tracker
+	reg              *prometheus.Registry
 }
 
 // NewManager creates a new cost attribution manager. which is responsible for managing the cost attribution of series.
 // It will clean up inactive series and update the cost attribution of series every 3 minutes.
-func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides) *Manager {
-	s := &Manager{
+func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
+	m := &Manager{
 		trackersByUserID: make(map[string]*Tracker),
 		limits:           limits,
 		mtx:              sync.RWMutex{},
 		inactiveTimeout:  inactiveTimeout,
 		logger:           logger,
+		reg:              reg,
 	}
 
-	s.Service = services.NewTimerService(cleanupInterval, nil, s.iteration, nil).WithName("cost attribution manager")
-	return s
+	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
+	if err := reg.Register(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (m *Manager) iteration(_ context.Context) error {

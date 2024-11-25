@@ -19,8 +19,6 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/compactor"
@@ -43,6 +41,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.HandlerFunc
@@ -276,6 +276,13 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
+}
+
+// Function to register the usage metrics route
+func (a *API) RegisterUsageMetricsRoute(customRegistryPath string, reg *prometheus.Registry) {
+	// Create a Prometheus HTTP handler for the custom registry
+	// Register the handler with the API's routing system
+	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), true, false, "GET")
 }
 
 // Ingester is defined as an interface to allow for alternative implementations

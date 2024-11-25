@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -44,7 +43,12 @@ func getMockLimits(idx int) (*validation.Overrides, error) {
 func newTestManager() *Manager {
 	logger := log.NewNopLogger()
 	limits, _ := getMockLimits(0)
-	return NewManager(5*time.Second, 10*time.Second, logger, limits)
+	reg := prometheus.NewRegistry()
+	manager, err := NewManager(5*time.Second, 10*time.Second, logger, limits, reg)
+	if err != nil {
+		panic(err)
+	}
+	return manager
 }
 
 func Test_NewManager(t *testing.T) {
@@ -63,8 +67,6 @@ func Test_EnabledForUser(t *testing.T) {
 
 func Test_CreateDeleteTracker(t *testing.T) {
 	manager := newTestManager()
-	reg := prometheus.NewRegistry()
-	require.NoError(t, reg.Register(manager))
 
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		user1Tracker := manager.TrackerForUser("user1")
@@ -92,7 +94,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_received_attributed_samples_total counter
 		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="custom_attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_received_attributed_samples_total"))
 	})
 
 	t.Run("Purge inactive attributions", func(t *testing.T) {
@@ -102,7 +104,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_discarded_attributed_samples_total counter
 		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="custom_attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
 
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
@@ -115,7 +117,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_received_attributed_samples_total counter
 		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="custom_attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
 	})
 
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
@@ -131,7 +133,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_discarded_attributed_samples_total counter
 		cortex_discarded_attributed_samples_total{feature="__missing__",reason="invalid-metrics-name",team="foo",tenant="user3",tracker="custom_attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
 
 	t.Run("When cost attribution get overflowed, all metrics are purged except overflow metrics", func(t *testing.T) {
@@ -144,14 +146,12 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_received_attributed_samples_total counter
 		cortex_received_attributed_samples_total{feature="__overflow__",team="__overflow__",tenant="user3",tracker="custom_attribution"} 2
 		`
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
 	})
 }
 
 func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager := newTestManager()
-	reg := prometheus.NewRegistry()
-	require.NoError(t, reg.Register(manager))
 
 	// Simulate metrics for multiple users to set up initial state
 	manager.TrackerForUser("user1").IncrementReceivedSamples(labels.FromStrings("team", "foo"), 1, time.Unix(1, 0))
@@ -174,7 +174,7 @@ func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",
 		}
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), metricNames...))
 	})
 
 	t.Run("Purge after inactive timeout", func(t *testing.T) {
@@ -194,7 +194,7 @@ func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 		metricNames := []string{
 			"cortex_discarded_attributed_samples_total",
 		}
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), metricNames...))
 	})
 
 	t.Run("Purge all trackers", func(t *testing.T) {
@@ -209,6 +209,6 @@ func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 			"cortex_discarded_attributed_samples_total",
 			"cortex_received_attributed_samples_total",
 		}
-		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), metricNames...))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(""), metricNames...))
 	})
 }
