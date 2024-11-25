@@ -22,7 +22,7 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 		storagePusherMetrics: newStoragePusherMetrics(reg),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_records_processing_time_seconds",
-			Help:                            "Time taken to process a batch of fetched records. Fetched records are effectively a set of WriteRequests read from Kafka.",
+			Help:                            "Time taken to process a batch of fetched records. Fetched records are effectively a set of WriteRequests read from Kafka. This is the latency of a single attempt and does not include retries.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,

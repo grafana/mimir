@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing/opentracing-go"
@@ -622,7 +623,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		MaxRetries: 0, // retry forever
 	})
 	defer func(consumeStart time.Time) {
-		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
+		instrument.ObserveWithExemplar(ctx, r.metrics.consumeLatency, time.Since(consumeStart).Seconds())
 	}(time.Now())
 
 	logger := spanlogger.FromContext(ctx, r.logger)
@@ -1093,7 +1094,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		}),
 		consumeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_records_batch_process_duration_seconds",
-			Help:                        "How long a consumer spent processing a batch of records from Kafka.",
+			Help:                        "How long a consumer spent processing a batch of records from Kafka. This includes retries on server errors.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
