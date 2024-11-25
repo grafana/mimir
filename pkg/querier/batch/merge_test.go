@@ -8,7 +8,6 @@ package batch
 import (
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/prometheus/prometheus/model/histogram"
-	"strconv"
 	"testing"
 	"time"
 
@@ -216,37 +215,6 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 		})
 	}
 	//TODO: test seek should always return unknown
-}
-
-func testIterWithHints(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
-	nextExpectedTS := model.TimeFromUnix(0)
-	var assertPoint func(i int)
-	switch encoding {
-	case chunk.PrometheusHistogramChunk:
-		assertPoint = func(i int) {
-			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
-			ts, h := iter.AtHistogram(nil)
-			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
-			expH := test.GenerateTestHistogram(int(nextExpectedTS))
-			test.RequireHistogramEqual(t, expH, h, strconv.Itoa(i))
-			nextExpectedTS = nextExpectedTS.Add(step)
-		}
-	case chunk.PrometheusFloatHistogramChunk:
-		assertPoint = func(i int) {
-			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
-			ts, fh := iter.AtFloatHistogram(nil)
-			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
-			expFH := test.GenerateTestFloatHistogram(int(nextExpectedTS))
-			test.RequireFloatHistogramEqual(t, expFH, fh, strconv.Itoa(i))
-			nextExpectedTS = nextExpectedTS.Add(step)
-		}
-	default:
-		t.Errorf("testIterWithHints - unhandled encoding: %v", encoding)
-	}
-	for i := 0; i < points; i++ {
-		assertPoint(i)
-	}
-	require.Equal(t, chunkenc.ValNone, iter.Next())
 }
 
 // TestMergeIteratorSeek tests a bug while calling Seek() on mergeIterator.
