@@ -119,13 +119,78 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 9000, v: 9000, hint: histogram.NotCounterReset},
 					},
 				},
+				{
+					name: "overlapping chunks",
+					chunks: []GenericChunk{
+						mkGenericChunk(t, 0, 11, enc),
+						mkGenericChunk(t, 3000, 7, enc),
+					},
+					expectedSamples: []histSample{
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset},   // 1 sample from c0
+						{t: 1000, v: 1000, hint: histogram.NotCounterReset}, // 1 sample from c0, previous iterator was also c0, so keep the NCR hint
+						{t: 2000, v: 2000, hint: histogram.NotCounterReset}, // 2 samples from c0, previous iterator was also c0, so keep the NCR hint
+						{t: 3000, v: 3000, hint: histogram.NotCounterReset},
+						{t: 4000, v: 4000, hint: histogram.UnknownCounterReset}, // 4 samples from c1
+						{t: 5000, v: 5000, hint: histogram.NotCounterReset},
+						{t: 6000, v: 6000, hint: histogram.NotCounterReset},
+						{t: 7000, v: 7000, hint: histogram.NotCounterReset},
+						{t: 8000, v: 8000, hint: histogram.UnknownCounterReset}, // 3 samples from c1
+						{t: 9000, v: 9000, hint: histogram.NotCounterReset},
+						{t: 10000, v: 10000, hint: histogram.NotCounterReset},
+					},
+				},
+				{
+					name: "different values at same timestamp",
+					chunks: func() []GenericChunk {
+						var addFunc func(chk chunk.EncodedChunk, ts, val int)
+						if enc == chunk.PrometheusHistogramChunk {
+							addFunc = func(chk chunk.EncodedChunk, ts, val int) {
+								overflow, err := chk.AddHistogram(int64(ts), test.GenerateTestHistogram(val))
+								require.NoError(t, err)
+								require.Nil(t, overflow)
+							}
+						} else {
+							addFunc = func(chk chunk.EncodedChunk, ts, val int) {
+								overflow, err := chk.AddFloatHistogram(int64(ts), test.GenerateTestFloatHistogram(val))
+								require.NoError(t, err)
+								require.Nil(t, overflow)
+							}
+						}
+						chk1, err := chunk.NewForEncoding(enc)
+						require.NoError(t, err)
+						addFunc(chk1, 0, 0)
+						addFunc(chk1, 1, 1)
+						addFunc(chk1, 4, 2)
+						addFunc(chk1, 5, 3)
+						addFunc(chk1, 7, 4)
+						chk2, err := chunk.NewForEncoding(enc)
+						addFunc(chk2, 0, 7)
+						addFunc(chk2, 1, 8)
+						addFunc(chk2, 2, 9)
+						addFunc(chk2, 3, 10)
+						addFunc(chk2, 4, 11)
+						return []GenericChunk{
+							NewGenericChunk(0, 1, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 1).Data.NewIterator),
+							NewGenericChunk(0, 1, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 0, 1).Data.NewIterator),
+						}
+					}(),
+					expectedSamples: []histSample{
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset}, // 1 sample from c0
+						{t: 1, v: 8, hint: histogram.UnknownCounterReset}, // 1 sample from c1
+						{t: 2, v: 9, hint: histogram.NotCounterReset},     // 2 samples from c1, previous iterator was also c0, so keep the NCR hint
+						{t: 3, v: 10, hint: histogram.NotCounterReset},
+						{t: 4, v: 11, hint: histogram.NotCounterReset},    // 1 sample from c1, previous iterator was also c0, so keep the NCR hint, also end of iterator
+						{t: 5, v: 3, hint: histogram.UnknownCounterReset}, // 2 samples from c0
+						{t: 7, v: 4, hint: histogram.NotCounterReset},
+					},
+				},
 				//TODO: different sample values
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
 					for i, s := range tc.expectedSamples {
 						valType := iter.Next()
-						require.NotEqual(t, chunkenc.ValNone, valType)
+						require.NotEqual(t, chunkenc.ValNone, valType, "expectedSamples has extra samples")
 						require.Nil(t, iter.Err())
 						require.Equal(t, s.t, iter.AtT())
 						switch enc {
