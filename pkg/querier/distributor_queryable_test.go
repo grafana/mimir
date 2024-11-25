@@ -929,7 +929,7 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 		default:
 			t.Errorf("convertToChunks - unhandled type: %T", s)
 		}
-		//require.NoError(t, err)
+		require.NoError(t, err)
 		if overflow == nil {
 			chunks[len(chunks)-1].Through = model.Time(ts)
 			continue
