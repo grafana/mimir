@@ -553,3 +553,14 @@ eval range from 0 to 20m step 1m deriv(metric[3m1s])
   {case="mixed float, NaN and Inf"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN -0.4683333333333333 -0.016666666666666666 -0.01 -0.008333333333333333 -0.016666666666666666
 
 clear
+
+load 1m
+  some_metric{env="prod", cluster="eu"} _ _ _ 0+1x4
+  some_metric{env="prod", cluster="us"} _ _ _ 0+2x4
+  some_metric{env="prod", cluster="au"} _ _ _ {{count:5}}+{{count:5}}x4
+
+# Function over range vector with many steps at beginning of range with no samples.
+eval range from 0 to 7m step 1m last_over_time(some_metric[3m])
+  some_metric{env="prod", cluster="eu"} _ _ _ 0 1 2 3 4
+  some_metric{env="prod", cluster="us"} _ _ _ 0 2 4 6 8
+  some_metric{env="prod", cluster="au"} _ _ _ {{count:5}} {{count:10}} {{count:15}} {{count:20}} {{count:25}}
