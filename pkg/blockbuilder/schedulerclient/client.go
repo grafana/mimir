@@ -15,8 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 )
 
-type SchedulerClient interface {
-}
+type SchedulerClient interface{}
 
 // SchedulerClient is a client for the scheduler service.
 // It encapsulates the communication style expected by the scheduler service.
@@ -32,8 +31,9 @@ type schedulerClient struct {
 }
 
 type job struct {
-	spec       scheduler.JobSpec
-	complete   bool
+	spec     scheduler.JobSpec
+	complete bool
+	// The time, if non-zero, when this job entry should be expired from the map.
 	forgetTime time.Time
 }
 
@@ -103,6 +103,7 @@ func (s *schedulerClient) forgetOldJobs() {
 
 	for key, j := range s.jobs {
 		if !j.forgetTime.IsZero() && now.After(j.forgetTime) {
+			level.Info(s.logger).Log("msg", "forgetting old job", "jobID", key.Id, "epoch", key.Epoch)
 			delete(s.jobs, key)
 		}
 	}
@@ -147,12 +148,17 @@ func (s *schedulerClient) GetJob(ctx context.Context) (scheduler.JobKey, schedul
 }
 
 func (s *schedulerClient) CompleteJob(jobKey scheduler.JobKey) error {
+	level.Info(s.logger).Log("msg", "marking job as completed", "jobID", jobKey.Id, "epoch", jobKey.Epoch)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	j, ok := s.jobs[jobKey]
 	if !ok {
 		return fmt.Errorf("job %s (%d) not found", jobKey.GetId(), jobKey.GetEpoch())
+	}
+	if j.complete {
+		return nil
 	}
 
 	j.complete = true
