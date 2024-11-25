@@ -40,6 +40,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
+func init() {
+	types.EnableManglingReturnedSlices = true
+}
+
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	featureToggles := EnableAllFeatures
 

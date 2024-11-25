@@ -28,6 +28,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 		pool.NewBucketedPool(1, 1000, 2, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		FPointSize,
 		false,
+		nil,
 	)
 
 	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested.
@@ -80,6 +81,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 		pool.NewBucketedPool(1, 1000, 2, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		FPointSize,
 		false,
+		nil,
 	)
 
 	// Get a slice from the pool beneath the limit.
