@@ -905,6 +905,22 @@ func TestSubqueries(t *testing.T) {
 			Start: time.Unix(10, 0),
 		},
 		{
+			// A query where SeriesMetadata returns some series but evaluates to no samples should not return anything.
+			Query: `(metric > Inf)[20s:10s]`,
+			Start: time.Unix(30, 0),
+			Result: promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		{
+			// A nested subquery with the same properties as above.
+			Query: `last_over_time((metric > Inf)[20s:10s])[30s:5s]`,
+			Start: time.Unix(30, 0),
+			Result: promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		{
 			Query: "metric[20s:5s]",
 			Result: promql.Result{
 				Value: promql.Matrix{

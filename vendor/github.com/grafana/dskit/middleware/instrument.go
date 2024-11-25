@@ -6,10 +6,12 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/gorilla/mux"
@@ -50,6 +52,9 @@ type Instrument struct {
 	RequestBodySize   *prometheus.HistogramVec
 	ResponseBodySize  *prometheus.HistogramVec
 	InflightRequests  *prometheus.GaugeVec
+	LatencyCutoff     time.Duration
+	ThroughputUnit    string
+	RequestThroughput *prometheus.HistogramVec
 }
 
 // IsWSHandshakeRequest returns true if the given request is a websocket handshake request.
@@ -105,7 +110,38 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 			labelValues = append(labelValues, tenantID)
 			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
 		}
+		if i.LatencyCutoff > 0 && respMetrics.Duration > i.LatencyCutoff {
+			volume, err := extractValueFromMultiValueHeader(w.Header().Get("Server-Timing"), i.ThroughputUnit, "val")
+			if err == nil {
+				instrument.ObserveWithExemplar(r.Context(), i.RequestThroughput.WithLabelValues(r.Method, route), volume/respMetrics.Duration.Seconds())
+			}
+		}
 	})
+}
+
+// Extracts a single value from a multi-value header, e.g. "name0;key0=0.0;key1=1.1, name1;key0=1.1"
+func extractValueFromMultiValueHeader(h, name string, key string) (float64, error) {
+	parts := strings.Split(h, ", ")
+	if len(parts) == 0 {
+		return 0, fmt.Errorf("not a multi-value header")
+	}
+	for _, part := range parts {
+		if part, found := strings.CutPrefix(part, name); found {
+			for _, spart := range strings.Split(part, ";") {
+				if !strings.HasPrefix(spart, key) {
+					continue
+				}
+				var value float64
+				_, err := fmt.Sscanf(spart, key+"=%f", &value)
+				if err != nil {
+					return 0, fmt.Errorf("failed to parse value from header: %w", err)
+				}
+				return value, nil
+			}
+		}
+
+	}
+	return 0, fmt.Errorf("desired name not found in header")
 }
 
 // Return a name identifier for ths request.  There are three options:
