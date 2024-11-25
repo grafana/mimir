@@ -46,7 +46,7 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
 	cfg.OAuth2.RegisterFlagsWithPrefix("ruler.alertmanager-client.oauth.", f)
-	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic such as OAuth token requests.")
+	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
 }
 
 type OAuth2Config struct {

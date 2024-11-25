@@ -1970,7 +1970,7 @@ alertmanager_client:
     [scopes: <list of strings> | default = []]
 
   # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
-  # requests through. Applies to all requests, including auxiliary traffic such
+  # requests through. Applies to all requests, including auxiliary traffic, such
   # as OAuth token requests.
   # CLI flag: -ruler.alertmanager-client.proxy-url
   [proxy_url: <string> | default = ""]
