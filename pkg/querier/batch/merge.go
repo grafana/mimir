@@ -50,9 +50,7 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool)
 	}
 	for i, cs := range css {
-		c.its[i] = newNonOverlappingIterator(c.its[i], cs, &c.hPool, &c.fhPool)
-		// TODO: pass into constructor instead but cba to fix all the tests rn...
-		c.its[i].id = i
+		c.its[i] = newNonOverlappingIterator(c.its[i], i, cs, &c.hPool, &c.fhPool)
 	}
 
 	for _, iter := range c.its {
