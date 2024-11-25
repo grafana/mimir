@@ -33,7 +33,7 @@ import (
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
-func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time, elected time.Time) {
+func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTracker, user, cluster, replica string, expected time.Time, elected time.Time) {
 	t.Helper()
 
 	// Round the expected timestamp with milliseconds precision
@@ -75,7 +75,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	const replicaOne = "r1"
 	const replicaTwo = "r2"
 
-	var c *haTracker
+	var c *defaultHaTracker
 	var err error
 	var now time.Time
 
@@ -84,7 +84,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mockCountingClient := kv.NewMockCountingClient(kvStore)
-	c, err = newHATracker(HATrackerConfig{
+	c, err = newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mockCountingClient},
 		UpdateTimeout:          time.Millisecond * 100,
@@ -109,7 +109,7 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 
 	// Initializing a New Client to set calls to zero
 	mockCountingClient = kv.NewMockCountingClient(kvStore)
-	c, err = newHATracker(HATrackerConfig{
+	c, err = newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mockCountingClient},
 		UpdateTimeout:          time.Millisecond * 100,
@@ -211,7 +211,7 @@ func TestHATrackerWatchPrefixAssignment(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          time.Millisecond,
@@ -236,7 +236,7 @@ func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Store: "inmemory"},
 		UpdateTimeout:          100 * time.Millisecond,
@@ -283,7 +283,7 @@ func TestHATrackerCheckReplicaMultiCluster(t *testing.T) {
 	replica2 := "replica2"
 
 	reg := prometheus.NewPedanticRegistry()
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Store: "inmemory"},
 		UpdateTimeout:          100 * time.Millisecond,
@@ -333,7 +333,7 @@ func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	replica2 := "replica2"
 
 	reg := prometheus.NewPedanticRegistry()
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Store: "inmemory"},
 		UpdateTimeout:          100 * time.Millisecond,
@@ -413,7 +413,7 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          time.Second,
@@ -468,7 +468,7 @@ func TestHATrackerCheckReplicaMultiUser(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          100 * time.Millisecond,
@@ -550,7 +550,7 @@ func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			mock := kv.PrefixClient(kvStore, "prefix")
-			c, err := newHATracker(HATrackerConfig{
+			c, err := newHaTracker(HATrackerConfig{
 				EnableHATracker:        true,
 				KVStore:                kv.Config{Mock: mock},
 				UpdateTimeout:          testData.updateTimeout,
@@ -652,7 +652,7 @@ func TestHATrackerClustersLimit(t *testing.T) {
 	mock := kv.PrefixClient(kvStore, "prefix")
 	limits := trackerLimits{maxClusters: 2}
 
-	t1, err := newHATracker(HATrackerConfig{
+	t1, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          time.Second,
@@ -712,7 +712,7 @@ func TestHATrackerClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 1, t1, userID)
 }
 
-func waitForClustersUpdate(t *testing.T, expected int, tr *haTracker, userID string) {
+func waitForClustersUpdate(t *testing.T, expected int, tr *defaultHaTracker, userID string) {
 	t.Helper()
 	test.Poll(t, 2*time.Second, expected, func() interface{} {
 		tr.electedLock.RLock()
@@ -732,8 +732,21 @@ func (l trackerLimits) MaxHAClusters(_ string) int {
 
 func TestHATracker_MetricsCleanup(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	tr, err := newHATracker(HATrackerConfig{EnableHATracker: false}, nil, reg, log.NewNopLogger())
+	logger := utiltest.NewTestingLogger(t)
+
+	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+	tr, err := newHaTracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          1 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Second,
+	}, trackerLimits{maxClusters: 100}, reg, logger)
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tr))
 
 	metrics := []string{
 		"cortex_ha_tracker_elected_replica_changes_total",
@@ -801,7 +814,7 @@ func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
-	c, err := newHATracker(HATrackerConfig{
+	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          1 * time.Second,
@@ -864,7 +877,7 @@ func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 	))
 }
 
-func checkUserClusters(t *testing.T, duration time.Duration, c *haTracker, user string, expectedClusters int) {
+func checkUserClusters(t *testing.T, duration time.Duration, c *defaultHaTracker, user string, expectedClusters int) {
 	t.Helper()
 	test.Poll(t, duration, nil, func() interface{} {
 		c.electedLock.RLock()
@@ -879,7 +892,7 @@ func checkUserClusters(t *testing.T, duration time.Duration, c *haTracker, user 
 	})
 }
 
-func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracker, user, cluster string, expectedExistsInMemory, expectedExistsInKV, expectedMarkedForDeletion bool) {
+func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *defaultHaTracker, user, cluster string, expectedExistsInMemory, expectedExistsInKV, expectedMarkedForDeletion bool) {
 	key := fmt.Sprintf("%s/%s", user, cluster)
 
 	test.Poll(t, duration, nil, func() interface{} {
@@ -953,7 +966,7 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	mock := kv.PrefixClient(kvStore, "prefix")
 
 	// Start two trackers.
-	t1, err := newHATracker(HATrackerConfig{
+	t1, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          5 * time.Second,
@@ -962,7 +975,7 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
-	t2, err := newHATracker(HATrackerConfig{
+	t2, err := newHaTracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
 		UpdateTimeout:          5 * time.Second,
