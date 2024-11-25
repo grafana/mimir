@@ -18,7 +18,7 @@ import (
 )
 
 func TestMergeIter(t *testing.T) {
-	for _, enc := range []chunk.Encoding{/*chunk.PrometheusXorChunk,*/ chunk.PrometheusHistogramChunk/*, chunk.PrometheusFloatHistogramChunk*/} {
+	for _, enc := range []chunk.Encoding{chunk.PrometheusXorChunk, chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
 		t.Run(enc.String(), func(t *testing.T) {
 			chunk1 := mkGenericChunk(t, 0, 100, enc)
 			chunk2 := mkGenericChunk(t, model.TimeFromUnix(25), 100, enc)
@@ -27,15 +27,15 @@ func TestMergeIter(t *testing.T) {
 			chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, enc)
 
 			iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testIter(t, 200, iter, enc)
+			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 			iter = NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testSeek(t, 200, iter, enc)
+			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 
 			// Re-use iterator.
 			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testIter(t, 200, iter, enc)
+			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
-			testSeek(t, 200, iter, enc)
+			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
 }
@@ -56,10 +56,10 @@ func TestMergeHarder(t *testing.T) {
 				from = from.Add(time.Duration(offset) * time.Second)
 			}
 			iter := newMergeIterator(nil, chunks)
-			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
+			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
 
 			iter = newMergeIterator(nil, chunks)
-			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
+			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
 }

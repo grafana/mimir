@@ -106,3 +106,14 @@ func RequireHistogramEqual(t require.TestingT, expected, actual *histogram.Histo
 func RequireFloatHistogramEqual(t require.TestingT, expected, actual *histogram.FloatHistogram, msgAndArgs ...interface{}) {
 	require.EqualValues(t, expected, actual, msgAndArgs)
 }
+
+// RequireHistogramEqualNoCounterResets requires the two histograms to be equal apart from their counter reset hint.
+// The hint cannot be CounterReset either
+func RequireHistogramEqualNoCounterResets(t require.TestingT, expected, actual *histogram.Histogram, msgAndArgs ...interface{}) {
+	require.NotEqual(t, histogram.CounterReset, actual.CounterResetHint)
+	if expected.CounterResetHint != histogram.GaugeType {
+		expected.CounterResetHint = histogram.UnknownCounterReset
+		actual.CounterResetHint = histogram.UnknownCounterReset
+	}
+	require.EqualValues(t, expected, actual, msgAndArgs)
+}
