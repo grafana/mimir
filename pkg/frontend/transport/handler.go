@@ -484,18 +484,21 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 		parts := make([]string, 0)
 		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 		parts = append(parts, statsValue("response_time", queryResponseTime))
-		parts = append(parts, statsBytesProcessedValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
+		parts = append(parts, statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
 		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
 	}
 }
 
-func statsValue(name string, d time.Duration) string {
-	durationInMs := strconv.FormatFloat(float64(d)/float64(time.Millisecond), 'f', -1, 64)
-	return name + ";dur=" + durationInMs
-}
-
-func statsBytesProcessedValue(name string, value uint64) string {
-	return name + "=" + strconv.FormatUint(value, 10)
+func statsValue(name string, val interface{}) string {
+	switch v := val.(type) {
+	case time.Duration:
+		durationInMs := strconv.FormatFloat(float64(v)/float64(time.Millisecond), 'f', -1, 64)
+		return name + ";dur=" + durationInMs
+	case uint64:
+		return name + ";val=" + strconv.FormatUint(v, 10)
+	default:
+		return name + ";val=" + fmt.Sprintf("%v", v)
+	}
 }
 
 func httpRequestActivity(request *http.Request, userAgent string, requestParams url.Values) string {
