@@ -2043,6 +2043,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-histogram-quantile-function",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_one_to_many_and_many_to_one_binary_operations",
+              "required": false,
+              "desc": "Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

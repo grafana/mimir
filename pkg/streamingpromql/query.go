@@ -249,7 +249,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
 		}
 
-		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne {
+		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne && !q.engine.featureToggles.EnableOneToManyAndManyToOneBinaryOperations {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
 		}
 

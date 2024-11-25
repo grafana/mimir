@@ -50,12 +50,10 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
-		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"topk(5, metric{})":                            "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
-		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
-		"quantile(0.95, metric{})":                     "'quantile' aggregation with parameter",
+		"topk(5, metric{})":                     "'topk' aggregation with parameter",
+		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
+		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
+		"quantile(0.95, metric{})":              "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -157,11 +155,19 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
 	})
 
-	t.Run("classic histograms", func(t *testing.T) {
+	t.Run("histogram_quantile function", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableHistogramQuantileFunction = false
 
 		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "'histogram_quantile' function")
+	})
+
+	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableOneToManyAndManyToOneBinaryOperations = false
+
+		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
+		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
 	})
 }
 
