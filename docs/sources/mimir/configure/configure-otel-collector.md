@@ -17,7 +17,7 @@ When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector
 
 ## Use the OpenTelemetry protocol
 
-Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter and the native Mimir endpoint. For example:
+Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, use the [`otlphttp` exporter](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) and the native Mimir endpoint. For example:
 
 ```yaml
 exporters:
@@ -25,7 +25,7 @@ exporters:
     endpoint: http://<mimir-endpoint>/otlp
 ```
 
-Then, enable it in `service.pipelines`:
+Then, enable it in the `service.pipelines` block:
 
 ```yaml
 service:
@@ -36,7 +36,7 @@ service:
       exporters: [..., otlphttp]
 ```
 
-If you want to authenticate using basic auth, use the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension:
+If you want to authenticate using basic auth, use the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension. For example:
 
 ```yaml
 extensions:
@@ -62,10 +62,6 @@ service:
 
 ## Use the Prometheus remote write protocol
 
-{{< admonition type="note" >}}
-Support for the Prometheus remote write protocol is an experimental feature in Mimir.
-{{< /admonition >}}
-
 To use the Prometheus remote write protocol to send metrics into Mimir, use the [`prometheusremotewrite`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/prometheusremotewriteexporter) exporter in the Collector and the native Mimir endpoint.
 
 In the `exporters` section, add:
@@ -87,7 +83,7 @@ service:
       exporters: [..., prometheusremotewrite]
 ```
 
-If you want to authenticate using basic auth, use the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension:
+If you want to authenticate using basic auth, use the [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) extension. For example:
 
 ```yaml
 extensions:
