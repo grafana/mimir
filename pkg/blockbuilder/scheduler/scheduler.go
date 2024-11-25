@@ -239,7 +239,7 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 }
 
 // AssignJob returns an assigned job for the given workerID.
-func (s *BlockBuilderScheduler) AssignJob(ctx context.Context, req *AssignJobRequest) (*AssignJobResponse, error) {
+func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *AssignJobRequest) (*AssignJobResponse, error) {
 	key, spec, err := s.jobs.assign(req.WorkerId)
 	if err != nil {
 		return nil, err
@@ -278,7 +278,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, err
 }
 
 // UpdateJob takes a job update from the client and records it, if necessary.
-func (s *BlockBuilderScheduler) UpdateJob(ctx context.Context, req *UpdateJobRequest) (*UpdateJobResponse, error) {
+func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *UpdateJobRequest) (*UpdateJobResponse, error) {
 	if err := s.updateJob(req.Key.key(), req.WorkerId, req.Complete, jobSpec{
 		topic:          req.Spec.Topic,
 		partition:      req.Spec.Partition,
