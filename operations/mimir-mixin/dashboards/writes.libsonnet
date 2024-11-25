@@ -240,30 +240,6 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Kafka fetch throughput') +
-        $.panelDescription(
-          'Kafka fetch throughput',
-          |||
-            Throughput of fetches received from Kafka brokers.
-            This panel shows the rate of bytes fetched from Kafka brokers, and the rate of bytes discarded.
-            The discarded bytes are due to concurrent fetching.
-
-            Discarded bytes amounting to up to 10% of the total fetched bytes are exepcted during startup when there is higher concurrency in fetching.
-            Discarded bytes amounting to around 1% of the total fetched bytes are expected during normal operation.
-
-            High values of discarded bytes might indicate inefficient estimation of record size. This can be verified via the cortex_ingest_storage_reader_bytes_per_record metric.
-          |||
-        ) +
-        $.queryPanel([
-          'sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingest_storage_reader_fetched_discarded_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-        ], [
-          'Fetched bytes (decompressed)',
-          'Discarded bytes (decompressed)',
-        ]) +
-        { fieldConfig+: { defaults+: { unit: 'Bps' } } },
-      )
-      .addPanel(
         $.timeseriesPanel('Kafka records batch latency') +
         $.panelDescription(
           'Kafka records batch latency',
@@ -292,10 +268,59 @@ local filename = 'mimir-writes.json';
         } +
         $.stack,
       )
+      .addPanel(
+        $.timeseriesPanel('Record size') +
+        $.panelDescription(
+          'Record size',
+          |||
+            Concurrent fetching estimates the size of records.
+            The estimation is used to enforce the max-buffered-bytes limit and to reduce discarded bytes.
+          |||
+        ) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          |||
+            histogram_avg(sum(rate(cortex_ingest_storage_reader_bytes_per_record{%s}[$__rate_interval])))
+          |||
+          % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Actual bytes per record (avg)',
+          'Estimated bytes per record (avg)',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
+      )
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
       $.row('')
+      .addPanel(
+        $.timeseriesPanel('Kafka fetch throughput') +
+        $.panelDescription(
+          'Kafka fetch throughput',
+          |||
+            Throughput of fetches received from Kafka brokers.
+            This panel shows the rate of bytes fetched from Kafka brokers, and the rate of bytes discarded.
+            The discarded bytes are due to concurrently fetching overlapping overlapping offsets.
+
+            Discarded bytes amounting to up to 10% of the total fetched bytes are exepcted during startup when there is higher concurrency in fetching.
+            Discarded bytes amounting to around 1% of the total fetched bytes are expected during normal operation.
+
+            High values of discarded bytes might indicate inaccurate estimation of record size.
+          |||
+        ) +
+        $.queryPanel([
+          'sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_fetched_discarded_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Fetched bytes (decompressed)',
+          'Discarded bytes (decompressed)',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'Bps' } } },
+      )
       .addPanel(
         $.timeseriesPanel('Write request batches processed / sec') +
         $.panelDescription(
@@ -346,10 +371,21 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel(),
-      )
-      .addPanel(
-        $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),
+        $.timeseriesPanel('Ingested samples / sec') +
+        $.panelDescription(
+          'Ingested samples',
+          |||
+            Concurrent ingestion estimates the number of timeseries per batch to choose the optimal concurrency settings.
+          |||
+        ) +
+        $.queryPanel([
+          'histogram_sum(sum(rate(cortex_ingest_storage_reader_pusher_timeseries_per_flush{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_pusher_estimated_timeseries_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Actual samples',
+          'Estimated samples',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
     )
     .addRowIf(
