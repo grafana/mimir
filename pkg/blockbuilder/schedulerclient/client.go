@@ -108,7 +108,7 @@ func (s *schedulerClient) forgetOldJobs() {
 
 // GetJob returns the job assigned to the worker with the given ID.
 // It will block until a job is available.
-func (s *schedulerClient) GetJob(ctx context.Context, workerID string) (scheduler.JobKey, scheduler.JobSpec, error) {
+func (s *schedulerClient) GetJob(ctx context.Context) (scheduler.JobKey, scheduler.JobSpec, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
