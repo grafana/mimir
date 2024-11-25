@@ -1195,6 +1195,7 @@ func TestSubqueries(t *testing.T) {
 
 				res := qry.Exec(context.Background())
 				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+				qry.Close()
 			}
 
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
