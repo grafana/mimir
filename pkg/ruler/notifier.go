@@ -50,10 +50,10 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type OAuth2Config struct {
-	ClientID     string              `yaml:"client_id"`
-	ClientSecret flagext.Secret      `yaml:"client_secret"`
-	TokenURL     string              `yaml:"token_url"`
-	Scopes       flagext.StringSlice `yaml:"scopes,omitempty"`
+	ClientID     string                 `yaml:"client_id"`
+	ClientSecret flagext.Secret         `yaml:"client_secret"`
+	TokenURL     string                 `yaml:"token_url"`
+	Scopes       flagext.StringSliceCSV `yaml:"scopes,omitempty"`
 }
 
 func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
