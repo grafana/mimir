@@ -12390,9 +12390,9 @@
                   "required": false,
                   "desc": "Optional scopes to include with the token request.",
                   "fieldValue": null,
-                  "fieldDefaultValue": [],
+                  "fieldDefaultValue": "",
                   "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
-                  "fieldType": "list of strings"
+                  "fieldType": "string"
                 }
               ],
               "fieldValue": null,

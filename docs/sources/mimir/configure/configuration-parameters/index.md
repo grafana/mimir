@@ -1967,7 +1967,7 @@ alertmanager_client:
 
     # Optional scopes to include with the token request.
     # CLI flag: -ruler.alertmanager-client.oauth.scopes
-    [scopes: <list of strings> | default = []]
+    [scopes: <string> | default = ""]
 
   # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
   # requests through. Applies to all requests, including auxiliary traffic, such
