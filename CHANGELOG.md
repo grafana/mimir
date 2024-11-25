@@ -39,7 +39,7 @@
 * [FEATURE] Ruler: Add experimental support for caching the contents of rule groups. This is disabled by default and can be enabled by setting `-ruler-storage.cache.rule-group-enabled`. #9595
 * [FEATURE] PromQL: Add experimental `info` function. Experimental functions are disabled by default, but can be enabled setting `-querier.promql-experimental-functions-enabled=true` in the query-frontend and querier. #9879
 * [FEATURE] Distributor: Support promotion of OTel resource attributes to labels. #8271
-* [ENHANCEMENT] Query Frontend: Update Server-Timing `bytes_processed` format #9985
+* [ENHANCEMENT] Query Frontend: Return server-side total bytes processed statistics following Server-Timing format. #9985
 * [ENHANCEMENT] mimirtool: Adds bearer token support for mimirtool's analyze ruler/prometheus commands. #9587
 * [ENHANCEMENT] Ruler: Support `exclude_alerts` parameter in `<prometheus-http-prefix>/api/v1/rules` endpoint. #9300
 * [ENHANCEMENT] Distributor: add a metric to track tenants who are sending newlines in their label values called `cortex_distributor_label_values_with_newlines_total`. #9400
@@ -54,7 +54,6 @@
   * `-memberlist.max-concurrent-writes`
   * `-memberlist.acquire-writer-timeout`
 * [ENHANCEMENT] memberlist: Notifications can now be processed once per interval specified by `-memberlist.notify-interval` to reduce notify storm CPU activity in large clusters. #9594
-* [ENHANCEMENT] Return server-side total bytes processed statistics as a header through query frontend. #9645
 * [ENHANCEMENT] Query-scheduler: Remove the experimental `query-scheduler.prioritize-query-components` flag. Request queues always prioritize query component dequeuing above tenant fairness. #9703
 * [ENHANCEMENT] Ingester: Emit traces for block syncing, to join up block-upload traces. #9656
 * [ENHANCEMENT] Querier: Enable the optional querying of additional storage queryables. #9712
