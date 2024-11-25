@@ -292,6 +292,9 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange
 			if h != nil && h != invalidCombinationOfHistograms {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
+
+				// Remove histogram from slice to ensure it's not mutated when the slice is reused.
+				g.histograms[i] = nil
 			}
 		}
 	}
