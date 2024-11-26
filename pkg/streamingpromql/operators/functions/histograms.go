@@ -150,9 +150,9 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		if !groupExists {
 			g.labels = series.Labels
 			g.group = bucketGroupPool.Get()
-			g.group.lastInputSeriesIdx = innerIdx
 			groups[string(b)] = g
 		}
+		g.group.lastInputSeriesIdx = innerIdx
 		g.group.remainingSeriesCount++
 		h.seriesGroupPairs[innerIdx].nativeHistogramGroup = g.group
 
@@ -168,12 +168,11 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 			lb.Del(labels.BucketLabel)
 			g.labels = lb.Labels()
 			g.group = bucketGroupPool.Get()
-			g.group.lastInputSeriesIdx = innerIdx
 			groups[string(b)] = g
 		}
+		g.group.lastInputSeriesIdx = innerIdx
 		g.group.remainingSeriesCount++
 		h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
-
 	}
 
 	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
