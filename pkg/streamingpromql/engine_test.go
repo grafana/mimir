@@ -2243,6 +2243,21 @@ func TestClassicHistogramAnnotations(t *testing.T) {
 			expr:                       `histogram_quantile(2, series{host="d"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)`},
 		},
+		"no le label on selected series": {
+			data: `
+				series  2
+			`,
+			expr:                       `histogram_quantile(0.5, series{})`,
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
+		},
+		"extra entry in series without le label": {
+			data: `
+				series{le="+Inf"} 1
+				series  2
+			`,
+			expr:                       `histogram_quantile(0.5, series{})`,
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
+		},
 	}
 
 	runAnnotationTests(t, testCases)

@@ -146,22 +146,24 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		g.group.remainingSeriesCount++
 		h.seriesGroupPairs[innerIdx].nativeHistogramGroup = g.group
 
-		// If `le` exists, also get the group without that label
-		if le != "" {
-			b = series.Labels.BytesWithoutLabels(b, labels.BucketLabel)
-			g, groupExists = groups[string(b)]
+		// Then get the group without the `le` label. This may be the same
+		// as the previous group if not le label exists.
+		// We still need to do this (rather than set it to nil) so that we know when to emit
+		// NewBadBucketLabelWarning when the series are processed.
+		b = series.Labels.BytesWithoutLabels(b, labels.BucketLabel)
+		g, groupExists = groups[string(b)]
 
-			if !groupExists {
-				lb.Reset(series.Labels)
-				lb.Del(labels.BucketLabel)
-				g.labels = lb.Labels()
-				g.group = bucketGroupPool.Get()
-				g.group.lastInputSeriesIdx = innerIdx
-				groups[string(b)] = g
-			}
-			g.group.remainingSeriesCount++
-			h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
+		if !groupExists {
+			lb.Reset(series.Labels)
+			lb.Del(labels.BucketLabel)
+			g.labels = lb.Labels()
+			g.group = bucketGroupPool.Get()
+			g.group.lastInputSeriesIdx = innerIdx
+			groups[string(b)] = g
 		}
+		g.group.remainingSeriesCount++
+		h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
+
 	}
 
 	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
@@ -226,9 +228,7 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 		// It is also possible that both series groups are the same.
 		// The conflict in points is then detected in computeOutputSeriesForGroup.
 		h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups.nativeHistogramGroup)
-		if thisSeriesGroups.classicHistogramGroup != nil {
-			h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
-		}
+		h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
 
 		// We are done with the fPoints, so return these now
 		// hPoint's are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
