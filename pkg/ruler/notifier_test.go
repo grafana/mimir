@@ -6,7 +6,10 @@
 package ruler
 
 import (
+	"bytes"
 	"errors"
+	"flag"
+	"maps"
 	"net/url"
 	"testing"
 	"time"
@@ -17,9 +20,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBuildNotifierConfig(t *testing.T) {
@@ -374,6 +379,51 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "with OAuth2 and optional endpoint params",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						EndpointParams: validation.NewLimitsMapWithData[string](
+							map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+							validateOAuth2EndpointParam,
+						),
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:       "oauth2-client-id",
+									ClientSecret:   "test",
+									TokenURL:       "https://oauth2-token-endpoint.local/token",
+									EndpointParams: map[string]string{"param1": "value1", "param2": "value2"},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "with OAuth2 and proxy_url simultaneously, inheriting proxy",
 			cfg: &Config{
 				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
@@ -493,6 +543,48 @@ func TestBuildNotifierConfig(t *testing.T) {
 				require.Equal(t, tt.ncfg, ncfg)
 			} else {
 				require.EqualError(t, err, tt.err.Error())
+			}
+		})
+	}
+}
+
+func TestOAuth2Config_ValidateEndpointParams(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args     []string
+		expected validation.LimitsMap[string]
+		error    string
+	}{
+		"basic test": {
+			args: []string{"-map-flag", "{\"param1\": \"value1\" }"},
+			expected: validation.NewLimitsMapWithData(map[string]string{
+				"param1": "value1",
+			}, validateOAuth2EndpointParam),
+		},
+
+		"empty value": {
+			args:  []string{"-map-flag", "{\"param1\": \"\" }"},
+			error: "invalid value \"{\\\"param1\\\": \\\"\\\" }\" for flag -map-flag: endpoint params value cannot be empty",
+		},
+
+		"parsing error": {
+			args:  []string{"-map-flag", "{\"hello\": ..."},
+			error: "invalid value \"{\\\"hello\\\": ...\" for flag -map-flag: invalid character '.' looking for beginning of value",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := validation.NewLimitsMap(validateOAuth2EndpointParam)
+
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			fs.SetOutput(&bytes.Buffer{}) // otherwise errors would go to stderr.
+			fs.Var(v, "map-flag", "Map flag, you can pass JSON into this")
+			err := fs.Parse(tc.args)
+
+			if tc.error != "" {
+				require.NotNil(t, err)
+				assert.Equal(t, tc.error, err.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.True(t, maps.Equal(tc.expected.Read(), v.Read()))
 			}
 		})
 	}
