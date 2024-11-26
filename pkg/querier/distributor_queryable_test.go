@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -521,243 +520,119 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	require.NoError(t, seriesSet.Err())
 }
 
-// Krajo's test from https://github.com/grafana/mimir/pull/9823/, working with cr -> ucr header update. I think it's right?
-func TestDistributorQuerier_Select_FixedInflatedCounterResets(t *testing.T) {
-	var (
-		queryStart int64
-		queryEnd   int64 = 1000
-	)
-
-	h1 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 40},
-		Sum:   40,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{40},
-		Timestamp:      queryStart + 100,
-	}
-	h2 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 30},
-		Sum:   30,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{30},
-		Timestamp:      queryStart + 200,
-	}
-	h3 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 20},
-		Sum:   20,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{20},
-		Timestamp:      queryStart + 300,
+func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
+	makeHistogram := func(ts, val int64, hint mimirpb.Histogram_ResetHint) mimirpb.Histogram {
+		return mimirpb.Histogram{
+			Count: &mimirpb.Histogram_CountInt{CountInt: uint64(val)},
+			Sum:   float64(val),
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 1},
+			},
+			PositiveDeltas: []int64{val},
+			Timestamp:      ts,
+			ResetHint:      hint,
+		}
 	}
 
-	ingesterOneReturns := []mimirpb.Histogram{h1, h3}     // Counter reset at h3.
-	ingesterTwoReturns := []mimirpb.Histogram{h1, h2, h3} // Counter reset at h2, should invalidate the reset at h3.
-
-	testCases := map[string]struct {
-		combinedResponse client.CombinedQueryStreamResponse
-		// To be able to encode unsupported cases that might become supported in
-		// the future.
-		expectError bool
+	for _, tc := range []struct {
+		name                 string
+		chunks               []client.Chunk
+		queryStart, queryEnd int64
+		expectedSamples      []mimirpb.Histogram
 	}{
-		"chunkseries": {
-			combinedResponse: client.CombinedQueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-						Chunks: append(convertToChunks(t, histogramsToInterface(ingesterOneReturns), true), convertToChunks(t, histogramsToInterface(ingesterTwoReturns), true)...),
-					},
-				},
+		{
+			// This might happen is when an in-order chunk and OOO chunk are returned from the same ingester.
+			name: "overlapping chunks",
+			chunks: append(
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(700, 50, mimirpb.Histogram_NO),
+				}), false),
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(200, 20, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(300, 60, mimirpb.Histogram_NO),
+					makeHistogram(400, 70, mimirpb.Histogram_NO),
+					makeHistogram(500, 80, mimirpb.Histogram_NO),
+					makeHistogram(600, 90, mimirpb.Histogram_NO),
+				}), false)...),
+			expectedSamples: []mimirpb.Histogram{
+				makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(200, 20, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(300, 60, mimirpb.Histogram_NO),
+				makeHistogram(400, 70, mimirpb.Histogram_NO),
+				makeHistogram(500, 80, mimirpb.Histogram_NO),
+				makeHistogram(600, 90, mimirpb.Histogram_NO),
+				makeHistogram(700, 50, mimirpb.Histogram_UNKNOWN),
 			},
 		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			d := &mockDistributor{}
-			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.combinedResponse, nil)
-
-			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
-			querier, err := queryable.Querier(queryStart, queryEnd)
-			require.NoError(t, err)
-
-			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: queryStart, End: queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
-			require.True(t, seriesSet.Next())
-			require.NoError(t, seriesSet.Err())
-
-			series := seriesSet.At()
-			it := series.Iterator(nil)
-			count := int64(0)
-			for it.Next() == chunkenc.ValHistogram {
-				count++
-				ts, h := it.AtHistogram(nil)
-				require.Equal(t, queryStart+(count*100), ts)
-				require.NotNil(t, h)
-				switch count {
-				case 1:
-					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
-				case 2:
-					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
-				case 3:
-					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
-				}
-			}
-			require.NoError(t, it.Err())
-			require.Equal(t, int64(3), count)
-
-			require.False(t, seriesSet.Next())
-		})
-	}
-}
-
-// This test shows overlapping chunks in a single ingester aren't fixed
-func TestDistributorQuerier_Select_OverlappingChunksFromSingleIngester(t *testing.T) {
-	var (
-		queryStart int64
-		queryEnd   int64 = 1000
-	)
-
-	// In ts order:
-	// - 40 (chunk 1 - unknown, first in chunk)
-	// - 20 (chunk 2 - unknown, first in chunk)
-	// - 60 (chunk 2 - not reset, second in chunk 2 and is consecutive)
-	// - 50 (chunk 1 - unknown, second in chunk 1, not consecutive, is actually counter reset but we currently treat all counter resets as unknowns)
-	// C1 could be an in-order chunk, C2 an OOO chunk
-	h1 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 40},
-		Sum:   40,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{40},
-		Timestamp:      queryStart + 100,
-	}
-	h2 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 20},
-		Sum:   20,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{20},
-		Timestamp:      queryStart + 200,
-	}
-	h3 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 60},
-		Sum:   60,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{60},
-		Timestamp:      queryStart + 300,
-	}
-	h4 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 70},
-		Sum:   70,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{70},
-		Timestamp:      queryStart + 400,
-	}
-	h5 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 80},
-		Sum:   80,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{80},
-		Timestamp:      queryStart + 500,
-	}
-	h6 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 90},
-		Sum:   90,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{90},
-		Timestamp:      queryStart + 600,
-	}
-	h7 := mimirpb.Histogram{
-		Count: &mimirpb.Histogram_CountInt{CountInt: 50},
-		Sum:   50,
-		PositiveSpans: []mimirpb.BucketSpan{
-			{Offset: 0, Length: 1},
-		},
-		PositiveDeltas: []int64{50},
-		Timestamp:      queryStart + 700,
-	}
-
-	c1 := convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{h1, h7}), false)
-	c2 := convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{h2, h3, h4, h5, h6}), false)
-	allChunksInOneIngester := append(c1, c2...)
-
-	testCases := map[string]struct {
-		combinedResponse client.CombinedQueryStreamResponse
-		// To be able to encode unsupported cases that might become supported in
-		// the future.
-		expectError bool
-	}{
-		"chunkseries": {
-			combinedResponse: client.CombinedQueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-						Chunks: allChunksInOneIngester,
-					},
-				},
+		{
+			// This might happen when one of the ingesters hasn't ingested all the samples.
+			name: "duplicate samples in separate chunks",
+			chunks: append(
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(300, 20, mimirpb.Histogram_NO),
+				}), true),
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(200, 30, mimirpb.Histogram_NO),
+					makeHistogram(300, 20, mimirpb.Histogram_NO),
+				}), true)...),
+			expectedSamples: []mimirpb.Histogram{
+				makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(200, 30, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(300, 20, mimirpb.Histogram_UNKNOWN),
 			},
 		},
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			d := &mockDistributor{}
-			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.combinedResponse, nil)
-
-			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
-			querier, err := queryable.Querier(queryStart, queryEnd)
-			require.NoError(t, err)
-
-			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: queryStart, End: queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
-			require.True(t, seriesSet.Next())
-			require.NoError(t, seriesSet.Err())
-
-			series := seriesSet.At()
-			it := series.Iterator(nil)
-			count := int64(0)
-			for it.Next() == chunkenc.ValHistogram {
-				count++
-				ts, h := it.AtHistogram(nil)
-				require.Equal(t, queryStart+(count*100), ts)
-				require.NotNil(t, h)
-				switch count {
-				case 1:
-					require.Equal(t, histogram.UnknownCounterReset, h.CounterResetHint, "time %d", ts)
-				case 2:
-					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
-				case 3:
-					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
-				case 4:
-					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
-				case 5:
-					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
-				case 6:
-					require.Contains(t, []histogram.CounterResetHint{histogram.NotCounterReset}, h.CounterResetHint, "time %d", ts)
-				case 7:
-					require.Contains(t, []histogram.CounterResetHint{histogram.UnknownCounterReset}, h.CounterResetHint, "time %d", ts)
-				}
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			responseTypes := map[string]struct {
+				combinedResponse client.CombinedQueryStreamResponse
+			}{
+				"chunkseries": {
+					combinedResponse: client.CombinedQueryStreamResponse{
+						Chunkseries: []client.TimeSeriesChunk{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+								Chunks: tc.chunks,
+							},
+						},
+					},
+				},
+				"streamingseries": {
+					combinedResponse: client.CombinedQueryStreamResponse{
+						StreamingSeries: []client.StreamingSeries{
+							{
+								Labels: labels.FromStrings(labels.MetricName, "one"),
+								Sources: []client.StreamingSeriesSource{
+									{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+										{SeriesIndex: 0, Chunks: tc.chunks},
+									})},
+								},
+							},
+						},
+					},
+				},
 			}
-			require.NoError(t, it.Err())
-			require.Equal(t, int64(7), count)
 
-			require.False(t, seriesSet.Next())
+			for responseName, responseType := range responseTypes {
+				t.Run(responseName, func(t *testing.T) {
+					d := &mockDistributor{}
+					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
+
+					ctx := user.InjectOrgID(context.Background(), "0")
+					queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
+					require.NoError(t, err)
+
+					seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: tc.queryStart, End: tc.queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+					require.True(t, seriesSet.Next())
+					require.NoError(t, seriesSet.Err())
+
+					verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(tc.expectedSamples))
+					require.False(t, seriesSet.Next())
+				})
+			}
 		})
 	}
 }
