@@ -3,6 +3,7 @@
 package testutils
 
 import (
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -104,7 +105,7 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 }
 
 func requireInEpsilonIfNotZero(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
-	if expected == 0 {
+	if expected == 0 || math.IsInf(expected, +1) || math.IsInf(expected, -1) {
 		require.Equal(t, expected, actual, msgAndArgs...)
 	} else {
 		require.InEpsilon(t, expected, actual, 1e-10, msgAndArgs...)
