@@ -52,7 +52,7 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
 }
 
-func validateOAuth2EndpointParam(k string, v string) error {
+func validateOAuth2EndpointParam(_ string, v string) error {
 	if v == "" {
 		return errEmptyEndpointParamValue
 	}
