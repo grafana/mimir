@@ -1,0 +1,36 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: test-extra-args-values-rollout-operator
+  labels:
+    helm.sh/chart: rollout-operator-0.20.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/version: "v0.20.0"
+    app.kubernetes.io/managed-by: Helm
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - get
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - list
+  - get
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets/status
+  verbs:
+  - update
