@@ -192,6 +192,39 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 	})
 }
 
+func TestLimitingPool_Mangling(t *testing.T) {
+	defer func() {
+		// Ensure we reset this back to the default state given it applies globally.
+		EnableManglingReturnedSlices = false
+	}()
+
+	_, metric := createRejectedMetric()
+	tracker := limiting.NewMemoryConsumptionTracker(0, metric)
+
+	p := NewLimitingBucketedPool(
+		pool.NewBucketedPool(1, 1000, 2, func(size int) []int { return make([]int, 0, size) }),
+		1,
+		false,
+		func(_ int) int { return 123 },
+	)
+
+	s, err := p.Get(4, tracker)
+	require.NoError(t, err)
+	s = append(s, 1000, 2000, 3000, 4000)
+
+	p.Put(s, tracker)
+	require.Equal(t, []int{1000, 2000, 3000, 4000}, s, "returned slice should not be mangled when mangling is disabled")
+
+	EnableManglingReturnedSlices = true
+
+	s, err = p.Get(4, tracker)
+	require.NoError(t, err)
+	s = append(s, 1000, 2000, 3000, 4000)
+
+	p.Put(s, tracker)
+	require.Equal(t, []int{123, 123, 123, 123}, s, "returned slice should be mangled when mangling is enabled")
+}
+
 func assertRejectedQueryCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
 	expected := fmt.Sprintf(`
 		# TYPE %s counter
