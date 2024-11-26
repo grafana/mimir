@@ -167,7 +167,6 @@ func (b *VectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (b
 	}
 
 	if len(b.leftMetadata) == 0 {
-		// FIXME: this is incorrect for 'or'
 		// No series on left-hand side, we'll never have any output series.
 		return false, nil
 	}
@@ -178,7 +177,6 @@ func (b *VectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (b
 	}
 
 	if len(b.rightMetadata) == 0 {
-		// FIXME: this is incorrect for 'or' and 'unless'
 		// No series on right-hand side, we'll never have any output series.
 		return false, nil
 	}
@@ -202,7 +200,6 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 	// Use the smaller side to populate the map of possible output series first.
 	// This should ensure we don't unnecessarily populate the output series map with series that will never match in most cases.
 	// (It's possible that all the series on the larger side all belong to the same group, but this is expected to be rare.)
-	// FIXME: this doesn't work as-is for 'unless'.
 	smallerSide := b.leftMetadata
 	largerSide := b.rightMetadata
 	smallerSideIsLeftSide := len(b.leftMetadata) < len(b.rightMetadata)
@@ -240,14 +237,11 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 				series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
 			}
 		}
-
-		// FIXME: if this is an 'or' operation, then we need to create the right side even if the left doesn't exist (or vice-versa)
 	}
 
 	// Remove series that cannot produce samples.
 	for seriesLabels, outputSeries := range outputSeriesMap {
 		if len(outputSeries.leftSeriesIndices) == 0 || len(outputSeries.rightSeriesIndices) == 0 {
-			// FIXME: this is incorrect for 'or' and 'unless'
 			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
 			delete(outputSeriesMap, seriesLabels)
 		}
