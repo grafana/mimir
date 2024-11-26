@@ -70,42 +70,43 @@ import (
 
 // The various modules that make up Mimir.
 const (
-	ActivityTracker                 string = "activity-tracker"
-	API                             string = "api"
-	SanityCheck                     string = "sanity-check"
-	IngesterRing                    string = "ingester-ring"
-	IngesterPartitionRing           string = "ingester-partitions-ring"
-	RuntimeConfig                   string = "runtime-config"
-	Overrides                       string = "overrides"
-	OverridesExporter               string = "overrides-exporter"
-	Server                          string = "server"
-	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
-	Distributor                     string = "distributor"
-	DistributorService              string = "distributor-service"
-	Ingester                        string = "ingester"
-	IngesterService                 string = "ingester-service"
-	Flusher                         string = "flusher"
-	Querier                         string = "querier"
-	Queryable                       string = "queryable"
-	StoreQueryable                  string = "store-queryable"
-	QueryFrontend                   string = "query-frontend"
-	QueryFrontendCodec              string = "query-frontend-codec"
-	QueryFrontendTripperware        string = "query-frontend-tripperware"
-	QueryFrontendTopicOffsetsReader string = "query-frontend-topic-offsets-reader"
-	RulerStorage                    string = "ruler-storage"
-	Ruler                           string = "ruler"
-	AlertManager                    string = "alertmanager"
-	Compactor                       string = "compactor"
-	StoreGateway                    string = "store-gateway"
-	MemberlistKV                    string = "memberlist-kv"
-	QueryScheduler                  string = "query-scheduler"
-	Vault                           string = "vault"
-	TenantFederation                string = "tenant-federation"
-	UsageStats                      string = "usage-stats"
-	BlockBuilder                    string = "block-builder"
-	BlockBuilderScheduler           string = "block-builder-scheduler"
-	ContinuousTest                  string = "continuous-test"
-	All                             string = "all"
+	ActivityTracker                      string = "activity-tracker"
+	API                                  string = "api"
+	SanityCheck                          string = "sanity-check"
+	IngesterRing                         string = "ingester-ring"
+	IngesterPartitionRing                string = "ingester-partitions-ring"
+	RuntimeConfig                        string = "runtime-config"
+	Overrides                            string = "overrides"
+	OverridesExporter                    string = "overrides-exporter"
+	Server                               string = "server"
+	ActiveGroupsCleanupService           string = "active-groups-cleanup-service"
+	Distributor                          string = "distributor"
+	DistributorService                   string = "distributor-service"
+	Ingester                             string = "ingester"
+	IngesterService                      string = "ingester-service"
+	Flusher                              string = "flusher"
+	Querier                              string = "querier"
+	Queryable                            string = "queryable"
+	StoreQueryable                       string = "store-queryable"
+	QueryFrontend                        string = "query-frontend"
+	QueryFrontendCodec                   string = "query-frontend-codec"
+	QueryFrontendTripperware             string = "query-frontend-tripperware"
+	QueryFrontendTopicOffsetsReader      string = "query-frontend-topic-offsets-reader"
+	RulerStorage                         string = "ruler-storage"
+	Ruler                                string = "ruler"
+	AlertManager                         string = "alertmanager"
+	Compactor                            string = "compactor"
+	StoreGateway                         string = "store-gateway"
+	MemberlistKV                         string = "memberlist-kv"
+	QueryScheduler                       string = "query-scheduler"
+	Vault                                string = "vault"
+	TenantFederation                     string = "tenant-federation"
+	UsageStats                           string = "usage-stats"
+	BlockBuilder                         string = "block-builder"
+	BlockBuilderScheduler                string = "block-builder-scheduler"
+	ContinuousTest                       string = "continuous-test"
+	OTelResourceAttributePromotionConfig string = "otel-resource-attribute-promotion-config"
+	All                                  string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
@@ -476,7 +477,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
 	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer, t.Overrides)
+	return nil, nil
+}
 
+func (t *Mimir) initOTelResourceAttributePromotionConfig() (serv services.Service, err error) {
+	t.Cfg.Distributor.OTelResourceAttributePromotionConfig = t.Overrides
 	return nil, nil
 }
 
@@ -1159,6 +1164,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
+	mm.RegisterModule(OTelResourceAttributePromotionConfig, t.initOTelResourceAttributePromotionConfig)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
@@ -1175,7 +1181,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                       {RuntimeConfig},
 		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault, OTelResourceAttributePromotionConfig},
 		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
 		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},

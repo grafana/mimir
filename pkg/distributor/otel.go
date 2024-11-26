@@ -170,12 +170,7 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		var promoteResourceAttributes []string
-		if resourceAttributePromotionConfig != nil {
-			promoteResourceAttributes = resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
-		} else {
-			promoteResourceAttributes = limits.PromoteOTelResourceAttributes(tenantID)
-		}
+		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
