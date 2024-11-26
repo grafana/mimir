@@ -1363,14 +1363,6 @@ spec:
             max by (pod) (up{container="test_false_false_0.7__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_false_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1397,14 +1389,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_false_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1442,14 +1426,6 @@ spec:
             max by (pod) (up{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1476,14 +1452,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1521,14 +1489,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1555,14 +1515,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1600,14 +1552,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1634,14 +1578,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1679,14 +1615,6 @@ spec:
             max by (pod) (up{container="test_false_false_1.5__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_false_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1713,14 +1641,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_false_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1758,14 +1678,6 @@ spec:
             max by (pod) (up{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1792,14 +1704,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1837,14 +1741,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1871,14 +1767,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1916,14 +1804,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -1950,14 +1830,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -1995,14 +1867,6 @@ spec:
             max by (pod) (up{container="test_false_false_1__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_false_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1___cpu_hpa_default
@@ -2028,14 +1892,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_false_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2073,14 +1929,6 @@ spec:
             max by (pod) (up{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1__pod_zone_a.*_cpu_hpa_default
@@ -2106,14 +1954,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_false_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2151,14 +1991,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1_test_container__cpu_hpa_default
@@ -2184,14 +2016,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2229,14 +2053,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_false_1_test_container_pod_zone_a.*_cpu_hpa_default
@@ -2262,14 +2078,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2307,14 +2115,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_true_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2341,14 +2141,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_true_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2386,14 +2178,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2420,14 +2204,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2465,14 +2241,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2499,14 +2267,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2544,14 +2304,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2578,14 +2330,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2623,14 +2367,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_true_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2657,14 +2393,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_true_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2702,14 +2430,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2736,14 +2456,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2781,14 +2493,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2815,14 +2519,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2860,14 +2556,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -2894,14 +2582,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -2939,14 +2619,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_true_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1___cpu_hpa_default
@@ -2972,14 +2644,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_true_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3017,14 +2681,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1__pod_zone_a.*_cpu_hpa_default
@@ -3050,14 +2706,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_false_true_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_false_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3095,14 +2743,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1_test_container__cpu_hpa_default
@@ -3128,14 +2768,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3173,14 +2805,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: test_false_true_1_test_container_pod_zone_a.*_cpu_hpa_default
@@ -3206,14 +2830,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3251,14 +2867,6 @@ spec:
             max by (pod) (up{container="test_true_false_0.7__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_false_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3285,14 +2893,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_false_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3330,14 +2930,6 @@ spec:
             max by (pod) (up{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3364,14 +2956,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_false_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3409,14 +2993,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3443,14 +3019,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3488,14 +3056,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3522,14 +3082,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3567,14 +3119,6 @@ spec:
             max by (pod) (up{container="test_true_false_1.5__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_false_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3601,14 +3145,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_false_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3646,14 +3182,6 @@ spec:
             max by (pod) (up{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3680,14 +3208,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_false_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3725,14 +3245,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3759,14 +3271,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3804,14 +3308,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -3838,14 +3334,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3883,14 +3371,6 @@ spec:
             max by (pod) (up{container="test_true_false_1__",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_false_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1___cpu_hpa_default
@@ -3916,14 +3396,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_false_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -3961,14 +3433,6 @@ spec:
             max by (pod) (up{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1__pod_zone_a.*_cpu_hpa_default
@@ -3994,14 +3458,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_false_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_false_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4039,14 +3495,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1_test_container__cpu_hpa_default
@@ -4072,14 +3520,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4117,14 +3557,6 @@ spec:
             max by (pod) (up{container="test_container",namespace="default",pod=~"pod-zone-a.*"}) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_false_1_test_container_pod_zone_a.*_cpu_hpa_default
@@ -4150,14 +3582,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4195,14 +3619,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_true_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4229,14 +3645,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_0.7__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_true_0.7__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4274,14 +3682,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4308,14 +3708,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_0.7__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_true_0.7__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4353,14 +3745,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4387,14 +3771,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4432,14 +3808,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 0.70
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4466,14 +3834,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4511,14 +3871,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_true_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4545,14 +3897,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1.5__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_true_1.5__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4590,14 +3934,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4624,14 +3960,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1.5__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_true_1.5__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4669,14 +3997,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4703,14 +4023,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4748,14 +4060,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
          * 1.50
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
@@ -4782,14 +4086,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4827,14 +4123,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_true_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1___cpu_hpa_default
@@ -4860,14 +4148,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1__", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_true_1__",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4905,14 +4185,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1__pod_zone_a.*_cpu_hpa_default
@@ -4938,14 +4210,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_true_true_1__pod-zone-a.*", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_true_true_1__pod-zone-a.*",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -4983,14 +4247,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1_test_container__cpu_hpa_default
@@ -5016,14 +4272,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"
@@ -5061,14 +4309,6 @@ spec:
             max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true",pod=~"pod-zone-a.*"}[1m])) > 0
           )[15m:]
         ) * 1000
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_cpu_usage_seconds_total{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
-        )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "8000"
     name: cortex_test_true_true_1_test_container_pod_zone_a.*_cpu_hpa_default
@@ -5094,14 +4334,6 @@ spec:
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="test_container", namespace="default", reason="OOMKilled",pod=~"pod-zone-a.*"})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="test_container",namespace="default",pod=~"pod-zone-a.*"}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "858993459"

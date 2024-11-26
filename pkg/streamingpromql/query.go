@@ -659,6 +659,9 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 				T:      ts,
 				H:      point.H,
 			})
+
+			// Remove histogram from slice to ensure it's not mutated when the slice is reused.
+			d.Histograms[0].H = nil
 		} else {
 			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
 

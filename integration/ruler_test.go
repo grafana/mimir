@@ -727,7 +727,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName2, expression2, false)
 
 		// Ensure that samples were returned.
-		require.Less(t, 0, getLastEvalSamples())
+		require.Positive(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
@@ -740,7 +740,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName3, expression3, false)
 
 		// Ensure that samples were returned.
-		require.Less(t, 0, getLastEvalSamples())
+		require.Positive(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
@@ -753,7 +753,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName4, expression4, false)
 
 		// Ensure that samples were returned.
-		require.Less(t, 0, getLastEvalSamples())
+		require.Positive(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
@@ -769,7 +769,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
 
 		deleteRuleAndWait(groupName5)
 		zeroSeriesQueries = getZeroSeriesQueriesTotal()
@@ -782,7 +782,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
 	})
 
 	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.

@@ -40,6 +40,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
+func init() {
+	types.EnableManglingReturnedSlices = true
+}
+
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	featureToggles := EnableAllFeatures
 
@@ -1284,6 +1288,7 @@ func TestSubqueries(t *testing.T) {
 
 				res := qry.Exec(context.Background())
 				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+				qry.Close()
 			}
 
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
