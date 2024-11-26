@@ -81,7 +81,18 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 	}),
 	uint64(unsafe.Sizeof(buckets{})),
 	true,
+	func(b buckets) buckets {
+		return mangleBuckets(b)
+	},
 )
+
+func mangleBuckets(b buckets) buckets {
+	for i := range b {
+		b[i].upperBound = 12345678
+		b[i].count = 12345678
+	}
+	return b
+}
 
 func NewHistogramFunctionOverInstantVector(
 	phArg types.ScalarOperator,

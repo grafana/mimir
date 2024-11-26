@@ -97,6 +97,7 @@ var (
 		}),
 		StringSize,
 		true,
+		nil,
 	)
 )
 
