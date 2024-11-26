@@ -16,8 +16,12 @@ type LimitsMap[T float64 | int | string] struct {
 }
 
 func NewLimitsMap[T float64 | int | string](validator func(k string, v T) error) LimitsMap[T] {
+	return NewLimitsMapWithData(make(map[string]T), validator)
+}
+
+func NewLimitsMapWithData[T float64 | int | string](data map[string]T, validator func(k string, v T) error) LimitsMap[T] {
 	return LimitsMap[T]{
-		data:      make(map[string]T),
+		data:      data,
 		validator: validator,
 	}
 }
