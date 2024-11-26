@@ -5751,7 +5751,7 @@ func TestIngester_QueryExemplars(t *testing.T) {
 	})
 }
 
-// This test shows a single ingester returns compacted OOO and in-order chunks separately, even if they overlap
+// This test shows a single ingester returns compacted OOO and in-order chunks separately after compaction, even if they overlap.
 func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
@@ -5805,11 +5805,6 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	_, err = i.Push(ctx, histReq)
 	require.NoError(t, err)
 
-	// Sorted: 4, 2 (OOO), 6, 3 (OOO), 8
-	// Merged chunks: [4], [2 (OOO), 6], [3 (OOO), 8]
-
-	// Query chunks before compaction
-
 	// Create a GRPC server used to query back the data.
 	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
 	defer serv.GracefulStop()
@@ -5822,59 +5817,81 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 		require.NoError(t, serv.Serve(listener))
 	}()
 
-	// Query back the series using GRPC streaming.
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
 	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer c.Close()
 
-	s, err := c.QueryStream(ctx, &client.QueryRequest{
-		StartTimestampMs: 0,
-		EndTimestampMs:   5,
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+		s, err := c.QueryStream(ctx, &client.QueryRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   5,
 
-		Matchers: []*client.LabelMatcher{{
-			Type:  client.EQUAL,
-			Name:  model.MetricNameLabel,
-			Value: "foo",
-		}},
-	})
-	require.NoError(t, err)
-
-	recvMsgs := 0
-
-	chunks := []client.Chunk{}
-	for {
-		resp, err := s.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
+			Matchers: []*client.LabelMatcher{{
+				Type:  client.EQUAL,
+				Name:  model.MetricNameLabel,
+				Value: "foo",
+			}},
+		})
 		require.NoError(t, err)
 
-		for _, c := range resp.Chunkseries {
-			chunks = append(chunks, c.Chunks...)
+		recvMsgs := 0
+
+		chunks := []client.Chunk{}
+		for {
+			resp, err := s.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+
+			for _, c := range resp.Chunkseries {
+				chunks = append(chunks, c.Chunks...)
+			}
+			recvMsgs++
 		}
-		recvMsgs++
+
+		require.Equal(t, recvMsgs, 1)
+		// Sort chunks by time
+		sort.Slice(chunks, func(i, j int) bool {
+			return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+		})
+
+		headers := []chunkenc.CounterResetHeader{}
+		var samples [][]sample
+		for _, c := range chunks {
+			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
+			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
+			require.NoError(t, err)
+
+			s := []sample{}
+			it := chk.Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				ts, h := it.AtHistogram(nil)
+				s = append(s, sample{t: ts, h: h})
+			}
+			samples = append(samples, s)
+			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+		}
+		return headers, samples
 	}
 
-	require.Equal(t, recvMsgs, 1)
-	require.Len(t, chunks, 3)
-	// Sort chunks by time
-	sort.Slice(chunks, func(i, j int) bool {
-		return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
-	})
-
-	headers := []chunkenc.CounterResetHeader{}
-	for _, c := range chunks {
-		require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
-		chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
-		require.NoError(t, err)
-
-		headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
-	}
-	// Second + third chunks have counter reset detected as samples from in-order and OOO are merged and counter resets detected
-	// TODO: don't care what the counter resets are (will always treat as unknown)
-	// TODO: check samples in each chunk
-	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, headers)
+	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
+	actHeaders, actSamples := runQuery()
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
+	require.Equal(t, [][]sample{
+		{
+			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+		},
+		{
+			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+		},
+		{
+			{t: 3, h: histogramWithHint(3, histogram.UnknownCounterReset)},
+			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+		},
+	}, actSamples)
 
 	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
 
@@ -5884,85 +5901,31 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 	defer c.Close()
 
-	// Query chunks after compaction
-	s, err = c.QueryStream(ctx, &client.QueryRequest{
-		StartTimestampMs: 0,
-		EndTimestampMs:   5,
-
-		Matchers: []*client.LabelMatcher{{
-			Type:  client.EQUAL,
-			Name:  model.MetricNameLabel,
-			Value: "foo",
-		}},
-	})
-	require.NoError(t, err)
-
-	recvMsgs = 0
-
-	chunks = []client.Chunk{}
-	for {
-		resp, err := s.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		for _, c := range resp.Chunkseries {
-			chunks = append(chunks, c.Chunks...)
-		}
-		recvMsgs++
-	}
-
-	require.Equal(t, recvMsgs, 1)
-	// Two chunks - in-order and OOO blocks are first compacted separately.
-	// When querying, chunks from blocks in an ingester aren't merged together as the UnorderedChunkQuerier is used.
-	require.Len(t, chunks, 2)
-	// Sort chunks by time
-	sort.Slice(chunks, func(i, j int) bool {
-		return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
-	})
-
-	var samples [][]sample
-	headers = []chunkenc.CounterResetHeader{}
-	for _, c := range chunks {
-		require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
-		chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
-		require.NoError(t, err)
-
-		s := []sample{}
-		it := chk.Iterator(nil)
-		for it.Next() != chunkenc.ValNone {
-			ts, h := it.AtHistogram(nil)
-			s = append(s, sample{t: ts, h: h})
-		}
-		samples = append(samples, s)
-		headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
-	}
-	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, headers)
+	actHeaders, actSamples = runQuery()
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
 	require.Equal(t, [][]sample{
 		{
-			{t: 0, h: HistogramWithHint(4, histogram.UnknownCounterReset)},
-			{t: 2, h: HistogramWithHint(6, histogram.NotCounterReset)},
-			{t: 4, h: HistogramWithHint(8, histogram.NotCounterReset)},
+			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 		{
-			{t: 1, h: HistogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 3, h: HistogramWithHint(3, histogram.NotCounterReset)},
+			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{t: 3, h: histogramWithHint(3, histogram.NotCounterReset)},
 		},
-	}, samples)
+	}, actSamples)
 }
 
-func HistogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Histogram {
+func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Histogram {
 	h := util_test.GenerateTestHistogram(idx)
 	h.CounterResetHint = hint
 	return h
 }
 
 type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
+	t int64
+	v float64
+	h *histogram.Histogram
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
