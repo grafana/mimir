@@ -140,9 +140,9 @@ func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
 	return b.Timestamps[b.Index], b.PointerValues[b.Index]
 }
 
-// GetIteratorId retrieves the non overlapping iterator id.
+// GetIteratorID retrieves the non overlapping iterator id.
 // Only call when type is chunkenc.ValHistogram or chunkenc.ValFloatHistogram.
-func (b *Batch) GetIteratorId() int {
+func (b *Batch) GetIteratorID() int {
 	return int(b.Values[b.Index])
 }
 

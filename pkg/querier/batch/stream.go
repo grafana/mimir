@@ -151,7 +151,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
 			if itID == -1 {
-				itID = batch.GetIteratorId()
+				itID = batch.GetIteratorID()
 			}
 			if prevIteratorID != itID && prevIteratorID != -1 {
 				// We switched non overlapping iterators, so if the next sample coming
@@ -165,7 +165,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
 			if itID == -1 {
-				itID = batch.GetIteratorId()
+				itID = batch.GetIteratorID()
 			}
 			if prevIteratorID != itID && prevIteratorID != -1 {
 				// We switched non overlapping iterators, so if the next sample coming
