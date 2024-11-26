@@ -156,6 +156,13 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
 	})
+
+	t.Run("classic histograms", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableClassicHistograms = false
+
+		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "classic histograms")
+	})
 }
 
 func requireQueryIsUnsupported(t *testing.T, toggles FeatureToggles, expression string, expectedError string) {

@@ -2043,6 +2043,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-subqueries",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_classic_histograms",
+              "required": false,
+              "desc": "Enable support for classic histogram functions in Mimir's query engine. Only applies if the histogram function is supported by MQE. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-classic-histograms",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

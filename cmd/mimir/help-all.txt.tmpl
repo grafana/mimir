@@ -2103,6 +2103,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-binary-logical-operations
     	[experimental] Enable support for binary logical operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+  -querier.mimir-query-engine.enable-classic-histograms
+    	[experimental] Enable support for classic histogram functions in Mimir's query engine. Only applies if the histogram function is supported by MQE. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
     	[experimental] Enable support for binary comparison operations between two scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-scalars
