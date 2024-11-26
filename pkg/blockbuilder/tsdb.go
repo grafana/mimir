@@ -35,11 +35,11 @@ import (
 type TSDBBuilder struct {
 	dataDir string
 
-	logger                      log.Logger
-	limits                      *validation.Overrides
-	blocksStorageCfg            mimir_tsdb.BlocksStorageConfig
-	metrics                     tsdbBuilderMetrics
-	applyGlobalSeriesLimitUnder int
+	logger                           log.Logger
+	limits                           *validation.Overrides
+	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
+	metrics                          tsdbBuilderMetrics
+	applyMaxGlobalSeriesPerUserBelow int // inclusive
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -60,15 +60,15 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyGlobalSeriesLimitUnder int) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
 	return &TSDBBuilder{
-		dataDir:                     dataDir,
-		logger:                      logger,
-		limits:                      limits,
-		blocksStorageCfg:            blocksStorageCfg,
-		metrics:                     metrics,
-		applyGlobalSeriesLimitUnder: applyGlobalSeriesLimitUnder,
-		tsdbs:                       make(map[tsdbTenant]*userTSDB),
+		dataDir:                          dataDir,
+		logger:                           logger,
+		limits:                           limits,
+		blocksStorageCfg:                 blocksStorageCfg,
+		metrics:                          metrics,
+		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
+		tsdbs:                            make(map[tsdbTenant]*userTSDB),
 	}
 }
 
@@ -263,8 +263,13 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		userID: userID,
 	}
 
+	// Until we have a better way to enforce the same limits between ingesters and block builders,
+	// as a stop gap, we apply limits when they are under a given value. Reason is that when a tenant
+	// has higher limits, the higher usage and increase is expected and capacity is planned accordingly
+	// and the tenant is generally more careful. It is the smaller tenants that can create problem
+	// if they suddenly send millions of series when they are supposed to be limited to a few thousand.
 	userLimit := b.limits.MaxGlobalSeriesPerUser(userID)
-	if userLimit <= b.applyGlobalSeriesLimitUnder {
+	if userLimit <= b.applyMaxGlobalSeriesPerUserBelow {
 		udb.maxGlobalSeries = userLimit
 	}
 
