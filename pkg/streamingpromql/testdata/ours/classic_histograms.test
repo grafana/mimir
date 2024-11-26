@@ -147,3 +147,18 @@ load 6m
 
 eval_warn instant at 0m histogram_quantile(0.8, series)
 	{le="3"} 2.4000000000000004
+
+clear
+
+# Test changing buckets
+
+load 6m
+  metric{env="test", le="1"}    1 2 _
+  metric{env="test", le="2"}    5 _ 1
+  metric{env="test", le="3"}    _ 9 _
+  metric{env="test", le="5"}    8 _ 5
+  metric{env="test", le="7"}    _ 20 _
+  metric{env="test", le="+Inf"} _ 20 20
+
+eval range from 0 to 12m step 6m histogram_quantile(0.5, metric)
+  {env="test"} NaN 3.3636363636363638 5
