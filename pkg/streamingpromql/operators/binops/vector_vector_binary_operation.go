@@ -753,7 +753,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		if hlhs != nil && hrhs != nil {
 			if hlhs.Equals(hrhs) {
-				return 0, hlhs, true, true, nil
+				return 0, hlhs.Copy(), true, true, nil
 			}
 
 			return 0, nil, false, true, nil
@@ -772,7 +772,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		if hlhs != nil && hrhs != nil {
 			if !hlhs.Equals(hrhs) {
-				return 0, hlhs, true, true, nil
+				return 0, hlhs.Copy(), true, true, nil
 			}
 
 			return 0, nil, false, true, nil
