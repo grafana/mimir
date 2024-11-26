@@ -12427,12 +12427,15 @@
                   "fieldType": "string"
                 },
                 {
-                  "kind": "block",
+                  "kind": "field",
                   "name": "endpoint_params",
                   "required": false,
-                  "desc": "",
+                  "desc": "Optional additional URL parameters to send to the token URL.",
                   "fieldValue": null,
-                  "fieldDefaultValue": null
+                  "fieldDefaultValue": {},
+                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
