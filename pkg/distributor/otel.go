@@ -170,6 +170,9 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
+		if resourceAttributePromotionConfig == nil {
+			resourceAttributePromotionConfig = limits
+		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
