@@ -1164,7 +1164,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
-	mm.RegisterModule(OTelResourceAttributePromotionConfig, t.initOTelResourceAttributePromotionConfig)
+	mm.RegisterModule(OTelResourceAttributePromotionConfig, t.initOTelResourceAttributePromotionConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
