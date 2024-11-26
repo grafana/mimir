@@ -145,7 +145,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		return nil, err
 	}
 	b := make([]byte, 0, 1024)
-	lb := labels.NewBuilder(nil)
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for innerIdx, series := range innerSeries {
 		// Each series belongs to two groups, one without the `le` label, and one with all labels.
