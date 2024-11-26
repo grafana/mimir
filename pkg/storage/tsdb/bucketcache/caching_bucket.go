@@ -800,7 +800,7 @@ func maybeHashName(name string) string {
 	// We hash object names to avoid hitting cache key length limits. If the object name
 	// is shorter than the hashed version would be, skip hashing it since it provides no
 	// value and the original name is more useful when debugging.
-	if len(name) < base64.RawURLEncoding.EncodedLen(blake2b.Size256) {
+	if len(name) <= base64.RawURLEncoding.EncodedLen(blake2b.Size256) {
 		return name
 	}
 
