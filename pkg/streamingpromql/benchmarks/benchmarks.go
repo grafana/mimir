@@ -271,9 +271,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
 		},
-		//{
-		//	Expr: "histogram_quantile(0.9, rate(h_X[5m]))",
-		//},
+		{
+			Expr: "histogram_quantile(0.9, rate(h_X[5m]))",
+		},
 		//// Many-to-one join.
 		//{
 		//	Expr: "a_X + on(l) group_right a_one",
