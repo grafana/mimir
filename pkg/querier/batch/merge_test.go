@@ -74,6 +74,20 @@ type histSample struct {
 
 func TestMergeHistogramCheckHints(t *testing.T) {
 	for _, enc := range []chunk.Encoding{chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
+		var addFunc func(chk chunk.EncodedChunk, ts, val int)
+		if enc == chunk.PrometheusHistogramChunk {
+			addFunc = func(chk chunk.EncodedChunk, ts, val int) {
+				overflow, err := chk.AddHistogram(int64(ts), test.GenerateTestHistogram(val))
+				require.NoError(t, err)
+				require.Nil(t, overflow)
+			}
+		} else {
+			addFunc = func(chk chunk.EncodedChunk, ts, val int) {
+				overflow, err := chk.AddFloatHistogram(int64(ts), test.GenerateTestFloatHistogram(val))
+				require.NoError(t, err)
+				require.Nil(t, overflow)
+			}
+		}
 		t.Run(enc.String(), func(t *testing.T) {
 			for _, tc := range []struct {
 				name            string
@@ -141,20 +155,6 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				{
 					name: "different values at same timestamp",
 					chunks: func() []GenericChunk {
-						var addFunc func(chk chunk.EncodedChunk, ts, val int)
-						if enc == chunk.PrometheusHistogramChunk {
-							addFunc = func(chk chunk.EncodedChunk, ts, val int) {
-								overflow, err := chk.AddHistogram(int64(ts), test.GenerateTestHistogram(val))
-								require.NoError(t, err)
-								require.Nil(t, overflow)
-							}
-						} else {
-							addFunc = func(chk chunk.EncodedChunk, ts, val int) {
-								overflow, err := chk.AddFloatHistogram(int64(ts), test.GenerateTestFloatHistogram(val))
-								require.NoError(t, err)
-								require.Nil(t, overflow)
-							}
-						}
 						chk1, err := chunk.NewForEncoding(enc)
 						require.NoError(t, err)
 						addFunc(chk1, 0, 0)
@@ -163,14 +163,15 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						addFunc(chk1, 5, 3)
 						addFunc(chk1, 7, 4)
 						chk2, err := chunk.NewForEncoding(enc)
+						require.NoError(t, err)
 						addFunc(chk2, 0, 7)
 						addFunc(chk2, 1, 8)
 						addFunc(chk2, 2, 9)
 						addFunc(chk2, 3, 10)
 						addFunc(chk2, 4, 11)
 						return []GenericChunk{
-							NewGenericChunk(0, 1, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 1).Data.NewIterator),
-							NewGenericChunk(0, 1, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 0, 1).Data.NewIterator),
+							NewGenericChunk(0, 7, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7).Data.NewIterator),
+							NewGenericChunk(0, 4, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 0, 4).Data.NewIterator),
 						}
 					}(),
 					expectedSamples: []histSample{
@@ -181,6 +182,41 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 4, v: 11, hint: histogram.NotCounterReset},    // 1 sample from c1, previous iterator was also c0, so keep the NCR hint, also end of iterator
 						{t: 5, v: 3, hint: histogram.UnknownCounterReset}, // 2 samples from c0
 						{t: 7, v: 4, hint: histogram.NotCounterReset},
+					},
+				},
+				{
+					name: "overlapping and interleaved samples",
+					chunks: func() []GenericChunk {
+						chk1, err := chunk.NewForEncoding(enc)
+						require.NoError(t, err)
+						addFunc(chk1, 0, 0)
+						addFunc(chk1, 3, 1)
+						addFunc(chk1, 4, 2)
+						addFunc(chk1, 5, 3)
+						addFunc(chk1, 7, 4)
+						chk2, err := chunk.NewForEncoding(enc)
+						require.NoError(t, err)
+						addFunc(chk2, 1, 1)
+						addFunc(chk2, 2, 7)
+						addFunc(chk2, 5, 8)
+						addFunc(chk2, 6, 9)
+						addFunc(chk2, 7, 10)
+						addFunc(chk2, 8, 11)
+						return []GenericChunk{
+							NewGenericChunk(0, 7, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7).Data.NewIterator),
+							NewGenericChunk(0, 4, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 0, 4).Data.NewIterator),
+						}
+					}(),
+					expectedSamples: []histSample{
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset},  // c0
+						{t: 1, v: 1, hint: histogram.UnknownCounterReset},  // c1
+						{t: 2, v: 7, hint: histogram.NotCounterReset},      // c1
+						{t: 3, v: 1, hint: histogram.UnknownCounterReset},  // c0
+						{t: 4, v: 2, hint: histogram.NotCounterReset},      // c0
+						{t: 5, v: 8, hint: histogram.UnknownCounterReset},  // c1
+						{t: 6, v: 9, hint: histogram.UnknownCounterReset},  // c1 - consecutive sample, but the batch with the previous sample is removed before this sample is merged in so can't detect it's from the same iterator
+						{t: 7, v: 4, hint: histogram.UnknownCounterReset},  // c0
+						{t: 8, v: 11, hint: histogram.UnknownCounterReset}, // c1
 					},
 				},
 			} {
@@ -213,7 +249,6 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 			}
 		})
 	}
-	//TODO: test seek should always return unknown
 }
 
 // TestMergeIteratorSeek tests a bug while calling Seek() on mergeIterator.
