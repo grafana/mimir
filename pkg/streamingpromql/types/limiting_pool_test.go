@@ -193,9 +193,10 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 }
 
 func TestLimitingPool_Mangling(t *testing.T) {
+	currentEnableManglingReturnedSlices := EnableManglingReturnedSlices
 	defer func() {
 		// Ensure we reset this back to the default state given it applies globally.
-		EnableManglingReturnedSlices = false
+		EnableManglingReturnedSlices = currentEnableManglingReturnedSlices
 	}()
 
 	_, metric := createRejectedMetric()
@@ -208,6 +209,8 @@ func TestLimitingPool_Mangling(t *testing.T) {
 		func(_ int) int { return 123 },
 	)
 
+	// Test with mangling disabled.
+	EnableManglingReturnedSlices = false
 	s, err := p.Get(4, tracker)
 	require.NoError(t, err)
 	s = append(s, 1000, 2000, 3000, 4000)
@@ -215,8 +218,8 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	p.Put(s, tracker)
 	require.Equal(t, []int{1000, 2000, 3000, 4000}, s, "returned slice should not be mangled when mangling is disabled")
 
+	// Test with mangling enabled.
 	EnableManglingReturnedSlices = true
-
 	s, err = p.Get(4, tracker)
 	require.NoError(t, err)
 	s = append(s, 1000, 2000, 3000, 4000)
