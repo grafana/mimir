@@ -383,7 +383,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		if userID == 0 && cfg.queryStatsEnabled {
 			res, _, err := c.QueryRaw("{instance=~\"hello.*\"}")
 			require.NoError(t, err)
-			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*, bytes_processed=[0-9.]*$", res.Header.Values("Server-Timing")[0])
+			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*, bytes_processed;val=[0-9.]*$", res.Header.Values("Server-Timing")[0])
 		}
 
 		// Beyond the range of -querier.query-ingesters-within should return nothing. No need to repeat it for each user.

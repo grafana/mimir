@@ -780,9 +780,9 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				return err
 			}
 
-			// A storegateway client will only fill either of mySeries or myStreamingSeries, and not both.
+			// A storegateway client will only fill either of mySeries or myStreamingSeriesLabels, and not both.
 			mySeries := []*storepb.Series(nil)
-			myStreamingSeries := []*storepb.StreamingSeries(nil)
+			myStreamingSeriesLabels := []labels.Labels(nil)
 			var myWarnings annotations.Annotations
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
@@ -813,7 +813,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
-					if err := queryLimiter.AddSeries(s.Labels); err != nil {
+					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
 						return err
 					}
 
@@ -853,16 +853,22 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				}
 
 				if ss := resp.GetStreamingSeries(); ss != nil {
+					myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
+
 					for _, s := range ss.Series {
 						// Add series fingerprint to query limiter; will return error if we are over the limit
-						if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
+						l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+						if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
 							return limitErr
 						}
+
+						myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
 					}
-					myStreamingSeries = append(myStreamingSeries, ss.Series...)
+
 					if ss.IsEndOfSeriesStream {
 						// If we aren't expecting any series from this stream, close it now.
-						if len(myStreamingSeries) == 0 {
+						if len(myStreamingSeriesLabels) == 0 {
 							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 						}
 
@@ -904,13 +910,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						chunkInfo.EndSeries(i == len(mySeries)-1)
 					}
 				}
-			} else if len(myStreamingSeries) > 0 {
+			} else if len(myStreamingSeriesLabels) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
-				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
-				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeries), queryLimiter, reqStats, q.metrics, q.logger)
+				reqStats.AddFetchedSeries(uint64(len(myStreamingSeriesLabels)))
+				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeriesLabels), queryLimiter, reqStats, q.metrics, q.logger)
 				level.Debug(log).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
-					"fetched series", len(myStreamingSeries),
+					"fetched series", len(myStreamingSeriesLabels),
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
@@ -925,12 +931,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			mtx.Lock()
 			if len(mySeries) > 0 {
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
-			} else if len(myStreamingSeries) > 0 {
+			} else if len(myStreamingSeriesLabels) > 0 {
 				if chunkInfo != nil {
 					chunkInfo.SetMsg("store-gateway streaming")
 				}
 				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
-					series:        myStreamingSeries,
+					series:        myStreamingSeriesLabels,
 					streamReader:  streamReader,
 					chunkInfo:     chunkInfo,
 					remoteAddress: c.RemoteAddress(),

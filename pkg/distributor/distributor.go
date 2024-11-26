@@ -107,7 +107,7 @@ type Distributor struct {
 	healthyInstancesCount  *atomic.Uint32
 
 	// For handling HA replicas.
-	HATracker *haTracker
+	HATracker haTracker
 
 	// Per-user rate limiters.
 	requestRateLimiter   *limiter.RateLimiter
@@ -179,6 +179,12 @@ type Distributor struct {
 	partitionsRing *ring.PartitionInstanceRing
 }
 
+// OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
+type OTelResourceAttributePromotionConfig interface {
+	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
+	PromoteOTelResourceAttributes(id string) []string
+}
+
 // Config contains the configuration required to
 // create a Distributor
 type Config struct {
@@ -227,6 +233,9 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+
+	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
+	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -315,15 +324,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
-
-	haTracker, err := newHATracker(cfg.HATrackerConfig, limits, reg, log)
-	if err != nil {
-		return nil, err
-	}
-
 	subservices := []services.Service(nil)
-	subservices = append(subservices, haTracker)
-
 	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
@@ -335,7 +336,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
-		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -489,6 +489,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
 	var distributorsLifecycler *ring.BasicLifecycler
 	var distributorsRing *ring.Ring
+	var err error
 
 	if !canJoinDistributorsRing {
 		requestRateStrategy = newInfiniteRateStrategy()
@@ -504,10 +505,28 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
 	}
 
+	// If this isn't a real distributor that will be accepting writes or if the HA tracker is
+	// disabled, use a no-op implementation. We don't want to require it to be configured when
+	// it's not used due to being disabled or this being a component that doesn't use it (rulers,
+	// queriers).
+	var haTrackerImpl haTracker
+
+	if !canJoinDistributorsRing || !cfg.HATrackerConfig.EnableHATracker {
+		haTrackerImpl = newNopHaTracker()
+	} else {
+		haTrackerImpl, err = newHaTracker(cfg.HATrackerConfig, limits, reg, log)
+		if err != nil {
+			return nil, err
+		}
+
+		subservices = append(subservices, haTrackerImpl)
+	}
+
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
+	d.HATracker = haTrackerImpl
 
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
@@ -2557,7 +2576,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if err := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(m)); err != nil {
+		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
 		result = append(result, m)

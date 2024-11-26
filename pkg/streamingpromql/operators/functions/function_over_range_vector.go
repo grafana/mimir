@@ -29,7 +29,7 @@ type FunctionOverRangeVector struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	numSteps     int
+	timeRange    types.QueryTimeRange
 	rangeSeconds float64
 
 	expressionPosition   posrange.PositionRange
@@ -45,6 +45,7 @@ func NewFunctionOverRangeVector(
 	f FunctionOverRangeVectorDefinition,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
 ) *FunctionOverRangeVector {
 	o := &FunctionOverRangeVector{
 		Inner:                    inner,
@@ -52,6 +53,7 @@ func NewFunctionOverRangeVector(
 		Func:                     f,
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
+		timeRange:                timeRange,
 	}
 
 	if f.SeriesValidationFuncFactory != nil {
@@ -81,7 +83,6 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		m.metricNames.CaptureMetricNames(metadata)
 	}
 
-	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
@@ -122,10 +123,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		}
 		if hasFloat {
 			if data.Floats == nil {
-				// Only get fPoint slice once we are sure we have float points.
-				// This potentially over-allocates as some points in the steps may be histograms,
-				// but this is expected to be rare.
-				data.Floats, err = types.FPointSlicePool.Get(m.numSteps, m.MemoryConsumptionTracker)
+				// Only get FPoint slice once we are sure we have float points.
+				// This potentially over-allocates as some points may be histograms, but this is expected to be rare.
+
+				remainingStepCount := m.timeRange.StepCount - int(m.timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
+				data.Floats, err = types.FPointSlicePool.Get(remainingStepCount, m.MemoryConsumptionTracker)
 				if err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
@@ -134,10 +136,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		}
 		if h != nil {
 			if data.Histograms == nil {
-				// Only get hPoint slice once we are sure we have histogram points.
-				// This potentially over-allocates as some points in the steps may be floats,
-				// but this is expected to be rare.
-				data.Histograms, err = types.HPointSlicePool.Get(m.numSteps, m.MemoryConsumptionTracker)
+				// Only get HPoint slice once we are sure we have histogram points.
+				// This potentially over-allocates as some points may be floats, but this is expected to be rare.
+
+				remainingStepCount := m.timeRange.StepCount - int(m.timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
+				data.Histograms, err = types.HPointSlicePool.Get(remainingStepCount, m.MemoryConsumptionTracker)
 				if err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}

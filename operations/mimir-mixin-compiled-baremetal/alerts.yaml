@@ -583,7 +583,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#etcdallocatingtoomuchmemory
           expr: |
             (
-              container_memory_working_set_bytes{container="etcd"}
+              container_memory_rss{container="etcd"}
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.65
@@ -597,7 +597,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#etcdallocatingtoomuchmemory
           expr: |
             (
-              container_memory_working_set_bytes{container="etcd"}
+              container_memory_rss{container="etcd"}
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.8
@@ -1105,6 +1105,15 @@ groups:
             and
             (sum by (cluster, namespace, instance) (cortex_ingest_storage_reader_buffered_fetched_records) > 0)
           for: 5m
+          labels:
+            severity: critical
+        - alert: MimirIngesterMissedRecordsFromKafka
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} missed processing records from Kafka. There may be data loss.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestermissedrecordsfromkafka
+          expr: |
+            # Alert if the ingester missed some records from Kafka.
+            increase(cortex_ingest_storage_reader_missed_records_total[10m]) > 0
           labels:
             severity: critical
         - alert: MimirStrongConsistencyEnforcementFailed

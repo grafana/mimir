@@ -299,19 +299,6 @@
           )[15m:]
         ) * 1000
       |||
-  ) + (
-    // Ensures that it only returns a result if all expected samples were present for the CPU metric over
-    // the last 15 minutes.
-    |||
-      and
-      count (
-        count_over_time(
-          present_over_time(
-            container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
-          )[15m:1m]
-        ) >= 15
-      )
-    |||
   ),
 
   local memoryHPAQuery(with_ready_trigger) =
@@ -351,10 +338,7 @@
           )
         |||
     ) + (
-      // The first section of the query adds pods that were terminated due to an OOM in the memory calculation.
-      //
-      // The second section of the query ensures that it only returns a result if all expected samples were
-      // present for the memory metric over the last 15 minutes.
+      // Add pods that were terminated due to an OOM in the memory calculation.
       |||
         +
         sum(
@@ -364,14 +348,6 @@
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       |||
     ),
@@ -636,9 +612,10 @@
       }
     ),
 
+  local isDistributorSingleZoneEnabled = $._config.single_zone_distributor_enabled,
   local isDistributorMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
   local isDistributorAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
-  local isDistributorAutoscalingSingleZoneEnabled = !isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled,
+  local isDistributorAutoscalingSingleZoneEnabled = isDistributorSingleZoneEnabled && isDistributorAutoscalingEnabled,
   local isDistributorAutoscalingZoneAEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isDistributorAutoscalingZoneBEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isDistributorAutoscalingZoneCEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 3,

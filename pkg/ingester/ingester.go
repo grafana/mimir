@@ -106,7 +106,7 @@ const (
 	reasonSampleTooOld           = "sample-too-old"
 	reasonSampleTooFarInFuture   = "sample-too-far-in-future"
 	reasonNewValueForTimestamp   = "new-value-for-timestamp"
-	reasonSampleOutOfBounds      = "sample-out-of-bounds"
+	reasonSampleTimestampTooOld  = "sample-timestamp-too-old"
 	reasonPerUserSeriesLimit     = "per_user_series_limit"
 	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
 	reasonInvalidNativeHistogram = "invalid-native-histogram"
@@ -959,7 +959,7 @@ type pushStats struct {
 	failedSamplesCount          int
 	succeededExemplarsCount     int
 	failedExemplarsCount        int
-	sampleOutOfBoundsCount      int
+	sampleTimestampTooOldCount  int
 	sampleOutOfOrderCount       int
 	sampleTooOldCount           int
 	sampleTooFarInFutureCount   int
@@ -1189,7 +1189,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				stats.failedSamplesCount++
 			},
 			func(timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.sampleOutOfBoundsCount++
+				stats.sampleTimestampTooOldCount++
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
 					return newSampleTimestampTooOldError(model.Time(timestamp), labels)
 				})
@@ -1336,8 +1336,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 }
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
-	if stats.sampleOutOfBoundsCount > 0 {
-		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
+	if stats.sampleTimestampTooOldCount > 0 {
+		discarded.sampleTimestampTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTimestampTooOldCount))
 	}
 	if stats.sampleOutOfOrderCount > 0 {
 		discarded.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
@@ -1405,7 +1405,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
-				stats.sampleOutOfBoundsCount += len(ts.Samples) + len(ts.Histograms)
+				stats.sampleTimestampTooOldCount += len(ts.Samples) + len(ts.Histograms)
 
 				var firstTimestamp int64
 				if len(ts.Samples) > 0 {
@@ -1426,7 +1426,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				len(ts.Samples) > 0 && allOutOfBoundsFloats(ts.Samples, minAppendTime) {
 
 				stats.failedSamplesCount += len(ts.Samples)
-				stats.sampleOutOfBoundsCount += len(ts.Samples)
+				stats.sampleTimestampTooOldCount += len(ts.Samples)
 
 				firstTimestamp := ts.Samples[0].TimestampMs
 

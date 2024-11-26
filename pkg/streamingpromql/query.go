@@ -740,6 +740,12 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 			return nil, err
 		}
 
+		if len(floats) == 0 && len(histograms) == 0 {
+			types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
+			types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
+			continue
+		}
+
 		m = append(m, promql.Series{
 			Metric:     s.Labels,
 			Floats:     floats,

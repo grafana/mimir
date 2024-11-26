@@ -724,6 +724,9 @@ How to **fix** it:
   -compactor.cleanup-interval=5m
   ```
 
+> [!NOTE]
+> These mitigations may be especially helpful if you are concurrently seeing queries for this tenant fail consistency checks.
+
 ### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
@@ -1405,11 +1408,28 @@ How to **investigate** and **fix** it:
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
+
   - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
   - If you suspect this may be an issue:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
+
+- Check if the persistent volume is nearing its limit and determine if it needs to be increased.
+
+  - If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, you must disable it before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone. To disable automatic downscaling for store-gateways,
+    set `$._config.store_gateway_automated_downscale_enabled = false`.
+
+  ```jsonnet
+  {
+    _config+:
+    {
+      store_gateway_automated_downscale_enabled: false
+    }
+  }
+  ```
+
+  - After the resizing process finishes, revert this change.
 
 ## Mimir ingest storage (experimental)
 
@@ -1528,6 +1548,25 @@ How to **investigate**:
 - Take goroutine profile of the ingester and check if there's any routine calling `pushToStorage`:
   - If the call exists and it's waiting on a lock then there may be a deadlock.
   - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
+
+### MimirIngesterMissedRecordsFromKafka
+
+This alert fires when an ingester has missed processing some records from Kafka. In other words, there has been a gap in offsets.
+
+How it **works**:
+
+- The ingester reads records from Kafka and processes them sequentially. It keeps track of the offset of the last record it's processed.
+- Upon fetching the next batch of records, it checks if the first available record has an offset of one greater than the last processed offset. If the first available offset is larger than that, then the ingester has missed some records.
+- Kafka doesn't guarantee sequential offsets. If a record has been manually deleted from Kafka or if the records have been produced in a transaction and the transaction was aborted, then there may be a gap.
+- Mimir doesn't produce in transactions and does not delete records.
+- When the ingester starts, it attempts to resume from the last offset it processed. If the ingester has been unavailable for long enough that the next record is already removed due to retention, then the ingester misses some records.
+
+How to **investigate**:
+
+- Find the offsets which were missed. The ingester logs them along with the message `there is a gap in consumed offsets`.
+- Verify that there have been no deleted records in your Kafka cluster.
+- Verify that the ingester hasn't been down for longer than the retention on the Kafka partition.
+- Report a bug.
 
 ### MimirStrongConsistencyEnforcementFailed
 
