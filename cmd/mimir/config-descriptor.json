@@ -12425,6 +12425,14 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,

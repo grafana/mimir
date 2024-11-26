@@ -1972,6 +1972,8 @@ alertmanager_client:
     # CLI flag: -ruler.alertmanager-client.oauth.scopes
     [scopes: <string> | default = ""]
 
+    endpoint_params:
+
   # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
   # requests through. Applies to all requests, including auxiliary traffic, such
   # as OAuth token requests.
