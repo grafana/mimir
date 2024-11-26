@@ -977,3 +977,245 @@ load 6m
 # Test the case where both sides of 'or' contain series with the same labels.
 eval range from 0 to 48m step 6m min(series_1) or min(series_2)
   {} 9 1 2 9 4 5 9 7 9
+
+clear
+
+# Many-to-one / one-to-many matching.
+load 6m
+  method_code:http_errors:rate5m{method="get", code="500"}  24  240  240  _
+  method_code:http_errors:rate5m{method="get", code="404"}  30  300  _    _
+  method_code:http_errors:rate5m{method="put", code="501"}  3   30   _    _
+  method_code:http_errors:rate5m{method="post", code="500"} 6   60   _    60
+  method_code:http_errors:rate5m{method="post", code="404"} 21  210  _    210
+  method:http_requests:rate5m{method="get", foo="bar"}      600 _    2400 2400
+  method:http_requests:rate5m{method="get", foo="bar2"}     _   1200 1200 1200
+  method:http_requests:rate5m{method="del", foo="baz"}      34  80   _    _
+  method:http_requests:rate5m{method="post", foo="blah"}    120 100  _    100
+
+eval instant at 0 method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.04
+  {method="get", code="404"} 0.05
+  {method="post", code="500"} 0.05
+  {method="post", code="404"} 0.175
+
+eval instant at 0 method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.04
+  {method="get", code="404"} 0.05
+  {method="post", code="500"} 0.05
+  {method="post", code="404"} 0.175
+
+eval instant at 0 method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"} 0.04
+  {method="get", code="404", foo="bar"} 0.05
+  {method="post", code="500", foo="blah"} 0.05
+  {method="post", code="404", foo="blah"} 0.175
+
+eval instant at 0 method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"} 0.04
+  {method="get", code="404", foo="bar"} 0.05
+  {method="post", code="500", foo="blah"} 0.05
+  {method="post", code="404", foo="blah"} 0.175
+
+eval instant at 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.2
+  {method="get", code="404"} 0.25
+  {method="post", code="500"} 0.6
+  {method="post", code="404"} 2.1
+
+eval instant at 6m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.2
+  {method="get", code="404"} 0.25
+  {method="post", code="500"} 0.6
+  {method="post", code="404"} 2.1
+
+eval instant at 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar2"} 0.2
+  {method="get", code="404", foo="bar2"} 0.25
+  {method="post", code="500", foo="blah"} 0.6
+  {method="post", code="404", foo="blah"} 2.1
+
+eval instant at 6m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar2"} 0.2
+  {method="get", code="404", foo="bar2"} 0.25
+  {method="post", code="500", foo="blah"} 0.6
+  {method="post", code="404", foo="blah"} 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  {method="get", code="500"}  0.04  0.2
+  {method="get", code="404"}  0.05  0.25
+  {method="post", code="500"} 0.05  0.6
+  {method="post", code="404"} 0.175 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  {method="get", code="500"}  0.04  0.2
+  {method="get", code="404"}  0.05  0.25
+  {method="post", code="500"} 0.05  0.6
+  {method="post", code="404"} 0.175 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"}   0.04  _
+  {method="get", code="404", foo="bar"}   0.05  _
+  {method="get", code="500", foo="bar2"}  _     0.2
+  {method="get", code="404", foo="bar2"}  _     0.25
+  {method="post", code="500", foo="blah"} 0.05  0.6
+  {method="post", code="404", foo="blah"} 0.175 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"}   0.04  _
+  {method="get", code="404", foo="bar"}   0.05  _
+  {method="get", code="500", foo="bar2"}  _     0.2
+  {method="get", code="404", foo="bar2"}  _     0.25
+  {method="post", code="500", foo="blah"} 0.05  0.6
+  {method="post", code="404", foo="blah"} 0.175 2.1
+
+# Fail if multiple series on "one" side, even if they differ on the additional labels
+eval_fail instant at 12m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 12m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 12m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 12m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+# Fail if multiple series on "one" side, even if there is no matching point on the "many" side
+eval_fail instant at 18m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 18m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+# Same cases as above, but with group_right and expressions swapped.
+eval instant at 0 method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 25
+  {method="get", code="404"} 20
+  {method="post", code="500"} 20
+  {method="post", code="404"} 5.7142857143
+
+eval instant at 0 method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 25
+  {method="get", code="404"} 20
+  {method="post", code="500"} 20
+  {method="post", code="404"} 5.7142857143
+
+eval instant at 0 method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"} 25
+  {method="get", code="404", foo="bar"} 20
+  {method="post", code="500", foo="blah"} 20
+  {method="post", code="404", foo="blah"} 5.7142857143
+
+eval instant at 0 method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"} 25
+  {method="get", code="404", foo="bar"} 20
+  {method="post", code="500", foo="blah"} 20
+  {method="post", code="404", foo="blah"} 5.7142857143
+
+eval instant at 6m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 5
+  {method="get", code="404"} 4
+  {method="post", code="500"} 1.6666666667
+  {method="post", code="404"} 0.4761904762
+
+eval instant at 6m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 5
+  {method="get", code="404"} 4
+  {method="post", code="500"} 1.6666666667
+  {method="post", code="404"} 0.4761904762
+
+eval instant at 6m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar2"} 5
+  {method="get", code="404", foo="bar2"} 4
+  {method="post", code="500", foo="blah"} 1.6666666667
+  {method="post", code="404", foo="blah"} 0.4761904762
+
+eval instant at 6m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar2"} 5
+  {method="get", code="404", foo="bar2"} 4
+  {method="post", code="500", foo="blah"} 1.6666666667
+  {method="post", code="404", foo="blah"} 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"}  25           5
+  {method="get", code="404"}  20           4
+  {method="post", code="500"} 20           1.6666666667
+  {method="post", code="404"} 5.7142857143 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"}  25           5
+  {method="get", code="404"}  20           4
+  {method="post", code="500"} 20           1.6666666667
+  {method="post", code="404"} 5.7142857143 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"}   25           _
+  {method="get", code="404", foo="bar"}   20           _
+  {method="get", code="500", foo="bar2"}  _            5
+  {method="get", code="404", foo="bar2"}  _            4
+  {method="post", code="500", foo="blah"} 20           1.6666666667
+  {method="post", code="404", foo="blah"} 5.7142857143 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"}   25           _
+  {method="get", code="404", foo="bar"}   20           _
+  {method="get", code="500", foo="bar2"}  _            5
+  {method="get", code="404", foo="bar2"}  _            4
+  {method="post", code="500", foo="blah"} 20           1.6666666667
+  {method="post", code="404", foo="blah"} 5.7142857143 0.4761904762
+
+# Fail if multiple series on "one" side, even if they differ on the additional labels
+eval_fail instant at 12m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 12m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 12m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 12m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+# Fail if multiple series on "one" side, even if there is no matching point on the "many" side
+eval_fail instant at 18m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+eval_fail instant at 18m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+
+clear
+
+# Test group_left / group_right where the additional labels from "one" side replace labels with the same name from the the "many" side
+load 6m
+  left{method="get", code="500", foo="left-1"} 1
+  left{method="get", code="404", foo="left-2"} 2
+  right{method="get", foo="right-1"} 4
+
+eval instant at 0 left / on(method) group_left(foo) right
+  {method="get", code="500", foo="right-1"} 0.25
+  {method="get", code="404", foo="right-1"} 0.5
+
+eval instant at 0 right / on(method) group_right(foo) left
+  {method="get", code="500", foo="right-1"} 4
+  {method="get", code="404", foo="right-1"} 2
+
+clear
+
+load 6m
+  left{method="get", code="500", foo="left-1"}   1 _ 10
+  left{method="get", code="404", foo="left-2"}   _ 4 20
+  right{method="get", code="999", foo="right-1"} 4 8 40
+
+eval range from 0 to 6m step 6m left / on(method) group_left(foo, code) right
+  {method="get", code="999", foo="right-1"} 0.25 0.5
+
+eval range from 0 to 6m step 6m right / on(method) group_right(foo, code) left
+  {method="get", code="999", foo="right-1"} 4 2
+
+eval_fail instant at 12m left / on(method) group_left(foo, code) right
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m right / on(method) group_right(foo, code) left
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
