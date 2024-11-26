@@ -13,6 +13,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // HistogramFunctionOverInstantVector performs a function over each series in an instant vector,
@@ -72,6 +74,14 @@ type seriesGroupPair struct {
 var bucketGroupPool = zeropool.New(func() *bucketGroup {
 	return &bucketGroup{}
 })
+
+var pointBucketPool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(1, types.MaxExpectedPointsPerSeries, types.PointsPerSeriesBucketFactor, func(size int) []buckets {
+		return make([]buckets, 0, size)
+	}),
+	uint64(unsafe.Sizeof(buckets{})),
+	true,
+)
 
 func NewHistogramFunctionOverInstantVector(
 	phArg types.ScalarOperator,
@@ -193,7 +203,10 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 		// Reset the group before returning to the pool
 		//thisGroup.groupedMetricName = ""
 		thisGroup.lastInputSeriesIdx = 0
-		thisGroup.pointBuckets = nil
+		if thisGroup.pointBuckets != nil {
+			pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
+			thisGroup.pointBuckets = nil
+		}
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
 		bucketGroupPool.Put(thisGroup)
@@ -228,7 +241,10 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 		// It is also possible that both series groups are the same.
 		// The conflict in points is then detected in computeOutputSeriesForGroup.
 		h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups.nativeHistogramGroup)
-		h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
+		err = h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
+		if err != nil {
+			return err
+		}
 
 		// We are done with the fPoints, so return these now
 		// hPoint's are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
@@ -239,7 +255,7 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 }
 
 // saveFloatsToGroup places each fPoint into a bucket with the upperBound set by the input series.
-func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.FPoint, le string, g *bucketGroup) {
+func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.FPoint, le string, g *bucketGroup) error {
 	if len(fPoints) > 0 {
 		upperBound, err := strconv.ParseFloat(le, 64)
 		if err != nil {
@@ -251,7 +267,11 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 			))
 		} else {
 			if g.pointBuckets == nil {
-				g.pointBuckets = make([]buckets, h.timeRange.StepCount)
+				g.pointBuckets, err = pointBucketPool.Get(h.timeRange.StepCount, h.memoryConsumptionTracker)
+				if err != nil {
+					return err
+				}
+				g.pointBuckets = g.pointBuckets[:h.timeRange.StepCount]
 			}
 			for _, f := range fPoints {
 				pointIdx := h.timeRange.PointIndex(f.T)
@@ -266,6 +286,7 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 		}
 	}
 	g.remainingSeriesCount--
+	return nil
 }
 
 // saveNativeHistogramsToGroup stores the given native histograms onto the given group.

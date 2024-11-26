@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	maxExpectedPointsPerSeries  = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
-	pointsPerSeriesBucketFactor = 2
+	MaxExpectedPointsPerSeries  = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
+	PointsPerSeriesBucketFactor = 2
 
 	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory bytes limit.
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.
@@ -31,7 +31,7 @@ const (
 
 var (
 	FPointSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
 			return make([]promql.FPoint, 0, size)
 		}),
 		FPointSize,
@@ -39,7 +39,7 @@ var (
 	)
 
 	HPointSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
 			return make([]promql.HPoint, 0, size)
 		}),
 		HPointSize,
@@ -47,7 +47,7 @@ var (
 	)
 
 	VectorPool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) promql.Vector {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) promql.Vector {
 			return make(promql.Vector, 0, size)
 		}),
 		VectorSampleSize,
@@ -55,7 +55,7 @@ var (
 	)
 
 	Float64SlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []float64 {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []float64 {
 			return make([]float64, 0, size)
 		}),
 		Float64Size,
@@ -63,7 +63,7 @@ var (
 	)
 
 	BoolSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []bool {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []bool {
 			return make([]bool, 0, size)
 		}),
 		BoolSize,
@@ -71,7 +71,7 @@ var (
 	)
 
 	HistogramSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []*histogram.FloatHistogram {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []*histogram.FloatHistogram {
 			return make([]*histogram.FloatHistogram, 0, size)
 		}),
 		HistogramPointerSize,
@@ -79,7 +79,7 @@ var (
 	)
 
 	StringSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []string {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []string {
 			return make([]string, 0, size)
 		}),
 		StringSize,
