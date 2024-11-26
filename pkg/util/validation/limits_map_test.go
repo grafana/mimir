@@ -36,19 +36,19 @@ func TestNewLimitsMap(t *testing.T) {
 	t.Run("float64", func(t *testing.T) {
 		lm := NewLimitsMap(fakeFloat64Validator)
 		lm.data["key1"] = 10.6
-		require.Len(t, lm.data, 1)
+		require.Len(t, lm.Read(), 1)
 	})
 
 	t.Run("int", func(t *testing.T) {
 		lm := NewLimitsMap(fakeIntValidator)
 		lm.data["key1"] = 10
-		require.Len(t, lm.data, 1)
+		require.Len(t, lm.Read(), 1)
 	})
 
 	t.Run("string", func(t *testing.T) {
 		lm := NewLimitsMap(fakeStringValidator)
 		lm.data["key1"] = "test"
-		require.Len(t, lm.data, 1)
+		require.Len(t, lm.Read(), 1)
 	})
 }
 
@@ -110,7 +110,7 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 					require.Equal(t, tt.error, err.Error())
 				} else {
 					require.NoError(t, err)
-					require.Equal(t, tt.expected, lm.data)
+					require.Equal(t, tt.expected, lm.Read())
 					require.Equal(t, tt.input, lm.String())
 				}
 			})
@@ -151,7 +151,7 @@ func TestLimitsMap_SetAndString(t *testing.T) {
 					require.Equal(t, tt.error, err.Error())
 				} else {
 					require.NoError(t, err)
-					require.Equal(t, tt.expected, lm.data)
+					require.Equal(t, tt.expected, lm.Read())
 					require.Equal(t, tt.input, lm.String())
 				}
 			})
@@ -416,7 +416,7 @@ func TestLimitsMap_updateMap(t *testing.T) {
 		// Verify that no partial updates were applied.
 		// Because maps in Go are accessed in random order, there's a chance that the validation will fail on the first invalid element of the map thus not asserting partial updates.
 		expectedData := map[string]float64{"a": 1.0, "b": 2.0}
-		require.Equal(t, expectedData, limitsMap.data)
+		require.Equal(t, expectedData, limitsMap.Read())
 	})
 
 	t.Run("updates totally replace all values", func(t *testing.T) {
@@ -428,6 +428,6 @@ func TestLimitsMap_updateMap(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedData := updateData
-		require.Equal(t, expectedData, limitsMap.data)
+		require.Equal(t, expectedData, limitsMap.Read())
 	})
 }

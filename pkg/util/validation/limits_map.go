@@ -45,6 +45,10 @@ func (m LimitsMap[T]) Set(s string) error {
 	return m.updateMap(newMap)
 }
 
+func (m LimitsMap[T]) Read() map[string]T {
+	return m.data
+}
+
 // Clone returns a copy of the LimitsMap.
 func (m LimitsMap[T]) Clone() LimitsMap[T] {
 	newMap := make(map[string]T, len(m.data))
