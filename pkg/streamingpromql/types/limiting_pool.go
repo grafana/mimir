@@ -30,12 +30,17 @@ const (
 )
 
 var (
+	// EnableManglingReturnedSlices enables mangling values in slices returned to pool to aid in detecting use-after-return bugs.
+	// Only used in tests.
+	EnableManglingReturnedSlices = false
+
 	FPointSlicePool = NewLimitingBucketedPool(
 		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
 			return make([]promql.FPoint, 0, size)
 		}),
 		FPointSize,
 		false,
+		nil,
 	)
 
 	HPointSlicePool = NewLimitingBucketedPool(
@@ -44,6 +49,10 @@ var (
 		}),
 		HPointSize,
 		false,
+		func(point promql.HPoint) promql.HPoint {
+			point.H = mangleHistogram(point.H)
+			return point
+		},
 	)
 
 	VectorPool = NewLimitingBucketedPool(
@@ -52,6 +61,7 @@ var (
 		}),
 		VectorSampleSize,
 		false,
+		nil,
 	)
 
 	Float64SlicePool = NewLimitingBucketedPool(
@@ -60,6 +70,7 @@ var (
 		}),
 		Float64Size,
 		true,
+		nil,
 	)
 
 	BoolSlicePool = NewLimitingBucketedPool(
@@ -68,6 +79,7 @@ var (
 		}),
 		BoolSize,
 		true,
+		nil,
 	)
 
 	HistogramSlicePool = NewLimitingBucketedPool(
@@ -76,6 +88,7 @@ var (
 		}),
 		HistogramPointerSize,
 		true,
+		mangleHistogram,
 	)
 
 	StringSlicePool = NewLimitingBucketedPool(
@@ -87,6 +100,30 @@ var (
 	)
 )
 
+func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
+	if h == nil {
+		return nil
+	}
+
+	h.ZeroCount = 12345678
+	h.Count = 12345678
+	h.Sum = 12345678
+
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] = 12345678
+	}
+
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] = 12345678
+	}
+
+	for i := range h.CustomValues {
+		h.CustomValues[i] = 12345678
+	}
+
+	return h
+}
+
 // LimitingBucketedPool pools slices across multiple query evaluations, and applies any max in-memory bytes limit.
 //
 // LimitingBucketedPool only estimates the in-memory size of the slices it returns. For example, it ignores the overhead of slice headers,
@@ -95,13 +132,15 @@ type LimitingBucketedPool[S ~[]E, E any] struct {
 	inner       *pool.BucketedPool[S, E]
 	elementSize uint64
 	clearOnGet  bool
+	mangle      func(E) E
 }
 
-func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], elementSize uint64, clearOnGet bool) *LimitingBucketedPool[S, E] {
+func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], elementSize uint64, clearOnGet bool, mangle func(E) E) *LimitingBucketedPool[S, E] {
 	return &LimitingBucketedPool[S, E]{
 		inner:       inner,
 		elementSize: elementSize,
 		clearOnGet:  clearOnGet,
+		mangle:      mangle,
 	}
 }
 
@@ -138,6 +177,12 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptionTracker) {
 	if s == nil {
 		return
+	}
+
+	if EnableManglingReturnedSlices && p.mangle != nil {
+		for i, e := range s {
+			s[i] = p.mangle(e)
+		}
 	}
 
 	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)
