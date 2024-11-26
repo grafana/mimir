@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
 // Most of the functionality of the histogram operator is tested through the test scripts in
@@ -20,15 +20,12 @@ import (
 
 func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	testCases := map[string]struct {
-		inputSeries []labels.Labels
-		// expectedOutputSeriesOrder is in the order we expect, but
-		// each sub-set can be different between themselves.
-		// This is because more than one group can have the same last series.
-		expectedOutputSeriesOrder [][]labels.Labels
+		inputSeries               []labels.Labels
+		expectedOutputSeriesOrder []labels.Labels
 	}{
 		"empty input": {
 			inputSeries:               []labels.Labels{},
-			expectedOutputSeriesOrder: [][]labels.Labels{},
+			expectedOutputSeriesOrder: []labels.Labels{},
 		},
 		"classic histogram": {
 			inputSeries: []labels.Labels{
@@ -39,14 +36,14 @@ func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				labels.FromStrings("__name__", "series", "le", "16"),
 				labels.FromStrings("__name__", "series", "le", "+Inf"),
 			},
-			expectedOutputSeriesOrder: [][]labels.Labels{
-				{labels.FromStrings("le", "1")},
-				{labels.FromStrings("le", "2")},
-				{labels.FromStrings("le", "4")},
-				{labels.FromStrings("le", "8")},
-				{labels.FromStrings("le", "16")},
-				// These last two series can come back in either order
-				{labels.FromStrings("le", "+Inf"), labels.EmptyLabels()},
+			expectedOutputSeriesOrder: []labels.Labels{
+				labels.FromStrings("le", "1"),
+				labels.FromStrings("le", "2"),
+				labels.FromStrings("le", "4"),
+				labels.FromStrings("le", "8"),
+				labels.FromStrings("le", "16"),
+				labels.EmptyLabels(),
+				labels.FromStrings("le", "+Inf"),
 			},
 		},
 		"series without le": {
@@ -54,9 +51,9 @@ func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				labels.FromStrings("__name__", "series", "abc", "1"),
 				labels.FromStrings("__name__", "series", "abc", "2"),
 			},
-			expectedOutputSeriesOrder: [][]labels.Labels{
-				{labels.FromStrings("abc", "1")},
-				{labels.FromStrings("abc", "2")},
+			expectedOutputSeriesOrder: []labels.Labels{
+				labels.FromStrings("abc", "1"),
+				labels.FromStrings("abc", "2"),
 			},
 		},
 		"classic histogram and series with same name": {
@@ -69,15 +66,14 @@ func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				labels.FromStrings("__name__", "series", "le", "+Inf"),
 				labels.FromStrings("__name__", "series"),
 			},
-			expectedOutputSeriesOrder: [][]labels.Labels{
-				{labels.FromStrings("le", "1")},
-				{labels.FromStrings("le", "2")},
-				{labels.FromStrings("le", "4")},
-				{labels.FromStrings("le", "8")},
-				{labels.FromStrings("le", "16")},
-				// These last two series will always be in this order
-				{labels.FromStrings("le", "+Inf")},
-				{labels.EmptyLabels()},
+			expectedOutputSeriesOrder: []labels.Labels{
+				labels.FromStrings("le", "1"),
+				labels.FromStrings("le", "2"),
+				labels.FromStrings("le", "4"),
+				labels.FromStrings("le", "8"),
+				labels.FromStrings("le", "16"),
+				labels.FromStrings("le", "+Inf"),
+				labels.EmptyLabels(),
 			},
 		},
 		"multiple classic histograms with interleaved series": {
@@ -95,19 +91,21 @@ func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				labels.FromStrings("label", "B", "le", "16"),
 				labels.FromStrings("label", "B", "le", "+Inf"),
 			},
-			expectedOutputSeriesOrder: [][]labels.Labels{
-				{labels.FromStrings("label", "A", "le", "1")},
-				{labels.FromStrings("label", "B", "le", "1")},
-				{labels.FromStrings("label", "A", "le", "2")},
-				{labels.FromStrings("label", "B", "le", "2")},
-				{labels.FromStrings("label", "A", "le", "4")},
-				{labels.FromStrings("label", "B", "le", "4")},
-				{labels.FromStrings("label", "A", "le", "8")},
-				{labels.FromStrings("label", "A", "le", "16")},
-				{labels.FromStrings("label", "A", "le", "+Inf"), labels.FromStrings("label", "A")},
-				{labels.FromStrings("label", "B", "le", "8")},
-				{labels.FromStrings("label", "B", "le", "16")},
-				{labels.FromStrings("label", "B", "le", "+Inf"), labels.FromStrings("label", "B")},
+			expectedOutputSeriesOrder: []labels.Labels{
+				labels.FromStrings("label", "A", "le", "1"),
+				labels.FromStrings("label", "B", "le", "1"),
+				labels.FromStrings("label", "A", "le", "2"),
+				labels.FromStrings("label", "B", "le", "2"),
+				labels.FromStrings("label", "A", "le", "4"),
+				labels.FromStrings("label", "B", "le", "4"),
+				labels.FromStrings("label", "A", "le", "8"),
+				labels.FromStrings("label", "A", "le", "16"),
+				labels.FromStrings("label", "A"),
+				labels.FromStrings("label", "A", "le", "+Inf"),
+				labels.FromStrings("label", "B", "le", "8"),
+				labels.FromStrings("label", "B", "le", "16"),
+				labels.FromStrings("label", "B"),
+				labels.FromStrings("label", "B", "le", "+Inf"),
 			},
 		},
 	}
@@ -123,26 +121,7 @@ func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 			outputSeries, err := hOp.SeriesMetadata(context.Background())
 			require.NoError(t, err)
 
-			checkOutputSeriesOrder(t, outputSeries, testCase.expectedOutputSeriesOrder)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
 	}
-}
-
-func checkOutputSeriesOrder(t *testing.T, outputSeries []types.SeriesMetadata, expectedOrder [][]labels.Labels) {
-	outputIndex := 0
-	found := 0
-
-	for _, expectedLabels := range expectedOrder {
-		actualLabels := []labels.Labels{}
-
-		for i := 0; i < len(expectedLabels) && outputIndex < len(outputSeries); i++ {
-			actualLabels = append(actualLabels, outputSeries[outputIndex].Labels)
-			found++
-			outputIndex++
-		}
-
-		require.ElementsMatch(t, expectedLabels, actualLabels)
-	}
-
-	require.Equal(t, len(outputSeries), found, "Not all output series were accounted for in expected input series")
 }

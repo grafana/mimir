@@ -61,7 +61,8 @@ type bucketGroup struct {
 
 	// All the input series should have the same Metric name (from innerSeriesMetricNames).
 	// We just need one index to determine the group name, so we take the last series, as we also use that to sort the groups by.
-	lastInputSeriesIdx int
+	lastInputSeriesIdx      int
+	isClassicHistogramGroup bool // Denotes if it is the group where `le` has been dropped or not. Used to sort output series.
 }
 
 // Each series belongs to 2 groups. One with the `le` label, and one without. Sometimes, these are the same group.
@@ -179,6 +180,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 			lb.Del(labels.BucketLabel)
 			g.labels = lb.Labels()
 			g.group = bucketGroupPool.Get()
+			g.group.isClassicHistogramGroup = true
 			groups[string(b)] = g
 		}
 		g.group.lastInputSeriesIdx = innerIdx
@@ -401,7 +403,11 @@ func (g bucketGroupSorter) Len() int {
 }
 
 func (g bucketGroupSorter) Less(i, j int) bool {
-	return g.groups[i].lastInputSeriesIdx < g.groups[j].lastInputSeriesIdx
+	if g.groups[i].lastInputSeriesIdx != g.groups[j].lastInputSeriesIdx {
+		return g.groups[i].lastInputSeriesIdx < g.groups[j].lastInputSeriesIdx
+	}
+	// return classic histogram groups first
+	return g.groups[i].isClassicHistogramGroup && !g.groups[j].isClassicHistogramGroup
 }
 
 func (g bucketGroupSorter) Swap(i, j int) {
