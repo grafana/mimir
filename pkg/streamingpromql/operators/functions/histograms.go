@@ -130,9 +130,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		types.PutSeriesMetadataSlice(innerSeries)
-	}()
+	defer types.PutSeriesMetadataSlice(innerSeries)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -169,7 +167,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 		h.seriesGroupPairs[innerIdx].nativeHistogramGroup = g.group
 
 		// Then get the group without the `le` label. This may be the same
-		// as the previous group if not le label exists.
+		// as the previous group if no le label exists.
 		// We still need to do this (rather than set it to nil) so that we know when to emit
 		// NewBadBucketLabelWarning when the series are processed.
 		b = series.Labels.BytesWithoutLabels(b, labels.BucketLabel)
@@ -213,12 +211,9 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 	h.remainingGroups = h.remainingGroups[1:]
 	defer func() {
 		// Reset the group before returning to the pool
-		//thisGroup.groupedMetricName = ""
 		thisGroup.lastInputSeriesIdx = 0
-		if thisGroup.pointBuckets != nil {
-			pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
-			thisGroup.pointBuckets = nil
-		}
+		pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
+		thisGroup.pointBuckets = nil
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
 		bucketGroupPool.Put(thisGroup)
@@ -258,75 +253,85 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 			return err
 		}
 
-		// We are done with the fPoints, so return these now
-		// hPoint's are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
+		// We are done with the FPoints, so return these now
+		// HPoints are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
 		types.FPointSlicePool.Put(s.Floats, h.memoryConsumptionTracker)
 		h.currentInnerSeriesIndex++
 	}
 	return nil
 }
 
-// saveFloatsToGroup places each fPoint into a bucket with the upperBound set by the input series.
+// saveFloatsToGroup places each FPoint into a bucket with the upperBound set by the input series.
 func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.FPoint, le string, g *bucketGroup) error {
-	if len(fPoints) > 0 {
-		upperBound, err := strconv.ParseFloat(le, 64)
-		if err != nil {
-			// The le label was invalid. Record it:
-			h.annotations.Add(annotations.NewBadBucketLabelWarning(
-				h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
-				le,
-				h.inner.ExpressionPosition(),
-			))
-		} else {
-			if g.pointBuckets == nil {
-				g.pointBuckets, err = pointBucketPool.Get(h.timeRange.StepCount, h.memoryConsumptionTracker)
-				if err != nil {
-					return err
-				}
-				g.pointBuckets = g.pointBuckets[:h.timeRange.StepCount]
-			}
-			for _, f := range fPoints {
-				pointIdx := h.timeRange.PointIndex(f.T)
-				g.pointBuckets[pointIdx] = append(
-					g.pointBuckets[pointIdx],
-					bucket{
-						upperBound: upperBound,
-						count:      f.F,
-					},
-				)
-			}
-		}
-	}
 	g.remainingSeriesCount--
+	if len(fPoints) == 0 {
+		return nil
+	}
+
+	upperBound, err := strconv.ParseFloat(le, 64)
+	if err != nil {
+		// The le label was invalid. Record it:
+		h.annotations.Add(annotations.NewBadBucketLabelWarning(
+			h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
+			le,
+			h.inner.ExpressionPosition(),
+		))
+		return nil
+	}
+
+	if g.pointBuckets == nil {
+		g.pointBuckets, err = pointBucketPool.Get(h.timeRange.StepCount, h.memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.pointBuckets = g.pointBuckets[:h.timeRange.StepCount]
+	}
+	for _, f := range fPoints {
+		pointIdx := h.timeRange.PointIndex(f.T)
+		g.pointBuckets[pointIdx] = append(
+			g.pointBuckets[pointIdx],
+			bucket{
+				upperBound: upperBound,
+				count:      f.F,
+			},
+		)
+	}
+
 	return nil
 }
 
 // saveNativeHistogramsToGroup stores the given native histograms onto the given group.
-// There should only ever be one native histogram per a series or series group. In general,
-// they are per-series, but we handle them as parts of groups because they could hypothetically
-// have the same series name as a classic histogram.
+// There should only ever be one native histogram per step for a series or series group.
+// In general, they are per-series, but we handle them as parts of groups because they
+// could hypothetically have the same series name as a classic histogram.
 func (h *HistogramFunctionOverInstantVector) saveNativeHistogramsToGroup(hPoints []promql.HPoint, g *bucketGroup) {
-	if len(hPoints) > 0 {
-		// We should only ever see one set of native histograms per group.
-		if g.nativeHistograms != nil {
-			panic("We should never see more than one native histogram per group")
-		}
-		g.nativeHistograms = hPoints
-	}
 	g.remainingSeriesCount--
+	if len(hPoints) == 0 {
+		return
+	}
+
+	// We should only ever see one set of native histograms per group.
+	if g.nativeHistograms != nil {
+		panic("We should never see more than one native histogram per group")
+	}
+	g.nativeHistograms = hPoints
 }
 
 func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *bucketGroup) (types.InstantVectorSeriesData, error) {
-	floatPoints, err := types.FPointSlicePool.Get(h.timeRange.StepCount, h.memoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
+	// We only allocate floatPoints from the pool once we know for certain we'll return some points.
+	// We also then only need to get a length for the remaining points.
+	var floatPoints []promql.FPoint
 	histogramIndex := 0
-	var currentHistogram *histogram.FloatHistogram
 	var currentHistogramPointIdx int64
 
 	for pointIdx := range h.timeRange.StepCount {
+		var currentHistogram *histogram.FloatHistogram
+		var thisPointBuckets buckets
+
+		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
+			thisPointBuckets = g.pointBuckets[pointIdx]
+		}
+
 		ph := h.phValues.Samples[pointIdx].F
 		if math.IsNaN(ph) || ph < 0 || ph > 1 {
 			// Even when ph is invalid we still return a series as BucketQuantile will return +/-Inf.
@@ -344,7 +349,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 			}
 		}
 
-		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 && currentHistogram != nil && currentHistogramPointIdx == int64(pointIdx) {
+		if thisPointBuckets != nil && currentHistogram != nil {
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
@@ -353,8 +358,15 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 			continue
 		}
 
-		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
-			res, forcedMonotonicity, _ := bucketQuantile(ph, g.pointBuckets[pointIdx])
+		if thisPointBuckets != nil {
+			res, forcedMonotonicity, _ := bucketQuantile(ph, thisPointBuckets)
+			if floatPoints == nil {
+				var err error
+				floatPoints, err = types.FPointSlicePool.Get(h.timeRange.StepCount-pointIdx, h.memoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,
@@ -370,8 +382,14 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 		}
 
 		if currentHistogram != nil && currentHistogramPointIdx == int64(pointIdx) {
+			if floatPoints == nil {
+				var err error
+				floatPoints, err = types.FPointSlicePool.Get(h.timeRange.StepCount-pointIdx, h.memoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
 			res := histogramQuantile(ph, currentHistogram)
-
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,

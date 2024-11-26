@@ -161,7 +161,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableClassicHistograms = false
 
-		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "classic histograms")
+		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "'histogram_quantile' function")
 	})
 }
 
@@ -2201,7 +2201,7 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 	runAnnotationTests(t, testCases)
 }
 
-func TestClassicHistogramAnnotations(t *testing.T) {
+func TestHistogramAnnotations(t *testing.T) {
 	mixedClassicHistograms := `
 		series{host="a", le="0.1"}  2
 		series{host="a", le="1"}    1

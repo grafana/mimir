@@ -303,7 +303,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 	// Handle special toggles for classic histograms
 	if !q.engine.featureToggles.EnableClassicHistograms {
 		if e.Func.Name == "histogram_quantile" {
-			return nil, compat.NewNotSupportedError("classic histograms")
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 		}
 	}
 
