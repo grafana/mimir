@@ -50,7 +50,7 @@ spec:
             - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
           {{- range $key, $value := .Values.graphite.write_proxy.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.graphite.write_proxy.extraVolumeMounts }}

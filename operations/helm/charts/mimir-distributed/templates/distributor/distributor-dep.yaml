@@ -68,7 +68,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.distributor.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.distributor.extraVolumeMounts }}

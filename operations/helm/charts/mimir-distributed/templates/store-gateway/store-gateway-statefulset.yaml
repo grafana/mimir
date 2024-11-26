@@ -140,7 +140,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.store_gateway.extraVolumeMounts }}
