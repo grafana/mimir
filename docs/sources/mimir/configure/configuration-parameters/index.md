@@ -1502,47 +1502,45 @@ store_gateway_client:
 [promql_experimental_functions_enabled: <boolean> | default = false]
 
 mimir_query_engine:
-  # (experimental) Enable support for aggregation operations in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
+  # (experimental) Enable support for aggregation operations in the Mimir query
+  # engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
   [enable_aggregation_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between two
-  # vectors in Mimir's query engine. Only applies if the Mimir query engine is
-  # in use.
+  # vectors in the Mimir query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
   [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between a
-  # vector and a scalar in Mimir's query engine. Only applies if the Mimir query
-  # engine is in use.
+  # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
+  # use.
   # CLI flag: -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
   [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between two
-  # scalars in Mimir's query engine. Only applies if the Mimir query engine is
-  # in use.
+  # scalars in the Mimir query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
   [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for binary logical operations in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
+  # (experimental) Enable support for binary logical operations in the Mimir
+  # query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
   [enable_binary_logical_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for scalars in Mimir's query engine. Only
-  # applies if the Mimir query engine is in use.
+  # (experimental) Enable support for scalars in the Mimir query engine. Only
+  # applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
 
-  # (experimental) Enable support for subqueries in Mimir's query engine. Only
-  # applies if the Mimir query engine is in use.
+  # (experimental) Enable support for subqueries in the Mimir query engine. Only
+  # applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-subqueries
   [enable_subqueries: <boolean> | default = true]
 
-  # (experimental) Enable support for classic histogram functions in Mimir's
-  # query engine. Only applies if the histogram function is supported by MQE.
-  # Only applies if the Mimir query engine is in use.
+  # (experimental) Enable support for classic histogram functions in the Mimir
+  # query engine. Only applies if MQE supports the histogram function, and only
+  # applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-classic-histograms
   [enable_classic_histograms: <boolean> | default = true]
 ```

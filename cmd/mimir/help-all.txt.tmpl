@@ -2100,21 +2100,21 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.mimir-query-engine.enable-aggregation-operations
-    	[experimental] Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-binary-logical-operations
-    	[experimental] Enable support for binary logical operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-classic-histograms
-    	[experimental] Enable support for classic histogram functions in Mimir's query engine. Only applies if the histogram function is supported by MQE. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for classic histogram functions in the Mimir query engine. Only applies if MQE supports the histogram function, and only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalars
-    	[experimental] Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-subqueries
-    	[experimental] Enable support for subqueries in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between a vector and a scalar in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two vectors in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
