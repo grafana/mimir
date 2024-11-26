@@ -73,6 +73,7 @@ func (m LimitsMap[T]) updateMap(newMap map[string]T) error {
 		}
 	}
 
+	clear(m.data)
 	for k, v := range newMap {
 		m.data[k] = v
 	}

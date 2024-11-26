@@ -404,16 +404,30 @@ func TestLimitsMap_Clone(t *testing.T) {
 }
 
 func TestLimitsMap_updateMap(t *testing.T) {
-	initialData := map[string]float64{"a": 1.0, "b": 2.0}
-	updateData := map[string]float64{"a": 3.0, "b": -3.0, "c": 5.0}
+	t.Run("does not apply partial updates", func(t *testing.T) {
+		initialData := map[string]float64{"a": 1.0, "b": 2.0}
+		updateData := map[string]float64{"a": 3.0, "b": -3.0, "c": 5.0}
 
-	limitsMap := LimitsMap[float64]{data: initialData, validator: fakeFloat64Validator}
+		limitsMap := LimitsMap[float64]{data: initialData, validator: fakeFloat64Validator}
 
-	err := limitsMap.updateMap(updateData)
-	require.Error(t, err)
+		err := limitsMap.updateMap(updateData)
+		require.Error(t, err)
 
-	// Verify that no partial updates were applied.
-	// Because maps in Go are accessed in random order, there's a chance that the validation will fail on the first invalid element of the map thus not asserting partial updates.
-	expectedData := map[string]float64{"a": 1.0, "b": 2.0}
-	require.Equal(t, expectedData, limitsMap.data)
+		// Verify that no partial updates were applied.
+		// Because maps in Go are accessed in random order, there's a chance that the validation will fail on the first invalid element of the map thus not asserting partial updates.
+		expectedData := map[string]float64{"a": 1.0, "b": 2.0}
+		require.Equal(t, expectedData, limitsMap.data)
+	})
+
+	t.Run("updates totally replace all values", func(t *testing.T) {
+		initialData := map[string]float64{"a": 1.0, "b": 2.0}
+		updateData := map[string]float64{"b": 5.0, "c": 6.0}
+		limitsMap := LimitsMap[float64]{data: initialData, validator: fakeFloat64Validator}
+
+		err := limitsMap.updateMap(updateData)
+		require.NoError(t, err)
+
+		expectedData := updateData
+		require.Equal(t, expectedData, limitsMap.data)
+	})
 }
