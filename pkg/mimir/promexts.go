@@ -3,8 +3,9 @@
 package mimir
 
 import (
-	"github.com/grafana/mimir/pkg/util/promqlext"
 	"github.com/prometheus/common/model"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func init() {
