@@ -114,7 +114,6 @@ func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
 	changeRDesc := change.(*ReplicaDesc)
 	return r1, changeRDesc
 }
-
 func TestReplicaDescMerge(t *testing.T) {
 	now := time.Now().Unix()
 
@@ -174,53 +173,74 @@ func TestReplicaDescMerge(t *testing.T) {
 		}
 	}
 
-	expectedFirstSecondThirdAtMerge := func() *ReplicaDesc {
-		return &ReplicaDesc{
-			Replica:        replica3,
-			ReceivedAt:     now,
-			DeletedAt:      0,
-			ElectedAt:      now + 10,
-			ElectedChanges: 3,
-		}
+	tests := []struct {
+		name           string
+		rDesc1         *ReplicaDesc
+		rDesc2         *ReplicaDesc
+		expectedOurs   *ReplicaDesc
+		expectedChange *ReplicaDesc
+	}{
+		{
+			name:           "simple merge: firstReplica and firstReplicaWithHigherReceivedAt",
+			rDesc1:         firstReplica(),
+			rDesc2:         firstReplicaWithHigherReceivedAt(),
+			expectedOurs:   expectedFirstAndFirstHigherReceivedAtMerge(),
+			expectedChange: expectedFirstAndFirstHigherReceivedAtMerge(),
+		},
+		{
+			name:           "idempotency: no change after applying same Replica again",
+			rDesc1:         expectedFirstAndFirstHigherReceivedAtMerge(),
+			rDesc2:         firstReplica(),
+			expectedOurs:   expectedFirstAndFirstHigherReceivedAtMerge(),
+			expectedChange: nil,
+		},
+		{
+			name:   "commutativity: Merge(firstReplicaWithHigherReceivedAt, first) == Merge(first, firstReplicaWithHigherReceivedAt)",
+			rDesc1: firstReplicaWithHigherReceivedAt(),
+			rDesc2: firstReplica(),
+			expectedOurs: func() *ReplicaDesc {
+				expected, _ := merge(firstReplica(), firstReplicaWithHigherReceivedAt())
+				return expected
+			}(),
+			expectedChange: nil,
+		},
+		{
+			name: "associativity: Merge(Merge(first, second), third) == Merge(first, Merge(second, third))",
+			rDesc1: func() *ReplicaDesc {
+				ours1, _ := merge(firstReplica(), secondReplica())
+				ours1, _ = merge(ours1, thirdReplica())
+				return ours1
+			}(),
+			rDesc2: nil,
+			expectedOurs: func() *ReplicaDesc {
+				ours2, _ := merge(secondReplica(), thirdReplica())
+				ours2, _ = merge(ours2, firstReplica())
+				return ours2
+			}(),
+			expectedChange: nil,
+		},
 	}
 
-	{
-		ours, ch := merge(firstReplica(), firstReplicaWithHigherReceivedAt())
-		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), ours)
-		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), ch)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ours, ch := merge(tt.rDesc1, tt.rDesc2)
+			assert.Equal(t, tt.expectedOurs, ours)
+			assert.Equal(t, tt.expectedChange, ch)
+		})
 	}
-
-	{ // idempotency: (no change after applying same Replica again)
-		ours, ch := merge(expectedFirstAndFirstHigherReceivedAtMerge(), firstReplica())
-		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), ours)
-		assert.Equal(t, (*ReplicaDesc)(nil), ch)
-	}
-
-	{ // commutativity: Merge(firstReplicaWithHigherReceivedAt, first) == Merge(first, firstReplicaWithHigherReceivedAt)
-		our, ch := merge(firstReplicaWithHigherReceivedAt(), firstReplica())
-		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), our)
-		// change is nil in this case, since the incoming ReplicaDesc has lower receivedAt timestamp
-		assert.Equal(t, (*ReplicaDesc)(nil), ch)
-	}
-
-	{ // associativity: Merge(Merge(first, second), third) == Merge(first, Merge(second, third))
-		ours1, _ := merge(firstReplica(), secondReplica())
-		ours1, _ = merge(ours1, thirdReplica())
-		assert.Equal(t, expectedFirstSecondThirdAtMerge(), ours1)
-
-		ours2, _ := merge(secondReplica(), thirdReplica())
-		ours2, _ = merge(ours2, firstReplica())
-		assert.Equal(t, expectedFirstSecondThirdAtMerge(), ours2)
-	}
-
 }
 
 func TestHaTrackerWithMemberList(t *testing.T) {
 	var config memberlist.KVConfig
 
-	const cluster = "cluster"
-	const replica1 = "r1"
-	const replica2 = "r2"
+	const (
+		cluster                  = "cluster"
+		replica1                 = "r1"
+		replica2                 = "r2"
+		updateTimeout            = time.Millisecond * 100
+		failoverTimeout          = 2 * time.Millisecond
+		failoverTimeoutPlus100ms = failoverTimeout + 100*time.Millisecond
+	)
 
 	flagext.DefaultValues(&config)
 	ctx := context.Background()
@@ -250,9 +270,9 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
 			MemberlistKV: memberListSvc.GetMemberlistKV,
 		}},
-		UpdateTimeout:          time.Millisecond * 100,
+		UpdateTimeout:          updateTimeout,
 		UpdateTimeoutJitterMax: 0,
-		FailoverTimeout:        time.Millisecond * 2,
+		FailoverTimeout:        failoverTimeout,
 	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
 	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 	require.NoError(t, err)
@@ -271,7 +291,7 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	assert.Error(t, err)
 
 	// Wait more than the overwrite timeout.
-	now = now.Add(1100 * time.Millisecond)
+	now = now.Add(time.Millisecond * failoverTimeoutPlus100ms)
 
 	// Another sample from replica2 to update its timestamp.
 	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)
