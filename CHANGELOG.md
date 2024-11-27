@@ -83,7 +83,7 @@
 * [BUGFIX] Fix issue where active series requests error when encountering a stale posting. #9580
 * [BUGFIX] Fix pooling buffer reuse logic when `-distributor.max-request-pool-buffer-size` is set. #9666
 * [BUGFIX] Fix issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where the ruler could panic as it updates a running ruleset or shutdowns. #9726
-* [BUGFIX] Always return unknown hint for first sample in non-gauge histogram chunk to avoid incorrect counter reset hints when merging chunks from different sources. #10033
+* [BUGFIX] Always return unknown hint for first sample in non-gauge native histograms chunk to avoid incorrect counter reset hints when merging chunks from different sources. #10033
 * [BUGFIX] Ingester: Fix race condition in per-tenant TSDB creation. #9708
 * [BUGFIX] Ingester: Fix race condition in exemplar adding. #9765
 * [BUGFIX] Ingester: Fix race condition in native histogram appending. #9765
