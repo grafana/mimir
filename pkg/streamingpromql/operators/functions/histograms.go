@@ -28,11 +28,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-// HistogramFunctionOverInstantVector performs a function over each series in an instant vector,
+// HistogramQuantileFunction performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
 // At the moment, it only supports histogram_quantile
-type HistogramFunctionOverInstantVector struct {
-	phArg                    types.ScalarOperator // for histogram_quantile
+type HistogramQuantileFunction struct {
+	phArg                    types.ScalarOperator
 	inner                    types.InstantVectorOperator
 	currentInnerSeriesIndex  int
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
@@ -47,7 +47,7 @@ type HistogramFunctionOverInstantVector struct {
 	remainingGroups  []*bucketGroup    // One entry per group, in the order we want to return them.
 }
 
-var _ types.InstantVectorOperator = &HistogramFunctionOverInstantVector{}
+var _ types.InstantVectorOperator = &HistogramQuantileFunction{}
 
 type groupWithLabels struct {
 	labels labels.Labels
@@ -106,15 +106,15 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 	nil,
 )
 
-func NewHistogramFunctionOverInstantVector(
+func NewHistogramQuantileFunction(
 	phArg types.ScalarOperator,
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
-) *HistogramFunctionOverInstantVector {
-	return &HistogramFunctionOverInstantVector{
+) *HistogramQuantileFunction {
+	return &HistogramQuantileFunction{
 		phArg:                    phArg,
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -125,11 +125,11 @@ func NewHistogramFunctionOverInstantVector(
 	}
 }
 
-func (h *HistogramFunctionOverInstantVector) ExpressionPosition() posrange.PositionRange {
+func (h *HistogramQuantileFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
 
-func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (h *HistogramQuantileFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Pre-process any Scalar arguments
 	var err error
 	h.phValues, err = h.phArg.GetValues(ctx)
@@ -211,7 +211,7 @@ func (h *HistogramFunctionOverInstantVector) SeriesMetadata(ctx context.Context)
 	return seriesMetadata, nil
 }
 
-func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (h *HistogramQuantileFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(h.remainingGroups) == 0 {
 		// No more groups left.
 		return types.InstantVectorSeriesData{}, types.EOS
@@ -242,7 +242,7 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 // As each inner series is selected, it is added into its respective groups.
 // This means a group other than the one we are focused on may get completed first, but we
 // continue until the desired group is ready.
-func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx context.Context, g *bucketGroup) error {
+func (h *HistogramQuantileFunction) accumulateUntilGroupComplete(ctx context.Context, g *bucketGroup) error {
 	for g.remainingSeriesCount > 0 {
 		s, err := h.inner.NextSeries(ctx)
 		if err != nil {
@@ -273,7 +273,7 @@ func (h *HistogramFunctionOverInstantVector) accumulateUntilGroupComplete(ctx co
 }
 
 // saveFloatsToGroup places each FPoint into a bucket with the upperBound set by the input series.
-func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.FPoint, le string, g *bucketGroup) error {
+func (h *HistogramQuantileFunction) saveFloatsToGroup(fPoints []promql.FPoint, le string, g *bucketGroup) error {
 	g.remainingSeriesCount--
 	if len(fPoints) == 0 {
 		return nil
@@ -323,7 +323,7 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 // There should only ever be one native histogram per step for a series or series group.
 // In general, they are per-series, but we handle them as parts of groups because they
 // could hypothetically have the same series name as a classic histogram.
-func (h *HistogramFunctionOverInstantVector) saveNativeHistogramsToGroup(hPoints []promql.HPoint, g *bucketGroup) {
+func (h *HistogramQuantileFunction) saveNativeHistogramsToGroup(hPoints []promql.HPoint, g *bucketGroup) {
 	g.remainingSeriesCount--
 	if len(hPoints) == 0 {
 		return
@@ -336,7 +336,7 @@ func (h *HistogramFunctionOverInstantVector) saveNativeHistogramsToGroup(hPoints
 	g.nativeHistograms = hPoints
 }
 
-func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *bucketGroup) (types.InstantVectorSeriesData, error) {
+func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.InstantVectorSeriesData, error) {
 	// We only allocate floatPoints from the pool once we know for certain we'll return some points.
 	// We also then only need to get a length for the remaining points.
 	var floatPoints []promql.FPoint
@@ -431,7 +431,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }
 
-func (h *HistogramFunctionOverInstantVector) Close() {
+func (h *HistogramQuantileFunction) Close() {
 	h.inner.Close()
 	h.phArg.Close()
 	types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)

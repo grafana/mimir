@@ -159,7 +159,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 	t.Run("classic histograms", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
-		featureToggles.EnableClassicHistograms = false
+		featureToggles.EnableHistogramQuantileFunction = false
 
 		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "'histogram_quantile' function")
 	})

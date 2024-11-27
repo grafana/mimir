@@ -112,7 +112,7 @@ func TestHistogram_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			hOp := &HistogramFunctionOverInstantVector{
+			hOp := &HistogramQuantileFunction{
 				phArg:                  &testScalarOperator{},
 				inner:                  &operators.TestOperator{Series: testCase.inputSeries},
 				innerSeriesMetricNames: &operators.MetricNames{},

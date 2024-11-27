@@ -305,7 +305,7 @@ func HistogramQuantileOperatorFactory() InstantVectorFunctionOperatorFactory {
 			return nil, fmt.Errorf("expected an instant vector for 2nd argument for histogram_quantile, got %T", args[1])
 		}
 
-		return functions.NewHistogramFunctionOverInstantVector(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange), nil
+		return functions.NewHistogramQuantileFunction(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange), nil
 	}
 }
 

@@ -2046,12 +2046,12 @@
             },
             {
               "kind": "field",
-              "name": "enable_classic_histograms",
+              "name": "enable_histogram_quantile_function",
               "required": false,
-              "desc": "Enable support for classic histogram functions in the Mimir query engine. Only applies if MQE supports the histogram function, and only applies if the MQE is in use.",
+              "desc": "Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-classic-histograms",
+              "fieldFlag": "querier.mimir-query-engine.enable-histogram-quantile-function",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }

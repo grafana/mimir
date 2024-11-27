@@ -1538,11 +1538,10 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-subqueries
   [enable_subqueries: <boolean> | default = true]
 
-  # (experimental) Enable support for classic histogram functions in the Mimir
-  # query engine. Only applies if MQE supports the histogram function, and only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-classic-histograms
-  [enable_classic_histograms: <boolean> | default = true]
+  # (experimental) Enable support for the histogram_quantile function in the
+  # Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-histogram-quantile-function
+  [enable_histogram_quantile_function: <boolean> | default = true]
 ```
 
 ### frontend

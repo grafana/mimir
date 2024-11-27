@@ -25,7 +25,7 @@ type FeatureToggles struct {
 	EnableBinaryLogicalOperations                bool `yaml:"enable_binary_logical_operations" category:"experimental"`
 	EnableScalars                                bool `yaml:"enable_scalars" category:"experimental"`
 	EnableSubqueries                             bool `yaml:"enable_subqueries" category:"experimental"`
-	EnableClassicHistograms                      bool `yaml:"enable_classic_histograms" category:"experimental"`
+	EnableHistogramQuantileFunction              bool `yaml:"enable_histogram_quantile_function" category:"experimental"`
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.
@@ -49,5 +49,5 @@ func (t *FeatureToggles) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&t.EnableBinaryLogicalOperations, "querier.mimir-query-engine.enable-binary-logical-operations", true, "Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use.")
 	f.BoolVar(&t.EnableScalars, "querier.mimir-query-engine.enable-scalars", true, "Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use.")
 	f.BoolVar(&t.EnableSubqueries, "querier.mimir-query-engine.enable-subqueries", true, "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.")
-	f.BoolVar(&t.EnableClassicHistograms, "querier.mimir-query-engine.enable-classic-histograms", true, "Enable support for classic histogram functions in the Mimir query engine. Only applies if MQE supports the histogram function, and only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableHistogramQuantileFunction, "querier.mimir-query-engine.enable-histogram-quantile-function", true, "Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use.")
 }
