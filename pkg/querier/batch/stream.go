@@ -20,6 +20,8 @@ type batchStream struct {
 	batches    []chunk.Batch
 	batchesBuf []chunk.Batch
 
+	// prevIteratorID is the iterator id of the last sample appended to the batchStream from the last merge() call.
+	// This helps reduce the number of hints that are set to unknown across merge calls.
 	prevIteratorID int
 
 	hPool  *zeropool.Pool[*histogram.Histogram]
@@ -150,7 +152,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			b.Timestamps[b.Index], b.Values[b.Index] = batch.At()
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
-			if itID == -1 {
+			if itID == -1 { // This means the sample is already in the batch stream. We get its original iterator id.
 				itID = batch.GetIteratorID()
 			}
 			if prevIteratorID != itID && prevIteratorID != -1 {
@@ -164,7 +166,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			b.SetIteratorId(itID)
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
-			if itID == -1 {
+			if itID == -1 { // This means the sample is already in the batch stream. We get its original iterator id.
 				itID = batch.GetIteratorID()
 			}
 			if prevIteratorID != itID && prevIteratorID != -1 {

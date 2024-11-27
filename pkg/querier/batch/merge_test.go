@@ -198,6 +198,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						addFunc(chk1, 4, 2)
 						addFunc(chk1, 5, 3)
 						addFunc(chk1, 7, 4)
+						addFunc(chk1, 8, 5)
 						chk2, err := chunk.NewForEncoding(enc)
 						require.NoError(t, err)
 						addFunc(chk2, 1, 1)
@@ -205,22 +206,26 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						addFunc(chk2, 5, 8)
 						addFunc(chk2, 6, 9)
 						addFunc(chk2, 7, 10)
-						addFunc(chk2, 8, 11)
+						addFunc(chk2, 9, 11)
 						return []GenericChunk{
-							NewGenericChunk(0, 7, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7).Data.NewIterator),
-							NewGenericChunk(1, 8, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 1, 8).Data.NewIterator),
+							NewGenericChunk(0, 8, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 8).Data.NewIterator),
+							NewGenericChunk(1, 9, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk2, 1, 9).Data.NewIterator),
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
-						{t: 0, v: 0, hint: histogram.UnknownCounterReset},  // c1
-						{t: 1, v: 1, hint: histogram.UnknownCounterReset},  // c2
-						{t: 2, v: 7, hint: histogram.NotCounterReset},      // c2
-						{t: 3, v: 1, hint: histogram.UnknownCounterReset},  // c1
-						{t: 4, v: 2, hint: histogram.NotCounterReset},      // c1
-						{t: 5, v: 8, hint: histogram.UnknownCounterReset},  // c2
-						{t: 6, v: 9, hint: histogram.UnknownCounterReset},  // c2 - consecutive sample, but the batch with the previous sample is removed before this sample is merged in so can't detect it's from the same iterator
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset}, // c1
+						{t: 1, v: 1, hint: histogram.UnknownCounterReset}, // c2
+						{t: 2, v: 7, hint: histogram.NotCounterReset},     // c2
+						{t: 3, v: 1, hint: histogram.UnknownCounterReset}, // c1
+						{t: 4, v: 2, hint: histogram.NotCounterReset},     // c1
+						{t: 5, v: 8, hint: histogram.UnknownCounterReset}, // c2
+						// Next sample is from c2. This is consecutive, but this ends up as the first sample in a merged
+						// batch, and the c1 sample at ts 7 and 8 is added to the batch stream this c2 sample, so the
+						// prevIteratorID is set to c1 rather than c2 when we append this sample.
+						{t: 6, v: 9, hint: histogram.UnknownCounterReset},
 						{t: 7, v: 4, hint: histogram.UnknownCounterReset},  // c1
-						{t: 8, v: 11, hint: histogram.UnknownCounterReset}, // c2
+						{t: 8, v: 5, hint: histogram.NotCounterReset},      // c1
+						{t: 9, v: 11, hint: histogram.UnknownCounterReset}, // c2
 					},
 				},
 				{
