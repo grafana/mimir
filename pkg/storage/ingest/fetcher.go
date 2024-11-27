@@ -65,8 +65,8 @@ type fetcher interface {
 	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
 	BufferedBytes() int64
 
-	// BytesPerRecord returns the current estimation for how many bytes each record is.
-	BytesPerRecord() int64
+	// EstimatedBytesPerRecord returns the current estimation for how many bytes each record is.
+	EstimatedBytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -374,7 +374,7 @@ func (r *concurrentFetchers) BufferedBytes() int64 {
 	return r.bufferedFetchedBytes.Load()
 }
 
-func (r *concurrentFetchers) BytesPerRecord() int64 {
+func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
 }
 

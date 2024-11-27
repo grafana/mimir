@@ -165,9 +165,9 @@ func (r *PartitionReader) BufferedBytes() int64 {
 	return fcount + ccount
 }
 
-func (r *PartitionReader) BytesPerRecord() int64 {
+func (r *PartitionReader) EstimatedBytesPerRecord() int64 {
 	if f := r.getFetcher(); f != nil && f != r {
-		return f.BytesPerRecord()
+		return f.EstimatedBytesPerRecord()
 	}
 
 	return 0
@@ -1011,7 +1011,7 @@ type readerMetrics struct {
 
 	bufferedFetchedRecords           prometheus.GaugeFunc
 	bufferedFetchedBytes             prometheus.GaugeFunc
-	bytesPerRecord                   prometheus.Histogram
+	estimatedBytesPerRecord          prometheus.Histogram
 	receiveDelayWhenStarting         prometheus.Observer
 	receiveDelayWhenRunning          prometheus.Observer
 	recordsPerFetch                  prometheus.Histogram
@@ -1029,7 +1029,7 @@ type readerMetrics struct {
 type readerMetricsSource interface {
 	BufferedBytes() int64
 	BufferedRecords() int64
-	BytesPerRecord() int64
+	EstimatedBytesPerRecord() int64
 }
 
 func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource) readerMetrics {
@@ -1063,9 +1063,9 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 			Name: "cortex_ingest_storage_reader_buffered_fetched_bytes",
 			Help: "The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.",
 		}, func() float64 { return float64(metricsSource.BufferedBytes()) }),
-		bytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_bytes_per_record",
-			Help:                        "Observations with the current size of records fetched from Kafka. Sampled at 10Hz.",
+		estimatedBytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_estimated_bytes_per_record",
+			Help:                        "Observations with the current size estimation of records fetched from Kafka. Sampled at 10Hz.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
@@ -1107,7 +1107,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 	}
 
 	m.Service = services.NewTimerService(100*time.Millisecond, nil, func(context.Context) error {
-		m.bytesPerRecord.Observe(float64(metricsSource.BytesPerRecord()))
+		m.estimatedBytesPerRecord.Observe(float64(metricsSource.EstimatedBytesPerRecord()))
 		return nil
 	}, nil)
 	return m

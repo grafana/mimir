@@ -284,7 +284,7 @@ local filename = 'mimir-writes.json';
             sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
           ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           |||
-            histogram_avg(sum(rate(cortex_ingest_storage_reader_bytes_per_record{%s}[$__rate_interval])))
+            histogram_avg(sum(rate(cortex_ingest_storage_reader_estimated_bytes_per_record{%s}[$__rate_interval])))
           |||
           % [$.jobMatcher($._config.job_names.ingester)],
         ], [
