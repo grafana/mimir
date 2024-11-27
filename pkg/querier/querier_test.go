@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -37,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -315,7 +317,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	require.NoError(t, err)
 
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:     logger,
+		Logger:     util_log.SlogFromGoKit(logger),
 		MaxSamples: 1e6,
 		Timeout:    1 * time.Minute,
 	})
@@ -402,7 +404,7 @@ func TestBatchMergeChunks(t *testing.T) {
 		nil)
 
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:     logger,
+		Logger:     util_log.SlogFromGoKit(logger),
 		MaxSamples: 1e6,
 		Timeout:    1 * time.Minute,
 	})
@@ -474,7 +476,7 @@ func BenchmarkQueryExecute(b *testing.B) {
 				nil)
 
 			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     logger,
+				Logger:     util_log.SlogFromGoKit(logger),
 				MaxSamples: 1e6,
 				Timeout:    1 * time.Minute,
 			})
@@ -618,10 +620,10 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
+	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
 
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             promslog.NewNopLogger(),
 		ActiveQueryTracker: queryTracker,
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
@@ -690,7 +692,7 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 	}
 
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:        log.NewNopLogger(),
+		Logger:        promslog.NewNopLogger(),
 		MaxSamples:    1e6,
 		Timeout:       1 * time.Minute,
 		LookbackDelta: engineLookbackDelta,
@@ -756,13 +758,13 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			query:          "rate(foo[31d])",
 			queryStartTime: time.Now().Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError(745*time.Hour, 720*time.Hour)),
+			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError(745*time.Hour-time.Millisecond, 720*time.Hour)),
 		},
 		"should forbid query on large time range over the limit and short rate time window": {
 			query:          "rate(foo[1m])",
 			queryStartTime: time.Now().Add(-maxQueryLength).Add(-time.Hour),
 			queryEndTime:   time.Now(),
-			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError((721*time.Hour)+time.Minute, 720*time.Hour)),
+			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError((721*time.Hour)+time.Minute-time.Millisecond, 720*time.Hour)),
 		},
 	}
 
@@ -783,7 +785,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			// Create the PromQL engine to execute the query.
 			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:             log.NewNopLogger(),
+				Logger:             promslog.NewNopLogger(),
 				ActiveQueryTracker: nil,
 				MaxSamples:         1e6,
 				Timeout:            1 * time.Minute,
@@ -876,7 +878,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 	logger := log.NewNopLogger()
 	// Create the PromQL engine to execute the queries.
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:             logger,
+		Logger:             util_log.SlogFromGoKit(logger),
 		ActiveQueryTracker: nil,
 		MaxSamples:         1e6,
 		LookbackDelta:      engineLookbackDelta,
@@ -1124,11 +1126,11 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
+	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
 
 	from, through, step := time.Unix(0, 0), end.Time(), q.step
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             promslog.NewNopLogger(),
 		ActiveQueryTracker: queryTracker,
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
@@ -1278,10 +1280,10 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	queryTracker := promql.NewActiveQueryTracker(dir, 10, log.NewNopLogger())
+	queryTracker := promql.NewActiveQueryTracker(dir, 10, promslog.NewNopLogger())
 
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             promslog.NewNopLogger(),
 		ActiveQueryTracker: queryTracker,
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,

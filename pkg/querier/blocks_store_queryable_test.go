@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -2830,7 +2831,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
 
 					engine := promql.NewEngine(promql.EngineOpts{
-						Logger:     logger,
+						Logger:     util_log.SlogFromGoKit(logger),
 						Timeout:    10 * time.Second,
 						MaxSamples: 1e6,
 					})

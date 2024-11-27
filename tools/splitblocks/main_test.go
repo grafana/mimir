@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -200,7 +201,7 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 }
 
 func listSeriesAndChunksFromBlock(t *testing.T, blockDir string) []*block.SeriesSpec {
-	blk, err := tsdb.OpenBlock(log.NewNopLogger(), blockDir, nil)
+	blk, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil)
 	require.NoError(t, err)
 	chunkReader, err := blk.Chunks()
 	require.NoError(t, err)
