@@ -80,9 +80,9 @@ var (
 		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
 		validation.MaxLabelNamesPerSeriesFlag,
 	)
-	tooManyInfoLabelsMsgFormat = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
+	tooManyInfoLabelsMsgFormat = globalerror.MaxLabelNamesPerInfoSeries.MessageWithPerTenantLimitConfig(
 		"received an info series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
-		validation.MaxLabelNamesPerSeriesFlag,
+		validation.MaxLabelNamesPerInfoSeriesFlag,
 	)
 
 	noMetricNameMsgFormat                 = globalerror.MissingMetricName.Message("received series has no metric name")
