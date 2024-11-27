@@ -62,6 +62,21 @@ eval_warn range from 0m to 24m step 6m histogram_quantile(scalar(ph), series)
 
 clear
 
+# Test for invalid ph value where no points
+load 6m
+	series{le="0"}    0   _   0
+	series{le="2"}    1   _   1
+	series{le="4"}    2   _   2
+	series{le="6"}    3   _   3
+	series{le="+Inf"} 3   _   3
+	ph                0.5 NaN 0.9
+
+# Both engines output a warning even though there is no point where ph is also invalid.
+eval_warn range from 0m to 12m step 6m histogram_quantile(scalar(ph), series)
+	{} 3 _ 5.4
+
+clear
+
 # Test various mixed metric scenarios
 load 6m
 	series{host="a", le="0.1"}  2 _ 1 {{schema:0 sum:5 count:4 buckets:[2 2 2]}}

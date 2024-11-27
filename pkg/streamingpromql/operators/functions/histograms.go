@@ -336,6 +336,8 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 		if math.IsNaN(ph) || ph < 0 || ph > 1 {
 			// Even when ph is invalid we still return a series as BucketQuantile will return +/-Inf.
 			// So don't skip/continue the series, just emit a warning.
+			// Additionally, even if a point isn't returned, an annotation is emitted if ph is invalid
+			// at any step.
 			h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, h.phArg.ExpressionPosition()))
 		}
 
