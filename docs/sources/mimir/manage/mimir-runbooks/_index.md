@@ -1731,12 +1731,12 @@ Invalid series are skipped during the ingestion, and valid series within the sam
 
 ### err-mimir-max-label-names-per-info-series
 
-This non-critical error occurs when Mimir receives a write request that contains an info series with a number of labels that exceed the configured limit.
+This non-critical error occurs when Mimir receives a write request that contains an info series with a number of labels that exceeds the configured limit.
 An info series is a series where the metric name ends in `_info`.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-info-series` option.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion, and valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-max-native-histogram-buckets
