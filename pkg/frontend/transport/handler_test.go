@@ -303,7 +303,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
-				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
 			},
 		},
 	} {

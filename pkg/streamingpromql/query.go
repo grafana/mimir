@@ -659,6 +659,9 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 				T:      ts,
 				H:      point.H,
 			})
+
+			// Remove histogram from slice to ensure it's not mutated when the slice is reused.
+			d.Histograms[0].H = nil
 		} else {
 			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
 
@@ -738,6 +741,12 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 		histograms, err := step.Histograms.CopyPoints()
 		if err != nil {
 			return nil, err
+		}
+
+		if len(floats) == 0 && len(histograms) == 0 {
+			types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
+			types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
+			continue
 		}
 
 		m = append(m, promql.Series{

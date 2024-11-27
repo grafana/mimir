@@ -1951,6 +1951,30 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 
+  oauth2:
+    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
+    # Alertmanager.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_id
+    [client_id: <string> | default = ""]
+
+    # OAuth2 client secret.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
+    [client_secret: <string> | default = ""]
+
+    # Endpoint used to fetch access token.
+    # CLI flag: -ruler.alertmanager-client.oauth.token_url
+    [token_url: <string> | default = ""]
+
+    # Optional scopes to include with the token request.
+    # CLI flag: -ruler.alertmanager-client.oauth.scopes
+    [scopes: <string> | default = ""]
+
+  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
+  # requests through. Applies to all requests, including auxiliary traffic, such
+  # as OAuth token requests.
+  # CLI flag: -ruler.alertmanager-client.proxy-url
+  [proxy_url: <string> | default = ""]
+
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
@@ -3208,6 +3232,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
 
+# Maximum number of label names per info series. Has no effect if less than the
+# value of the maximum number of label names per series option
+# (-validation.max-label-names-per-series)
+# CLI flag: -validation.max-label-names-per-info-series
+[max_label_names_per_info_series: <int> | default = 80]
+
 # Maximum length accepted for metric metadata. Metadata refers to Metric Name,
 # HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.
 # CLI flag: -validation.max-metadata-length
@@ -3761,6 +3791,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Prometheus zero samples in the OTLP endpoint.
 # CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
+
+# (experimental) Optionally specify OTel resource attributes to promote to
+# labels.
+# CLI flag: -distributor.otel-promote-resource-attributes
+[promote_otel_resource_attributes: <string> | default = ""]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
@@ -4394,6 +4429,11 @@ tsdb:
   # queue.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 1000000]
+
+  # (experimental) When enabled, ingester produces 24h blocks for out-of-order
+  # data that is before the current day, instead of the usual 2h blocks.
+  # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
+  [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

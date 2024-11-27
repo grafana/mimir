@@ -56,7 +56,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute),
+				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
 				MaxT:         end.Truncate(time.Millisecond),
 				Step:         step,
 			},
@@ -90,7 +90,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute),
+				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
 				MaxT:         end.Truncate(time.Millisecond),
 				Step:         step,
 			},
@@ -122,7 +122,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          start.Truncate(time.Millisecond),
-				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute),
+				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
 				MaxT:         start.Truncate(time.Millisecond),
 			},
 		},
@@ -174,7 +174,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
-				MinT:         start.Truncate(time.Millisecond).Add(-30 * time.Minute),
+				MinT:         start.Truncate(time.Millisecond).Add(-30 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
 				MaxT:         end.Truncate(time.Millisecond).Add(10 * time.Minute),
 			},
 		},
@@ -217,7 +217,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
-				MinT:         start.Truncate(time.Millisecond),
+				MinT:         start.Truncate(time.Millisecond).Add(time.Millisecond), // query range is left-open, but minT is inclusive
 				MaxT:         end.Truncate(time.Millisecond).Add(10 * time.Minute),
 			},
 		},

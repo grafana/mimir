@@ -911,6 +911,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -blocks-storage.swift.username string
     	OpenStack Swift username.
+  -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
+    	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
@@ -1389,6 +1391,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
+  -distributor.otel-promote-resource-attributes comma-separated-list-of-strings
+    	[experimental] Optionally specify OTel resource attributes to promote to labels.
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
@@ -2819,6 +2823,16 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
+  -ruler.alertmanager-client.oauth.client_id string
+    	OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.
+  -ruler.alertmanager-client.oauth.client_secret string
+    	OAuth2 client secret.
+  -ruler.alertmanager-client.oauth.scopes comma-separated-list-of-strings
+    	Optional scopes to include with the token request.
+  -ruler.alertmanager-client.oauth.token_url string
+    	Endpoint used to fetch access token.
+  -ruler.alertmanager-client.proxy-url string
+    	Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.
   -ruler.alertmanager-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.alertmanager-client.tls-cert-path string
@@ -3149,6 +3163,10 @@ Usage of ./cmd/mimir/mimir:
     	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
+  -server.throughput.latency-cutoff duration
+    	Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.
+  -server.throughput.unit string
+    	Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "total_samples")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
@@ -3301,6 +3319,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.max-label-names-per-info-series int
+    	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

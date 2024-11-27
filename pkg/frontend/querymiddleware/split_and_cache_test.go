@@ -1753,6 +1753,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 	queryFooSubqueryAtStartExpr, _ := parser.ParseExpr(queryFooSubqueryAtStart)
 	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.000)"
 	queryFooSubqueryAtZeroExpr, _ := parser.ParseExpr(queryFooSubqueryAtZero)
+	lookbackDelta := 5 * time.Minute
 
 	for i, tc := range []struct {
 		input    MetricsQueryRequest
@@ -1760,160 +1761,160 @@ func TestSplitQueryByInterval(t *testing.T) {
 		interval time.Duration
 	}{
 		{
-			input: &PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, maxT: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, minT: -lookbackDelta.Milliseconds() + 1, maxT: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, maxT: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 60 * 60 * seconds, minT: -lookbackDelta.Milliseconds() + 1, maxT: 60 * 60 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 0, end: 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 0, end: 24 * 3600 * seconds, maxT: 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 24 * 3600 * seconds, minT: -lookbackDelta.Milliseconds() + 1, maxT: 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 0, end: 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 0, end: 3 * 3600 * seconds, maxT: 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: 3 * 3600 * seconds, minT: -lookbackDelta.Milliseconds() + 1, maxT: 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 0, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooAtStartExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooAtStartExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 0, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooAtZeroExpr},
-				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooAtZeroExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: (24 * 3600 * seconds) - (15 * seconds), minT: -lookbackDelta.Milliseconds() + 1, step: 15 * seconds, queryExpr: queryFooAtZeroExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, minT: -lookbackDelta.Milliseconds() + 1, step: 15 * seconds, queryExpr: queryFooAtZeroExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 0, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooSubqueryAtStartExpr},
+			input: &PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 0, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooSubqueryAtStartExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 0, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooSubqueryAtZeroExpr},
-				&PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooSubqueryAtZeroExpr},
+				&PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds) - lookbackDelta.Milliseconds() + 1, start: 0, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooSubqueryAtZeroExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds) - lookbackDelta.Milliseconds() + 1, start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooSubqueryAtZeroExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 0, end: 2 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 0, end: 2 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 0, end: (3 * 3600 * seconds) - (15 * seconds), maxT: (3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: 2 * 3 * 3600 * seconds, minT: 3 * 3600 * seconds, maxT: 2 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 0, end: (3 * 3600 * seconds) - (15 * seconds), minT: -lookbackDelta.Milliseconds() + 1, maxT: (3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: 2 * 3 * 3600 * seconds, minT: 3*3600*seconds - lookbackDelta.Milliseconds() + 1, maxT: 2 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: 3 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: 3 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, minT: 3 * 3600 * seconds, end: (24 * 3600 * seconds) - (15 * seconds), maxT: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, minT: 24 * 3600 * seconds, end: (2 * 24 * 3600 * seconds) - (15 * seconds), maxT: (2 * 24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: 2 * 24 * 3600 * seconds, minT: 2 * 24 * 3600 * seconds, end: 3 * 24 * 3600 * seconds, maxT: 3 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, minT: 3*3600*seconds - lookbackDelta.Milliseconds() + 1, end: (24 * 3600 * seconds) - (15 * seconds), maxT: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, minT: 24*3600*seconds - lookbackDelta.Milliseconds() + 1, end: (2 * 24 * 3600 * seconds) - (15 * seconds), maxT: (2 * 24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: 2 * 24 * 3600 * seconds, minT: 2*24*3600*seconds - lookbackDelta.Milliseconds() + 1, end: 3 * 24 * 3600 * seconds, maxT: 3 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: 2 * 3600 * seconds, end: 3 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: 2 * 3600 * seconds, end: 3 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 2 * 3600 * seconds, end: (3 * 3600 * seconds) - (15 * seconds), minT: 2 * 3600 * seconds, maxT: (3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: (2 * 3 * 3600 * seconds) - (15 * seconds), minT: 3 * 3600 * seconds, maxT: (2 * 3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: 2 * 3 * 3600 * seconds, end: 3 * 3 * 3600 * seconds, minT: 2 * 3 * 3600 * seconds, maxT: 3 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: 2 * 3600 * seconds, end: (3 * 3600 * seconds) - (15 * seconds), minT: 2*3600*seconds - lookbackDelta.Milliseconds() + 1, maxT: (3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: 3 * 3600 * seconds, end: (2 * 3 * 3600 * seconds) - (15 * seconds), minT: 3*3600*seconds - lookbackDelta.Milliseconds() + 1, maxT: (2 * 3 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: 2 * 3 * 3600 * seconds, end: 3 * 3 * 3600 * seconds, minT: 2*3*3600*seconds - lookbackDelta.Milliseconds() + 1, maxT: 3 * 3 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:03:00Z"), step: 5 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:03:00Z"), step: 5 * time.Minute.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:03:00Z"), minT: timeToMillis(t, "2021-10-14T23:48:00Z"), maxT: timeToMillis(t, "2021-10-15T00:03:00Z"), step: 5 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:03:00Z"), minT: timeToMillis(t, "2021-10-14T23:48:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T00:03:00Z"), step: 5 * time.Minute.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-14T23:54:00Z"), minT: timeToMillis(t, "2021-10-14T23:48:00Z"), maxT: timeToMillis(t, "2021-10-14T23:54:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), minT: timeToMillis(t, "2021-10-15T00:00:00Z"), maxT: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T23:48:00Z"), end: timeToMillis(t, "2021-10-14T23:54:00Z"), minT: timeToMillis(t, "2021-10-14T23:48:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-14T23:54:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), minT: timeToMillis(t, "2021-10-15T00:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 6 * time.Minute.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T22:00:00Z"), end: timeToMillis(t, "2021-10-17T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T22:00:00Z"), end: timeToMillis(t, "2021-10-17T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T22:00:00Z"), end: timeToMillis(t, "2021-10-14T22:00:00Z"), minT: timeToMillis(t, "2021-10-14T22:00:00Z"), maxT: timeToMillis(t, "2021-10-14T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-15T22:00:00Z"), minT: timeToMillis(t, "2021-10-15T22:00:00Z"), maxT: timeToMillis(t, "2021-10-15T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T22:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), minT: timeToMillis(t, "2021-10-16T22:00:00Z"), maxT: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T22:00:00Z"), end: timeToMillis(t, "2021-10-17T22:00:00Z"), minT: timeToMillis(t, "2021-10-17T22:00:00Z"), maxT: timeToMillis(t, "2021-10-17T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-14T22:00:00Z"), end: timeToMillis(t, "2021-10-14T22:00:00Z"), minT: timeToMillis(t, "2021-10-14T22:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-14T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-15T22:00:00Z"), minT: timeToMillis(t, "2021-10-15T22:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T22:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), minT: timeToMillis(t, "2021-10-16T22:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T22:00:00Z"), end: timeToMillis(t, "2021-10-17T22:00:00Z"), minT: timeToMillis(t, "2021-10-17T22:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T22:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-18T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-18T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), minT: timeToMillis(t, "2021-10-15T00:00:00Z"), maxT: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T00:00:00Z"), end: timeToMillis(t, "2021-10-16T00:00:00Z"), minT: timeToMillis(t, "2021-10-16T00:00:00Z"), maxT: timeToMillis(t, "2021-10-16T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T00:00:00Z"), end: timeToMillis(t, "2021-10-17T00:00:00Z"), minT: timeToMillis(t, "2021-10-17T00:00:00Z"), maxT: timeToMillis(t, "2021-10-17T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-18T00:00:00Z"), end: timeToMillis(t, "2021-10-18T00:00:00Z"), minT: timeToMillis(t, "2021-10-18T00:00:00Z"), maxT: timeToMillis(t, "2021-10-18T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T00:00:00Z"), end: timeToMillis(t, "2021-10-15T00:00:00Z"), minT: timeToMillis(t, "2021-10-15T00:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T00:00:00Z"), end: timeToMillis(t, "2021-10-16T00:00:00Z"), minT: timeToMillis(t, "2021-10-16T00:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-16T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T00:00:00Z"), end: timeToMillis(t, "2021-10-17T00:00:00Z"), minT: timeToMillis(t, "2021-10-17T00:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-18T00:00:00Z"), end: timeToMillis(t, "2021-10-18T00:00:00Z"), minT: timeToMillis(t, "2021-10-18T00:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-18T00:00:00Z"), step: 24 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-22T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-22T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-15T22:00:00Z"), minT: timeToMillis(t, "2021-10-15T22:00:00Z"), maxT: timeToMillis(t, "2021-10-15T22:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T04:00:00Z"), end: timeToMillis(t, "2021-10-17T04:00:00Z"), minT: timeToMillis(t, "2021-10-17T04:00:00Z"), maxT: timeToMillis(t, "2021-10-17T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-18T10:00:00Z"), end: timeToMillis(t, "2021-10-18T10:00:00Z"), minT: timeToMillis(t, "2021-10-18T10:00:00Z"), maxT: timeToMillis(t, "2021-10-18T10:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-19T16:00:00Z"), end: timeToMillis(t, "2021-10-19T16:00:00Z"), minT: timeToMillis(t, "2021-10-19T16:00:00Z"), maxT: timeToMillis(t, "2021-10-19T16:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-20T22:00:00Z"), end: timeToMillis(t, "2021-10-20T22:00:00Z"), minT: timeToMillis(t, "2021-10-20T22:00:00Z"), maxT: timeToMillis(t, "2021-10-20T22:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-22T04:00:00Z"), end: timeToMillis(t, "2021-10-22T04:00:00Z"), minT: timeToMillis(t, "2021-10-22T04:00:00Z"), maxT: timeToMillis(t, "2021-10-22T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T22:00:00Z"), end: timeToMillis(t, "2021-10-15T22:00:00Z"), minT: timeToMillis(t, "2021-10-15T22:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T22:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T04:00:00Z"), end: timeToMillis(t, "2021-10-17T04:00:00Z"), minT: timeToMillis(t, "2021-10-17T04:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-18T10:00:00Z"), end: timeToMillis(t, "2021-10-18T10:00:00Z"), minT: timeToMillis(t, "2021-10-18T10:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-18T10:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-19T16:00:00Z"), end: timeToMillis(t, "2021-10-19T16:00:00Z"), minT: timeToMillis(t, "2021-10-19T16:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-19T16:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-20T22:00:00Z"), end: timeToMillis(t, "2021-10-20T22:00:00Z"), minT: timeToMillis(t, "2021-10-20T22:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-20T22:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-22T04:00:00Z"), end: timeToMillis(t, "2021-10-22T04:00:00Z"), minT: timeToMillis(t, "2021-10-22T04:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-22T04:00:00Z"), step: 30 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T14:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T14:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T18:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z"), maxT: timeToMillis(t, "2021-10-15T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T06:00:00Z"), end: timeToMillis(t, "2021-10-16T18:00:00Z"), minT: timeToMillis(t, "2021-10-16T06:00:00Z"), maxT: timeToMillis(t, "2021-10-16T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T06:00:00Z"), end: timeToMillis(t, "2021-10-17T14:00:00Z"), minT: timeToMillis(t, "2021-10-17T06:00:00Z"), maxT: timeToMillis(t, "2021-10-17T14:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T18:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T06:00:00Z"), end: timeToMillis(t, "2021-10-16T18:00:00Z"), minT: timeToMillis(t, "2021-10-16T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-16T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T06:00:00Z"), end: timeToMillis(t, "2021-10-17T14:00:00Z"), minT: timeToMillis(t, "2021-10-17T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T14:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T18:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z"), maxT: timeToMillis(t, "2021-10-15T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T06:00:00Z"), end: timeToMillis(t, "2021-10-16T18:00:00Z"), minT: timeToMillis(t, "2021-10-16T06:00:00Z"), maxT: timeToMillis(t, "2021-10-16T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), minT: timeToMillis(t, "2021-10-17T06:00:00Z"), maxT: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T18:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T06:00:00Z"), end: timeToMillis(t, "2021-10-16T18:00:00Z"), minT: timeToMillis(t, "2021-10-16T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-16T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), minT: timeToMillis(t, "2021-10-17T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 12 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T16:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z"), maxT: timeToMillis(t, "2021-10-15T16:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T02:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), minT: timeToMillis(t, "2021-10-16T02:00:00Z"), maxT: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T08:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), minT: timeToMillis(t, "2021-10-17T08:00:00Z"), maxT: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T16:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T16:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T02:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), minT: timeToMillis(t, "2021-10-16T02:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T08:00:00Z"), end: timeToMillis(t, "2021-10-17T18:00:00Z"), minT: timeToMillis(t, "2021-10-17T08:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T18:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T08:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+			input: &PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-17T08:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			expected: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T16:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z"), maxT: timeToMillis(t, "2021-10-15T16:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T02:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), minT: timeToMillis(t, "2021-10-16T02:00:00Z"), maxT: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
-				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T08:00:00Z"), end: timeToMillis(t, "2021-10-17T08:00:00Z"), minT: timeToMillis(t, "2021-10-17T08:00:00Z"), maxT: timeToMillis(t, "2021-10-17T08:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-15T06:00:00Z"), end: timeToMillis(t, "2021-10-15T16:00:00Z"), minT: timeToMillis(t, "2021-10-15T06:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-15T16:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-16T02:00:00Z"), end: timeToMillis(t, "2021-10-16T22:00:00Z"), minT: timeToMillis(t, "2021-10-16T02:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-16T22:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
+				&PrometheusRangeQueryRequest{start: timeToMillis(t, "2021-10-17T08:00:00Z"), end: timeToMillis(t, "2021-10-17T08:00:00Z"), minT: timeToMillis(t, "2021-10-17T08:00:00Z") - lookbackDelta.Milliseconds() + 1, maxT: timeToMillis(t, "2021-10-17T08:00:00Z"), step: 10 * time.Hour.Milliseconds(), queryExpr: queryFooExpr, lookbackDelta: lookbackDelta},
 			},
 			interval: day,
 		},
 	} {
-		t.Run(fmt.Sprintf("%d: start: %v, end: %v, step: %v", i, tc.input.GetStart(), tc.input.GetEnd(), tc.input.GetStep()), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d: start: %v, end: %v, step: %v: %v", i, tc.input.GetStart(), tc.input.GetEnd(), tc.input.GetStep(), tc.input.GetQuery()), func(t *testing.T) {
 			days, err := splitQueryByInterval(tc.input, tc.interval)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, days)

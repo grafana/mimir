@@ -91,8 +91,8 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	// Apply offset after adjusting for timestamp from @ modifier.
 	rangeEnd = rangeEnd - s.SubqueryOffset
 	rangeStart := rangeEnd - s.rangeMilliseconds
-	s.floats.DiscardPointsBefore(rangeStart)
-	s.histograms.DiscardPointsBefore(rangeStart)
+	s.floats.DiscardPointsAtOrBefore(rangeStart)
+	s.histograms.DiscardPointsAtOrBefore(rangeStart)
 
 	s.stepData.Floats = s.floats.ViewUntilSearchingForwards(rangeEnd, s.stepData.Floats)
 	s.stepData.Histograms = s.histograms.ViewUntilSearchingForwards(rangeEnd, s.stepData.Histograms)
