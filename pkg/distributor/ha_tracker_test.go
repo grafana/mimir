@@ -101,6 +101,120 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTra
 	})
 }
 
+func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
+	change, err := r1.Merge(r2, false)
+	if err != nil {
+		panic(err)
+	}
+
+	if change == nil {
+		return r1, nil
+	}
+
+	changeRDesc := change.(*ReplicaDesc)
+	return r1, changeRDesc
+}
+
+func TestReplicaDescMerge(t *testing.T) {
+	now := time.Now().Unix()
+
+	const (
+		replica1 = "r1"
+		replica2 = "r2"
+		replica3 = "r3"
+	)
+
+	firstReplica := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica1,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now,
+			ElectedChanges: 1,
+		}
+	}
+
+	firstReplicaWithHigherReceivedAt := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica1,
+			ReceivedAt:     now + 5,
+			DeletedAt:      0,
+			ElectedAt:      now,
+			ElectedChanges: 1,
+		}
+	}
+
+	secondReplica := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica2,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 5,
+			ElectedChanges: 2,
+		}
+	}
+
+	thirdReplica := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica3,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 10,
+			ElectedChanges: 3,
+		}
+	}
+
+	expectedFirstAndFirstHigherReceivedAtMerge := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica1,
+			ReceivedAt:     now + 5,
+			DeletedAt:      0,
+			ElectedAt:      now,
+			ElectedChanges: 1,
+		}
+	}
+
+	expectedFirstSecondThirdAtMerge := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica3,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 10,
+			ElectedChanges: 3,
+		}
+	}
+
+	{
+		ours, ch := merge(firstReplica(), firstReplicaWithHigherReceivedAt())
+		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), ours)
+		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), ch)
+	}
+
+	{ // idempotency: (no change after applying same Replica again)
+		ours, ch := merge(expectedFirstAndFirstHigherReceivedAtMerge(), firstReplica())
+		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), ours)
+		assert.Equal(t, (*ReplicaDesc)(nil), ch)
+	}
+
+	{ // commutativity: Merge(firstReplicaWithHigherReceivedAt, first) == Merge(first, firstReplicaWithHigherReceivedAt)
+		our, ch := merge(firstReplicaWithHigherReceivedAt(), firstReplica())
+		assert.Equal(t, expectedFirstAndFirstHigherReceivedAtMerge(), our)
+		// change is nil in this case, since the incoming ReplicaDesc has lower receivedAt timestamp
+		assert.Equal(t, (*ReplicaDesc)(nil), ch)
+	}
+
+	{ // associativity: Merge(Merge(first, second), third) == Merge(first, Merge(second, third))
+		ours1, _ := merge(firstReplica(), secondReplica())
+		ours1, _ = merge(ours1, thirdReplica())
+		assert.Equal(t, expectedFirstSecondThirdAtMerge(), ours1)
+
+		ours2, _ := merge(secondReplica(), thirdReplica())
+		ours2, _ = merge(ours2, firstReplica())
+		assert.Equal(t, expectedFirstSecondThirdAtMerge(), ours2)
+	}
+
+}
+
 func TestHaTrackerWithMemberList(t *testing.T) {
 	var config memberlist.KVConfig
 

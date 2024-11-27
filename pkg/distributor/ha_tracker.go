@@ -61,11 +61,11 @@ func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
 }
 
-func (r *ReplicaDesc) Merge(other memberlist.Mergeable, localCAS bool) (change memberlist.Mergeable, error error) {
-	return r.mergeWithTime(other, localCAS)
+func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
+	return r.mergeWithTime(other)
 }
 
-func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable, _ bool) (memberlist.Mergeable, error) {
+func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.Mergeable, error) {
 	if mergeable == nil {
 		return nil, nil
 	}
@@ -81,18 +81,30 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable, _ bool) (mem
 
 	thisRDesc := r
 	otherRDesc := other
+
 	// Track changes
 	changed := false
 
-	// Keeping the one with the most recent Received At.
-	// Even if the Replica is different
-	if otherRDesc.ReceivedAt > thisRDesc.ReceivedAt {
-		*r = *other
-		changed = true
-	} else if thisRDesc.ReceivedAt == otherRDesc.ReceivedAt && thisRDesc.DeletedAt == 0 && otherRDesc.DeletedAt != 0 {
-		if thisRDesc.Replica == otherRDesc.Replica {
+	if otherRDesc.Replica == thisRDesc.Replica {
+		// Keeping the one with the most recent receivedAt timestamp
+		if otherRDesc.ReceivedAt > thisRDesc.ReceivedAt {
 			*r = *other
 			changed = true
+		} else if thisRDesc.ReceivedAt == otherRDesc.ReceivedAt && thisRDesc.DeletedAt == 0 && otherRDesc.DeletedAt != 0 {
+			*r = *other
+			changed = true
+		}
+	} else {
+		// keep the most recent Elected to reach consistency
+		if otherRDesc.ElectedAt > thisRDesc.ElectedAt {
+			*r = *other
+			changed = true
+		} else if otherRDesc.ElectedAt == thisRDesc.ElectedAt {
+			// if the timestamps are equal we compare receivedAt
+			if otherRDesc.ReceivedAt > thisRDesc.ReceivedAt {
+				*r = *other
+				changed = true
+			}
 		}
 	}
 
@@ -106,9 +118,7 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable, _ bool) (mem
 	return out, nil
 }
 
-// MergeContent with the current approach will return always 1, with the current value
-// Questions to be answered:
-// 1. What if r.ReplicaDesc is empty string: answer its gonna return an empty list of strings
+// MergeContent noOp currently
 func (r *ReplicaDesc) MergeContent() []string {
 	result := []string(nil)
 	if len(r.Replica) != 0 {
@@ -118,8 +128,6 @@ func (r *ReplicaDesc) MergeContent() []string {
 }
 
 // RemoveTombstones noOp for now
-// Questions
-// 1. How should we handle deletion for one entry (ReplicaDesc)?
 func (r *ReplicaDesc) RemoveTombstones(limit time.Time) (total, removed int) {
 	if r.DeletedAt > 0 {
 		if limit.IsZero() || time.Unix(r.DeletedAt, 0).Before(limit) {
