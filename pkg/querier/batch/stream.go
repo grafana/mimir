@@ -157,7 +157,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			}
 			if prevIteratorID != itID && prevIteratorID != -1 {
 				// We switched non overlapping iterators, so if the next sample coming
-				// from a different place or time and we should reset the hint.
+				// from a different place or time we should reset the hint.
 				h := (*histogram.Histogram)(b.PointerValues[b.Index])
 				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
 					h.CounterResetHint = histogram.UnknownCounterReset
@@ -171,7 +171,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 			}
 			if prevIteratorID != itID && prevIteratorID != -1 {
 				// We switched non overlapping iterators, so if the next sample coming
-				// from a different place or time and we should reset the hint.
+				// from a different place or time we should reset the hint.
 				h := (*histogram.FloatHistogram)(b.PointerValues[b.Index])
 				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
 					h.CounterResetHint = histogram.UnknownCounterReset
