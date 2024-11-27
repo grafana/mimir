@@ -357,7 +357,6 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 
 		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
 			thisPointBuckets = g.pointBuckets[pointIdx][:g.pointBucketsIndex[pointIdx]]
-			defer bucketSliceBucketedPool.Put(thisPointBuckets, h.memoryConsumptionTracker)
 		}
 
 		ph := h.phValues.Samples[pointIdx].F
@@ -430,6 +429,11 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 	// Return any retained native histogram to the pool
 	if g.nativeHistograms != nil {
 		types.HPointSlicePool.Put(g.nativeHistograms, h.memoryConsumptionTracker)
+	}
+
+	// We are done with all the point buckets, so return all those to the pool too
+	for _, b := range g.pointBuckets {
+		bucketSliceBucketedPool.Put(b, h.memoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
