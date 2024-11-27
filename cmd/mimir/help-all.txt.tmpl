@@ -911,6 +911,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -blocks-storage.swift.username string
     	OpenStack Swift username.
+  -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
+    	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
