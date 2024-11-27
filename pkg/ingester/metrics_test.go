@@ -176,7 +176,7 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
 
-			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
+			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
 			# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
 			# observations        buckets
 			#                     600
@@ -400,7 +400,7 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
 
-			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
+			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
 			# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
 			# observations        buckets
 			#                     600
@@ -606,7 +606,7 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 
 	tsdbOOOHistogram := promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_sample_ooo_delta",
-		Help:    "Delta in seconds by which a histSample is considered out-of-order.",
+		Help:    "Delta in seconds by which a sample is considered out-of-order.",
 		Buckets: []float64{60 * 10, 60 * 60 * 24}, // for testing: 3 buckets: 10 min, 24 hour, and inf
 	})
 	tsdbOOOHistogram.Observe(7 * base)
