@@ -74,7 +74,7 @@
 * [ENHANCEMENT] Ingester: `-ingest-storage.kafka.max-buffered-bytes` to limit the memory for buffered records when using concurrent fetching. #9892
 * [ENHANCEMENT] Querier: improve performance and memory consumption of queries that select many series. #9914
 * [ENHANCEMENT] Ruler: Support OAuth2 and proxies in Alertmanager client #9945
-* [ENHANCEMENT] Ingester: Build 24h blocks for older OOO. #9844
+* [ENHANCEMENT] Ingester: Build 24h blocks for older OOO. #9844, #10033
 * [BUGFIX] Fix issue where functions such as `rate()` over native histograms could return incorrect values if a float stale marker was present in the selected range. #9508
 * [BUGFIX] Fix issue where negation of native histograms (eg. `-some_native_histogram_series`) did nothing. #9508
 * [BUGFIX] Fix issue where `metric might not be a counter, name does not end in _total/_sum/_count/_bucket` annotation would be emitted even if `rate` or `increase` did not have enough samples to compute a result. #9508
@@ -83,6 +83,7 @@
 * [BUGFIX] Fix issue where active series requests error when encountering a stale posting. #9580
 * [BUGFIX] Fix pooling buffer reuse logic when `-distributor.max-request-pool-buffer-size` is set. #9666
 * [BUGFIX] Fix issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where the ruler could panic as it updates a running ruleset or shutdowns. #9726
+* [BUGFIX] Always return unknown hint for first sample in non-gauge histogram chunk to avoid incorrect counter reset hints when merging chunks from different sources. #10033
 * [BUGFIX] Ingester: Fix race condition in per-tenant TSDB creation. #9708
 * [BUGFIX] Ingester: Fix race condition in exemplar adding. #9765
 * [BUGFIX] Ingester: Fix race condition in native histogram appending. #9765
