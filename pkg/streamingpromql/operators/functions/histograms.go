@@ -56,6 +56,7 @@ type groupWithLabels struct {
 
 type bucketGroup struct {
 	pointBuckets         []buckets       // Buckets for the grouped series at each step
+	pointBucketsIndex    []uint          // The number of buckets entered into pointBuckets at the same step
 	nativeHistograms     []promql.HPoint // Histograms should only ever exist once per group
 	remainingSeriesCount uint            // The number of series remaining before this group is fully collated.
 
@@ -225,6 +226,8 @@ func (h *HistogramFunctionOverInstantVector) NextSeries(ctx context.Context) (ty
 		thisGroup.lastInputSeriesIdx = 0
 		pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
 		thisGroup.pointBuckets = nil
+		types.UintSlicePool.Put(thisGroup.pointBucketsIndex, h.memoryConsumptionTracker)
+		thisGroup.pointBucketsIndex = nil
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
 		bucketGroupPool.Put(thisGroup)
@@ -296,26 +299,29 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 			return err
 		}
 		g.pointBuckets = g.pointBuckets[:h.timeRange.StepCount]
+
+		g.pointBucketsIndex, err = types.UintSlicePool.Get(h.timeRange.StepCount, h.memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		g.pointBucketsIndex = g.pointBucketsIndex[:h.timeRange.StepCount]
 	}
 	for _, f := range fPoints {
 		pointIdx := h.timeRange.PointIndex(f.T)
 
 		if g.pointBuckets[pointIdx] == nil {
 			// Remaining series count + 1 since we decrement the series count early to simplify each return point.
-			g.pointBuckets[pointIdx], err = bucketSliceBucketedPool.Get(int(g.remainingSeriesCount)+1, h.memoryConsumptionTracker)
+			maxBuckets := int(g.remainingSeriesCount) + 1
+			g.pointBuckets[pointIdx], err = bucketSliceBucketedPool.Get(maxBuckets, h.memoryConsumptionTracker)
 			if err != nil {
 				return err
 			}
-			g.pointBuckets = g.pointBuckets[:]
+			g.pointBuckets[pointIdx] = g.pointBuckets[pointIdx][:maxBuckets]
 		}
 
-		g.pointBuckets[pointIdx] = append(
-			g.pointBuckets[pointIdx],
-			bucket{
-				upperBound: upperBound,
-				count:      f.F,
-			},
-		)
+		g.pointBuckets[pointIdx][g.pointBucketsIndex[pointIdx]].upperBound = upperBound
+		g.pointBuckets[pointIdx][g.pointBucketsIndex[pointIdx]].count = f.F
+		g.pointBucketsIndex[pointIdx]++
 	}
 
 	return nil
@@ -350,7 +356,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 		var thisPointBuckets buckets
 
 		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
-			thisPointBuckets = g.pointBuckets[pointIdx]
+			thisPointBuckets = g.pointBuckets[pointIdx][:g.pointBucketsIndex[pointIdx]]
 			defer bucketSliceBucketedPool.Put(thisPointBuckets, h.memoryConsumptionTracker)
 		}
 
