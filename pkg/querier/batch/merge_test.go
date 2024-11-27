@@ -220,8 +220,8 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 4, v: 2, hint: histogram.NotCounterReset},     // c1
 						{t: 5, v: 8, hint: histogram.UnknownCounterReset}, // c2
 						// Next sample is from c2. This is consecutive, but this ends up as the first sample in a merged
-						// batch, and the c1 sample at ts 7 and 8 is added to the batch stream this c2 sample, so the
-						// prevIteratorID is set to c1 rather than c2 when we append this sample.
+						// batch, and the c1 sample at ts 7 and 8 is added to the batch stream before this c2 sample, so
+						// the prevIteratorID is set to c1 rather than c2 when we append this sample.
 						{t: 6, v: 9, hint: histogram.UnknownCounterReset},
 						{t: 7, v: 4, hint: histogram.UnknownCounterReset},  // c1
 						{t: 8, v: 5, hint: histogram.NotCounterReset},      // c1
