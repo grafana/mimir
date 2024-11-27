@@ -95,6 +95,17 @@ func mangleBuckets(b buckets) buckets {
 	return b
 }
 
+const maxExpectedBucketsPerHistogram = 64 // There isn't much science to this
+
+var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(1, maxExpectedBucketsPerHistogram, 2, func(size int) []bucket {
+		return make([]bucket, 0, size)
+	}),
+	uint64(unsafe.Sizeof(bucket{})),
+	true,
+	nil,
+)
+
 func NewHistogramFunctionOverInstantVector(
 	phArg types.ScalarOperator,
 	inner types.InstantVectorOperator,
@@ -288,6 +299,16 @@ func (h *HistogramFunctionOverInstantVector) saveFloatsToGroup(fPoints []promql.
 	}
 	for _, f := range fPoints {
 		pointIdx := h.timeRange.PointIndex(f.T)
+
+		if g.pointBuckets[pointIdx] == nil {
+			// Remaining series count + 1 since we decrement the series count early to simplify each return point.
+			g.pointBuckets[pointIdx], err = bucketSliceBucketedPool.Get(int(g.remainingSeriesCount)+1, h.memoryConsumptionTracker)
+			if err != nil {
+				return err
+			}
+			g.pointBuckets = g.pointBuckets[:]
+		}
+
 		g.pointBuckets[pointIdx] = append(
 			g.pointBuckets[pointIdx],
 			bucket{
@@ -330,6 +351,7 @@ func (h *HistogramFunctionOverInstantVector) computeOutputSeriesForGroup(g *buck
 
 		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
 			thisPointBuckets = g.pointBuckets[pointIdx]
+			defer bucketSliceBucketedPool.Put(thisPointBuckets, h.memoryConsumptionTracker)
 		}
 
 		ph := h.phValues.Samples[pointIdx].F
