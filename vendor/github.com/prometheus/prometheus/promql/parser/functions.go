@@ -208,12 +208,6 @@ var Functions = map[string]*Function{
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
-	// Keep an alias for Mimir users using holt_winters.
-	"holt_winters": {
-		Name:       "holt_winters",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-	},
 	"hour": {
 		Name:       "hour",
 		ArgTypes:   []ValueType{ValueTypeVector},
