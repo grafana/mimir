@@ -2648,7 +2648,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
-	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
+	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
 		RetentionDuration:                     i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
 		MinBlockDuration:                      blockRanges[0],
 		MaxBlockDuration:                      blockRanges[len(blockRanges)-1],

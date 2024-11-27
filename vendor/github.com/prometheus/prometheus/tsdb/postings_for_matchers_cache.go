@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -42,6 +43,10 @@ type IndexPostingsReader interface {
 	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
+
+	// PostingsForAllLabelValues returns a sorted iterator over all postings having a label with the given name.
+	// If no postings are found with the label in question, an empty iterator is returned.
+	PostingsForAllLabelValues(ctx context.Context, name string) index.Postings
 }
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
@@ -49,8 +54,9 @@ type IndexPostingsReader interface {
 // If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
 func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool) *PostingsForMatchersCache {
 	b := &PostingsForMatchersCache{
-		calls:  &sync.Map{},
-		cached: list.New(),
+		calls:            &sync.Map{},
+		cached:           list.New(),
+		expireInProgress: atomic.NewBool(false),
 
 		ttl:      ttl,
 		maxItems: maxItems,
@@ -80,6 +86,10 @@ type PostingsForMatchersCache struct {
 	maxItems int
 	maxBytes int64
 	force    bool
+
+	// Signal whether there's already a call to expire() in progress, in order to avoid multiple goroutines
+	// cleaning up expired entries at the same time (1 at a time is enough).
+	expireInProgress *atomic.Bool
 
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
@@ -248,6 +258,14 @@ func (c *PostingsForMatchersCache) expire() {
 		return
 	}
 
+	// Ensure there's no other cleanup in progress. It's not a technical issue if there are two ongoing cleanups,
+	// but it's a waste of resources and it adds extra pressure to the mutex. One cleanup at a time is enough.
+	if !c.expireInProgress.CompareAndSwap(false, true) {
+		return
+	}
+
+	defer c.expireInProgress.Store(false)
+
 	c.cachedMtx.RLock()
 	if !c.shouldEvictHead() {
 		c.cachedMtx.RUnlock()
@@ -314,19 +332,26 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 		return
 	}
 
-	c.cachedMtx.Lock()
-	defer c.cachedMtx.Unlock()
+	// Cache the promise.
+	var lastCachedBytes int64
+	{
+		c.cachedMtx.Lock()
 
-	c.cached.PushBack(&postingsForMatchersCachedCall{
-		key:       key,
-		ts:        ts,
-		sizeBytes: sizeBytes,
-	})
-	c.cachedBytes += sizeBytes
+		c.cached.PushBack(&postingsForMatchersCachedCall{
+			key:       key,
+			ts:        ts,
+			sizeBytes: sizeBytes,
+		})
+		c.cachedBytes += sizeBytes
+		lastCachedBytes = c.cachedBytes
+
+		c.cachedMtx.Unlock()
+	}
+
 	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
 		attribute.Stringer("timestamp", ts),
 		attribute.Int64("size in bytes", sizeBytes),
-		attribute.Int64("cached bytes", c.cachedBytes),
+		attribute.Int64("cached bytes", lastCachedBytes),
 	))
 }
 

@@ -20,10 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/go-kit/log"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
@@ -34,20 +35,21 @@ import (
 )
 
 type Settings struct {
-	Namespace                           string
-	ExternalLabels                      map[string]string
-	DisableTargetInfo                   bool
-	ExportCreatedMetric                 bool
-	AddMetricSuffixes                   bool
-	SendMetadata                        bool
-	PromoteResourceAttributes           []string
-	EnableCreatedTimestampZeroIngestion bool
+	ExternalLabels                             map[string]string
+	Namespace                                  string
+	PromoteResourceAttributes                  []string
+	DisableTargetInfo                          bool
+	ExportCreatedMetric                        bool
+	AddMetricSuffixes                          bool
+	SendMetadata                               bool
+	EnableCreatedTimestampZeroIngestion        bool
+	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
 
 type StartTsAndTs struct {
+	Labels  []prompb.Label
 	StartTs int64
 	Ts      int64
-	Labels  []prompb.Label
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -65,7 +67,7 @@ func NewPrometheusConverter() *PrometheusConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger log.Logger) (annots annotations.Annotations, errs error) {
+func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {

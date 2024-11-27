@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -41,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -492,11 +494,11 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// setup
 			cfg := defaultRulerConfig(t)
 			options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
-			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
+			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, promslog.NewNopLogger())
 			eng := promql.NewEngine(promql.EngineOpts{
 				MaxSamples:         1e6,
 				ActiveQueryTracker: tracker,
@@ -560,10 +562,10 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 
 			var (
 				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
 				ruleFiles       = writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
 				queryable       = newMockQueryable()
-				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
 				eng             = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -648,8 +650,8 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 			var (
 				cfg             = defaultRulerConfig(t)
 				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
-				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
 				eng             = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -727,8 +729,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	var (
 		options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
-		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
 		eng             = promql.NewEngine(promql.EngineOpts{
 			MaxSamples:         1e6,
 			ActiveQueryTracker: tracker,

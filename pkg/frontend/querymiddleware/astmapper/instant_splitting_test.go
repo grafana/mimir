@@ -466,6 +466,7 @@ func TestInstantSplitterSkippedQueryReason(t *testing.T) {
 			query:         `deriv({app="foo"}[3m])`,
 			skippedReason: SkippedReasonNonSplittable,
 		},
+		// holt_winters is a backwards compatible, non-experimental, alias for double_exponential_smoothing.
 		{
 			query:         `holt_winters({app="foo"}[3m], 1, 10)`,
 			skippedReason: SkippedReasonNonSplittable,

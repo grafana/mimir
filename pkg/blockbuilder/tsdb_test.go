@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -267,7 +268,7 @@ func TestTSDBBuilder(t *testing.T) {
 			require.NoError(t, err)
 			require.Nil(t, builder.tsdbs[tenant])
 
-			newDB, err := tsdb.Open(shipperDir, log.NewNopLogger(), nil, nil, nil)
+			newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
 			require.NoError(t, err)
 
 			// One for the in-order current range. Two for the out-of-order blocks: one for the current range

@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
@@ -82,7 +83,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		newTestPrometheusCodec(),
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
@@ -135,7 +136,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		codec,
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
@@ -505,7 +506,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
+					Logger:     promslog.NewNopLogger(),
 					Reg:        nil,
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
@@ -767,7 +768,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
+					Logger:     promslog.NewNopLogger(),
 					Reg:        nil,
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
@@ -902,7 +903,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		NewPrometheusCodec(nil, 0, formatJSON),
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,

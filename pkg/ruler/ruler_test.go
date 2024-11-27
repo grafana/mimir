@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -139,7 +138,7 @@ type prepareOptions struct {
 }
 
 func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
-	defaultLogger := testutil.NewLogger(t)
+	defaultLogger := log.Logger(utiltest.NewTestingLogger(t))
 	defaultLogger = log.With(defaultLogger, "instance", instanceID)
 	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
 

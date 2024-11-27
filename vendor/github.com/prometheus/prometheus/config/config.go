@@ -16,6 +16,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"mime"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,8 +27,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -73,7 +73,7 @@ const (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -85,10 +85,6 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return nil, err
 	}
 
-	if !expandExternalLabels {
-		return cfg, nil
-	}
-
 	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
@@ -98,26 +94,28 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 			if v := os.Getenv(s); v != "" {
 				return v
 			}
-			level.Warn(logger).Log("msg", "Empty environment variable", "name", s)
+			logger.Warn("Empty environment variable", "name", s)
 			return ""
 		})
 		if newV != v.Value {
-			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
+			logger.Debug("External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
 		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
-	cfg.GlobalConfig.ExternalLabels = b.Labels()
+	if !b.Labels().IsEmpty() {
+		cfg.GlobalConfig.ExternalLabels = b.Labels()
+	}
 	return cfg, nil
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), expandExternalLabels, logger)
+	cfg, err := Load(string(content), logger)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
@@ -166,13 +164,13 @@ var (
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
-		ScrapeClassicHistograms: false,
-		MetricsPath:             "/metrics",
-		Scheme:                  "http",
-		HonorLabels:             false,
-		HonorTimestamps:         true,
-		HTTPClientConfig:        config.DefaultHTTPClientConfig,
-		EnableCompression:       true,
+		AlwaysScrapeClassicHistograms: false,
+		MetricsPath:                   "/metrics",
+		Scheme:                        "http",
+		HonorLabels:                   false,
+		HonorTimestamps:               true,
+		HTTPClientConfig:              config.DefaultHTTPClientConfig,
+		EnableCompression:             true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -183,13 +181,18 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
+	DefaultRemoteWriteHTTPClientConfig = config.HTTPClientConfig{
+		FollowRedirects: true,
+		EnableHTTP2:     false,
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
 		ProtobufMessage:  RemoteWriteProtoMsgV1,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		HTTPClientConfig: DefaultRemoteWriteHTTPClientConfig,
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.
@@ -429,6 +432,8 @@ type GlobalConfig struct {
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
+	// File to which scrape failures are logged.
+	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 	// An uncompressed response body larger than this many bytes will cause the
@@ -474,9 +479,22 @@ func (s ScrapeProtocol) Validate() error {
 	return nil
 }
 
+// HeaderMediaType returns the MIME mediaType for a particular ScrapeProtocol.
+func (s ScrapeProtocol) HeaderMediaType() string {
+	if _, ok := ScrapeProtocolsHeaders[s]; !ok {
+		return ""
+	}
+	mediaType, _, err := mime.ParseMediaType(ScrapeProtocolsHeaders[s])
+	if err != nil {
+		return ""
+	}
+	return mediaType
+}
+
 var (
 	PrometheusProto      ScrapeProtocol = "PrometheusProto"
 	PrometheusText0_0_4  ScrapeProtocol = "PrometheusText0.0.4"
+	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
 	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
@@ -484,6 +502,7 @@ var (
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
 		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
 		PrometheusText0_0_4:  "text/plain;version=0.0.4",
+		PrometheusText1_0_0:  "text/plain;version=1.0.0;escaping=allow-utf-8",
 		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
 	}
@@ -493,6 +512,7 @@ var (
 	DefaultScrapeProtocols = []ScrapeProtocol{
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
+		PrometheusText1_0_0,
 		PrometheusText0_0_4,
 	}
 
@@ -504,6 +524,7 @@ var (
 		PrometheusProto,
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
+		PrometheusText1_0_0,
 		PrometheusText0_0_4,
 	}
 )
@@ -529,6 +550,7 @@ func validateAcceptScrapeProtocols(sps []ScrapeProtocol) error {
 // SetDirectory joins any relative file paths with dir.
 func (c *GlobalConfig) SetDirectory(dir string) {
 	c.QueryLogFile = config.JoinDir(dir, c.QueryLogFile)
+	c.ScrapeFailureLogFile = config.JoinDir(dir, c.ScrapeFailureLogFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -591,6 +613,7 @@ func (c *GlobalConfig) isZero() bool {
 		c.EvaluationInterval == 0 &&
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
+		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil
 }
 
@@ -628,10 +651,19 @@ type ScrapeConfig struct {
 	// The protocols to negotiate during a scrape. It tells clients what
 	// protocol are accepted by Prometheus and with what preference (most wanted is first).
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-	// OpenMetricsText1.0.0, PrometheusText0.0.4.
+	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
-	// Whether to scrape a classic histogram that is also exposed as a native histogram.
-	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
+	// The fallback protocol to use if the Content-Type provided by the target
+	// is not provided, blank, or not one of the expected values.
+	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
+	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
+	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
+	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
+	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
+	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	// File to which scrape failures are logged.
+	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
@@ -684,6 +716,7 @@ type ScrapeConfig struct {
 func (c *ScrapeConfig) SetDirectory(dir string) {
 	c.ServiceDiscoveryConfigs.SetDirectory(dir)
 	c.HTTPClientConfig.SetDirectory(dir)
+	c.ScrapeFailureLogFile = config.JoinDir(dir, c.ScrapeFailureLogFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -765,6 +798,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.KeepDroppedTargets == 0 {
 		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
 	}
+	if c.ScrapeFailureLogFile == "" {
+		c.ScrapeFailureLogFile = globalConfig.ScrapeFailureLogFile
+	}
 
 	if c.ScrapeProtocols == nil {
 		c.ScrapeProtocols = globalConfig.ScrapeProtocols
@@ -773,11 +809,17 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
 	}
 
+	if c.ScrapeFallbackProtocol != "" {
+		if err := c.ScrapeFallbackProtocol.Validate(); err != nil {
+			return fmt.Errorf("invalid fallback_scrape_protocol for scrape config with job name %q: %w", c.JobName, err)
+		}
+	}
+
 	switch globalConfig.MetricNameValidationScheme {
-	case "", LegacyValidationConfig:
-	case UTF8ValidationConfig:
+	case LegacyValidationConfig:
+	case "", UTF8ValidationConfig:
 		if model.NameValidationScheme != model.UTF8Validation {
-			return fmt.Errorf("utf8 name validation requested but feature not enabled via --enable-feature=utf8-names")
+			panic("utf8 name validation requested but model.NameValidationScheme is not set to UTF8")
 		}
 	default:
 		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
@@ -948,6 +990,7 @@ func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
 
 // AlertmanagerAPIVersion represents a version of the
 // github.com/prometheus/alertmanager/api, e.g. 'v1' or 'v2'.
+// 'v1' is no longer supported.
 type AlertmanagerAPIVersion string
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -977,7 +1020,7 @@ const (
 )
 
 var SupportedAlertmanagerAPIVersions = []AlertmanagerAPIVersion{
-	AlertmanagerAPIVersionV1, AlertmanagerAPIVersionV2,
+	AlertmanagerAPIVersionV2,
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.

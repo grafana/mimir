@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
@@ -651,7 +652,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	// then it will be snapshotted to the storage directory.
 	tmpDir := t.TempDir()
 
-	db, err := tsdb.Open(tmpDir, log.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	db, err := tsdb.Open(tmpDir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())

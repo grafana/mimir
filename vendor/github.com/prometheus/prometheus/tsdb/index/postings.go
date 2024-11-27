@@ -368,13 +368,22 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
+func appendWithExponentialGrowth[T any](a []T, v T) []T {
+	if cap(a) < len(a)+1 {
+		newList := make([]T, len(a), len(a)*2+1)
+		copy(newList, a)
+		a = newList
+	}
+	return append(a, v)
+}
+
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
+	list := appendWithExponentialGrowth(nm[l.Value], id)
 	nm[l.Value] = list
 
 	if !p.ordered {
@@ -421,20 +430,38 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 
 	// Now `vals` only contains the values that matched, get their postings.
 	its := make([]Postings, 0, len(vals))
+	lps := make([]ListPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
-	for _, v := range vals {
+	for i, v := range vals {
 		if refs, ok := e[v]; ok {
 			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
 			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
 			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
 			// because the series were deleted already.
-			its = append(its, NewListPostings(refs))
+			lps[i] = ListPostings{list: refs}
+			its = append(its, &lps[i])
 		}
 	}
 	// Let the mutex go before merging.
 	p.mtx.RUnlock()
 
+	return Merge(ctx, its...)
+}
+
+func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
+	p.mtx.RLock()
+
+	e := p.m[name]
+	its := make([]Postings, 0, len(e))
+	for _, refs := range e {
+		if len(refs) > 0 {
+			its = append(its, NewListPostings(refs))
+		}
+	}
+
+	// Let the mutex go before merging.
+	p.mtx.RUnlock()
 	return Merge(ctx, its...)
 }
 

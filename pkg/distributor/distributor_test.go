@@ -1252,6 +1252,11 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			skipLabelNameValidationReq: true,
 			errExpected:                false,
 		},
+		"UTF-8 characters are not accepted": {
+			inputLabels: labelAdapters(model.MetricNameLabel, "foo", "😊", "smile!"),
+			errExpected: true,
+			errMessage:  `received a series with an invalid label: '😊' series: 'foo{😊="smile!"}' (err-mimir-label-invalid)`,
+		},
 	}
 
 	for testName, tc := range tests {

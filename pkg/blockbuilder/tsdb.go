@@ -276,7 +276,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		userID: userID,
 	}
 
-	db, err := tsdb.Open(udir, userLogger, nil, &tsdb.Options{
+	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), nil, &tsdb.Options{
 		RetentionDuration:           0,
 		MinBlockDuration:            2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:            2 * time.Hour.Milliseconds(),

@@ -253,6 +253,10 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 				return nil, err
 			}
 			its = append(its, allPostings)
+		case m.Type == labels.MatchRegexp && m.Value == ".*":
+			// .* regexp matches any string: do nothing.
+		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
+			return index.EmptyPostings(), nil
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
@@ -358,29 +362,16 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *l
 		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	res := vals[:0]
-	// If the match before inversion was !="" or !~"", we just want all the values.
+	// If the matcher being inverted is =~"" or ="", we just want all the values.
 	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
-		res = vals
-	} else {
-		count := 1
-		for _, val := range vals {
-			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			count++
-			if !m.Matches(val) {
-				res = append(res, val)
-			}
-		}
+		it := ix.PostingsForAllLabelValues(ctx, m.Name)
+		return it, it.Err()
 	}
 
-	return ix.Postings(ctx, m.Name, res...)
+	it := ix.PostingsForLabelMatching(ctx, m.Name, func(s string) bool {
+		return !m.Matches(s)
+	})
+	return it, it.Err()
 }
 
 const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
@@ -1132,9 +1123,9 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		if newChunk != nil {
 			if !recoded {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
+				cmint = t
 			}
 			currentChunk = newChunk
-			cmint = t
 		}
 
 		cmaxt = t
