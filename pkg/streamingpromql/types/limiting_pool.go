@@ -91,24 +91,6 @@ var (
 		true,
 		mangleHistogram,
 	)
-
-	StringSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []string {
-			return make([]string, 0, size)
-		}),
-		StringSize,
-		true,
-		nil,
-	)
-
-	UintSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []uint {
-			return make([]uint, 0, size)
-		}),
-		UintSize,
-		true,
-		nil,
-	)
 )
 
 func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
