@@ -199,6 +199,11 @@ type Options struct {
 	// OOO Native Histogram ingestion is complete.
 	EnableOOONativeHistograms bool
 
+	// EnableBiggerOOOBlockForOldSamples enables building 24h blocks for the OOO samples
+	// that belong to the previous day. This is in-line with Mimir maintaining 24h blocks
+	// for the previous days.
+	EnableBiggerOOOBlockForOldSamples bool
+
 	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
@@ -1513,19 +1518,21 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		return nil
 	}
 
-	day := 24 * time.Hour.Milliseconds()
-	maxtFor24hBlock := day * (db.Head().MaxTime() / day)
-
-	// 24h blocks for data that is for the previous days
-	for t := day * (oooHeadMint / day); t < maxtFor24hBlock; t += day {
-		if err := runCompaction(t, t+day); err != nil {
-			return nil, err
-		}
-	}
-
 	oooStart := oooHeadMint
-	if oooStart < maxtFor24hBlock {
-		oooStart = maxtFor24hBlock
+	if db.opts.EnableBiggerOOOBlockForOldSamples {
+		day := 24 * time.Hour.Milliseconds()
+		maxtFor24hBlock := day * (db.Head().MaxTime() / day)
+
+		// 24h blocks for data that is for the previous days
+		for t := day * (oooHeadMint / day); t < maxtFor24hBlock; t += day {
+			if err := runCompaction(t, t+day); err != nil {
+				return nil, err
+			}
+		}
+
+		if oooStart < maxtFor24hBlock {
+			oooStart = maxtFor24hBlock
+		}
 	}
 	for t := blockSize * (oooStart / blockSize); t <= oooHeadMaxt; t += blockSize {
 		if err := runCompaction(t, t+blockSize); err != nil {
