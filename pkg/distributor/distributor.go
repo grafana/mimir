@@ -61,6 +61,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func init() {
+	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	model.NameValidationScheme = model.LegacyValidation
+}
+
 var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
