@@ -102,11 +102,11 @@ const (
 	instanceIngestionRateTickInterval = time.Second
 
 	// Reasons for discarding samples
-	reasonSampleOutOfOrder       = "sample-out-of-order"
-	reasonSampleTooOld           = "sample-too-old"
-	reasonSampleTooFarInFuture   = "sample-too-far-in-future"
+	reasonSampleOutOfOrder       = "histSample-out-of-order"
+	reasonSampleTooOld           = "histSample-too-old"
+	reasonSampleTooFarInFuture   = "histSample-too-far-in-future"
 	reasonNewValueForTimestamp   = "new-value-for-timestamp"
-	reasonSampleTimestampTooOld  = "sample-timestamp-too-old"
+	reasonSampleTimestampTooOld  = "histSample-timestamp-too-old"
 	reasonPerUserSeriesLimit     = "per_user_series_limit"
 	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
 	reasonInvalidNativeHistogram = "invalid-native-histogram"
@@ -239,7 +239,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.Uint64Var(&cfg.ReadPathMemoryUtilizationLimit, "ingester.read-path-memory-utilization-limit", 0, "Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
-	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 10, "Each error will be logged once in this many times. Use 0 to log all of them.")
+	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-histSample-rate", 10, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
@@ -251,7 +251,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 func (cfg *Config) Validate(log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
-		return fmt.Errorf("error sample rate cannot be a negative number")
+		return fmt.Errorf("error histSample rate cannot be a negative number")
 	}
 
 	return cfg.IngesterRing.Validate()
@@ -1444,13 +1444,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
-		// To find out if any sample was added to this series, we keep old value.
+		// To find out if any histSample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
 
 		for _, s := range ts.Samples {
 			var err error
 
-			// Ensure the sample is not too far in the future.
+			// Ensure the histSample is not too far in the future.
 			if s.TimestampMs > maxTimestampMs {
 				errProcessor.ProcessErr(globalerror.SampleTooFarInFuture, s.TimestampMs, ts.Labels)
 				continue

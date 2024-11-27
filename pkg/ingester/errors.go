@@ -75,7 +75,7 @@ func wrapOrAnnotateWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %s", userID, err)
 }
 
-// sampleError is an ingesterError indicating a problem with a sample.
+// sampleError is an ingesterError indicating a problem with a histSample.
 type sampleError struct {
 	errID     globalerror.ID
 	errMsg    string
@@ -85,7 +85,7 @@ type sampleError struct {
 
 func (e sampleError) Error() string {
 	return fmt.Sprintf(
-		"%s. The affected sample has timestamp %s and is from series %s",
+		"%s. The affected histSample has timestamp %s and is from series %s",
 		e.errID.Message(e.errMsg),
 		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
 		e.series,
@@ -114,23 +114,23 @@ func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, l
 }
 
 func newSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
+	return newSampleError(globalerror.SampleTimestampTooOld, "the histSample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
 func newSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) sampleError {
-	return newSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
+	return newSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the histSample has been rejected because another histSample with a more recent timestamp has already been ingested and this histSample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
 func newSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
+	return newSampleError(globalerror.SampleTooFarInFuture, "received a histSample whose timestamp is too far in the future", timestamp, labels)
 }
 
 func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
+	return newSampleError(globalerror.SampleOutOfOrder, "the histSample has been rejected because another histSample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
 func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+	return newSampleError(globalerror.SampleDuplicateTimestamp, "the histSample has been rejected because another histSample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
 }
 
 // exemplarError is an ingesterError indicating a problem with an exemplar.

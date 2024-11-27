@@ -1954,7 +1954,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total{user="test"} 1
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-out-of-order",user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
 				cortex_ingester_ingested_samples_failures_total{user="test"} 1
@@ -2367,7 +2367,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
-		"should soft fail on sample out-of-order": {
+		"should soft fail on histSample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -2409,7 +2409,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-out-of-order",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2467,7 +2467,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2526,7 +2526,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 3
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="test"} 3
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2645,7 +2645,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2707,7 +2707,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-too-far-in-future",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2762,7 +2762,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-too-far-in-future",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2856,7 +2856,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds ` + fmt.Sprintf("%g", float64(now.UnixMilli())/1000) + `
 			`,
 		},
-		"should soft fail on two different sample values at the same timestamp": {
+		"should soft fail on two different histSample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -2913,7 +2913,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on exemplar with unknown series": {
 			maxExemplars: 1,
 			reqs: []*mimirpb.WriteRequest{
-				// Ingesting an exemplar requires a sample to create the series first
+				// Ingesting an exemplar requires a histSample to create the series first
 				// This is not done here.
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
@@ -3004,7 +3004,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on exemplar with series later in the same write request": {
 			maxExemplars: 1,
 			reqs: []*mimirpb.WriteRequest{
-				// Ingesting an exemplar requires a sample to create the series first
+				// Ingesting an exemplar requires a histSample to create the series first
 				// This is done too late here.
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
@@ -3716,7 +3716,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 		"out-of-order samples": {
 			prepareConfig: func(*validation.Limits, *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
-				// For each series, push a single sample with a timestamp greater than next pushes.
+				// For each series, push a single histSample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
@@ -4521,7 +4521,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 				assert.NotContains(t, actualSeriesIDs, seriesID, "series was returned multiple times")
 				actualSeriesIDs = append(actualSeriesIDs, seriesID)
 
-				// We expect 1 sample with the same timestamp and value we've written.
+				// We expect 1 histSample with the same timestamp and value we've written.
 				require.Len(t, series.Values, 1)
 				require.Equal(t, int64(seriesID), int64(series.Values[0].Timestamp))
 				require.Equal(t, float64(seriesID), float64(series.Values[0].Value))
@@ -4927,9 +4927,9 @@ func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 	var (
 		userID              = "test"
 		numSeries           = 10000
-		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
+		numSamplesPerSeries = 60 * 6 // 6h on 1 histSample per minute
 		startTimestamp      = util.TimeToMillis(time.Now())
-		step                = int64(60000) // 1 sample per minute
+		step                = int64(60000) // 1 histSample per minute
 	)
 
 	i := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
@@ -5195,7 +5195,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 				switch typeLabel {
 				case "float":
-					// We expect 1 sample with the same timestamp and value we've written.
+					// We expect 1 histSample with the same timestamp and value we've written.
 					require.Len(t, series.Samples, 1)
 					assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
 					assert.Equal(t, float64(seriesID), series.Samples[0].Value)
@@ -5231,7 +5231,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					chk, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
 					require.NoError(t, err)
 
-					// We expect 1 sample with the same timestamp and value we've written.
+					// We expect 1 histSample with the same timestamp and value we've written.
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValFloat, it.Next())
@@ -5245,7 +5245,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					chk, err := chunkenc.FromData(chunkenc.EncHistogram, series.Chunks[0].Data)
 					require.NoError(t, err)
 
-					// We expect 1 sample with the same timestamp and value we've written.
+					// We expect 1 histSample with the same timestamp and value we've written.
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValHistogram, it.Next())
@@ -5259,7 +5259,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					chk, err := chunkenc.FromData(chunkenc.EncFloatHistogram, series.Chunks[0].Data)
 					require.NoError(t, err)
 
-					// We expect 1 sample with the same timestamp and value we've written.
+					// We expect 1 histSample with the same timestamp and value we've written.
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
@@ -5822,7 +5822,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]histSample) {
 		s, err := c.QueryStream(ctx, &client.QueryRequest{
 			StartTimestampMs: 0,
 			EndTimestampMs:   5,
@@ -5858,17 +5858,17 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 		})
 
 		headers := []chunkenc.CounterResetHeader{}
-		var samples [][]sample
+		var samples [][]histSample
 		for _, c := range chunks {
 			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
 			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
 			require.NoError(t, err)
 
-			s := []sample{}
+			s := []histSample{}
 			it := chk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				s = append(s, sample{t: ts, h: h})
+				s = append(s, histSample{t: ts, h: h})
 			}
 			samples = append(samples, s)
 			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
@@ -5879,7 +5879,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
 	actHeaders, actSamples := runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]histSample{
 		{
 			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
 		},
@@ -5903,7 +5903,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 	actHeaders, actSamples = runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]histSample{
 		{
 			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
 			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
@@ -5922,9 +5922,8 @@ func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Hist
 	return h
 }
 
-type sample struct {
+type histSample struct {
 	t int64
-	v float64
 	h *histogram.Histogram
 }
 
@@ -6796,7 +6795,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 		return time.Now().Unix()
 	})
 
-	// Push another sample to the same metric and timestamp, with different value. We expect to get error.
+	// Push another histSample to the same metric and timestamp, with different value. We expect to get error.
 	{
 		req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 1, sampleTimestamp)
 		_, err = i.Push(ctx, req)
@@ -7189,7 +7188,7 @@ func TestIngester_ForFlush(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 
-	// Our single sample should be reloaded from WAL
+	// Our single histSample should be reloaded from WAL
 	verifyCompactedHead(t, i, false)
 	i.Flush()
 
@@ -7266,7 +7265,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 0.2, res.ApiIngestionRate, 0.0001)
 	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)
-	// Active series are considered according to the wall time during the push, not the sample timestamp.
+	// Active series are considered according to the wall time during the push, not the histSample timestamp.
 	// Therefore all three series are still active at this point.
 	assert.Equal(t, uint64(3), res.NumSeries)
 
@@ -7409,7 +7408,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 		cortex_ingester_memory_users 1
     `), "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users"))
 
-	// Pushing another sample still works.
+	// Pushing another histSample still works.
 	pushSingleSampleWithMetadata(t, i)
 	verifyCompactedHead(t, i, false)
 
@@ -7518,7 +7517,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		cortex_ingester_memory_metadata 0
     `), metricsToCheck...))
 
-	// Pushing another sample will recreate TSDB.
+	// Pushing another histSample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
 	i.updateActiveSeries(time.Now())
 
@@ -7942,7 +7941,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	// Push a sample, it should succeed.
+	// Push a histSample, it should succeed.
 	pushSingleSampleWithMetadata(t, i)
 
 	// We mock a flushing by setting the boolean.
@@ -8494,7 +8493,7 @@ func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i
 
 		samples = int(float64(samples) * float64(targetRequestDuration/elapsed) * 1.5) // Adjust number of series to hit our targetRequestDuration push duration.
 		for samples >= int(time.Hour.Milliseconds()) {
-			// We generate one sample per millisecond, if we have more than an hour of samples TSDB will fail with "out of bounds".
+			// We generate one histSample per millisecond, if we have more than an hour of samples TSDB will fail with "out of bounds".
 			// So we trade samples for series here.
 			samples /= 10
 			ser *= 10
@@ -8559,7 +8558,7 @@ func matrixToSamples(m model.Matrix) []mimirpb.Sample {
 	return samples
 }
 
-// Return one copy of the labels per sample
+// Return one copy of the labels per histSample
 func matrixToLables(m model.Matrix) [][]mimirpb.LabelAdapter {
 	var labels [][]mimirpb.LabelAdapter
 	for _, ss := range m {
@@ -10068,12 +10067,12 @@ func testIngesterOutOfOrder(t *testing.T,
 		assert.ElementsMatch(t, expMatrix, res)
 	}
 
-	// Push first in-order sample at minute 100.
+	// Push first in-order histSample at minute 100.
 	pushSamples(100, 100, false, "")
 	verifySamples(100, 100)
 
-	// OOO is not enabled. So it errors out. No sample ingested.
-	pushSamples(90, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed")
+	// OOO is not enabled. So it errors out. No histSample ingested.
+	pushSamples(90, 99, true, "the histSample has been rejected because another histSample with a more recent timestamp has already been ingested and out-of-order samples are not allowed")
 	verifySamples(100, 100)
 
 	i.updateUsageStats()
@@ -10086,7 +10085,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
-		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
 		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 10
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 10
@@ -10114,7 +10113,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 10
-		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
 		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 20
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 20
@@ -10129,8 +10128,8 @@ func testIngesterOutOfOrder(t *testing.T,
 		`
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 
-	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
-	pushSamples(69, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
+	// Gives an error for histSample 69 since it's outside time window, but rest is ingested.
+	pushSamples(69, 99, true, "the histSample has been rejected because another histSample with a more recent timestamp has already been ingested and this histSample is beyond the out-of-order time window")
 	verifySamples(70, 100)
 
 	// 20 more ooo samples appended (between 70-89, the other 10 between 90-99 are discarded as dupes of previously ingested samples)
@@ -10138,7 +10137,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
-		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
 		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
@@ -10154,14 +10153,14 @@ func testIngesterOutOfOrder(t *testing.T,
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 
 	// All beyond the ooo time window. None ingested.
-	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
+	pushSamples(50, 69, true, "the histSample has been rejected because another histSample with a more recent timestamp has already been ingested and this histSample is beyond the out-of-order time window")
 	verifySamples(70, 100)
 
 	expectedMetrics = `
 		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
-		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
 		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
@@ -10190,7 +10189,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
-		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
 		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
@@ -10212,14 +10211,14 @@ func testIngesterOutOfOrder(t *testing.T,
 
 	// Decrease the time window again. Same push should fail.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
-	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
+	pushSamples(50, 69, true, "the histSample has been rejected because another histSample with a more recent timestamp has already been ingested and this histSample is beyond the out-of-order time window")
 	verifySamples(50, 100)
 
 	expectedMetrics = `
 		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
-		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a histSample is considered out-of-order.
 		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
         cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
@@ -10470,7 +10469,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			// Push first in-order sample at minute 100.
+			// Push first in-order histSample at minute 100.
 			pushSamples(100, 100)
 			// Push older, out-of-order samples
 			pushSamples(90, 99)
@@ -10732,7 +10731,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		maxExemplars     int
 		nativeHistograms bool
 	}{
-		"should soft fail on sample out-of-order": {
+		"should soft fail on histSample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -10757,8 +10756,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="user-1"} 4
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="user-2"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-out-of-order",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="histSample-out-of-order",user="user-2"} 1
 			`,
 		},
 		"should soft fail on all samples out of bound in a write request": {
@@ -10790,8 +10789,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-2"} 2
 			`,
 		},
 		"should soft fail on all histograms out of bound in a write request": {
@@ -10823,8 +10822,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 4
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-2"} 1
 			`,
 			nativeHistograms: true,
 		},
@@ -10858,8 +10857,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 12
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 3
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-1"} 12
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-2"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -10895,8 +10894,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
-				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="histSample-timestamp-too-old",user="user-2"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -10929,8 +10928,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-too-far-in-future",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="histSample-too-far-in-future",user="user-2"} 1
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
@@ -10957,8 +10956,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
+				cortex_discarded_samples_total{group="",reason="histSample-too-far-in-future",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="histSample-too-far-in-future",user="user-2"} 1
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
@@ -10986,7 +10985,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			},
 			expectedSampling: false,
 		},
-		"should soft fail on two different sample values at the same timestamp": {
+		"should soft fail on two different histSample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -11018,7 +11017,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on exemplar with unknown series": {
 			maxExemplars: 1,
 			reqs: []*mimirpb.WriteRequest{
-				// Ingesting an exemplar requires a sample to create the series first
+				// Ingesting an exemplar requires a histSample to create the series first
 				// This is not done here.
 				{
 					Timeseries: []mimirpb.PreallocTimeseries{
@@ -11113,7 +11112,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					// The expected result is that only 1 sampled error related to users[0] will be logged,
 					// but the cortex_discarded_samples_total counter will contain:
 					// - (errorSampleRate - 1) samples for users[0] and
-					// - 1 sample for users[1].
+					// - 1 histSample for users[1].
 					for i := 0; i < errorSampleRate-1; i++ {
 						_, err = client.Push(ctxs[0], req)
 						require.Error(t, err)
@@ -11441,7 +11440,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	require.NotNil(t, db)
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 
-	// push sample 10 years, 10 months and 10 days in the future.
+	// push histSample 10 years, 10 months and 10 days in the future.
 	futureTS := time.Now().AddDate(10, 10, 10).UnixMilli()
 	pushSingleSampleAtTime(t, i, futureTS)
 
@@ -11456,7 +11455,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	// "last update" time should still be "now", not in the future.
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
 
-	// Verify that maxTime of TSDB is actually our future sample.
+	// Verify that maxTime of TSDB is actually our future histSample.
 	require.Equal(t, futureTS, db.db.Head().MaxTime())
 }
 

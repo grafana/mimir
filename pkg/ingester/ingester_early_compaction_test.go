@@ -92,8 +92,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 		ctxWithUser = user.InjectOrgID(ctx, userID)
 		now         = time.Now()
 
-		// Use a constant sample for the timestamp so that TSDB head is guaranteed to not span across 2h boundaries.
-		// The sample timestamp is irrelevant towards active series tracking.
+		// Use a constant histSample for the timestamp so that TSDB head is guaranteed to not span across 2h boundaries.
+		// The histSample timestamp is irrelevant towards active series tracking.
 		sampleTimestamp = time.Now().UnixMilli()
 	)
 
@@ -200,19 +200,19 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 
 	// Push a series and trigger early TSDB head compaction
 	{
-		// Push a series with a sample.
+		// Push a series with a histSample.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 1.0, sampleTime.UnixMilli()}}))
 
 		// Advance time and then check if TSDB head early compaction is triggered.
-		// We expect no block to be created because there's no sample before "now - active series idle timeout".
+		// We expect no block to be created because there's no histSample before "now - active series idle timeout".
 		now = now.Add(10 * time.Minute)
 		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
 		require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 		// Further advance time and then check if TSDB head early compaction is triggered.
-		// The previously written sample is expected to be compacted.
+		// The previously written histSample is expected to be compacted.
 		now = now.Add(11 * time.Minute)
 		ingester.compactBlocksToReduceInMemorySeries(ctx, now)
 
@@ -226,7 +226,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 			},
 		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
 
-		// We expect the series to be dropped from TSDB Head because there was no sample more recent than
+		// We expect the series to be dropped from TSDB Head because there was no histSample more recent than
 		// "now - active series idle timeout".
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
@@ -235,7 +235,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 
 	// Push again the same series and trigger TSDB head early compaction.
 	{
-		// Advance time and push another sample to the same series.
+		// Advance time and push another histSample to the same series.
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 2.0, sampleTime.UnixMilli()}}))
@@ -254,7 +254,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 			},
 		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
 
-		// We expect the series to be dropped from TSDB Head because there was no sample more recent than
+		// We expect the series to be dropped from TSDB Head because there was no histSample more recent than
 		// "now - active series idle timeout".
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
@@ -263,12 +263,12 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 
 	// Push again the same series and trigger the normal TSDB head compaction
 	{
-		// Push a sample with the timestamp BEFORE the next TSDB block range boundary.
+		// Push a histSample with the timestamp BEFORE the next TSDB block range boundary.
 		firstSampleTime := now
 		sampleTimes = append(sampleTimes, firstSampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{metricLabels, 3.0, firstSampleTime.UnixMilli()}}))
 
-		// Push a sample with the timestamp AFTER the next TSDB block range boundary.
+		// Push a histSample with the timestamp AFTER the next TSDB block range boundary.
 		now = now.Add(4 * time.Hour)
 		secondSampleTime := now
 		sampleTimes = append(sampleTimes, secondSampleTime)
@@ -287,7 +287,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 			},
 		}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, newBlockID.String()), metricName))
 
-		// We expect the series to NOT be dropped from TSDB Head because there's a sample which is still in the Head.
+		// We expect the series to NOT be dropped from TSDB Head because there's a histSample which is still in the Head.
 		db := ingester.getTSDB(userID)
 		require.NotNil(t, db)
 		assert.Equal(t, uint64(1), db.Head().NumSeries())
@@ -443,7 +443,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	}, readMetricSamplesFromBlockDir(t, filepath.Join(userBlocksDir, listBlocksInDir(t, userBlocksDir)[0].String()), "metric_1"))
 
 	// Should allow to push samples after "now - active series idle timeout", but not before that.
-	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 1.0, startTime.UnixMilli()}}), "the sample has been rejected because its timestamp is too old")
+	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 1.0, startTime.UnixMilli()}}), "the histSample has been rejected because its timestamp is too old")
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_2"), 2.0, startTime.Add(20 * time.Minute).UnixMilli()}}))
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []series{{labels.FromStrings(labels.MetricName, "metric_1"), 3.0, startTime.Add(30 * time.Minute).UnixMilli()}}))
 }
@@ -526,7 +526,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 							})
 						}
 
-						require.NoErrorf(t, pushSeriesToIngester(ctxWithUser, t, ingester, seriesToWrite), "worker: %d, sample idx: %d, sample timestamp: %d (%s)", writerID, sampleIdx, timestamp, time.UnixMilli(timestamp).String())
+						require.NoErrorf(t, pushSeriesToIngester(ctxWithUser, t, ingester, seriesToWrite), "worker: %d, histSample idx: %d, histSample timestamp: %d (%s)", writerID, sampleIdx, timestamp, time.UnixMilli(timestamp).String())
 
 						// Keep track of the last timestamp written.
 						writerTimesMx.Lock()
@@ -570,8 +570,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 									expectedTime := model.Time(startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli())
 									expectedValue := model.SampleValue(sampleIdx)
 
-									require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
-									require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+									require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s histSample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+									require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s histSample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
 								}
 							}
 						}
@@ -599,7 +599,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 					case <-time.After(100 * time.Millisecond):
 						lowestWriterTimeMilli := int64(math.MaxInt64)
 
-						// Find the lowest sample written. We compact up until that timestamp.
+						// Find the lowest histSample written. We compact up until that timestamp.
 						writerTimesMx.Lock()
 						for _, ts := range writerTimes {
 							lowestWriterTimeMilli = util_math.Min(lowestWriterTimeMilli, ts)
@@ -658,8 +658,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 					expectedTime := model.Time(startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli())
 					expectedValue := model.SampleValue(sampleIdx)
 
-					require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
-					require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s sample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+					require.Equalf(t, expectedTime, sample.Timestamp, "response entry: %d series: %s histSample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
+					require.Equalf(t, expectedValue, sample.Value, "response entry: %d series: %s histSample idx: %d", entryIdx, entry.Metric.String(), sampleIdx)
 				}
 			}
 		})

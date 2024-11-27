@@ -163,7 +163,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 					h.CounterResetHint = histogram.UnknownCounterReset
 				}
 			}
-			b.SetIteratorId(itID)
+			b.SetIteratorID(itID)
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
 			if itID == -1 { // This means the sample is already in the batch stream. We get its original iterator id.
@@ -177,7 +177,7 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 					h.CounterResetHint = histogram.UnknownCounterReset
 				}
 			}
-			b.SetIteratorId(itID)
+			b.SetIteratorID(itID)
 		}
 		prevIteratorID = itID
 		b.Index++

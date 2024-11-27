@@ -151,9 +151,9 @@ func (b *Batch) GetIteratorID() int {
 	return int(b.Values[b.Index])
 }
 
-// SetIteratorId stores the non overlapping iterator id.
+// SetIteratorID stores the non overlapping iterator id.
 // Only call when type is chunkenc.ValHistogram or chunkenc.ValFloatHistogram.
-func (b *Batch) SetIteratorId(id int) {
+func (b *Batch) SetIteratorID(id int) {
 	b.Values[b.Index] = float64(id)
 }
 

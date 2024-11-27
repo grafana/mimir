@@ -6,7 +6,6 @@
 package batch
 
 import (
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/prometheus/prometheus/model/histogram"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMergeIter(t *testing.T) {
@@ -78,7 +78,8 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 		addFunc := func(chk chunk.EncodedChunk, ts, val int) {
 			switch chk.Encoding() {
 			case chunk.PrometheusXorChunk:
-				chk.Add(model.SamplePair{Timestamp: model.Time(ts), Value: model.SampleValue(val)})
+				_, err := chk.Add(model.SamplePair{Timestamp: model.Time(ts), Value: model.SampleValue(val)})
+				require.NoError(t, err)
 			case chunk.PrometheusHistogramChunk:
 				overflow, err := chk.AddHistogram(int64(ts), test.GenerateTestHistogram(val))
 				require.NoError(t, err)
@@ -247,6 +248,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						addFunc(chk2, 8, 10)
 						addFunc(chk2, 9, 11)
 						chk3, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+						require.NoError(t, err)
 						addFunc(chk3, 4, 2)
 						return []GenericChunk{
 							NewGenericChunk(0, 7, chunk.NewChunk(labels.FromStrings(model.MetricNameLabel, "foo"), chk1, 0, 7).Data.NewIterator),
