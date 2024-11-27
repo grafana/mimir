@@ -28,8 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
@@ -46,6 +44,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
