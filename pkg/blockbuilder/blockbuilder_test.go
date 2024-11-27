@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -164,7 +165,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	compareQuery(t,
@@ -291,7 +292,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 	`), "cortex_blockbuilder_consumer_lag_records"))
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	compareQuery(t,
@@ -351,7 +352,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 
 	for _, tenant := range tenants {
 		bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
-		db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+		db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, db.Close()) })
 
@@ -446,7 +447,7 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 			require.NoError(t, bb.nextConsumeCycle(ctx, end))
 
 			bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenantID)
-			db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+			db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, db.Close()) })
 
@@ -517,7 +518,7 @@ func TestBlockBuilder_RetryOnTransientErrors(t *testing.T) {
 	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 1 }, 50*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	compareQuery(t,

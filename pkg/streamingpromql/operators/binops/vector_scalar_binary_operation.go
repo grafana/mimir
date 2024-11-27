@@ -31,12 +31,12 @@ type VectorScalarBinaryOperation struct {
 	opFunc    vectorScalarBinaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	emitAnnotation     types.EmitAnnotationFunc
+	annotations        *annotations.Annotations
 	scalarData         types.ScalarData
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
 
-type vectorScalarBinaryOperationFunc func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
+type vectorScalarBinaryOperationFunc func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error)
 
 func NewVectorScalarBinaryOperation(
 	scalar types.ScalarOperator,
@@ -70,29 +70,23 @@ func NewVectorScalarBinaryOperation(
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
 		timeRange:          timeRange,
+		annotations:        annotations,
 		expressionPosition: expressionPosition,
 	}
 
-	b.emitAnnotation = func(generator types.AnnotationGenerator) {
-		annotations.Add(generator("", expressionPosition))
-	}
-
 	if !b.ScalarIsLeftSide {
-		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
 			return f(vectorF, scalar, vectorH, nil)
 		}
 	} else if op.IsComparisonOperator() && !returnBool {
-		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-			_, _, ok, err := f(scalar, vectorF, nil, vectorH)
+		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
+			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH)
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
-			//
-			// We deliberately ignore the histogram value as we need to treat it as if it were a float with value 0,
-			// pending the resolution of the discussion in https://github.com/prometheus/prometheus/issues/13934#issuecomment-2372947976.
-			return vectorF, nil, ok, err
+			return vectorF, vectorH, keep, valid, err
 		}
 	} else {
-		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
 			return f(scalar, vectorF, nil, vectorH)
 		}
 	}
@@ -180,9 +174,9 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	v.vectorIterator.Reset(series)
 
 	for {
-		t, vectorF, vectorH, ok := v.vectorIterator.Next()
+		t, vectorF, vectorH, keep := v.vectorIterator.Next()
 
-		if !ok {
+		if !keep {
 			// We are done.
 			break
 		}
@@ -190,38 +184,48 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 		scalarIdx := (t - v.timeRange.StartT) / v.timeRange.IntervalMilliseconds // Scalars always have a value at every step, so we can just compute the index of the corresponding scalar value from the timestamp.
 		scalarValue := v.scalarData.Samples[scalarIdx].F
 
-		f, h, ok, err := v.opFunc(scalarValue, vectorF, vectorH)
+		f, h, keep, valid, err := v.opFunc(scalarValue, vectorF, vectorH)
 		if err != nil {
 			err = functions.NativeHistogramErrorToAnnotation(err, v.emitAnnotation)
 			if err == nil {
 				// Error was converted to an annotation, continue without emitting a sample here.
-				ok = false
+				continue
+			}
+
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		if !valid {
+			if v.ScalarIsLeftSide {
+				emitIncompatibleTypesAnnotation(v.annotations, v.Op, nil, vectorH, v.expressionPosition)
 			} else {
-				return types.InstantVectorSeriesData{}, err
+				emitIncompatibleTypesAnnotation(v.annotations, v.Op, vectorH, nil, v.expressionPosition)
 			}
 		}
 
-		if ok {
-			if h != nil {
-				if hPoints == nil {
-					// First histogram for this series, get a slice for it.
-					if err := prepareHPointSlice(); err != nil {
-						return types.InstantVectorSeriesData{}, err
-					}
-				}
+		if !keep {
+			continue
+		}
 
-				hPoints = append(hPoints, promql.HPoint{T: t, H: h})
-			} else {
-				// We have a float value.
-				if fPoints == nil {
-					// First float for this series, get a slice for it.
-					if err := prepareFPointSlice(); err != nil {
-						return types.InstantVectorSeriesData{}, err
-					}
+		if h != nil {
+			if hPoints == nil {
+				// First histogram for this series, get a slice for it.
+				if err := prepareHPointSlice(); err != nil {
+					return types.InstantVectorSeriesData{}, err
 				}
-
-				fPoints = append(fPoints, promql.FPoint{T: t, F: f})
 			}
+
+			hPoints = append(hPoints, promql.HPoint{T: t, H: h})
+		} else {
+			// We have a float value.
+			if fPoints == nil {
+				// First float for this series, get a slice for it.
+				if err := prepareFPointSlice(); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
+
+			fPoints = append(fPoints, promql.FPoint{T: t, F: f})
 		}
 	}
 
@@ -247,6 +251,10 @@ func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
 	types.FPointSlicePool.Put(v.scalarData.Samples, v.MemoryConsumptionTracker)
+}
+
+func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
+	v.annotations.Add(generator("", v.expressionPosition))
 }
 
 var _ types.InstantVectorOperator = &VectorScalarBinaryOperation{}

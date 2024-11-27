@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"slices"
 	"sort"
@@ -28,8 +29,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
-	gokitlog "github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -245,7 +244,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string, logger gokitlog.Logger) error {
+	resource pcommon.Resource, settings Settings, baseName string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -337,7 +336,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 			labels := createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(labels, startTimestampMs, pt.Timestamp())
 		}
-		level.Debug(logger).Log("labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
+		logger.Debug("addHistogramDataPoints", "labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
 	}
 
 	return nil
@@ -359,9 +358,17 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		exemplarRunes := 0
 
 		promExemplar := prompb.Exemplar{
-			Value:     exemplar.DoubleValue(),
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
+		switch exemplar.ValueType() {
+		case pmetric.ExemplarValueTypeInt:
+			promExemplar.Value = float64(exemplar.IntValue())
+		case pmetric.ExemplarValueTypeDouble:
+			promExemplar.Value = exemplar.DoubleValue()
+		default:
+			return nil, fmt.Errorf("unsupported exemplar value type: %v", exemplar.ValueType())
+		}
+
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
@@ -443,7 +450,7 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string, logger gokitlog.Logger) error {
+	settings Settings, baseName string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -500,7 +507,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
 
-		level.Debug(logger).Log("labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
+		logger.Debug("addSummaryDataPoints", "labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
 	}
 
 	return nil
@@ -584,7 +591,7 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 // make use of its direct support fort Created Timestamps instead.
 // See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
 // resets for cumulative metrics.
-func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb.Label, settings Settings, typ string, value float64, logger gokitlog.Logger) {
+func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb.Label, settings Settings, typ string, value float64, logger *slog.Logger) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
@@ -606,7 +613,7 @@ func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb
 		return
 	}
 
-	level.Debug(logger).Log("msg", "adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", value)
+	logger.Debug("adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", value)
 
 	// See https://github.com/prometheus/prometheus/issues/14600 for context.
 	c.addSample(&prompb.Sample{Timestamp: startTs}, labels)
@@ -682,10 +689,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
-	ts := convertTimeStamp(timestamp)
 	sample := &prompb.Sample{
-		Value:     float64(1),
-		Timestamp: ts,
+		Value: float64(1),
+		// convert ns to ms
+		Timestamp: convertTimeStamp(timestamp),
 	}
 	converter.addSample(sample, labels)
 }

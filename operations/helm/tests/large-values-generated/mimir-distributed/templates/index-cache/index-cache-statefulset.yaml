@@ -60,7 +60,7 @@ spec:
               name: client
           args:
             - -m 2048
-            - --extended=modern,track_sizes
+            - --extended=modern
             - -I 5m
             - -c 16384
             - -v

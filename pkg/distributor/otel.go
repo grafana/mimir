@@ -413,7 +413,7 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 		PromoteResourceAttributes:           promoteResourceAttributes,
-	}, logger)
+	}, utillog.SlogFromGoKit(logger))
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))

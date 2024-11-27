@@ -56,7 +56,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	require.Equal(t, 1.0, m.SumCounters("cortex_distributor_query_ingester_chunks_deduped_total"))
 
 	require.Equal(t, uint64(3), queryStats.FetchedChunksCount)
-	require.Equal(t, uint64(114), queryStats.FetchedChunkBytes)
+	require.Equal(t, uint64(111), queryStats.FetchedChunkBytes)
 }
 
 func assertChunkIteratorsEqual(t testing.TB, c1, c2 chunkenc.Iterator) {

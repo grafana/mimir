@@ -296,9 +296,9 @@ func TestFranzGoErrorStrings(t *testing.T) {
 type noopReaderMetricsSource struct {
 }
 
-func (n noopReaderMetricsSource) BufferedBytes() int64   { return 0 }
-func (n noopReaderMetricsSource) BufferedRecords() int64 { return 0 }
-func (n noopReaderMetricsSource) BytesPerRecord() int64  { return 0 }
+func (n noopReaderMetricsSource) BufferedBytes() int64           { return 0 }
+func (n noopReaderMetricsSource) BufferedRecords() int64         { return 0 }
+func (n noopReaderMetricsSource) EstimatedBytesPerRecord() int64 { return 0 }
 
 func TestConcurrentFetchers(t *testing.T) {
 	const (
