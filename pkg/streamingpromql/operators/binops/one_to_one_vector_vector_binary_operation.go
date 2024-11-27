@@ -27,8 +27,9 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// VectorVectorBinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
-type VectorVectorBinaryOperation struct {
+// OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
+// One-to-many and many-to-one binary operations between instant vectors are not supported.
+type OneToOneVectorVectorBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
@@ -44,7 +45,7 @@ type VectorVectorBinaryOperation struct {
 	leftMetadata  []types.SeriesMetadata
 	rightMetadata []types.SeriesMetadata
 
-	remainingSeries []*binaryOperationOutputSeries
+	remainingSeries []*oneToOneBinaryOperationOutputSeries
 	leftBuffer      *operators.InstantVectorOperatorBuffer
 	rightBuffer     *operators.InstantVectorOperatorBuffer
 	leftIterator    types.InstantVectorSeriesDataIterator
@@ -55,9 +56,9 @@ type VectorVectorBinaryOperation struct {
 	annotations        *annotations.Annotations
 }
 
-var _ types.InstantVectorOperator = &VectorVectorBinaryOperation{}
+var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
 
-type binaryOperationOutputSeries struct {
+type oneToOneBinaryOperationOutputSeries struct {
 	leftSeriesIndices  []int
 	rightSeriesIndices []int
 }
@@ -65,18 +66,18 @@ type binaryOperationOutputSeries struct {
 // latestLeftSeries returns the index of the last series from the left source needed for this output series.
 //
 // It assumes that leftSeriesIndices is sorted in ascending order.
-func (s binaryOperationOutputSeries) latestLeftSeries() int {
+func (s oneToOneBinaryOperationOutputSeries) latestLeftSeries() int {
 	return s.leftSeriesIndices[len(s.leftSeriesIndices)-1]
 }
 
 // latestRightSeries returns the index of the last series from the right source needed for this output series.
 //
 // It assumes that rightSeriesIndices is sorted in ascending order.
-func (s binaryOperationOutputSeries) latestRightSeries() int {
+func (s oneToOneBinaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewVectorVectorBinaryOperation(
+func NewOneToOneVectorVectorBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
@@ -85,8 +86,8 @@ func NewVectorVectorBinaryOperation(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-) (*VectorVectorBinaryOperation, error) {
-	b := &VectorVectorBinaryOperation{
+) (*OneToOneVectorVectorBinaryOperation, error) {
+	b := &OneToOneVectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		leftIterator:             types.InstantVectorSeriesDataIterator{},
@@ -113,7 +114,7 @@ func NewVectorVectorBinaryOperation(
 	return b, nil
 }
 
-func (b *VectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRange {
+func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return b.expressionPosition
 }
 
@@ -132,7 +133,7 @@ func (b *VectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRang
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *VectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
@@ -156,7 +157,7 @@ func (b *VectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 // loadSeriesMetadata loads series metadata from both sides of this operation.
 // It returns false if one side returned no series and that means there is no way for this operation to return any series.
 // (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (b *VectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
+func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
@@ -192,10 +193,10 @@ func (b *VectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (b
 // - a corresponding list of the source series for each output series
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
-func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
+func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, []bool, error) {
 	labelsFunc := b.groupLabelsFunc()
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
-	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
+	outputSeriesMap := map[string]*oneToOneBinaryOperationOutputSeries{}
 
 	// Use the smaller side to populate the map of possible output series first.
 	// This should ensure we don't unnecessarily populate the output series map with series that will never match in most cases.
@@ -214,7 +215,7 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 		series, exists := outputSeriesMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !exists {
-			series = &binaryOperationOutputSeries{}
+			series = &oneToOneBinaryOperationOutputSeries{}
 			outputSeriesMap[string(groupKey)] = series
 		}
 
@@ -248,7 +249,7 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 	}
 
 	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
-	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
+	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
@@ -287,7 +288,7 @@ func (b *VectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetad
 //
 // At present, sortSeries uses a very basic heuristic to guess the best way to sort the output series, but we could make
 // this more sophisticated in the future.
-func (b *VectorVectorBinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) {
+func (b *OneToOneVectorVectorBinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*oneToOneBinaryOperationOutputSeries) {
 	// For one-to-one matching, we assume that each output series takes one series from each side of the operator.
 	// If this is true, then the best order is the one in which we read from the highest cardinality side in order.
 	// If we do this, then in the worst case, we'll have to buffer the whole of the lower cardinality side.
@@ -311,14 +312,14 @@ func (b *VectorVectorBinaryOperation) sortSeries(metadata []types.SeriesMetadata
 
 type binaryOperationOutputSorter struct {
 	metadata []types.SeriesMetadata
-	series   []*binaryOperationOutputSeries
+	series   []*oneToOneBinaryOperationOutputSeries
 }
 
 type favourLeftSideSorter struct {
 	binaryOperationOutputSorter
 }
 
-func newFavourLeftSideSorter(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) favourLeftSideSorter {
+func newFavourLeftSideSorter(metadata []types.SeriesMetadata, series []*oneToOneBinaryOperationOutputSeries) favourLeftSideSorter {
 	return favourLeftSideSorter{binaryOperationOutputSorter{metadata, series}}
 }
 
@@ -326,7 +327,7 @@ type favourRightSideSorter struct {
 	binaryOperationOutputSorter
 }
 
-func newFavourRightSideSorter(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) favourRightSideSorter {
+func newFavourRightSideSorter(metadata []types.SeriesMetadata, series []*oneToOneBinaryOperationOutputSeries) favourRightSideSorter {
 	return favourRightSideSorter{binaryOperationOutputSorter{metadata, series}}
 }
 
@@ -360,7 +361,7 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 }
 
 // groupLabelsFunc returns a function that computes the labels of the output group this series belongs to.
-func (b *VectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
+func (b *OneToOneVectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if b.VectorMatching.On {
@@ -388,7 +389,7 @@ func (b *VectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labe
 	}
 }
 
-func (b *VectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
@@ -434,7 +435,7 @@ func (b *VectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 // NOTE: mergeOneSide has the side effect of re-ordering both data and sourceSeriesIndices.
 //
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
-func (b *VectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
+func (b *OneToOneVectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
 	merged, conflict, err := operators.MergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
 
 	if err != nil {
@@ -448,7 +449,7 @@ func (b *VectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSer
 	return merged, nil
 }
 
-func (b *VectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
+func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
 	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
@@ -475,7 +476,7 @@ func (b *VectorVectorBinaryOperation) mergeConflictToError(conflict *operators.M
 	)
 }
 
-func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
+func (b *OneToOneVectorVectorBinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
 	var fPoints []promql.FPoint
 	var hPoints []promql.HPoint
 
@@ -629,7 +630,7 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 	}, nil
 }
 
-func (b *VectorVectorBinaryOperation) Close() {
+func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
 
@@ -650,7 +651,7 @@ func (b *VectorVectorBinaryOperation) Close() {
 	}
 }
 
-func (b *VectorVectorBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
+func (b *OneToOneVectorVectorBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
 	b.annotations.Add(generator("", b.expressionPosition))
 }
 
