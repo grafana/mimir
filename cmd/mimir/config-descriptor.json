@@ -3797,6 +3797,16 @@
         },
         {
           "kind": "field",
+          "name": "max_label_names_per_info_series",
+          "required": false,
+          "desc": "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series)",
+          "fieldValue": null,
+          "fieldDefaultValue": 80,
+          "fieldFlag": "validation.max-label-names-per-info-series",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "max_metadata_length",
           "required": false,
           "desc": "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.",
