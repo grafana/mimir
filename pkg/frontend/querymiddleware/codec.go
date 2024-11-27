@@ -149,6 +149,7 @@ type MetricsQueryRequest interface {
 	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
+	GetLookbackDelta() time.Duration
 }
 
 // LabelsQueryRequest represents a label names or values query request that can be process by middlewares.

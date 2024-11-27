@@ -153,7 +153,11 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	}
 
 	annotationAccumulator := NewAnnotationAccumulator()
-	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, nil)
+	var fullRangeHandler MetricsQueryHandler
+	if v, ok := ctx.Value("fullRangeHandler").(MetricsQueryHandler); ok {
+		fullRangeHandler = v
+	}
+	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, fullRangeHandler, nil)
 
 	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
 }

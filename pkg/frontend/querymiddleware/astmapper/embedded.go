@@ -33,12 +33,13 @@ const (
 
 // EmbeddedQueries is a wrapper type for encoding queries
 type EmbeddedQueries struct {
-	Concat []EmbeddedQuery `json:"Concat"`
+	Concat []EmbeddedQuery `json:"Concat,omitempty"`
 }
 
 type EmbeddedQuery struct {
-	Expr   string            `json:"Expr"`
-	Params map[string]string `json:"Params,omitempty"`
+	Expr           string            `json:"Expr"`
+	Params         map[string]string `json:"Params,omitempty"`
+	SourceSubquery string            `json:"SourceSubquery,omitempty"`
 }
 
 func NewEmbeddedQuery(expr string, params map[string]string) EmbeddedQuery {

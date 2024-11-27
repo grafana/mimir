@@ -32,13 +32,14 @@ var (
 	errNotImplemented       = errors.New("not implemented")
 )
 
-type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
+type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler, upstreamRangeHandler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
 
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
 	req                   MetricsQueryRequest
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
+	upstreamRangeHandler  MetricsQueryHandler
 	responseHeaders       *responseHeadersTracker
 	handleEmbeddedQuery   HandleEmbeddedQueryFunc
 }
@@ -46,7 +47,7 @@ type shardedQueryable struct {
 // NewShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
+func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next, upstreamRangeHandler MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
 	if handleEmbeddedQuery == nil {
 		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc
 	}
@@ -54,6 +55,7 @@ func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *Annotat
 		req:                   req,
 		annotationAccumulator: annotationAccumulator,
 		handler:               next,
+		upstreamRangeHandler:  upstreamRangeHandler,
 		responseHeaders:       newResponseHeadersTracker(),
 		handleEmbeddedQuery:   handleEmbeddedQuery,
 	}
@@ -61,7 +63,7 @@ func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *Annotat
 
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery}, nil
+	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, upstreamRangeHandler: q.upstreamRangeHandler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -77,6 +79,7 @@ type shardedQuerier struct {
 	req                   MetricsQueryRequest
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
+	upstreamRangeHandler  MetricsQueryHandler
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -115,7 +118,39 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
-func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler, upstreamRangeHandler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+	if queryExpr.SourceSubquery != "" && IsInstantQuery(query.GetPath()) && upstreamRangeHandler != nil {
+		parsedSubquery, err := parser.ParseExpr(queryExpr.SourceSubquery)
+		if err != nil {
+			return nil, nil, err
+		}
+		asSubquery, ok := parsedSubquery.(*parser.SubqueryExpr)
+		if !ok {
+			return nil, nil, errors.New("expected subquery expression")
+		}
+		end := query.GetEnd()
+		start := end - asSubquery.Range.Milliseconds()
+
+		newRangeRequest := NewPrometheusRangeQueryRequest(queryRangePathSuffix, query.GetHeaders(), start, end, asSubquery.Step.Milliseconds(), query.GetLookbackDelta(), asSubquery.Expr, query.GetOptions(), query.GetHints())
+
+		upstreamRangeHandlerResp, err := upstreamRangeHandler.Do(ctx, newRangeRequest)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		upstreamRangeHandlerPromRes, ok := upstreamRangeHandlerResp.(*PrometheusResponse)
+		if !ok {
+			return nil, nil, errors.Errorf("error invalid response type: %T, expected: %T", upstreamRangeHandlerResp, &PrometheusResponse{})
+		}
+
+		resStreams, err := ResponseToSamples(upstreamRangeHandlerPromRes)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return resStreams, upstreamRangeHandlerPromRes, nil
+	}
+
 	query, err := query.WithQuery(queryExpr.Expr)
 	if err != nil {
 		return nil, nil, err
@@ -145,7 +180,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []as
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
-		resStreams, promRes, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler)
+		resStreams, promRes, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler, q.upstreamRangeHandler)
 		if err != nil {
 			return err
 		}

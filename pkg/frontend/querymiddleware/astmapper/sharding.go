@@ -281,8 +281,9 @@ func (summer *shardSummer) shardAndSquashFuncCall(expr *parser.Call) (mapped par
 				clonedCall.Args[i] = mapped
 			}
 		}
-
-		children = append(children, NewEmbeddedQuery(clonedCall.String(), summer.shardLabeller.GetParams(i)))
+		child := NewEmbeddedQuery(clonedCall.String(), summer.shardLabeller.GetParams(i))
+		child.SourceSubquery = expr.String()
+		children = append(children, child)
 	}
 
 	// Update stats.

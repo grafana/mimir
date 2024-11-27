@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
@@ -246,6 +247,10 @@ func (r *remoteReadQueryRequest) GetStep() int64 {
 }
 
 func (r *remoteReadQueryRequest) GetID() int64 {
+	return 0
+}
+
+func (r *remoteReadQueryRequest) GetLookbackDelta() time.Duration {
 	return 0
 }
 
