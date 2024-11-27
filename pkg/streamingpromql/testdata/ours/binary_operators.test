@@ -1315,3 +1315,64 @@ eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == on(pod) right_side
 
 eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool on(pod) right_side
   {pod="a"} 0 1 1 0
+
+clear
+
+# Comparison operations with group_left / group_right.
+
+load 6m
+  left_side{env="test", pod="a", region="au"} 1 2 3 9 10
+  left_side{env="test", pod="a", region="us"} 6 7 8 4 5
+  right_side{env="test", dc="1"}              2 _ _ 5 _
+  right_side{env="test", dc="2"}              _ 3 _ _ 6
+
+eval range from 0 to 24m step 6m left_side < on(env) group_left(dc) right_side
+  left_side{env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  left_side{env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  left_side{env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  left_side{env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m left_side < bool on(env) group_left(dc) right_side
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+eval range from 0 to 24m step 6m left_side < ignoring(pod, region, dc) group_left(dc) right_side
+  left_side{env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  left_side{env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  left_side{env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  left_side{env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m left_side < bool ignoring(pod, region, dc) group_left(dc) right_side
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+# FIXME: shouldn't this return series with name right_side?
+eval range from 0 to 24m step 6m right_side > on(env) group_right(dc) left_side
+  left_side{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  left_side{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  left_side{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  left_side{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m right_side > bool on(env) group_right(dc) left_side
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+# FIXME: shouldn't this return series with name right_side?
+eval range from 0 to 24m step 6m right_side > ignoring(pod, region, dc) group_right(dc) left_side
+  left_side{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  left_side{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  left_side{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  left_side{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m right_side > bool ignoring(pod, region, dc) group_right(dc) left_side
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
