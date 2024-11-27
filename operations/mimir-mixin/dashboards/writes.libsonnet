@@ -304,7 +304,7 @@ local filename = 'mimir-writes.json';
           |||
             Throughput of fetches received from Kafka brokers.
             This panel shows the rate of bytes fetched from Kafka brokers, and the rate of bytes discarded.
-            The discarded bytes are due to concurrently fetching overlapping overlapping offsets.
+            The discarded bytes are due to concurrently fetching overlapping offsets.
 
             Discarded bytes amounting to up to 10% of the total fetched bytes are exepcted during startup when there is higher concurrency in fetching.
             Discarded bytes amounting to around 1% of the total fetched bytes are expected during normal operation.
