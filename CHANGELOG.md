@@ -93,7 +93,7 @@
 * [BUGFIX] Querier: Correct the behaviour of binary operators between native histograms and floats. #9844
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to always ignore native histograms. #9844
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to treat Infinity consistently. #9844
-
+* [BUGFIX] Ingester: Chunks could have one unnecessary zero byte at the end. #9844
 
 ### Mixin
 
