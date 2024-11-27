@@ -117,6 +117,7 @@
 * [CHANGE] Remove support to set Redis as a cache backend from jsonnet. #9677
 * [CHANGE] Rollout-operator now defaults to storing scaling operation metadata in a Kubernetes ConfigMap. This avoids recursively invoking the admission webhook in some Kubernetes environments. #9699
 * [CHANGE] Update rollout-operator version to 0.20.0. #9995
+* [CHANGE] Remove the `track_sizes` feature for Memcached pods since it is unused. #10032
 * [FEATURE] Add support to deploy distributors in multi availability zones. #9548
 * [FEATURE] Add configuration settings to set the number of Memcached replicas for each type of cache (`memcached_frontend_replicas`, `memcached_index_queries_replicas`, `memcached_chunks_replicas`, `memcached_metadata_replicas`). #9679
 * [ENHANCEMENT] Add `ingest_storage_ingester_autoscaling_triggers` option to specify multiple triggers in ScaledObject created for ingest-store ingester autoscaling. #9422
