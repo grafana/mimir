@@ -88,6 +88,7 @@
 * [BUGFIX] PromQL: `round` now removes the metric name again. #9879
 * [BUGFIX] Query-Frontend: fix `QueryFrontendCodec` module initialization to set lookback delta from `-querier.lookback-delta`. #9984
 * [BUGFIX] OTLP: Support integer exemplar value type. #9844
+* [BUGFIX] Querier: Correct the behaviour of binary operators between native histograms and floats. #9844
 
 ### Mixin
 
