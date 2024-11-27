@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/crypto/tls"
+	"github.com/grafana/dskit/flagext"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -28,18 +29,43 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-var errRulerNotifierStopped = cancellation.NewErrorf("rulerNotifier stopped")
+var (
+	errRulerNotifierStopped               = cancellation.NewErrorf("rulerNotifier stopped")
+	errRulerSimultaneousBasicAuthAndOAuth = errors.New("cannot use both Basic Auth and OAuth2 simultaneously")
+)
 
 type NotifierConfig struct {
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
 	BasicAuth  util.BasicAuth   `yaml:",inline"`
+	OAuth2     OAuth2Config     `yaml:"oauth2"`
+	ProxyURL   string           `yaml:"proxy_url" category:"advanced"`
 }
 
 func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TLSEnabled, "ruler.alertmanager-client.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
 	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
+	cfg.OAuth2.RegisterFlagsWithPrefix("ruler.alertmanager-client.oauth.", f)
+	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
+}
+
+type OAuth2Config struct {
+	ClientID     string                 `yaml:"client_id"`
+	ClientSecret flagext.Secret         `yaml:"client_secret"`
+	TokenURL     string                 `yaml:"token_url"`
+	Scopes       flagext.StringSliceCSV `yaml:"scopes,omitempty"`
+}
+
+func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.ClientID, prefix+"client_id", "", "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.")
+	f.Var(&cfg.ClientSecret, prefix+"client_secret", "OAuth2 client secret.")
+	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token.")
+	f.Var(&cfg.Scopes, prefix+"scopes", "Optional scopes to include with the token request.")
+}
+
+func (cfg *OAuth2Config) IsEnabled() bool {
+	return cfg.ClientID != "" || cfg.TokenURL != ""
 }
 
 // rulerNotifier bundles a notifier.Manager together with an associated
@@ -175,6 +201,37 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 		amConfig.HTTPClientConfig.BasicAuth = &config_util.BasicAuth{
 			Username: rulerConfig.Notifier.BasicAuth.Username,
 			Password: config_util.Secret(rulerConfig.Notifier.BasicAuth.Password.String()),
+		}
+	}
+
+	// Whether to use an optional HTTP, HTTP+CONNECT, or SOCKS5 proxy.
+	if rulerConfig.Notifier.ProxyURL != "" {
+		url, err := url.Parse(rulerConfig.Notifier.ProxyURL)
+		if err != nil {
+			return nil, err
+		}
+		amConfig.HTTPClientConfig.ProxyURL = config_util.URL{URL: url}
+	}
+
+	// Whether to use OAuth2 or not.
+	if rulerConfig.Notifier.OAuth2.IsEnabled() {
+		if amConfig.HTTPClientConfig.BasicAuth != nil {
+			return nil, errRulerSimultaneousBasicAuthAndOAuth
+		}
+
+		amConfig.HTTPClientConfig.OAuth2 = &config_util.OAuth2{
+			ClientID:     rulerConfig.Notifier.OAuth2.ClientID,
+			ClientSecret: config_util.Secret(rulerConfig.Notifier.OAuth2.ClientSecret.String()),
+			TokenURL:     rulerConfig.Notifier.OAuth2.TokenURL,
+			Scopes:       rulerConfig.Notifier.OAuth2.Scopes,
+		}
+
+		if rulerConfig.Notifier.ProxyURL != "" {
+			url, err := url.Parse(rulerConfig.Notifier.ProxyURL)
+			if err != nil {
+				return nil, err
+			}
+			amConfig.HTTPClientConfig.OAuth2.ProxyURL = config_util.URL{URL: url}
 		}
 	}
 

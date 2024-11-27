@@ -40,6 +40,7 @@ func TestChunksCaching(t *testing.T) {
 	}
 
 	name := "/test/chunks/000001"
+	keyGen := newCacheKeyBuilder(bucketID, name)
 
 	inmem := objstore.NewInMemBucket()
 	assert.NoError(t, inmem.Upload(context.Background(), name, bytes.NewReader(data)))
@@ -149,9 +150,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete first 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 0*subrangeSize, 1*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 1*subrangeSize, 2*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 2*subrangeSize, 3*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(0*subrangeSize, 1*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(1*subrangeSize, 2*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(2*subrangeSize, 3*subrangeSize)))
 			},
 		},
 
@@ -167,9 +168,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete last 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 7*subrangeSize, 8*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 8*subrangeSize, 9*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 9*subrangeSize, 10*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(7*subrangeSize, 8*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(8*subrangeSize, 9*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(9*subrangeSize, 10*subrangeSize)))
 			},
 		},
 
@@ -185,9 +186,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete 3 subranges in the middle.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 3*subrangeSize, 4*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 4*subrangeSize, 5*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 5*subrangeSize, 6*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(3*subrangeSize, 4*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(4*subrangeSize, 5*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(5*subrangeSize, 6*subrangeSize)))
 			},
 		},
 
@@ -206,7 +207,7 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), keyGen.objectSubrange(i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -228,7 +229,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), keyGen.objectSubrange(i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -249,7 +250,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), keyGen.objectSubrange(i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -834,71 +835,100 @@ func TestAttributes(t *testing.T) {
 	})
 }
 
-func TestCachingKeyAttributes(t *testing.T) {
-	assert.Equal(t, "attrs:/object", cachingKeyAttributes("", "/object"))
-	assert.Equal(t, "test:attrs:/object", cachingKeyAttributes("test", "/object"))
+func TestCacheKeyBuilder(t *testing.T) {
+	keyGenNoBucket := newCacheKeyBuilder("", "/object")
+	keyGenWithBucket := newCacheKeyBuilder("test", "/object")
+	keyGenLongObjectName := newCacheKeyBuilder("hashed", "/object-abcdefghijklmnopqrstuvwxyz1234567890")
+
+	t.Run("attributes()", func(t *testing.T) {
+		assert.Equal(t, "attrs:/object", keyGenNoBucket.attributes())
+		assert.Equal(t, "attrs:/object:lock", keyGenNoBucket.attributesLock())
+
+		assert.Equal(t, "test:attrs:/object", keyGenWithBucket.attributes())
+		assert.Equal(t, "test:attrs:/object:lock", keyGenWithBucket.attributesLock())
+
+		assert.Equal(t, "hashed:attrs:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.attributes())
+		assert.Equal(t, "hashed:attrs:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:lock", keyGenLongObjectName.attributesLock())
+	})
+
+	t.Run("objectSubrange()", func(t *testing.T) {
+		assert.Equal(t, "subrange:/object:10:20", keyGenNoBucket.objectSubrange(10, 20))
+		assert.Equal(t, "test:subrange:/object:10:20", keyGenWithBucket.objectSubrange(10, 20))
+		assert.Equal(t, "hashed:subrange:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:10:20", keyGenLongObjectName.objectSubrange(10, 20))
+	})
+
+	t.Run("iter()", func(t *testing.T) {
+		assert.Equal(t, "iter:/object", keyGenNoBucket.iter())
+		assert.Equal(t, "iter:/object:recursive", keyGenNoBucket.iter(objstore.WithRecursiveIter()))
+
+		assert.Equal(t, "test:iter:/object", keyGenWithBucket.iter())
+		assert.Equal(t, "test:iter:/object:recursive", keyGenWithBucket.iter(objstore.WithRecursiveIter()))
+
+		assert.Equal(t, "hashed:iter:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.iter())
+		assert.Equal(t, "hashed:iter:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:recursive", keyGenLongObjectName.iter(objstore.WithRecursiveIter()))
+	})
+
+	t.Run("exists()", func(t *testing.T) {
+		assert.Equal(t, "exists:/object", keyGenNoBucket.exists())
+		assert.Equal(t, "exists:/object:lock", keyGenNoBucket.existsLock())
+
+		assert.Equal(t, "test:exists:/object", keyGenWithBucket.exists())
+		assert.Equal(t, "test:exists:/object:lock", keyGenWithBucket.existsLock())
+
+		assert.Equal(t, "hashed:exists:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.exists())
+		assert.Equal(t, "hashed:exists:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:lock", keyGenLongObjectName.existsLock())
+	})
+
+	t.Run("content()", func(t *testing.T) {
+		assert.Equal(t, "content:/object", keyGenNoBucket.content())
+		assert.Equal(t, "content:/object:lock", keyGenNoBucket.contentLock())
+
+		assert.Equal(t, "test:content:/object", keyGenWithBucket.content())
+		assert.Equal(t, "test:content:/object:lock", keyGenWithBucket.contentLock())
+
+		assert.Equal(t, "hashed:content:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.content())
+		assert.Equal(t, "hashed:content:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:lock", keyGenLongObjectName.contentLock())
+	})
 }
 
-func TestCachingKeyObjectSubrange(t *testing.T) {
-	assert.Equal(t, "subrange:/object:10:20", cachingKeyObjectSubrange("", "/object", 10, 20))
-	assert.Equal(t, "test:subrange:/object:10:20", cachingKeyObjectSubrange("test", "/object", 10, 20))
-}
-
-func TestCachingKeyIter(t *testing.T) {
-	assert.Equal(t, "iter:/object", cachingKeyIter("", "/object"))
-	assert.Equal(t, "iter:/object:recursive", cachingKeyIter("", "/object", objstore.WithRecursiveIter()))
-	assert.Equal(t, "test:iter:/object", cachingKeyIter("test", "/object"))
-	assert.Equal(t, "test:iter:/object:recursive", cachingKeyIter("test", "/object", objstore.WithRecursiveIter()))
-}
-
-func TestCachingKeyExists(t *testing.T) {
-	assert.Equal(t, "exists:/object", cachingKeyExists("", "/object"))
-	assert.Equal(t, "test:exists:/object", cachingKeyExists("test", "/object"))
-}
-
-func TestCachingKeyContent(t *testing.T) {
-	assert.Equal(t, "content:/object", cachingKeyContent("", "/object"))
-	assert.Equal(t, "test:content:/object", cachingKeyContent("test", "/object"))
-}
-
-func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
+func TestCacheKeyBuilder_ShouldKeepAllocationsToMinimum(t *testing.T) {
 	tests := map[string]struct {
-		run            func(bucketID string)
+		run            func(keyGen cacheKeyBuilder)
 		expectedAllocs float64
 	}{
-		"cachingKeyAttributes()": {
-			run: func(bucketID string) {
-				cachingKeyAttributes(bucketID, "/object")
+		"attributes()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.attributes()
 			},
 			expectedAllocs: 1.0,
 		},
-		"cachingKeyObjectSubrange()": {
-			run: func(bucketID string) {
-				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+		"objectSubrange()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.objectSubrange(10, 20)
 			},
 			expectedAllocs: 1.0,
 		},
-		"cachingKeyIter()": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir")
+		"iter()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.iter()
 			},
 			expectedAllocs: 2.0,
 		},
-		"cachingKeyIter() recursive": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter())
+		"iter() recursive": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.iter(objstore.WithRecursiveIter())
 			},
 			expectedAllocs: 2.0,
 		},
-		"cachingKeyExists()": {
-			run: func(bucketID string) {
-				cachingKeyExists(bucketID, "/object")
+		"exists()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.exists()
 			},
 			expectedAllocs: 1.0,
 		},
-		"cachingKeyContent()": {
-			run: func(bucketID string) {
-				cachingKeyContent(bucketID, "/object")
+		"content()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.content()
 			},
 			expectedAllocs: 1.0,
 		},
@@ -912,8 +942,9 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 					bucketID = "test"
 				}
 
+				keyGen := newCacheKeyBuilder(bucketID, "/object")
 				allocs := testing.AllocsPerRun(100, func() {
-					testData.run(bucketID)
+					testData.run(keyGen)
 				})
 
 				require.Equal(t, testData.expectedAllocs, allocs)
@@ -1003,55 +1034,71 @@ func TestMutationInvalidatesCache(t *testing.T) {
 }
 
 func BenchmarkCachingKey(b *testing.B) {
+	const key = "/object"
+	const longKey = key + "-abcdefghijklmnopqrstuvwxyz1234567890"
+
 	tests := map[string]struct {
-		run func(bucketID string)
+		run func(bucketID string, name string)
 	}{
-		"cachingKeyAttributes()": {
-			run: func(bucketID string) {
-				cachingKeyAttributes(bucketID, "/object")
+		"cacheKeyBuilder.attributes()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.attributes()
 			},
 		},
-		"cachingKeyObjectSubrange()": {
-			run: func(bucketID string) {
-				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+
+		"cacheKeyBuilder.objectSubrange()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.objectSubrange(10, 20)
 			},
 		},
-		"cachingKeyIter()": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir")
+
+		"cacheKeyBuilder.iter()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.iter()
 			},
 		},
-		"cachingKeyIter() recursive": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter())
+
+		"cacheKeyBuilder.iter() recursive": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.iter(objstore.WithRecursiveIter())
 			},
 		},
-		"cachingKeyExists()": {
-			run: func(bucketID string) {
-				cachingKeyExists(bucketID, "/object")
+
+		"cacheKeyBuilder.exists()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.exists()
 			},
 		},
-		"cachingKeyContent()": {
-			run: func(bucketID string) {
-				cachingKeyContent(bucketID, "/object")
+
+		"cacheKeyBuilder.content()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.content()
 			},
 		},
 	}
 
 	for testName, testData := range tests {
 		for _, withBucketID := range []bool{false, true} {
-			b.Run(fmt.Sprintf("%s with bucket ID: %t", testName, withBucketID), func(b *testing.B) {
-				bucketID := ""
-				if withBucketID {
-					bucketID = "test"
-				}
+			for _, objectKey := range []string{key, longKey} {
+				b.Run(fmt.Sprintf("%s keyLength=%d, bucketID=%t", testName, len(objectKey), withBucketID), func(b *testing.B) {
+					bucketID := ""
+					if withBucketID {
+						bucketID = "test"
+					}
 
-				b.ResetTimer()
+					b.ResetTimer()
 
-				for n := 0; n < b.N; n++ {
-					testData.run(bucketID)
-				}
-			})
+					for n := 0; n < b.N; n++ {
+						testData.run(bucketID, objectKey)
+					}
+				})
+			}
 		}
 	}
 }
