@@ -3208,7 +3208,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
 
-# Maximum number of label names per info series.
+# Maximum number of label names per info series. Has no effect if less than the
+# value of the maximum number of label names per series option
+# (-validation.max-label-names-per-series)
 # CLI flag: -validation.max-label-names-per-info-series
 [max_label_names_per_info_series: <int> | default = 80]
 

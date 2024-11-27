@@ -3799,7 +3799,7 @@
           "kind": "field",
           "name": "max_label_names_per_info_series",
           "required": false,
-          "desc": "Maximum number of label names per info series.",
+          "desc": "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series)",
           "fieldValue": null,
           "fieldDefaultValue": 80,
           "fieldFlag": "validation.max-label-names-per-info-series",
