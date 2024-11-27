@@ -186,7 +186,7 @@ limits:
   ha_replica_label: ha_replica
   ha_max_clusters: 10
 
-  cost_attribution_labels: "instance"
+  cost_attribution_labels: "container"
   max_cost_attribution_labels_per_user: 2
   max_cost_attribution_cardinality_per_user: 100
   cost_attribution_cooldown: 20m

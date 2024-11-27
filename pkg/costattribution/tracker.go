@@ -4,9 +4,11 @@ package costattribution
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
@@ -34,13 +36,17 @@ type Tracker struct {
 	obseveredMtx sync.RWMutex
 	observed     map[uint64]*Observation
 
+	activeSerieMtx             sync.RWMutex
+	activeSeriesAttributionMap map[string]*atomic.Int64
+
 	hashBuffer       []byte
 	isOverflow       bool
 	cooldownUntil    *atomic.Int64
 	cooldownDuration int64
+	logger           log.Logger
 }
 
-func newTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration) (*Tracker, error) {
+func newTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) (*Tracker, error) {
 	// keep tracked labels sorted for consistent metric labels
 	sort.Slice(trackedLabels, func(i, j int) bool {
 		return trackedLabels[i] < trackedLabels[j]
@@ -69,8 +75,11 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 			Help:        "The total number of active series per user and attribution.",
 			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
 		}, append(trackedLabels, TenantLabel)),
-		hashBuffer:       make([]byte, 0, 1024),
-		cooldownDuration: int64(cooldown.Seconds()),
+		hashBuffer:                 make([]byte, 0, 1024),
+		cooldownDuration:           int64(cooldown.Seconds()),
+		logger:                     logger,
+		activeSerieMtx:             sync.RWMutex{},
+		activeSeriesAttributionMap: map[string]*atomic.Int64{},
 	}
 	return m, nil
 }
@@ -96,10 +105,25 @@ func (t *Tracker) CooldownDuration() int64 {
 	return t.cooldownDuration
 }
 
+// sep is used to separate the labels in the key, it is not a valid label caracter
+const sep = rune(0x80)
+
 func (t *Tracker) cleanupTrackerAttribution(vals []string) {
 	if t == nil {
 		return
 	}
+
+	var sb strings.Builder
+	for i, v := range vals {
+		if i > 0 {
+			sb.WriteRune(sep)
+		}
+		sb.WriteString(v)
+	}
+	t.activeSerieMtx.Lock()
+	delete(t.activeSeriesAttributionMap, sb.String())
+	t.activeSerieMtx.Unlock()
+
 	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
 	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
 
@@ -116,6 +140,9 @@ func (t *Tracker) cleanupTracker(userID string) {
 	if t == nil {
 		return
 	}
+	t.activeSerieMtx.Lock()
+	t.activeSeriesAttributionMap = map[string]*atomic.Int64{}
+	t.activeSerieMtx.Unlock()
 	filter := prometheus.Labels{TenantLabel: userID}
 	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
 	t.receivedSamplesAttribution.DeletePartialMatch(filter)
@@ -127,7 +154,20 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 		return
 	}
 	vals := t.getKeyValues(lbs, now.Unix())
-	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Inc()
+	var sb strings.Builder
+	for i, v := range vals {
+		if i > 0 {
+			sb.WriteRune(sep)
+		}
+		sb.WriteString(v)
+	}
+	t.activeSerieMtx.Lock()
+	if cnt, ok := t.activeSeriesAttributionMap[sb.String()]; !ok {
+		t.activeSeriesAttributionMap[sb.String()] = atomic.NewInt64(1)
+	} else {
+		cnt.Inc()
+	}
+	t.activeSerieMtx.Unlock()
 }
 
 func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
@@ -135,7 +175,18 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
 		return
 	}
 	vals := t.getKeyValues(lbs, now.Unix())
-	t.activeSeriesPerUserAttribution.WithLabelValues(vals...).Dec()
+	var sb strings.Builder
+	for i, v := range vals {
+		if i > 0 {
+			sb.WriteRune(sep)
+		}
+		sb.WriteString(v)
+	}
+	t.activeSerieMtx.Lock()
+	if cnt, ok := t.activeSeriesAttributionMap[sb.String()]; ok {
+		cnt.Dec()
+	}
+	t.activeSerieMtx.Unlock()
 }
 
 func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
@@ -163,6 +214,13 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 	if t == nil {
 		return
 	}
+	t.activeSerieMtx.Lock()
+	for key, c := range t.activeSeriesAttributionMap {
+		if c != nil {
+			t.activeSeriesPerUserAttribution.WithLabelValues(strings.Split(key, string(sep))...).Set(float64(c.Load()))
+		}
+	}
+	t.activeSerieMtx.Unlock()
 	t.activeSeriesPerUserAttribution.Collect(out)
 	t.receivedSamplesAttribution.Collect(out)
 	t.discardedSampleAttribution.Collect(out)
@@ -205,6 +263,7 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 		return false
 	}
 
+	t.obseveredMtx.Lock()
 	// we store up to 2 * maxCardinality observations, if we have seen the stream before, we update the last update time
 	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
 		o.lastUpdate.Store(ts)
@@ -214,6 +273,7 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 			lastUpdate: atomic.NewInt64(ts),
 		}
 	}
+	t.obseveredMtx.Unlock()
 
 	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
 	// the origin labels ovserved time is not updated, but the overflow hash is updated.

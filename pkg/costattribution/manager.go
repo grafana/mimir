@@ -79,7 +79,7 @@ func (m *Manager) TrackerForUser(userID string) *Tracker {
 
 	// if not exists, create a new tracker
 	if _, exists := m.trackersByUserID[userID]; !exists {
-		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID))
+		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 	}
 	return m.trackersByUserID[userID]
 }
@@ -180,7 +180,7 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 	// if they are different, we need to update the tracker, we don't mind, just reinitialized the tracker
 	if !CompareCALabels(cat.CALabels(), newTrackedLabels) {
 		m.mtx.Lock()
-		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID))
+		m.trackersByUserID[userID], _ = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		// update the tracker with the new tracker
 		cat = m.trackersByUserID[userID]
 		m.mtx.Unlock()

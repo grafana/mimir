@@ -76,7 +76,6 @@ type seriesStripe struct {
 	activeMatchingNativeHistograms       []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
 	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
-	buf                                  labels.ScratchBuilder
 }
 
 // seriesEntry holds a timestamp for single series.
@@ -451,7 +450,6 @@ func (s *seriesStripe) reinitialize(
 	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
 	s.cat = cat
-	s.buf = labels.NewScratchBuilder(128)
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
@@ -472,6 +470,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(s.activeMatchingNativeHistogramBuckets), s.activeMatchingNativeHistogramBuckets)
 
 	oldest := int64(math.MaxInt64)
+	buf := labels.NewScratchBuilder(128)
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
 		if ts < keepUntilNanos {
@@ -480,12 +479,11 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 			}
 
 			if idx != nil {
-				if err := idx.Series(ref, &s.buf, nil); err != nil {
+				if err := idx.Series(ref, &buf, nil); err != nil {
 					//TODO: think about what to do here
 					_ = err
 				}
-				s.cat.DecrementActiveSeries(s.buf.Labels(), keepUntil)
-				s.buf.Reset()
+				s.cat.DecrementActiveSeries(buf.Labels(), keepUntil)
 			}
 			delete(s.refs, ref)
 			continue
@@ -535,12 +533,12 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 
 	s.active--
 	if idx != nil {
-		if err := idx.Series(ref, &s.buf, nil); err != nil {
+		buf := labels.NewScratchBuilder(10)
+		if err := idx.Series(ref, &buf, nil); err != nil {
 			//TODO: think about what to do here
 			_ = err
 		}
-		s.cat.DecrementActiveSeries(s.buf.Labels(), time.Now())
-		defer s.buf.Reset()
+		s.cat.DecrementActiveSeries(buf.Labels(), time.Now())
 	}
 	if entry.numNativeHistogramBuckets >= 0 {
 		s.activeNativeHistograms--
