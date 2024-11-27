@@ -502,7 +502,7 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 	// at the end of series2 (also index 3).
 	// It should be pretty uncommon that metric contains both histograms and floats, so we will
 	// accept the cost of a new slice.
-	mixedPoints := len(left.Floats) > 0 && len(left.Histograms) > 0 || len(right.Floats) > 0 && len(right.Histograms) > 0
+	mixedPoints := (len(left.Floats) > 0 && len(left.Histograms) > 0) || (len(right.Floats) > 0 && len(right.Histograms) > 0)
 
 	prepareFSlice := func() error {
 		if !mixedPoints && maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) {
