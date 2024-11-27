@@ -371,19 +371,21 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Ingested samples / sec') +
+        $.timeseriesPanel('Ingested series / sec') +
         $.panelDescription(
-          'Ingested samples',
+          'Ingested series',
           |||
             Concurrent ingestion estimates the number of timeseries per batch to choose the optimal concurrency settings.
+
+            Normally one timeseries contains one sample, but it can contain multiple samples.
           |||
         ) +
         $.queryPanel([
           'histogram_sum(sum(rate(cortex_ingest_storage_reader_pusher_timeseries_per_flush{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingest_storage_reader_pusher_estimated_timeseries_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
         ], [
-          'Actual samples',
-          'Estimated samples',
+          'Actual series',
+          'Estimated series',
         ]) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
