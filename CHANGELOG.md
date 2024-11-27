@@ -69,6 +69,7 @@
 * [ENHANCEMENT] Distributor: Initialize ha_tracker cache before ha_tracker and distributor reach running state and begin serving writes. #9826 #9976
 * [ENHANCEMENT] Ingester: `-ingest-storage.kafka.max-buffered-bytes` to limit the memory for buffered records when using concurrent fetching. #9892
 * [ENHANCEMENT] Querier: improve performance and memory consumption of queries that select many series. #9914
+* [ENHANCEMENT] Ruler: Support OAuth2 and proxies in Alertmanager client #9945
 * [ENHANCEMENT] Distributor: allow a different limit for info series (series ending in `_info`) label count, via `-validation.max-label-names-per-info-series`. #10028
 * [BUGFIX] Fix issue where functions such as `rate()` over native histograms could return incorrect values if a float stale marker was present in the selected range. #9508
 * [BUGFIX] Fix issue where negation of native histograms (eg. `-some_native_histogram_series`) did nothing. #9508

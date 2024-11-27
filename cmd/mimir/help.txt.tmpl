@@ -711,6 +711,14 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
+  -ruler.alertmanager-client.oauth.client_id string
+    	OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.
+  -ruler.alertmanager-client.oauth.client_secret string
+    	OAuth2 client secret.
+  -ruler.alertmanager-client.oauth.scopes comma-separated-list-of-strings
+    	Optional scopes to include with the token request.
+  -ruler.alertmanager-client.oauth.token_url string
+    	Endpoint used to fetch access token.
   -ruler.alertmanager-url string
     	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.
   -ruler.enable-api
