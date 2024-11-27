@@ -87,6 +87,7 @@
 * [BUGFIX] Ingester: Fix data loss bug in the experimental ingest storage when a Kafka Fetch is split into multiple requests and some of them return an error. #9963 #9964
 * [BUGFIX] PromQL: `round` now removes the metric name again. #9879
 * [BUGFIX] Query-Frontend: fix `QueryFrontendCodec` module initialization to set lookback delta from `-querier.lookback-delta`. #9984
+* [BUGFIX] OTLP: Support integer exemplar value type. #9844
 
 ### Mixin
 
