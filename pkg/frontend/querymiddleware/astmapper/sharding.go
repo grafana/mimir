@@ -128,6 +128,17 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		if CanParallelize(e, summer.logger) {
 			return summer.shardAggregate(e)
 		}
+
+		if _, ok := e.Expr.(*parser.SubqueryExpr); ok {
+
+			// Subqueries can be run back through the handler
+			asEmbedded := NewEmbeddedQuery(e.Expr.String(), nil)
+			asEmbedded.SourceSubquery = expr.String()
+			squashed, err := summer.squash(asEmbedded)
+			return squashed, true, err
+
+		}
+
 		return e, false, nil
 
 	case *parser.VectorSelector:
@@ -144,7 +155,7 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 			// and they don't contain aggregations over series in children exprs.
 			if isSubqueryCall(e) {
 				if containsAggregateExpr(e) {
-					return e, true, nil
+					return e, false, nil
 				}
 				if !CanParallelize(e, summer.logger) {
 					return e, true, nil
@@ -225,7 +236,11 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		// If the mapper hits a subquery expression, it means it's a subquery whose sharding is currently
 		// not supported, so we terminate the mapping here. If the subquery was parallelizable we didn't reach
 		// this point, because the subquery was part of a parent shardable expr.
-		return e, true, nil
+		// Subqueries can be run back through the handler
+		asEmbedded := NewEmbeddedQuery(e.Expr.String(), nil)
+		asEmbedded.SourceSubquery = expr.String()
+		squashed, err := summer.squash(asEmbedded)
+		return squashed, true, err
 
 	default:
 		return e, false, nil

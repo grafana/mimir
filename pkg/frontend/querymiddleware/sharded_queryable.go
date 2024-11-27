@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 
@@ -126,7 +127,7 @@ func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.Emb
 		}
 		asSubquery, ok := parsedSubquery.(*parser.SubqueryExpr)
 		if !ok {
-			return nil, nil, errors.New("expected subquery expression")
+			return nil, nil, fmt.Errorf("expected subquery expression, got %s", parsedSubquery)
 		}
 		end := query.GetEnd()
 		start := end - asSubquery.Range.Milliseconds()
