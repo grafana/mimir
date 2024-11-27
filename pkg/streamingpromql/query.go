@@ -269,7 +269,14 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		case parser.LOR:
 			return binops.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
 		default:
-			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			switch e.VectorMatching.Card {
+			case parser.CardOneToMany, parser.CardManyToOne:
+				return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			case parser.CardOneToOne:
+				return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			default:
+				return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", e.VectorMatching.Card, e.Op))
+			}
 		}
 
 	case *parser.UnaryExpr:
