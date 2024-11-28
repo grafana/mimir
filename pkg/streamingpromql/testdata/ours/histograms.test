@@ -10,7 +10,7 @@ load 6m
 
 eval instant at 0m histogram_quantile(0.8, series)
 	{} 595
-	{le="2000"} 2.4000000000000004
+	{le="2000"} 2.29739670999407
 
 clear
 
@@ -89,18 +89,18 @@ load 6m
 	series{host="b"}     1 {{schema:0 sum:5 count:4 buckets:[0 3 1]}} {{schema:0 sum:5 count:4 buckets:[3 3 1]}} _
 
 eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series)
-	{host="a"}      _ 2.4000000000000004 73
-	{host="a", le="0.1"} _ _ _ 3.2
-	{host="a", le="1"} _ _ _ 2.4000000000000004
-	{host="a", le="10"} _ _ _ _ 3.2800000000000002
-	{host="a", le="100"} _ _ _ _ 3.4000000000000004
-	{host="b"} _ 2.4000000000000004 2.4000000000000004
+	{host="a"}      _ 2.29739670999407 73
+	{host="a", le="0.1"} _ _ _ 3.0314331330207964
+	{host="a", le="1"} _ _ _ 2.29739670999407
+	{host="a", le="10"} _ _ _ _ 3.1166583186419996
+	{host="a", le="100"} _ _ _ _ 3.2490095854249423
+	{host="b"} _ 2.29739670999407 2.29739670999407
 
 eval_warn range from 0m to 12m step 6m histogram_quantile(0.8, series{host="a"})
-	{host="a"} _ 2.4000000000000004 73
+	{host="a"} _ 2.29739670999407 73
 
 eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series{host="b"})
-	{host="b"} _ 2.4000000000000004 2.4000000000000004
+	{host="b"} _ 2.29739670999407 2.29739670999407
 
 clear
 
@@ -145,7 +145,7 @@ load 6m
 
 eval_warn instant at 0m histogram_quantile(0.8, series)
 	{} 4.800000000000001
-	{le="3"} 2.4000000000000004
+	{le="3"} 2.29739670999407
 
 clear
 
@@ -161,7 +161,7 @@ load 6m
 	series{le="3"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
 eval_warn instant at 0m histogram_quantile(0.8, series)
-	{le="3"} 2.4000000000000004
+	{le="3"} 2.29739670999407
 
 clear
 

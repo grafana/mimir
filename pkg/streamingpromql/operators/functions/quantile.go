@@ -243,8 +243,29 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		rank = count - rank
 	}
 
-	// TODO(codesome): Use a better estimation than linear.
-	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
+	// The fraction of how far we are into the current bucket.
+	fraction := rank / bucket.Count
+
+	// Return linear interpolation for custom buckets and for quantiles that
+	// end up in the zero bucket.
+	if h.UsesCustomBuckets() || (bucket.Lower <= 0 && bucket.Upper >= 0) {
+		return bucket.Lower + (bucket.Upper-bucket.Lower)*fraction
+	}
+
+	// For exponential buckets, we interpolate on a logarithmic scale. On a
+	// logarithmic scale, the exponential bucket boundaries (for any schema)
+	// become linear (every bucket has the same width). Therefore, after
+	// taking the logarithm of both bucket boundaries, we can use the
+	// calculated fraction in the same way as for linear interpolation (see
+	// above). Finally, we return to the normal scale by applying the
+	// exponential function to the result.
+	logLower := math.Log2(math.Abs(bucket.Lower))
+	logUpper := math.Log2(math.Abs(bucket.Upper))
+	if bucket.Lower > 0 { // Positive bucket.
+		return math.Exp2(logLower + (logUpper-logLower)*fraction)
+	}
+	// Otherwise, we are in a negative bucket and have to mirror things.
+	return -math.Exp2(logUpper + (logLower-logUpper)*(1-fraction))
 }
 
 // coalesceBuckets merges buckets with the same upper bound.
