@@ -173,36 +173,56 @@ func TestReplicaDescMerge(t *testing.T) {
 		}
 	}
 
-	tests := []struct {
+	expectedFirstAndSecondMerge := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica2,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 5,
+			ElectedChanges: 2,
+		}
+	}
+
+	testsMerge := []struct {
 		name           string
 		rDesc1         *ReplicaDesc
 		rDesc2         *ReplicaDesc
-		expectedOurs   *ReplicaDesc
+		expectedRDesc  *ReplicaDesc
 		expectedChange *ReplicaDesc
 	}{
 		{
-			name:           "simple merge: firstReplica and firstReplicaWithHigherReceivedAt",
+			name:           "Merge ReplicaDesc: Same replica name, different receivedAt should return ReplicaDesc with most recent receivedAt timestamp",
 			rDesc1:         firstReplica(),
 			rDesc2:         firstReplicaWithHigherReceivedAt(),
-			expectedOurs:   expectedFirstAndFirstHigherReceivedAtMerge(),
+			expectedRDesc:  expectedFirstAndFirstHigherReceivedAtMerge(),
 			expectedChange: expectedFirstAndFirstHigherReceivedAtMerge(),
 		},
 		{
-			name:           "idempotency: no change after applying same Replica again",
-			rDesc1:         expectedFirstAndFirstHigherReceivedAtMerge(),
+			name:           "Merge ReplicaDesc: Different replica name, different electedAt should return ReplicaDesc with most recent electedAt timestamp",
+			rDesc1:         firstReplica(),
+			rDesc2:         secondReplica(),
+			expectedRDesc:  expectedFirstAndSecondMerge(),
+			expectedChange: expectedFirstAndSecondMerge(),
+		},
+		{
+			name: "idempotency: no change after applying same ReplicaDesc again.",
+			rDesc1: func() *ReplicaDesc {
+				out, _ := merge(firstReplica(), secondReplica())
+				return out
+			}(),
 			rDesc2:         firstReplica(),
-			expectedOurs:   expectedFirstAndFirstHigherReceivedAtMerge(),
+			expectedRDesc:  expectedFirstAndSecondMerge(),
 			expectedChange: nil,
 		},
 		{
-			name:   "commutativity: Merge(firstReplicaWithHigherReceivedAt, first) == Merge(first, firstReplicaWithHigherReceivedAt)",
-			rDesc1: firstReplicaWithHigherReceivedAt(),
-			rDesc2: firstReplica(),
-			expectedOurs: func() *ReplicaDesc {
-				expected, _ := merge(firstReplica(), firstReplicaWithHigherReceivedAt())
+			name:   "commutativity: Merge(first, second) == Merge(second, first)",
+			rDesc1: firstReplica(),
+			rDesc2: secondReplica(),
+			expectedRDesc: func() *ReplicaDesc {
+				expected, _ := merge(secondReplica(), firstReplica())
 				return expected
 			}(),
-			expectedChange: nil,
+			expectedChange: expectedFirstAndSecondMerge(),
 		},
 		{
 			name: "associativity: Merge(Merge(first, second), third) == Merge(first, Merge(second, third))",
@@ -212,19 +232,19 @@ func TestReplicaDescMerge(t *testing.T) {
 				return ours1
 			}(),
 			rDesc2: nil,
-			expectedOurs: func() *ReplicaDesc {
+			expectedRDesc: func() *ReplicaDesc {
 				ours2, _ := merge(secondReplica(), thirdReplica())
-				ours2, _ = merge(ours2, firstReplica())
+				ours2, _ = merge(firstReplica(), ours2)
 				return ours2
 			}(),
 			expectedChange: nil,
 		},
 	}
 
-	for _, tt := range tests {
+	for _, tt := range testsMerge {
 		t.Run(tt.name, func(t *testing.T) {
-			ours, ch := merge(tt.rDesc1, tt.rDesc2)
-			assert.Equal(t, tt.expectedOurs, ours)
+			rDesc, ch := merge(tt.rDesc1, tt.rDesc2)
+			assert.Equal(t, tt.expectedRDesc, rDesc)
 			assert.Equal(t, tt.expectedChange, ch)
 		})
 	}
@@ -291,7 +311,7 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	assert.Error(t, err)
 
 	// Wait more than the overwrite timeout.
-	now = now.Add(time.Millisecond * failoverTimeoutPlus100ms)
+	now = now.Add(failoverTimeoutPlus100ms)
 
 	// Another sample from replica2 to update its timestamp.
 	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)

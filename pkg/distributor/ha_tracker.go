@@ -61,6 +61,9 @@ func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
 }
 
+// Merge merges other ReplicaDesc into this one.
+// The decision is made based on the ReceivedAt timestamp, if the Replica name is the same and at the ElectedAt if the
+// Replica name is different
 func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
 	return r.mergeWithTime(other)
 }
@@ -79,61 +82,51 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.
 		return nil, nil
 	}
 
-	thisRDesc := r
-	otherRDesc := other
-
-	if otherRDesc.Replica == thisRDesc.Replica {
+	if other.Replica == r.Replica {
 		// Keeping the one with the most recent receivedAt timestamp
-		if otherRDesc.ReceivedAt > thisRDesc.ReceivedAt {
-			*thisRDesc = *other
-		} else if thisRDesc.ReceivedAt == otherRDesc.ReceivedAt && thisRDesc.DeletedAt == 0 && otherRDesc.DeletedAt != 0 {
-			*thisRDesc = *other
+		if other.ReceivedAt > r.ReceivedAt {
+			*r = *other
+		} else if r.ReceivedAt == other.ReceivedAt && r.DeletedAt == 0 && other.DeletedAt != 0 {
+			*r = *other
 		}
 	} else {
 		// keep the most recent Elected to reach consistency
-		if otherRDesc.ElectedAt > thisRDesc.ElectedAt {
-			*thisRDesc = *other
-		} else if otherRDesc.ElectedAt == thisRDesc.ElectedAt {
+		if other.ElectedAt > r.ElectedAt {
+			*r = *other
+		} else if other.ElectedAt == r.ElectedAt {
 			// if the timestamps are equal we compare receivedAt
-			if otherRDesc.ReceivedAt > thisRDesc.ReceivedAt {
-				*thisRDesc = *other
+			if other.ReceivedAt > r.ReceivedAt {
+				*r = *other
 			}
 		}
 	}
 
-	// No changes - return
-	if *thisRDesc != *otherRDesc {
+	// No changes
+	if *r != *other {
 		return nil, nil
 	}
 
 	out := NewReplicaDesc()
-	*out = *thisRDesc
+	*out = *r
 	return out, nil
 }
 
-// MergeContent noOp currently
+// MergeContent describes content of this Mergeable.
+// Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains.
 func (r *ReplicaDesc) MergeContent() []string {
 	result := []string(nil)
 	if len(r.Replica) != 0 {
-		result = append(result, r.Replica)
+		result = append(result, r.String())
 	}
 	return result
 }
 
-// RemoveTombstones noOp for now
-func (r *ReplicaDesc) RemoveTombstones(limit time.Time) (total, removed int) {
-	if r.DeletedAt > 0 {
-		if limit.IsZero() || time.Unix(r.DeletedAt, 0).Before(limit) {
-			// need to implement the remove logic
-			removed = 1
-		} else {
-			total = 1
-		}
-	}
+// RemoveTombstones noOp.
+func (r *ReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
 	return
 }
 
-// Clone returns a deep copy of the ring state.
+// Clone returns a deep copy of the ReplicaDesc.
 func (r *ReplicaDesc) Clone() memberlist.Mergeable {
 	return proto.Clone(r).(*ReplicaDesc)
 }
