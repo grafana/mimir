@@ -1,13 +1,13 @@
 ---
-description: Learn how to get started with Grafana Enterprise Metrics using the Helm chart.
-menuTitle: Get started with GEM
-title: Get started with Grafana Enterprise Metrics using the Helm chart
+description: Learn how to configure Grafana Enterprise Metrics using the Helm chart.
+menuTitle: Configure GEM
+title: Configure Grafana Enterprise Metrics using the Helm chart
 weight: 40
 ---
 
-# Get started with GEM
+# Configure Grafana Enterprise Metrics
 
-Use the mimir-distributed Helm chart to deploy GEM on Kubernetes. Here are the main differences in using the Helm chart for GEM, as compared to Grafana Mimir:
+Use the mimir-distributed Helm chart to deploy Grafana Enterprise Metrics (GEM) on Kubernetes. Here are the main differences in using the Helm chart for GEM, as compared to Grafana Mimir:
 
 - GEM requires a valid license.
 - Instead of using NGINX as the router of requests to internal components, GEM deploys its own enterprise gateway component that authenticates and routes requests.
