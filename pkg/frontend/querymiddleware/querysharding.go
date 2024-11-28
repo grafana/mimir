@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,18 +120,25 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return s.next.Do(ctx, r)
 	}
 
+	var fullRangeHandler MetricsQueryHandler
+	// TODO: Support range
+	if v, ok := ctx.Value(fullRangeHandlerContextKey).(MetricsQueryHandler); ok && IsInstantQuery(r.GetPath()) {
+		fullRangeHandler = v
+	}
+	level.Debug(log).Log(fullRangeHandlerContextKey+" set", fullRangeHandler != nil)
+
 	s.shardingAttempts.Inc()
-	shardedQuery, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), totalShards)
+	shardedQuery, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), totalShards, fullRangeHandler != nil)
 
 	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
-	if err != nil || shardingStats.GetShardedQueries() == 0 {
+	if (err != nil || shardingStats.GetShardedQueries() == 0) && !strings.Contains(shardedQuery, astmapper.AggregatedSubqueryMetricName) {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			level.Error(log).Log("msg", "timeout while rewriting the input query into a shardable query, please fill in a bug report with this query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
 		} else if err != nil {
 			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
 		} else {
-			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query", "query", r.GetQuery())
+			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query", "query", r.GetQuery(), "rewritten", shardedQuery)
 		}
 
 		return s.next.Do(ctx, r)
@@ -153,7 +161,9 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	}
 
 	annotationAccumulator := NewAnnotationAccumulator()
-	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, nil)
+
+	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, fullRangeHandler, nil)
+	shardedQueryable = shardedQueryable.WithLogger(log)
 
 	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
 }
@@ -275,15 +285,16 @@ func mapEngineError(err error) error {
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharding) shardQuery(ctx context.Context, query string, totalShards int) (string, *astmapper.MapperStats, error) {
+func (s *querySharding) shardQuery(ctx context.Context, query string, totalShards int, upstreamSubqueries bool) (string, *astmapper.MapperStats, error) {
 	stats := astmapper.NewMapperStats()
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats)
+	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats, upstreamSubqueries)
 	if err != nil {
 		return "", nil, err
 	}
+
 	mapper := astmapper.NewSharding(summer)
 
 	// The mapper can modify the input expression in-place, so we must re-parse the original query
@@ -373,7 +384,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		// - count(metric)
 		//
 		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
-		_, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), 1)
+		_, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), 1, false)
 		numShardableLegs := 1
 		if err == nil && shardingStats.GetShardedQueries() > 0 {
 			numShardableLegs = shardingStats.GetShardedQueries()

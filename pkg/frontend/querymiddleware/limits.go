@@ -238,7 +238,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	// Wraps middlewares with a final handler, which will receive sub-requests in
 	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
 	// sub-requests run in parallel.
-	response, err := rt.middleware.Wrap(
+	fullHandler := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
 				return nil, fmt.Errorf("could not acquire work: %w", err)
@@ -246,7 +246,8 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 			defer sem.Release(1)
 
 			return rt.downstream.Do(ctx, r)
-		})).Do(ctx, request)
+		}))
+	response, err := fullHandler.Do(context.WithValue(ctx, fullRangeHandlerContextKey, fullHandler), request)
 	if err != nil {
 		return nil, err
 	}

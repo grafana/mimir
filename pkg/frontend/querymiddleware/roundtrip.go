@@ -48,6 +48,8 @@ const (
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
 	queryTypeOther                        = "other"
+
+	fullRangeHandlerContextKey = "fullRangeHandler"
 )
 
 var (

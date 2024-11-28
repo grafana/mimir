@@ -8,9 +8,12 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -39,14 +42,16 @@ type shardedQueryable struct {
 	req                   MetricsQueryRequest
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
+	upstreamRangeHandler  MetricsQueryHandler
 	responseHeaders       *responseHeadersTracker
 	handleEmbeddedQuery   HandleEmbeddedQueryFunc
+	logger                log.Logger
 }
 
 // NewShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
+func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next, upstreamRangeHandler MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
 	if handleEmbeddedQuery == nil {
 		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc
 	}
@@ -54,14 +59,20 @@ func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *Annotat
 		req:                   req,
 		annotationAccumulator: annotationAccumulator,
 		handler:               next,
+		upstreamRangeHandler:  upstreamRangeHandler,
 		responseHeaders:       newResponseHeadersTracker(),
 		handleEmbeddedQuery:   handleEmbeddedQuery,
 	}
 }
 
+func (q *shardedQueryable) WithLogger(logger log.Logger) *shardedQueryable {
+	q.logger = logger
+	return q
+}
+
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery}, nil
+	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, upstreamRangeHandler: q.upstreamRangeHandler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery, logger: q.logger}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -77,6 +88,8 @@ type shardedQuerier struct {
 	req                   MetricsQueryRequest
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
+	upstreamRangeHandler  MetricsQueryHandler
+	logger                log.Logger
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -87,6 +100,58 @@ type shardedQuerier struct {
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
 func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	var aggregatedSubqueryExpr string
+	for _, matcher := range matchers {
+		if matcher.Name == astmapper.AggregatedSubqueryMetricName {
+			aggregatedSubqueryExpr = matcher.Value
+			break
+		}
+	}
+
+	// Handle subqueries.
+	req := q.req
+	if aggregatedSubqueryExpr != "" && IsInstantQuery(req.GetPath()) && q.upstreamRangeHandler != nil {
+		if q.logger != nil {
+			level.Info(q.logger).Log("msg", "handling aggregated subquery", "expr", aggregatedSubqueryExpr)
+		}
+		parsedExpr, err := parser.ParseExpr(aggregatedSubqueryExpr)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+		subquery, ok := parsedExpr.(*parser.SubqueryExpr)
+		if !ok {
+			return storage.ErrSeriesSet(fmt.Errorf("expected subquery expression, got %s (%T)", parsedExpr, parsedExpr))
+		}
+
+		end := req.GetEnd()
+		start := end - subquery.Range.Milliseconds()
+
+		headers := req.GetHeaders()
+		headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}})
+
+		newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, start, end, subquery.Step.Milliseconds(), req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
+		if q.logger != nil {
+			level.Info(q.logger).Log("msg", "running subquery as a range query", "query", newRangeRequest.GetQuery())
+		}
+
+		upstreamRangeHandlerResp, err := q.upstreamRangeHandler.Do(ctx, newRangeRequest)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		upstreamRangeHandlerPromRes, ok := upstreamRangeHandlerResp.(*PrometheusResponse)
+		if !ok {
+			return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", upstreamRangeHandlerResp, &PrometheusResponse{}))
+		}
+
+		resStreams, err := ResponseToSamples(upstreamRangeHandlerPromRes)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		return newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
+	}
+
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
