@@ -65,7 +65,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.ruler.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.ruler.extraVolumeMounts }}

@@ -64,7 +64,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.ruler_querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.ruler_querier.extraVolumeMounts }}

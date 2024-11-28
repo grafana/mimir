@@ -153,7 +153,7 @@ spec:
             # needs to be higher to avoid connections being closed abruptly.
             - "-server.http-idle-timeout=6m"
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}
