@@ -201,7 +201,7 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
 
 ## Deploy Grafana Enterprise Metrics
 
-To use the mimir-distributed Helm chart to deploy GEM, refer to [Deploy Grafana Enterprise Metrics](https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/gs-gem).
+For additional GEM-specific configurations, refer to [Deploy Grafana Enterprise Metrics](https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/gs-gem).
 
 ## Enable external access to Grafana Mimir
 
