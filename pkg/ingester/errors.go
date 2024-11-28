@@ -513,16 +513,16 @@ type ingesterErrSamplers struct {
 
 func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	return ingesterErrSamplers{
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
-		log.NewSampler(freq),
+		sampleTimestampTooOld:             log.NewSampler(freq),
+		sampleTimestampTooOldOOOEnabled:   log.NewSampler(freq),
+		sampleTimestampTooFarInFuture:     log.NewSampler(freq),
+		sampleOutOfOrder:                  log.NewSampler(freq),
+		sampleDuplicateTimestamp:          log.NewSampler(freq),
+		maxSeriesPerMetricLimitExceeded:   log.NewSampler(freq),
+		maxMetadataPerMetricLimitExceeded: log.NewSampler(freq),
+		maxSeriesPerUserLimitExceeded:     log.NewSampler(freq),
+		maxMetadataPerUserLimitExceeded:   log.NewSampler(freq),
+		nativeHistogramValidationError:    log.NewSampler(freq),
 	}
 }
 
