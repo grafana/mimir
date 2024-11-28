@@ -1,11 +1,11 @@
 ---
-description: Learn how to configure Grafana Enterprise Metrics using the Helm chart.
-menuTitle: Configure GEM
-title: Configure Grafana Enterprise Metrics using the Helm chart
+description: Learn how to deploy Grafana Enterprise Metrics using the Helm chart.
+menuTitle: Deploy GEM
+title: Deploy Grafana Enterprise Metrics using the Helm chart
 weight: 40
 ---
 
-# Configure Grafana Enterprise Metrics
+# Deploy Grafana Enterprise Metrics
 
 Use the mimir-distributed Helm chart to deploy Grafana Enterprise Metrics (GEM) on Kubernetes. Here are the main differences in using the Helm chart for GEM, as compared to Grafana Mimir:
 
