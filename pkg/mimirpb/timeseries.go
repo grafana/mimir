@@ -19,11 +19,14 @@ import (
 )
 
 const (
-	minPreallocatedTimeseries         = 100
-	minPreallocatedLabels             = 20
-	minPreallocatedSamplesPerSeries   = 10
-	minPreallocatedExemplarsPerSeries = 1
-	maxPreallocatedExemplarsPerSeries = 10
+	minPreallocatedTimeseries          = 100
+	minPreallocatedLabels              = 20
+	maxPreallocatedLabels              = 200
+	minPreallocatedSamplesPerSeries    = 10
+	maxPreallocatedSamplesPerSeries    = 100
+	maxPreallocatedHistogramsPerSeries = 100
+	minPreallocatedExemplarsPerSeries  = 1
+	maxPreallocatedExemplarsPerSeries  = 10
 )
 
 var (
@@ -476,9 +479,28 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels[i].Name = ""
 		ts.Labels[i].Value = ""
 	}
-	ts.Labels = ts.Labels[:0]
-	ts.Samples = ts.Samples[:0]
-	ts.Histograms = ts.Histograms[:0]
+
+	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.
+	// This allows us to ensure we don't put very large slices back to the pool (e.g. a few requests with
+	// a huge number of samples may cause in-use heap memory to significantly increase, because the slices
+	// allocated by such poison requests would be reused by other requests with a normal number of samples).
+	if cap(ts.Labels) > maxPreallocatedLabels {
+		ts.Labels = nil
+	} else {
+		ts.Labels = ts.Labels[:0]
+	}
+
+	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
+		ts.Samples = nil
+	} else {
+		ts.Samples = ts.Samples[:0]
+	}
+
+	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
+		ts.Histograms = nil
+	} else {
+		ts.Histograms = ts.Histograms[:0]
+	}
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
