@@ -129,8 +129,9 @@ func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapte
 	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
-func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+func newSampleDuplicateTimestampError(timestamp model.Time, existing, newValue float64, labels []mimirpb.LabelAdapter) sampleError {
+	return newSampleError(globalerror.SampleDuplicateTimestamp, fmt.Sprintf("the sample has been rejected because another sample with the same timestamp has already been ingested: existing %g, new value %g", existing, newValue), timestamp, labels)
+
 }
 
 // exemplarError is an ingesterError indicating a problem with an exemplar.
@@ -512,6 +513,7 @@ type ingesterErrSamplers struct {
 }
 
 func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
+	lowerSampling := freq * 10 // For errors that occur more often and have less content.
 	return ingesterErrSamplers{
 		sampleTimestampTooOld:             log.NewSampler(freq),
 		sampleTimestampTooOldOOOEnabled:   log.NewSampler(freq),
@@ -520,7 +522,7 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 		sampleDuplicateTimestamp:          log.NewSampler(freq),
 		maxSeriesPerMetricLimitExceeded:   log.NewSampler(freq),
 		maxMetadataPerMetricLimitExceeded: log.NewSampler(freq),
-		maxSeriesPerUserLimitExceeded:     log.NewSampler(freq),
+		maxSeriesPerUserLimitExceeded:     log.NewSampler(lowerSampling),
 		maxMetadataPerUserLimitExceeded:   log.NewSampler(freq),
 		nativeHistogramValidationError:    log.NewSampler(freq),
 	}
