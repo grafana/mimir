@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -198,7 +199,7 @@ func TestNextForcedHeadCompactionRange(t *testing.T) {
 }
 
 func TestGetSeriesCountAndMinLocalLimit(t *testing.T) {
-	tsdbDB, err := tsdb.Open(t.TempDir(), log.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	tsdbDB, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, tsdbDB.Close())

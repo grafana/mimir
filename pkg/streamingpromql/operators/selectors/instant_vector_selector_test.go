@@ -270,10 +270,9 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 }
 
 func requireNotSameSlices[T any](t *testing.T, s1, s2 []T, description string, context string) {
-	require.NotSamef(t, s1, s2, "%v: must not point to the same %v slice", context, description)
-
-	// require.NotSame only checks the slice headers are different. It does not check that the slices do not point the same underlying arrays.
-	// So specifically check if the first elements are different.
+	// Check that the two slices do not share the same backing array.
+	// Note that this condition is sufficient for the cases we want to catch above, but this condition is not generally
+	// sufficient for checking if two slices share the same underlying array.
 	if len(s1) > 0 && len(s2) > 0 {
 		require.NotSamef(t, &s1[0], &s2[0], "%v: must not point to the same underlying %v array", context, description)
 	}

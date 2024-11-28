@@ -167,10 +167,11 @@ func generateExpectedFloats(start time.Time, end time.Time, step time.Duration, 
 	val := expectedVector[0].Value
 
 	const lookbackPeriod = 5 * time.Minute
+	rangeEnd := sampleTime.Add(lookbackPeriod)
 
 	values := []model.SamplePair(nil)
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		if ts.Before(sampleTime) || ts.After(sampleTime.Add(lookbackPeriod)) {
+		if ts.Before(sampleTime) || ts.After(rangeEnd) || ts.Equal(rangeEnd) {
 			continue
 		}
 		values = append(values, model.SamplePair{
@@ -192,10 +193,11 @@ func generateExpectedHistograms(start time.Time, end time.Time, step time.Durati
 	hist := expectedVector[0].Histogram
 
 	const lookbackPeriod = 5 * time.Minute
+	rangeEnd := sampleTime.Add(lookbackPeriod)
 
 	histograms := []model.SampleHistogramPair(nil)
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		if ts.Before(sampleTime) || ts.After(sampleTime.Add(lookbackPeriod)) {
+		if ts.Before(sampleTime) || ts.After(rangeEnd) || ts.Equal(rangeEnd) {
 			continue
 		}
 		histograms = append(histograms, model.SampleHistogramPair{

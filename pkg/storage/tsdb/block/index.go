@@ -29,6 +29,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // VerifyBlock does a full run over a block index and chunk data and verifies that they fulfill the order invariants.
@@ -421,7 +423,7 @@ func Repair(ctx context.Context, logger log.Logger, dir string, id ulid.ULID, so
 		return resid, errors.New("cannot repair downsampled block")
 	}
 
-	b, err := tsdb.OpenBlock(logger, bdir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), bdir, nil)
 	if err != nil {
 		return resid, errors.Wrap(err, "open block")
 	}

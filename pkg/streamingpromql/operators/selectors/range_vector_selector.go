@@ -90,8 +90,8 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	// Apply offset after adjusting for timestamp from @ modifier.
 	rangeEnd = rangeEnd - m.Selector.Offset
 	rangeStart := rangeEnd - m.rangeMilliseconds
-	m.floats.DiscardPointsBefore(rangeStart)
-	m.histograms.DiscardPointsBefore(rangeStart)
+	m.floats.DiscardPointsAtOrBefore(rangeStart)
+	m.histograms.DiscardPointsAtOrBefore(rangeStart)
 
 	if err := m.fillBuffer(m.floats, m.histograms, rangeStart, rangeEnd); err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			return m.chunkIterator.Err()
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
-			if value.IsStaleNaN(f) || t < rangeStart {
+			if value.IsStaleNaN(f) || t <= rangeStart {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				continue
@@ -134,7 +134,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			}
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t := m.chunkIterator.AtT()
-			if t < rangeStart {
+			if t <= rangeStart {
 				continue
 			}
 			hPoint, _ := histograms.NextPoint()

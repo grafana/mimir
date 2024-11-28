@@ -170,12 +170,10 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		var promoteResourceAttributes []string
-		if resourceAttributePromotionConfig != nil {
-			promoteResourceAttributes = resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
-		} else {
-			promoteResourceAttributes = limits.PromoteOTelResourceAttributes(tenantID)
+		if resourceAttributePromotionConfig == nil {
+			resourceAttributePromotionConfig = limits
 		}
+		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
@@ -415,7 +413,7 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 		PromoteResourceAttributes:           promoteResourceAttributes,
-	}, logger)
+	}, utillog.SlogFromGoKit(logger))
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))

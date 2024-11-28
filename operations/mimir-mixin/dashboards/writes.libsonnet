@@ -240,6 +240,88 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
       )
       .addPanel(
+        $.timeseriesPanel('Kafka records batch latency') +
+        $.panelDescription(
+          'Kafka records batch latency',
+          |||
+            This panel displays the two stages in processing a record batch from Kafka. Fetching batches happens asynchronously to processing them.
+
+            If processing batches is the bottleneck, then "Awaiting next batch avg" will be close to zero. In this case you can consider tuning the ingestion-concurrency configuration parameters.
+
+            If fetching is the bottleneck, then "Awaiting next batch avg" will be in the high tens of milliseconds or higher.
+            It is normal for fetching to be the bottleneck during normal operation because a lot of the time is spent in waiting for new records to be produced.
+          |||
+        ) +
+        $.withExemplars($.queryPanel(
+          [
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_process_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'Batch processing avg',
+            'Awaiting next batch avg',
+          ],
+        )) + {
+          fieldConfig+: {
+            defaults+: { unit: 's', exemplar: true },
+          },
+        } +
+        $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Record size') +
+        $.panelDescription(
+          'Record size',
+          |||
+            Concurrent fetching estimates the size of records.
+            The estimation is used to enforce the max-buffered-bytes limit and to reduce discarded bytes.
+          |||
+        ) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          |||
+            histogram_avg(sum(rate(cortex_ingest_storage_reader_estimated_bytes_per_record{%s}[$__rate_interval])))
+          |||
+          % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Actual bytes per record (avg)',
+          'Estimated bytes per record (avg)',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('')
+      .addPanel(
+        $.timeseriesPanel('Kafka fetch throughput') +
+        $.panelDescription(
+          'Kafka fetch throughput',
+          |||
+            Throughput of fetches received from Kafka brokers.
+            This panel shows the rate of bytes fetched from Kafka brokers, and the rate of bytes discarded.
+            The discarded bytes are due to concurrently fetching overlapping offsets.
+
+            Discarded bytes amounting to up to 10% of the total fetched bytes are exepcted during startup when there is higher concurrency in fetching.
+            Discarded bytes amounting to around 1% of the total fetched bytes are expected during normal operation.
+
+            High values of discarded bytes might indicate inaccurate estimation of record size.
+          |||
+        ) +
+        $.queryPanel([
+          'sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_fetched_discarded_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Fetched bytes (decompressed)',
+          'Discarded bytes (decompressed)',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'Bps' } } },
+      )
+      .addPanel(
         $.timeseriesPanel('Write request batches processed / sec') +
         $.panelDescription(
           'Write request batches processed / sec',
@@ -271,9 +353,9 @@ local filename = 'mimir-writes.json';
             'sum (
                 # This is the old metric name. We\'re keeping support for backward compatibility.
                 rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval])
-              or
-              rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="client"}[$__rate_interval])
-            )' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+                or
+                rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="client"}[$__rate_interval])
+              )' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
             'sum (
               # This is the old metric name. We\'re keeping support for backward compatibility.
               rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval])
@@ -289,31 +371,23 @@ local filename = 'mimir-writes.json';
         ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Kafka records batch processing latency') +
+        $.timeseriesPanel('Ingested series / sec') +
         $.panelDescription(
-          'Kafka records batch processing latency',
+          'Ingested series',
           |||
-            Time taken to process a batch of Kafka records (each record contains a write request).
+            Concurrent ingestion estimates the number of timeseries per batch to choose the optimal concurrency settings.
+
+            Normally one timeseries contains one sample, but it can contain multiple samples.
           |||
         ) +
-        $.queryPanel(
-          [
-            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_records_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_records_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_records_processing_time_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-          ],
-          [
-            'avg',
-            '99th percentile',
-            '99.9th percentile',
-            '100th percentile',
-          ],
-        ) + {
-          fieldConfig+: {
-            defaults+: { unit: 's' },
-          },
-        },
+        $.queryPanel([
+          'histogram_sum(sum(rate(cortex_ingest_storage_reader_pusher_timeseries_per_flush{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_pusher_estimated_timeseries_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Actual series',
+          'Estimated series',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
     )
     .addRowIf(
@@ -321,7 +395,8 @@ local filename = 'mimir-writes.json';
       $.row('Ingester – end-to-end latency (ingest storage)')
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
-      ).addPanel(
+      )
+      .addPanel(
         $.ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel(),
       )
       .addPanel(
