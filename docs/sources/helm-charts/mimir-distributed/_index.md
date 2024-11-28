@@ -20,3 +20,5 @@ The mimir-distributed Helm chart for [Grafana Mimir](https://grafana.com/docs/mi
 > **Note:** By default, the mimir-distributed Helm chart documentation applies to both Grafana Mimir and GEM. If it only applies to GEM, it is explicitly stated.
 
 {{< section menuTitle="true" >}}
+
+To learn more about Helm, refer to the [Helm home page](https://helm.sh/).
