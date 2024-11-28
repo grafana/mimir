@@ -117,9 +117,6 @@ func (p *prometheusHistogramChunk) AddFloatHistogram(_ int64, _ *histogram.Float
 }
 
 // AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
-// work, and should not be used in production. In particular, it appends all histograms to single chunk, and uses new
-// Appender for each invocation.
-// AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
 // work, and should not be used in production. In particular, it uses a new Appender for each invocation.
 func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
 	if p.chunk == nil {
