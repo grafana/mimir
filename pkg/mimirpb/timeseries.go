@@ -19,11 +19,14 @@ import (
 )
 
 const (
-	minPreallocatedTimeseries         = 100
-	minPreallocatedLabels             = 20
-	minPreallocatedSamplesPerSeries   = 10
-	minPreallocatedExemplarsPerSeries = 1
-	maxPreallocatedExemplarsPerSeries = 10
+	minPreallocatedTimeseries          = 100
+	minPreallocatedLabels              = 20
+	maxPreallocatedLabels              = 100
+	minPreallocatedSamplesPerSeries    = 10
+	maxPreallocatedSamplesPerSeries    = 50
+	maxPreallocatedHistogramsPerSeries = 50
+	minPreallocatedExemplarsPerSeries  = 1
+	maxPreallocatedExemplarsPerSeries  = 10
 )
 
 var (
@@ -476,9 +479,24 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels[i].Name = ""
 		ts.Labels[i].Value = ""
 	}
-	ts.Labels = ts.Labels[:0]
-	ts.Samples = ts.Samples[:0]
-	ts.Histograms = ts.Histograms[:0]
+
+	if cap(ts.Labels) > maxPreallocatedLabels {
+		ts.Labels = nil
+	} else {
+		ts.Labels = ts.Labels[:0]
+	}
+
+	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
+		ts.Samples = nil
+	} else {
+		ts.Samples = ts.Samples[:0]
+	}
+
+	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
+		ts.Histograms = nil
+	} else {
+		ts.Histograms = ts.Histograms[:0]
+	}
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
