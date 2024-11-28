@@ -29,6 +29,10 @@ const (
 
 	// EmbeddedQueriesMetricName is a reserved metric name denoting a special metric which contains embedded queries.
 	EmbeddedQueriesMetricName = "__embedded_queries__"
+
+	// AggregatedSubqueryMetricName is a reserved metric name denoting a special metric which contains aggregated subqueries.
+	// The actual subquery is stored in a label with the same key as the metric name.
+	AggregatedSubqueryMetricName = "__aggregated_subquery__"
 )
 
 // EmbeddedQueries is a wrapper type for encoding queries

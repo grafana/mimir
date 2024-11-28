@@ -8,6 +8,7 @@ package astmapper
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -51,12 +52,12 @@ func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
 }
 
 // NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
-func NewQueryShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
-	return NewShardSummerWithLabeller(ctx, shards, squasher, logger, stats, newQueryShardLabeller(shards))
+func NewQueryShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, upstreamSubqueries bool) (ASTMapper, error) {
+	return NewShardSummerWithLabeller(ctx, shards, squasher, logger, stats, newQueryShardLabeller(shards), upstreamSubqueries)
 }
 
-func NewShardSummerWithLabeller(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) (ASTMapper, error) {
-	summer, err := newShardSummer(ctx, shards, squasher, logger, stats, labeller)
+func NewShardSummerWithLabeller(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller, upstreamSubqueries bool) (ASTMapper, error) {
+	summer, err := newShardSummer(ctx, shards, squasher, logger, stats, labeller, upstreamSubqueries)
 	if err != nil {
 		return nil, err
 	}
@@ -66,18 +67,19 @@ func NewShardSummerWithLabeller(ctx context.Context, shards int, squasher Squash
 type shardSummer struct {
 	ctx context.Context
 
-	shards       int
-	currentShard *int
-	squash       Squasher
-	logger       log.Logger
-	stats        *MapperStats
+	shards             int
+	currentShard       *int
+	squash             Squasher
+	logger             log.Logger
+	stats              *MapperStats
+	upstreamSubqueries bool
 
 	shardLabeller ShardLabeller
 
 	canShardAllVectorSelectorsCache map[string]bool
 }
 
-func newShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) (*shardSummer, error) {
+func newShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller, upstreamSubqueries bool) (*shardSummer, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
 	}
@@ -85,11 +87,12 @@ func newShardSummer(ctx context.Context, shards int, squasher Squasher, logger l
 	return &shardSummer{
 		ctx: ctx,
 
-		shards:       shards,
-		squash:       squasher,
-		currentShard: nil,
-		logger:       logger,
-		stats:        stats,
+		shards:             shards,
+		squash:             squasher,
+		currentShard:       nil,
+		logger:             logger,
+		stats:              stats,
+		upstreamSubqueries: upstreamSubqueries,
 
 		shardLabeller: shardLabeller,
 
@@ -143,6 +146,23 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 			// Only shards Subqueries, they are parallelizable if they are parallelizable themselves
 			// and they don't contain aggregations over series in children exprs.
 			if isSubqueryCall(e) {
+				if strings.HasSuffix(e.Func.Name, "_over_time") && len(e.Args) == 1 && summer.upstreamSubqueries {
+					sq := e.Args[0].(*parser.SubqueryExpr)
+					selector := &parser.VectorSelector{
+						Name: AggregatedSubqueryMetricName,
+						LabelMatchers: []*labels.Matcher{
+							labels.MustNewMatcher(labels.MatchEqual, AggregatedSubqueryMetricName, sq.String()),
+						},
+					}
+
+					e.Args[0] = &parser.MatrixSelector{
+						VectorSelector: selector,
+						Range:          sq.Range,
+					}
+
+					return e, true, nil
+				}
+
 				if containsAggregateExpr(e) {
 					return e, true, nil
 				}
