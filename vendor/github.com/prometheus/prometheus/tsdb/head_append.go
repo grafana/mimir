@@ -497,7 +497,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
 				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
 			}
-			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
+			if math.Float64bits(s.lastValue) != math.Float64bits(v) && math.Float64bits(v) != value.QuietZeroNaN {
 				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -1139,6 +1139,10 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
+		}
+
+		if math.Float64bits(s.V) == value.QuietZeroNaN {
+			s.V = 0
 		}
 
 		switch {
