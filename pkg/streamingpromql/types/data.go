@@ -47,9 +47,9 @@ func (i *InstantVectorSeriesDataIterator) Reset(data InstantVectorSeriesData) {
 // It returns the next point with the lowest timestamp.
 // If h is not nil, the value is a histogram, otherwise it is a float.
 // If no more values exist ok is false.
-func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogram.FloatHistogram, ok bool) {
+func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogram.FloatHistogram, hIndex int, ok bool) {
 	if i.fIndex >= len(i.data.Floats) && i.hIndex >= len(i.data.Histograms) {
-		return 0, 0, nil, false
+		return 0, 0, nil, -1, false
 	}
 
 	exhaustedFloats := i.fIndex >= len(i.data.Floats)
@@ -58,13 +58,13 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 		// Return the next float
 		point := i.data.Floats[i.fIndex]
 		i.fIndex++
-		return point.T, point.F, nil, true
+		return point.T, point.F, nil, -1, true
 	}
 
 	// Return the next histogram
 	point := i.data.Histograms[i.hIndex]
 	i.hIndex++
-	return point.T, 0, point.H, true
+	return point.T, 0, point.H, i.hIndex - 1, true
 }
 
 // RangeVectorStepData contains the data and timestamps associated with a single time step produced by a

@@ -18,6 +18,7 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 		T       int64
 		F       float64
 		H       *histogram.FloatHistogram
+		HIndex  int
 		HasNext bool
 	}
 	type testCase struct {
@@ -37,10 +38,10 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 				},
 			},
 			expected: []expected{
-				{1000, 1.1, nil, true},
-				{2000, 2.2, nil, true},
-				{3000, 3.3, nil, true},
-				{0, 0, nil, false},
+				{1000, 1.1, nil, -1, true},
+				{2000, 2.2, nil, -1, true},
+				{3000, 3.3, nil, -1, true},
+				{0, 0, nil, -1, false},
 			},
 		},
 		{
@@ -52,9 +53,9 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 				},
 			},
 			expected: []expected{
-				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, true},
-				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, true},
-				{0, 0, nil, false},
+				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, 0, true},
+				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, 1, true},
+				{0, 0, nil, -1, false},
 			},
 		},
 		{
@@ -75,16 +76,16 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 				},
 			},
 			expected: []expected{
-				{1000, 1.1, nil, true},
-				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, true},
-				{2000, 2.2, nil, true},
-				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, true},
-				{3000, 3.3, nil, true},
-				{4000, 4.4, nil, true},
-				{5000, 5.5, nil, true},
-				{5500, 0, &histogram.FloatHistogram{Sum: 5500}, true},
-				{6000, 6.5, nil, true},
-				{0, 0, nil, false},
+				{1000, 1.1, nil, -1, true},
+				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, 0, true},
+				{2000, 2.2, nil, -1, true},
+				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, 1, true},
+				{3000, 3.3, nil, -1, true},
+				{4000, 4.4, nil, -1, true},
+				{5000, 5.5, nil, -1, true},
+				{5500, 0, &histogram.FloatHistogram{Sum: 5500}, 2, true},
+				{6000, 6.5, nil, -1, true},
+				{0, 0, nil, -1, false},
 			},
 		},
 		{
@@ -104,22 +105,22 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 				},
 			},
 			expected: []expected{
-				{1000, 1.1, nil, true},
-				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, true},
-				{2000, 2.2, nil, true},
-				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, true},
-				{3000, 3.3, nil, true},
-				{4000, 4.4, nil, true},
-				{5000, 5.5, nil, true},
-				{5500, 0, &histogram.FloatHistogram{Sum: 5500}, true},
-				{0, 0, nil, false},
+				{1000, 1.1, nil, -1, true},
+				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, 0, true},
+				{2000, 2.2, nil, -1, true},
+				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, 1, true},
+				{3000, 3.3, nil, -1, true},
+				{4000, 4.4, nil, -1, true},
+				{5000, 5.5, nil, -1, true},
+				{5500, 0, &histogram.FloatHistogram{Sum: 5500}, 2, true},
+				{0, 0, nil, -1, false},
 			},
 		},
 		{
 			name: "empty data",
 			data: InstantVectorSeriesData{},
 			expected: []expected{
-				{0, 0, nil, false},
+				{0, 0, nil, -1, false},
 			},
 		},
 		{
@@ -130,10 +131,10 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 				},
 			},
 			expected: []expected{
-				{1000, 1.1, nil, true},
-				{0, 0, nil, false},
-				{0, 0, nil, false},
-				{0, 0, nil, false},
+				{1000, 1.1, nil, -1, true},
+				{0, 0, nil, -1, false},
+				{0, 0, nil, -1, false},
+				{0, 0, nil, -1, false},
 			},
 		},
 	}
@@ -144,10 +145,11 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 			iter.Reset(tc.data)
 
 			for _, exp := range tc.expected {
-				timestamp, floatVal, hist, hasNext := iter.Next()
-				require.Equal(t, exp.T, timestamp)
-				require.Equal(t, exp.F, floatVal)
-				require.Equal(t, exp.H, hist)
+				ts, f, h, hIndex, hasNext := iter.Next()
+				require.Equal(t, exp.T, ts)
+				require.Equal(t, exp.F, f)
+				require.Equal(t, exp.H, h)
+				require.Equal(t, exp.HIndex, hIndex)
 				require.Equal(t, exp.HasNext, hasNext)
 			}
 		})

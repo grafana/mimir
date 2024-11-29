@@ -315,14 +315,24 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	e.rightIterator.Reset(right)
 
 	// Get first sample from left and right
-	lT, lF, lH, lOk := e.leftIterator.Next()
-	rT, rF, rH, rOk := e.rightIterator.Next()
+	lT, lF, lH, lHIndex, lOk := e.leftIterator.Next()
+	rT, rF, rH, rHIndex, rOk := e.rightIterator.Next()
 
 	appendHistogram := func(t int64, h *histogram.FloatHistogram) error {
 		if hPoints == nil {
 			if err := prepareHSlice(); err != nil {
 				return err
 			}
+		}
+
+		// Check if we're reusing the FloatHistogram from either side.
+		// If so, remove it so that it is not modified when the slice is reused.
+		if h == lH {
+			left.Histograms[lHIndex].H = nil
+		}
+
+		if h == rH {
+			right.Histograms[rHIndex].H = nil
 		}
 
 		hPoints = append(hPoints, promql.HPoint{
@@ -349,7 +359,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}
 
 	appendNextSample := func() error {
-		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH)
+		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight)
 
 		if err != nil {
 			err = functions.NativeHistogramErrorToAnnotation(err, e.emitAnnotation)
@@ -388,12 +398,12 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 
 		// Advance the iterator with the lower timestamp, or both if equal
 		if lT == rT {
-			lT, lF, lH, lOk = e.leftIterator.Next()
-			rT, rF, rH, rOk = e.rightIterator.Next()
+			lT, lF, lH, lHIndex, lOk = e.leftIterator.Next()
+			rT, rF, rH, rHIndex, rOk = e.rightIterator.Next()
 		} else if lT < rT {
-			lT, lF, lH, lOk = e.leftIterator.Next()
+			lT, lF, lH, lHIndex, lOk = e.leftIterator.Next()
 		} else {
-			rT, rF, rH, rOk = e.rightIterator.Next()
+			rT, rF, rH, rHIndex, rOk = e.rightIterator.Next()
 		}
 	}
 
