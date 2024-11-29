@@ -258,7 +258,10 @@ func (h *HistogramQuantileFunction) accumulateUntilGroupComplete(ctx context.Con
 		// It is possible that a series has both floats and histograms.
 		// It is also possible that both series groups are the same.
 		// The conflict in points is then detected in computeOutputSeriesForGroup.
-		h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups.nativeHistogramGroup)
+		err = h.saveNativeHistogramsToGroup(s.Histograms, thisSeriesGroups.nativeHistogramGroup)
+		if err != nil {
+			return err
+		}
 		err = h.saveFloatsToGroup(s.Floats, thisSeriesGroups.bucketValue, thisSeriesGroups.classicHistogramGroup)
 		if err != nil {
 			return err
@@ -323,17 +326,18 @@ func (h *HistogramQuantileFunction) saveFloatsToGroup(fPoints []promql.FPoint, l
 // There should only ever be one native histogram per step for a series or series group.
 // In general, they are per-series, but we handle them as parts of groups because they
 // could hypothetically have the same series name as a classic histogram.
-func (h *HistogramQuantileFunction) saveNativeHistogramsToGroup(hPoints []promql.HPoint, g *bucketGroup) {
+func (h *HistogramQuantileFunction) saveNativeHistogramsToGroup(hPoints []promql.HPoint, g *bucketGroup) error {
 	g.remainingSeriesCount--
 	if len(hPoints) == 0 {
-		return
+		return nil
 	}
 
 	// We should only ever see one set of native histograms per group.
 	if g.nativeHistograms != nil {
-		panic("We should never see more than one native histogram per group")
+		return fmt.Errorf("We should never see more than one native histogram per group")
 	}
 	g.nativeHistograms = hPoints
+	return nil
 }
 
 func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.InstantVectorSeriesData, error) {
