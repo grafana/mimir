@@ -21,7 +21,6 @@ import (
 	"log/slog"
 	"math"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -67,11 +66,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-<<<<<<< HEAD
 	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger *slog.Logger) error {
-=======
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger log.Logger) error {
->>>>>>> bb0f63b4ad (more updates for the local demo)
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -79,10 +74,6 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
-<<<<<<< HEAD
-=======
-		startTimestampNs := pt.StartTimestamp()
->>>>>>> bb0f63b4ad (more updates for the local demo)
 		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
 		lbls := createAttributes(
 			resource,
@@ -93,10 +84,6 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			model.MetricNameLabel,
 			name,
 		)
-<<<<<<< HEAD
-=======
-
->>>>>>> bb0f63b4ad (more updates for the local demo)
 		sample := &prompb.Sample{
 			// convert ns to ms
 			Timestamp: timestamp,
@@ -139,11 +126,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			}
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
-<<<<<<< HEAD
 		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
-=======
-		c.trackStartTimestampForSeries(startTimestampMs, timestamp, lbls, logger)
->>>>>>> bb0f63b4ad (more updates for the local demo)
 	}
 
 	return nil
