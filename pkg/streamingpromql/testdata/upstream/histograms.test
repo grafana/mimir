@@ -638,9 +638,8 @@ load_with_nhcb 5m
 eval instant at 10m increase(histogram_with_reset[15m])
     {} {{schema:-53 count:27 sum:91.5 custom_values:[1 2 4 8] counter_reset_hint:gauge buckets:[13.5 0 4.5 9]}}
 
-# Unsupported by streaming engine.
-# eval instant at 10m resets(histogram_with_reset[15m])
-#      {} 1
+eval instant at 10m resets(histogram_with_reset[15m])
+     {} 1
 
 eval instant at 10m histogram_count(increase(histogram_with_reset[15m]))
      {} 27
