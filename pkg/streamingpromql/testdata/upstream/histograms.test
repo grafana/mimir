@@ -94,10 +94,9 @@ eval instant at 50m testhistogram3_sum
 	testhistogram3_sum{start="negative"} 80
 
 # Test histogram_avg. This has no classic equivalent.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_avg(testhistogram3)
-#	{start="positive"} 3
-#	{start="negative"} 4
+eval instant at 50m histogram_avg(testhistogram3)
+	{start="positive"} 3
+	{start="negative"} 4
 
 # Test histogram_stddev. This has no classic equivalent.
 # Unsupported by streaming engine.

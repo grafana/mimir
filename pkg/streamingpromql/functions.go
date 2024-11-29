@@ -313,7 +313,6 @@ func HistogramQuantileOperatorFactory() InstantVectorFunctionOperatorFactory {
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
-
 	"abs":                InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
 	"acos":               InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
 	"acosh":              InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
@@ -334,6 +333,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
 	"exp":                InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
 	"floor":              InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
+	"histogram_avg":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramAvg),
 	"histogram_count":    InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_quantile": HistogramQuantileOperatorFactory(),
 	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
