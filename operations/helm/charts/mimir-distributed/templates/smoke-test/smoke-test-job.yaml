@@ -50,7 +50,7 @@ spec:
             - "-tests.write-read-series-test.max-query-age=48h"
             - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             {{- range $key, $value := .Values.smoke_test.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.smoke_test.extraVolumeMounts }}

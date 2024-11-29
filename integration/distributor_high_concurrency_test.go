@@ -127,7 +127,7 @@ func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bo
 			require.Equal(t, samples, added)
 
 			// query all samples back
-			query := fmt.Sprintf("%s[%s]", serName, model.Duration(timeRange))
+			query := fmt.Sprintf("%s[%s]", serName, model.Duration(timeRange+time.Millisecond)) // Add millisecond to ensure we get the first point (ranges are left-open).
 			result, err := client.Query(query, writeEnd)
 			require.NoError(t, err)
 			require.Equal(t, exp, result)

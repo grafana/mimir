@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	maxExpectedPointsPerSeries  = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
-	pointsPerSeriesBucketFactor = 2
+	MaxExpectedPointsPerSeries  = 100_000 // There's not too much science behind this number: 100000 points allows for a point per minute for just under 70 days.
+	PointsPerSeriesBucketFactor = 2
 
 	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory bytes limit.
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.
@@ -26,57 +26,96 @@ const (
 	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
+	StringSize           = uint64(unsafe.Sizeof(""))
+	UintSize             = uint64(unsafe.Sizeof(uint(0)))
 )
 
 var (
+	// EnableManglingReturnedSlices enables mangling values in slices returned to pool to aid in detecting use-after-return bugs.
+	// Only used in tests.
+	EnableManglingReturnedSlices = false
+
 	FPointSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []promql.FPoint {
 			return make([]promql.FPoint, 0, size)
 		}),
 		FPointSize,
 		false,
+		nil,
 	)
 
 	HPointSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []promql.HPoint {
 			return make([]promql.HPoint, 0, size)
 		}),
 		HPointSize,
 		false,
+		func(point promql.HPoint) promql.HPoint {
+			point.H = mangleHistogram(point.H)
+			return point
+		},
 	)
 
 	VectorPool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) promql.Vector {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) promql.Vector {
 			return make(promql.Vector, 0, size)
 		}),
 		VectorSampleSize,
 		false,
+		nil,
 	)
 
 	Float64SlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []float64 {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []float64 {
 			return make([]float64, 0, size)
 		}),
 		Float64Size,
 		true,
+		nil,
 	)
 
 	BoolSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []bool {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []bool {
 			return make([]bool, 0, size)
 		}),
 		BoolSize,
 		true,
+		nil,
 	)
 
 	HistogramSlicePool = NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []*histogram.FloatHistogram {
+		pool.NewBucketedPool(1, MaxExpectedPointsPerSeries, PointsPerSeriesBucketFactor, func(size int) []*histogram.FloatHistogram {
 			return make([]*histogram.FloatHistogram, 0, size)
 		}),
 		HistogramPointerSize,
 		true,
+		mangleHistogram,
 	)
 )
+
+func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
+	if h == nil {
+		return nil
+	}
+
+	h.ZeroCount = 12345678
+	h.Count = 12345678
+	h.Sum = 12345678
+
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] = 12345678
+	}
+
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] = 12345678
+	}
+
+	for i := range h.CustomValues {
+		h.CustomValues[i] = 12345678
+	}
+
+	return h
+}
 
 // LimitingBucketedPool pools slices across multiple query evaluations, and applies any max in-memory bytes limit.
 //
@@ -86,13 +125,15 @@ type LimitingBucketedPool[S ~[]E, E any] struct {
 	inner       *pool.BucketedPool[S, E]
 	elementSize uint64
 	clearOnGet  bool
+	mangle      func(E) E
 }
 
-func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], elementSize uint64, clearOnGet bool) *LimitingBucketedPool[S, E] {
+func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], elementSize uint64, clearOnGet bool, mangle func(E) E) *LimitingBucketedPool[S, E] {
 	return &LimitingBucketedPool[S, E]{
 		inner:       inner,
 		elementSize: elementSize,
 		clearOnGet:  clearOnGet,
+		mangle:      mangle,
 	}
 }
 
@@ -129,6 +170,12 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptionTracker) {
 	if s == nil {
 		return
+	}
+
+	if EnableManglingReturnedSlices && p.mangle != nil {
+		for i, e := range s {
+			s[i] = p.mangle(e)
+		}
 	}
 
 	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)

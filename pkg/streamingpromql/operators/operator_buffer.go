@@ -97,6 +97,7 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 }
 
 func (b *InstantVectorOperatorBuffer) Close() {
+	// NOTE: source is expected to be closed by the caller as often the buffer is bypassed.
 	if b.seriesUsed != nil {
 		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
 	}

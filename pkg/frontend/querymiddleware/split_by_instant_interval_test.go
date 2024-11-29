@@ -377,8 +377,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					expectedSplitQueries:         0,
 					expectedSkippedNonSplittable: 1,
 				},
-				"holt_winters": {
-					query:                        `holt_winters(metric_counter[1m], 0.5, 0.9)`,
+				"double_exponential_smoothing": {
+					query:                        `double_exponential_smoothing(metric_counter[1m], 0.5, 0.9)`,
 					expectedSplitQueries:         0,
 					expectedSkippedNonSplittable: 1,
 				},

@@ -304,6 +304,14 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	h.ZeroCount /= scalar
 	h.Count /= scalar
 	h.Sum /= scalar
+	// Division by zero removes all buckets.
+	if scalar == 0 {
+		h.PositiveBuckets = nil
+		h.NegativeBuckets = nil
+		h.PositiveSpans = nil
+		h.NegativeSpans = nil
+		return h
+	}
 	for i := range h.PositiveBuckets {
 		h.PositiveBuckets[i] /= scalar
 	}
@@ -353,7 +361,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 	default:
 		// All other cases shouldn't actually happen.
 		// They are a direct collision of CounterReset and NotCounterReset.
-		// Conservatively set the CounterResetHint to "unknown" and isse a warning.
+		// Conservatively set the CounterResetHint to "unknown" and issue a warning.
 		h.CounterResetHint = UnknownCounterReset
 		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
 	}
@@ -669,7 +677,7 @@ func detectReset(currIt, prevIt *floatBucketIterator) bool {
 			if !currIt.Next() {
 				// Reached end of currIt early, therefore
 				// previous histogram has a bucket that the
-				// current one does not have. Unlass all
+				// current one does not have. Unless all
 				// remaining buckets in the previous histogram
 				// are unpopulated, this is a reset.
 				for {
@@ -902,7 +910,7 @@ func (h *FloatHistogram) trimBucketsInZeroBucket() {
 // reconcileZeroBuckets finds a zero bucket large enough to include the zero
 // buckets of both histograms (the receiving histogram and the other histogram)
 // with a zero threshold that is not within a populated bucket in either
-// histogram. This method modifies the receiving histogram accourdingly, but
+// histogram. This method modifies the receiving histogram accordingly, but
 // leaves the other histogram as is. Instead, it returns the zero count the
 // other histogram would have if it were modified.
 func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {

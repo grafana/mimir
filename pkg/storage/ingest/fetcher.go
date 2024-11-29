@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/instrument"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -64,8 +65,8 @@ type fetcher interface {
 	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
 	BufferedBytes() int64
 
-	// BytesPerRecord returns the current estimation for how many bytes each record is.
-	BytesPerRecord() int64
+	// EstimatedBytesPerRecord returns the current estimation for how many bytes each record is.
+	EstimatedBytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -373,7 +374,7 @@ func (r *concurrentFetchers) BufferedBytes() int64 {
 	return r.bufferedFetchedBytes.Load()
 }
 
-func (r *concurrentFetchers) BytesPerRecord() int64 {
+func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
 }
 
@@ -493,7 +494,7 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
 	waitDuration := time.Since(waitStartTime)
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
-	r.metrics.fetchWaitDuration.Observe(waitDuration.Seconds())
+	instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
 
 	var (
 		doubleFetchedBytes             = 0

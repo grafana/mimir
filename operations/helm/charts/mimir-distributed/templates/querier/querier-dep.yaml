@@ -63,7 +63,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.querier.extraVolumeMounts }}

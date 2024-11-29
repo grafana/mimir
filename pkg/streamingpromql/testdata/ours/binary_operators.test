@@ -182,72 +182,59 @@ load 5m
   third_histogram{job="control"} {{schema:0 sum:15 count:5 buckets:[3 4 2]}}
   metric{job="test"}             2
 
-eval instant at 5m first_histogram + second_histogram
+eval instant at 0 first_histogram + second_histogram
   {job="test"} {{schema:0 sum:15 count:10 buckets:[2 4 2]}}
 
-eval instant at 5m second_histogram - first_histogram
+eval instant at 0 second_histogram - first_histogram
   {job="test"} {{schema:0 sum:5 count:2 buckets:[0 0 0]}}
 
-# Two histograms multiplied together result in a float 0
-eval instant at 5m first_histogram * second_histogram
-  {job="test"} 0
+# Cannot multiply two histograms
+eval_info instant at 0 first_histogram * second_histogram
 
 # Cannot divide a histogram by a histogram
-eval instant at 5m first_histogram / second_histogram
-  {job="test"} NaN
+eval_info instant at 0 first_histogram / second_histogram
 
 # Histogram multiplied by float
-eval instant at 5m first_histogram * metric
+eval instant at 0 first_histogram * metric
   {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
 
 # Works in either order
-eval instant at 5m metric * first_histogram
+eval instant at 0 metric * first_histogram
   {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
 
 # Histogram divide by float
-eval instant at 5m first_histogram / metric
+eval instant at 0 first_histogram / metric
   {job="test"} {{schema:0 count:2 sum:2.5 buckets:[0.5 1 0.5]}}
 
-# Float divided by histogram is equivalent to "float / 0"
-eval instant at 5m metric / first_histogram
-  {job="test"} +Inf
+# Cannot divide a float by a histogram
+eval_info instant at 0 metric / first_histogram
 
-# Histogram + float is equivalent to "0 + float"
-eval instant at 5m first_histogram + metric
-  {job="test"} 2
+# Cannot add a float to a histogram
+eval_info instant at 0 first_histogram + metric
 
-# Histogram - float is equivalent to "0 - float"
-eval instant at 5m first_histogram - metric
-  {job="test"} -2
+# Cannot subtract a float from a histogram
+eval_info instant at 0 first_histogram - metric
 
-# Histogram atan2 float is equivalent to "0 atan2 float"
-eval instant at 5m first_histogram atan2 metric
-  {job="test"} 0
+# Cannot perform atan2 on a histogram.
+eval_info instant at 0 first_histogram atan2 metric
 
-# Histogram to the power of a histogram is equivalent to "0 ^ 0"
-eval instant at 5m first_histogram ^ second_histogram
-  {job="test"} 1
+# Cannot apply ^ to a histogram.
+eval_info instant at 0 first_histogram ^ second_histogram
 
-# Histogram to power of a float is equivalent to "0 ^ float"
-eval instant at 5m first_histogram ^ metric
-  {job="test"} 0
+# Cannot apply ^ to a histogram.
+eval_info instant at 0 first_histogram ^ metric
 
-# Float to power of histogram is equivalent to "float ^ 0"
-eval instant at 5m metric ^ first_histogram
-  {job="test"} 1
+# Cannot apply ^ to a histogram.
+eval_info instant at 0 metric ^ first_histogram
 
-# Histogram mod histogram is equivalent to "0 % 0"
-eval instant at 5m first_histogram % second_histogram
-  {job="test"} NaN
+# Cannot apply % to a histogram.
+eval_info instant at 0 first_histogram % second_histogram
 
-# Histogram mod float is equivalent to "0 % float"
-eval instant at 5m first_histogram % metric
-  {job="test"} 0
+# Cannot apply % to a histogram.
+eval_info instant at 0 first_histogram % metric
 
-# Float mod histogram is equivalent to "float % 0"
-eval instant at 5m metric % first_histogram
-  {job="test"} NaN
-
+# Cannot apply % to a histogram.
+eval_info instant at 0 metric % first_histogram
 
 clear
 
@@ -260,11 +247,11 @@ load 5m
   second_histogram{env="dev",pod="pod-abc123"}    {{schema:0 sum:10 count:5 buckets:[2 3 2]}}
   second_histogram{env="dev",pod="pod-mno789"}    {{schema:0 sum:5 count:4 buckets:[1 1 1]}}
 
-eval instant at 5m first_histogram + second_histogram
+eval instant at 0 first_histogram + second_histogram
   {env="prod",pod="pod-abc123"} {{schema:0 sum:10 count:8 buckets:[2 4 2]}}
   {env="dev",pod="pod-abc123"}  {{schema:0 sum:20 count:10 buckets:[4 6 4]}}
 
-eval instant at 5m second_histogram - first_histogram
+eval instant at 0 second_histogram - first_histogram
   {env="prod",pod="pod-abc123"} {{schema:0 sum:0 count:0 buckets:[0 0 0]}}
   {env="dev",pod="pod-abc123"}  {{schema:0 sum:0 count:0 buckets:[0 0 0]}}
 
@@ -284,22 +271,22 @@ clear
 # These tests are affected by https://github.com/prometheus/prometheus/issues/14172
 # whereby the histograms followed by a float are ignored and the lookback float value is used.
 # For example, in "another_mixed", at T=5m it has the lookback value of 10, and at T=5min the lookback value is _.
-load 5m
-  mixed_metric{job="test"}  10 1                                           2                                           3                                            {{schema:0 sum:6 count:3 buckets:[1 2 3]}} {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
-  another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}} {{schema:0 sum:12 count:6 buckets:[2 4 6]}} 4                                            5                                          {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
-#                           @0 @5m                                         @10m                                        @15m                                         @20m                                       @25m
+load 1m
+  mixed_metric{job="test"}  10 1                                            2                                             3                                            {{schema:0 sum:6 count:3 buckets:[1 2 3]}}     {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
+  another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}}  {{schema:0 sum:12 count:6 buckets:[2 4 6]}}   4                                            5                                              {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
+#                           @0 @5m                                          @10m                                          @15m                                         @20m                                           @25m
 
-eval range from 0 to 25m step 5m mixed_metric + another_mixed
-  {job="test"}              20 11                                          _                                           7                                            5                                          {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
+eval range from 0 to 5m step 1m mixed_metric + another_mixed
+  {job="test"}              20 11                                           12                                            7                                            _                                              {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
 
-eval range from 0 to 25m step 5m mixed_metric - another_mixed
-  {job="test"}              0  -9                                          _                                           -1                                           -5                                         {{schema:0 sum:0 count:0}}
+eval range from 0 to 5m step 1m mixed_metric - another_mixed
+  {job="test"}              0  -9                                           -8                                            -1                                           _                                              {{schema:0 sum:0 count:0}}
 
-eval range from 0 to 25m step 5m mixed_metric * another_mixed
-  {job="test"}              100 10                                         _                                           12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} 0
+eval range from 0 to 5m step 1m mixed_metric * another_mixed
+  {job="test"}              100 10                                          20                                            12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} _
 
-eval range from 0 to 25m step 5m mixed_metric / another_mixed
-  {job="test"}              1  0.1                                         _                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} NAN
+eval range from 0 to 5m step 1m mixed_metric / another_mixed
+  {job="test"}              1  0.1                                          0.2                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} _
 
 clear
 
@@ -329,23 +316,20 @@ eval range from 0m to 24m step 6m my_metric / 2
   {job="bar"} 5 10 15 _ 25
 
 # Scalar on left side
-# Note that positive scalar / histogram == Inf.
+# Note that positive scalar / histogram == nothing.
 eval range from 0m to 24m step 6m 2 / my_metric
-  {histograms="only"} Inf Inf
-  {histograms="both"} 0.4 0.2 +Inf
+  {histograms="both"} 0.4 0.2 _
   {job="foo"} 2 1 0.6666666666666667 0.5 0.4
   {job="bar"} 0.2 0.1 0.06666666666666667 _ 0.04
 
 # Test other arithmetic operations.
 eval range from 0m to 24m step 6m my_metric + 2
-  {histograms="only"} 2 2
-  {histograms="both"} 7 12 2
+  {histograms="both"} 7 12 _
   {job="foo"} 3 4 5 6 7
   {job="bar"} 12 22 32 _ 52
 
 eval range from 0m to 24m step 6m my_metric - 2
-  {histograms="only"} -2 -2
-  {histograms="both"} 3 8 -2
+  {histograms="both"} 3 8
   {job="foo"} -1 0 1 2 3
   {job="bar"} 8 18 28 _ 48
 
@@ -355,15 +339,13 @@ eval range from 0m to 24m step 6m my_metric * 2
   {job="foo"} 2 4 6 8 10
   {job="bar"} 20 40 60 _ 100
 
-eval range from 0m to 24m step 6m my_metric ^ 2
-  {histograms="only"} 0 0
-  {histograms="both"} 25 100 0
+eval_info range from 0m to 24m step 6m my_metric ^ 2
+  {histograms="both"} 25 100 _
   {job="foo"} 1 4 9 16 25
   {job="bar"} 100 400 900 _ 2500
 
-eval range from 0m to 24m step 6m my_metric % 2
-  {histograms="only"} 0 0
-  {histograms="both"} 1 0 0
+eval_info range from 0m to 24m step 6m my_metric % 2
+  {histograms="both"} 1 0 _
   {job="foo"} 1 0 1 0 1
   {job="bar"} 0 0 0 _ 0
 
@@ -408,7 +390,6 @@ eval range from 0m to 42m step 6m scalar(metric) + 2
 clear
 
 # Comparison operations
-# Note that native histograms are currently treated as 0s for comparison operations.
 load 6m
   left_floats  1 2 _ _ 3 stale 4  5  NaN Inf -Inf
   right_floats 4 _ _ 5 3 7     -1 20 NaN Inf -Inf
@@ -427,16 +408,16 @@ eval range from 0 to 60m step 6m left_floats == does_not_match
   # No results.
 
 eval range from 0 to 24m step 6m left_histograms == right_histograms
-  left_histograms 0 0 _ _ _
+  left_histograms {{schema:3 sum:4 count:4 buckets:[1 2 1]}} _ _ _ _
 
 eval range from 0 to 24m step 6m left_histograms == bool right_histograms
-  {} 1 1 _ _ _
+  {} 1 0 _ _ _
 
-eval range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
-  left_histograms 0 _ _ _ _
+eval_info range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
-  {} 1 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+  # No results.
 
 eval range from 0 to 60m step 6m left_floats != right_floats
   left_floats 1 _ _ _ _ _ 4 5 NaN _ _
@@ -445,16 +426,16 @@ eval range from 0 to 60m step 6m left_floats != bool right_floats
   {} 1 _ _ _ 0 _ 1 1 1 0 0
 
 eval range from 0 to 24m step 6m left_histograms != right_histograms
-  # No results.
+  left_histograms _ {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}} _ _ _
 
 eval range from 0 to 24m step 6m left_histograms != bool right_histograms
-  {} 0 0 _ _ _
+  {} 0 1 _ _ _
 
-eval range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
-  left_histograms _ 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
-  {} 0 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+  # No results.
 
 eval range from 0 to 60m step 6m left_floats > right_floats
   left_floats _ _ _ _ _ _ 4 _ _ _ _
@@ -462,17 +443,17 @@ eval range from 0 to 60m step 6m left_floats > right_floats
 eval range from 0 to 60m step 6m left_floats > bool right_floats
   {} 0 _ _ _ 0 _ 1 0 0 0 0
 
-eval range from 0 to 24m step 6m left_histograms > right_histograms
+eval_info range from 0 to 24m step 6m left_histograms > right_histograms
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms > bool right_histograms
-  {} 0 0 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms > bool right_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
-  left_histograms _ 0 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
-  {} 0 1 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+  # No results.
 
 eval range from 0 to 60m step 6m left_floats >= right_floats
   left_floats _ _ _ _ 3 _ 4 _ _ Inf -Inf
@@ -480,17 +461,17 @@ eval range from 0 to 60m step 6m left_floats >= right_floats
 eval range from 0 to 60m step 6m left_floats >= bool right_floats
   {} 0 _ _ _ 1 _ 1 0 0 1 1
 
-eval range from 0 to 24m step 6m left_histograms >= right_histograms
-  left_histograms 0 0 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms >= right_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= bool right_histograms
-  {} 1 1 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms >= bool right_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
-  left_histograms 0 0 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
-  {} 1 1 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+  # No results.
 
 eval range from 0 to 60m step 6m left_floats < right_floats
   left_floats 1 _ _ _ _ _ _ 5 _ _ _
@@ -498,17 +479,17 @@ eval range from 0 to 60m step 6m left_floats < right_floats
 eval range from 0 to 60m step 6m left_floats < bool right_floats
   {} 1 _ _ _ 0 _ 0 1 0 0 0
 
-eval range from 0 to 24m step 6m left_histograms < right_histograms
+eval_info range from 0 to 24m step 6m left_histograms < right_histograms
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms < bool right_histograms
-  {} 0 0 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms < bool right_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
-  left_histograms _ _ _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
-  {} 0 0 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+  # No results.
 
 eval range from 0 to 60m step 6m left_floats <= right_floats
   left_floats 1 _ _ _ 3 _ _ 5 _ Inf -Inf
@@ -516,17 +497,17 @@ eval range from 0 to 60m step 6m left_floats <= right_floats
 eval range from 0 to 60m step 6m left_floats <= bool right_floats
   {} 1 _ _ _ 1 _ 0 1 0 1 1
 
-eval range from 0 to 24m step 6m left_histograms <= right_histograms
-  left_histograms 0 0 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms <= right_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= bool right_histograms
-  {} 1 1 _ _ _
+eval_info range from 0 to 24m step 6m left_histograms <= bool right_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
-  left_histograms 0 _ _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
-  {} 1 0 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+  # No results.
 
 # Vector / scalar combinations with scalar on right side
 eval range from 0 to 60m step 6m left_floats == 3
@@ -562,77 +543,77 @@ eval range from 0 to 60m step 6m left_floats == NaN
 eval range from 0 to 60m step 6m left_floats == bool NaN
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval range from 0 to 24m step 6m left_histograms == 3
+eval_info range from 0 to 24m step 6m left_histograms == 3
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms == 0
-  left_histograms 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms == 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms != 3
-  left_histograms 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms != 3
+  # No results.
 
 eval range from 0 to 24m step 6m left_histograms != 0
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms > 3
+eval_info range from 0 to 24m step 6m left_histograms > 3
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms > 0
+eval_info range from 0 to 24m step 6m left_histograms > 0
   # No results.
 
 eval range from 0 to 24m step 6m left_histograms >= 3
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= 0
-  left_histograms 0 0 _ _ 0
-
-eval range from 0 to 24m step 6m left_histograms < 3
-  left_histograms 0 0 _ _ 0
-
-eval range from 0 to 24m step 6m left_histograms < 0
+eval_info range from 0 to 24m step 6m left_histograms >= 0
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= 3
-  left_histograms 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms < 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= 3
+  # No results.
 
 eval range from 0 to 24m step 6m left_histograms <= 0
-  left_histograms 0 0 _ _ 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms == bool 3
-  {} 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms == bool 3
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms == bool 0
-  {} 1 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms == bool 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms != bool 3
-  {} 1 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms != bool 3
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms != bool 0
-  {} 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms != bool 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms > bool 3
-  {} 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms > bool 3
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms > bool 0
-  {} 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms > bool 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= bool 3
-  {} 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms >= bool 3
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= bool 0
-  {} 1 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms >= bool 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms < bool 3
-  {} 1 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms < bool 3
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms < bool 0
-  {} 0 0 _ _ 0
+eval_info range from 0 to 24m step 6m left_histograms < bool 0
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= bool 3
-  {} 1 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms <= bool 3
+  # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= bool 0
-  {} 1 1 _ _ 1
+eval_info range from 0 to 24m step 6m left_histograms <= bool 0
+  # No results.
 
 # Vector / scalar combinations with scalar on left side
 eval range from 0 to 60m step 6m 3 == left_floats
@@ -671,17 +652,11 @@ eval range from 0 to 60m step 6m NaN == bool left_floats
 eval range from 0 to 24m step 6m 3 == left_histograms
   # No results.
 
-# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
-# It has been moved to testdata/ours-only/binary_operators.test until the issue described there
-# has been resolved.
-# eval range from 0 to 24m step 6m 0 == left_histograms
-#   left_histograms 0 0 _ _ 0
+eval range from 0 to 24m step 6m 0 == left_histograms
+  # No results.
 
-# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
-# It has been moved to testdata/ours-only/binary_operators.test until the issue described there
-# has been resolved.
-# eval range from 0 to 24m step 6m 3 != left_histograms
-#   left_histograms 0 0 _ _ 0
+eval range from 0 to 24m step 6m 3 != left_histograms
+  # No results.
 
 eval range from 0 to 24m step 6m 0 != left_histograms
   # No results.
@@ -698,23 +673,17 @@ eval range from 0 to 24m step 6m 3 < left_histograms
 eval range from 0 to 24m step 6m 0 < left_histograms
   # No results.
 
-# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
-# It has been moved to testdata/ours-only/binary_operators.test until the issue described there has been resolved.
-# eval range from 0 to 24m step 6m 3 > left_histograms
-#   left_histograms 0 0 _ _ 0
+eval range from 0 to 24m step 6m 3 > left_histograms
+  # No results.
 
 eval range from 0 to 24m step 6m 0 > left_histograms
   # No results.
 
-# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
-# It has been moved to testdata/ours-only/binary_operators.test until the issue described there has been resolved.
-# eval range from 0 to 24m step 6m 3 >= left_histograms
-#   left_histograms 0 0 _ _ 0
+eval range from 0 to 24m step 6m 3 >= left_histograms
+  # No results.
 
-# This case currently fails in Prometheus' engine due to https://github.com/prometheus/prometheus/issues/13934#issuecomment-2373132091.
-# It has been moved to testdata/ours-only/binary_operators.test until the issue described there has been resolved.
-# eval range from 0 to 24m step 6m 0 >= left_histograms
-#   left_histograms 0 0 _ _ 0
+eval range from 0 to 24m step 6m 0 >= left_histograms
+  # No results.
 
 # Scalar / scalar combinations
 eval range from 0 to 60m step 6m scalar(left_floats) == bool 3

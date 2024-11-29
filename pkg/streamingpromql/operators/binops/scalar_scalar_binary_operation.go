@@ -75,7 +75,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 	for i, left := range leftValues.Samples {
 		right := rightValues.Samples[i]
 
-		f, h, ok, err := s.opFunc(left.F, right.F, nil, nil)
+		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil)
 
 		if err != nil {
 			return types.ScalarData{}, err
@@ -83,6 +83,10 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 
 		if !ok {
 			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) did not produce a result, this should never happen", s.Op.String(), left.F, right.F))
+		}
+
+		if !valid {
+			panic(fmt.Sprintf("%v binary operation between two scalars (%v and %v) is not considered a valid operation, this should never happen", s.Op.String(), left.F, right.F))
 		}
 
 		if h != nil {

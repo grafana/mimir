@@ -142,7 +142,7 @@ spec:
             - "-server.grpc-max-concurrent-streams=500"
             {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.ingester.extraVolumeMounts }}

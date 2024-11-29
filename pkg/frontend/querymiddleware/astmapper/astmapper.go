@@ -8,7 +8,13 @@ package astmapper
 import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
+
+func init() {
+	promqlext.ExtendPromQL()
+}
 
 // ASTMapper is the exported interface for mapping between multiple AST representations
 type ASTMapper interface {

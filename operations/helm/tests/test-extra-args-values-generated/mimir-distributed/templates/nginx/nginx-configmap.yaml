@@ -1,0 +1,138 @@
+---
+# Source: mimir-distributed/templates/nginx/nginx-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-extra-args-values-mimir-nginx
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/component: nginx
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  nginx.conf: |
+    worker_processes  5;  ## Default: 1
+    error_log  /dev/stderr error;
+    pid        /tmp/nginx.pid;
+    worker_rlimit_nofile 8192;
+    
+    events {
+      worker_connections  4096;  ## Default: 1024
+    }
+    
+    http {
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path       /tmp/proxy_temp_path;
+      fastcgi_temp_path     /tmp/fastcgi_temp;
+      uwsgi_temp_path       /tmp/uwsgi_temp;
+      scgi_temp_path        /tmp/scgi_temp;
+    
+      default_type application/octet-stream;
+      log_format   main '$remote_addr - $remote_user [$time_local]  $status '
+            '"$request" $body_bytes_sent "$http_referer" '
+            '"$http_user_agent" "$http_x_forwarded_for"';
+      access_log   /dev/stderr  main;
+    
+      sendfile           on;
+      tcp_nopush         on;
+      proxy_http_version 1.1;
+      resolver kube-dns.kube-system.svc.cluster.local.;
+    
+      # Ensure that X-Scope-OrgID is always present, default to the no_auth_tenant for backwards compatibility when multi-tenancy was turned off.
+      map $http_x_scope_orgid $ensured_x_scope_orgid {
+        default $http_x_scope_orgid;
+        "" "anonymous";
+      }
+    
+      map $http_x_scope_orgid $has_multiple_orgid_headers {
+        default 0;
+        "~^.+,.+$" 1;
+      }
+    
+      proxy_read_timeout 300;
+      server {
+        listen 8080;
+        listen [::]:8080;
+    
+        if ($has_multiple_orgid_headers = 1) {
+            return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
+        }
+    
+        location = / {
+          return 200 'OK';
+          auth_basic off;
+        }
+    
+        proxy_set_header X-Scope-OrgID $ensured_x_scope_orgid;
+    
+        # Distributor endpoints
+        location /distributor {
+          set $distributor test-extra-args-values-mimir-distributor-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$distributor:8080$request_uri;
+        }
+        location = /api/v1/push {
+          set $distributor test-extra-args-values-mimir-distributor-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$distributor:8080$request_uri;
+        }
+        location /otlp/v1/metrics {
+          set $distributor test-extra-args-values-mimir-distributor-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$distributor:8080$request_uri;
+        }
+    
+        # Alertmanager endpoints
+        location /alertmanager {
+          set $alertmanager test-extra-args-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$alertmanager:8080$request_uri;
+        }
+        location = /multitenant_alertmanager/status {
+          set $alertmanager test-extra-args-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$alertmanager:8080$request_uri;
+        }
+        location = /multitenant_alertmanager/configs {
+          set $alertmanager test-extra-args-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$alertmanager:8080$request_uri;
+        }
+        location = /api/v1/alerts {
+          set $alertmanager test-extra-args-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$alertmanager:8080$request_uri;
+        }
+    
+        # Ruler endpoints
+        location /prometheus/config/v1/rules {
+          set $ruler test-extra-args-values-mimir-ruler.citestns.svc.cluster.local.;
+          proxy_pass      http://$ruler:8080$request_uri;
+        }
+        location /prometheus/api/v1/rules {
+          set $ruler test-extra-args-values-mimir-ruler.citestns.svc.cluster.local.;
+          proxy_pass      http://$ruler:8080$request_uri;
+        }
+    
+        location /prometheus/api/v1/alerts {
+          set $ruler test-extra-args-values-mimir-ruler.citestns.svc.cluster.local.;
+          proxy_pass      http://$ruler:8080$request_uri;
+        }
+        location = /ruler/ring {
+          set $ruler test-extra-args-values-mimir-ruler.citestns.svc.cluster.local.;
+          proxy_pass      http://$ruler:8080$request_uri;
+        }
+    
+        # Rest of /prometheus goes to the query frontend
+        location /prometheus {
+          set $query_frontend test-extra-args-values-mimir-query-frontend.citestns.svc.cluster.local.;
+          proxy_pass      http://$query_frontend:8080$request_uri;
+        }
+    
+        # Buildinfo endpoint can go to any component
+        location = /api/v1/status/buildinfo {
+          set $query_frontend test-extra-args-values-mimir-query-frontend.citestns.svc.cluster.local.;
+          proxy_pass      http://$query_frontend:8080$request_uri;
+        }
+    
+        # Compactor endpoint for uploading blocks
+        location /api/v1/upload/block/ {
+          set $compactor test-extra-args-values-mimir-compactor.citestns.svc.cluster.local.;
+          proxy_pass      http://$compactor:8080$request_uri;
+        }
+      }
+    }

@@ -1,0 +1,118 @@
+---
+# Source: mimir-distributed/templates/mimir-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-extra-args-values-mimir-config
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  mimir.yaml: |
+    
+    activity_tracker:
+      filepath: /active-query-tracker/activity.log
+    alertmanager:
+      data_dir: /data
+      enable_api: true
+      external_url: /alertmanager
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
+    alertmanager_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-extra-args-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-tsdb
+        endpoint: test-extra-args-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+      tsdb:
+        dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
+    compactor:
+      compaction_interval: 30m
+      data_dir: /data
+      deletion_delay: 2h
+      first_level_compaction_wait_period: 25m
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+        wait_stability_min_duration: 1m
+      symbols_flushers_concurrency: 4
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+    frontend:
+      parallelize_shardable_queries: true
+      scheduler_address: test-extra-args-values-mimir-query-scheduler-headless.citestns.svc:9095
+    frontend_worker:
+      grpc_client_config:
+        max_send_msg_size: 419430400
+      scheduler_address: test-extra-args-values-mimir-query-scheduler-headless.citestns.svc:9095
+    ingester:
+      ring:
+        final_sleep: 0s
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        zone_awareness_enabled: true
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+    limits:
+      max_cache_freshness: 10m
+      max_query_parallelism: 240
+      max_total_query_length: 12000h
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - dns+test-extra-args-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 800
+    ruler:
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-extra-args-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
+      enable_api: true
+      rule_path: /data
+    ruler_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-extra-args-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    runtime_config:
+      file: /var/mimir/runtime.yaml
+    store_gateway:
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+        kvstore:
+          prefix: multi-zone/
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+        wait_stability_min_duration: 1m
+        zone_awareness_enabled: true
+    usage_stats:
+      installation_mode: helm

@@ -13,9 +13,16 @@ eval instant at 5m single_histogram
 eval range from 0 to 5m step 1m single_histogram
 	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
 
+# histogram_avg is sum / count.
+eval range from 0 to 5m step 1m  histogram_avg(single_histogram)
+	{} 1.25 1.25 1.25 1.25 1.25 2.857142857142857
+
 # histogram_count extracts the count property from the histogram.
 eval range from 0 to 5m step 1m  histogram_count(single_histogram)
 	{} 4 4 4 4 4 7
+
+eval range from 0 to 5m step 1m  histogram_fraction(0, 2, single_histogram)
+	{} 0.75 0.75 0.75 0.75 0.75 1
 
 # histogram_sum extracts the sum property from the histogram.
 eval range from 0 to 5m step 1m  histogram_sum(single_histogram)
@@ -30,8 +37,14 @@ load 1m
 eval range from 0 to 5m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
 
+eval instant at 3m histogram_avg(mixed_metric)
+	{} 1.25
+
 eval instant at 3m histogram_count(mixed_metric)
 	{} 4
+
+eval instant at 3m histogram_fraction(0, 1, mixed_metric)
+	{} 0.25
 
 eval instant at 4m histogram_sum(mixed_metric)
 	{} 8
@@ -42,8 +55,14 @@ eval range from 0 to 5m step 1m histogram_count(mixed_metric)
 eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
 	{} _ _ _ 5 8 8
 
+# histogram_avg ignores any float values
+eval instant at 2m histogram_avg(mixed_metric)
+
 # histogram_count ignores any float values
 eval instant at 2m histogram_count(mixed_metric)
+
+# histogram_fraction ignores any float values
+eval instant at 2m histogram_fraction(0, 1, mixed_metric)
 
 # histogram_sum ignores any float values
 eval instant at 2m histogram_sum(mixed_metric)
@@ -56,17 +75,27 @@ load 5m
 	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
 	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
 
-eval instant at 5m route
+eval instant at 0 route
 	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
 	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
 
-eval instant at 5m histogram_count(route)
+eval instant at 0 histogram_avg(route)
+	{path="one"} 1.25
+	{path="two"} 0.5
+	{path="three"} 1.2
+
+eval instant at 0 histogram_count(route)
 	{path="one"} 4
 	{path="two"} 20
 	{path="three"} 10
 
-eval instant at 5m histogram_sum(route)
+eval instant at 0 histogram_fraction(-10, 20, route)
+	{path="one"} 1
+	{path="two"} 1
+	{path="three"} 1
+
+eval instant at 0 histogram_sum(route)
 	{path="one"} 5
 	{path="two"} 10
 	{path="three"} 12
@@ -94,8 +123,14 @@ load 1m
 eval range from 0 to 8m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
 
+eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
+{} _ _ _ _ _ _ _ 1.8 1.8
+
 eval range from 0 to 8m step 1m histogram_count(mixed_metric)
 {} _ _ _ _ _ _ _ 10 10
+
+eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
+{} _ _ _ _ _ _ _ 0.3 0.3
 
 eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
 {} _ _ _ _ _ _ _ 18 18
@@ -135,11 +170,11 @@ load 1m
 # - The second value is a rate/increase from two floats
 # - The third value is a rate/increase across a float and histogram (so no value returned)
 # - The remaining values contain the rate/increase across two histograms in the vector
-eval_warn range from 0 to 4m step 1m rate(incr_histogram[1m])
+eval_warn range from 0 to 4m step 1m rate(incr_histogram[1m1s])
 	{} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
 
-eval_warn range from 0 to 4m step 1m increase(incr_histogram[1m])
-	{} _ 1 _ {{schema:3 count:1 sum:2 offset:1 buckets:[1]}} {{schema:3 count:1 sum:2 offset:1 buckets:[1]}}
+eval_warn range from 0 to 4m step 1m increase(incr_histogram[1m1s])
+	{} _ 1.0166666666666666 _ {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}} {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}}
 
 clear
 
@@ -164,11 +199,11 @@ clear
 load 1m
   metric {{sum:3 count:4 buckets:[1 2 1] counter_reset_hint:reset}} {{sum:63 count:124 buckets:[100 4 20] counter_reset_hint:not_reset}}
 
-eval instant at 1m rate(metric[1m])
+eval instant at 1m rate(metric[1m1s])
   {} {{sum:1 count:2 buckets:[1.65 0.03333333333333333 0.31666666666666665] counter_reset_hint:gauge}}
 
-eval instant at 1m increase(metric[1m])
-  {} {{sum:60 count:120 buckets:[99 2 19] counter_reset_hint:gauge}}
+eval instant at 1m increase(metric[1m1s])
+  {} {{count:122 sum:61 buckets:[100.64999999999999 2.033333333333333 19.316666666666666]}}
 
 clear
 
@@ -208,8 +243,8 @@ clear
 load 1m
   metric {{schema:4 sum:2 count:2 buckets:[2]}} {{schema:2 sum:6 count:12 buckets:[12]}} {{schema:3 sum:12 count:24 buckets:[24]}} {{schema:4 sum:164 count:326 buckets:[326]}}
 
-eval instant at 3m rate(metric[3m])
+eval instant at 3m rate(metric[3m1s])
   {} {{schema:2 sum:1 count:2 buckets:[2] counter_reset_hint:gauge}}
 
-eval instant at 3m increase(metric[3m])
-  {} {{schema:2 sum:180 count:360 buckets:[360] counter_reset_hint:gauge}}
+eval instant at 3m increase(metric[3m1s])
+  {} {{schema:2 sum:181 count:362 buckets:[362] counter_reset_hint:gauge}}

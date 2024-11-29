@@ -9,6 +9,8 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -19,11 +21,12 @@ type MinMaxAggregationGroup struct {
 	floatPresent []bool
 
 	accumulatePoint func(idx int64, f float64)
+	isMax           bool
 }
 
 // max represents whether this aggregation is `max` (true), or `min` (false)
 func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
-	g := &MinMaxAggregationGroup{}
+	g := &MinMaxAggregationGroup{isMax: max}
 	if max {
 		g.accumulatePoint = g.maxAccumulatePoint
 	} else {
@@ -48,11 +51,21 @@ func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
 	}
 }
 
-func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ types.EmitAnnotationFunc) error {
-	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.floatValues == nil {
-		// Even if we only have histograms, we have to populate the float slices, as we'll treat histograms as if they have value 0.
-		// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711
+func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+	// Native histograms are ignored for min and max.
+	if len(data.Histograms) > 0 {
+		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
+			name := "min"
 
+			if g.isMax {
+				name = "max"
+			}
+
+			return annotations.NewHistogramIgnoredInAggregationInfo(name, expressionPosition)
+		})
+	}
+
+	if len(data.Floats) > 0 && g.floatValues == nil {
 		var err error
 		// First series with float values for this group, populate it.
 		g.floatValues, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
@@ -71,13 +84,6 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	for _, p := range data.Floats {
 		idx := timeRange.PointIndex(p.T)
 		g.accumulatePoint(idx, p.F)
-	}
-
-	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
-	// This is consistent with Prometheus but may not be the desired value: https://github.com/prometheus/prometheus/issues/14711
-	for _, p := range data.Histograms {
-		idx := timeRange.PointIndex(p.T)
-		g.accumulatePoint(idx, 0)
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
