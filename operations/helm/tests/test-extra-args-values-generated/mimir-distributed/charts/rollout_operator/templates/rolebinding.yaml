@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-extra-args-values-rollout-operator
+  labels:
+    helm.sh/chart: rollout-operator-0.20.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/version: "v0.20.0"
+    app.kubernetes.io/managed-by: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: test-extra-args-values-rollout-operator
+subjects:
+- kind: ServiceAccount
+  name: test-extra-args-values-rollout-operator

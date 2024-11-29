@@ -50,7 +50,7 @@ spec:
             - -target=graphite-querier
             - -config.file=/etc/mimir/mimir.yaml
           {{- range $key, $value := .Values.graphite.querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.graphite.querier.extraVolumeMounts }}

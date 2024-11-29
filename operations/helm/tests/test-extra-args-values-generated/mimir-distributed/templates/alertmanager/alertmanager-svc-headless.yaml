@@ -1,0 +1,36 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-extra-args-values-mimir-alertmanager-headless
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+    - port: 9094
+      protocol: TCP
+      name: cluster
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/component: alertmanager
