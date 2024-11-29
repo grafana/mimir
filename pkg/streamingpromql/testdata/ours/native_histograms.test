@@ -21,6 +21,9 @@ eval range from 0 to 5m step 1m  histogram_avg(single_histogram)
 eval range from 0 to 5m step 1m  histogram_count(single_histogram)
 	{} 4 4 4 4 4 7
 
+eval range from 0 to 5m step 1m  histogram_fraction(0, 2, single_histogram)
+	{} 0.75 0.75 0.75 0.75 0.75 1
+
 # histogram_sum extracts the sum property from the histogram.
 eval range from 0 to 5m step 1m  histogram_sum(single_histogram)
 	{} 5 5 5 5 5 20
@@ -40,6 +43,9 @@ eval instant at 3m histogram_avg(mixed_metric)
 eval instant at 3m histogram_count(mixed_metric)
 	{} 4
 
+eval instant at 3m histogram_fraction(0, 1, mixed_metric)
+	{} 0.25
+
 eval instant at 4m histogram_sum(mixed_metric)
 	{} 8
 
@@ -54,6 +60,9 @@ eval instant at 2m histogram_avg(mixed_metric)
 
 # histogram_count ignores any float values
 eval instant at 2m histogram_count(mixed_metric)
+
+# histogram_fraction ignores any float values
+eval instant at 2m histogram_fraction(0, 1, mixed_metric)
 
 # histogram_sum ignores any float values
 eval instant at 2m histogram_sum(mixed_metric)
@@ -80,6 +89,11 @@ eval instant at 0 histogram_count(route)
 	{path="one"} 4
 	{path="two"} 20
 	{path="three"} 10
+
+eval instant at 0 histogram_fraction(-10, 20, route)
+	{path="one"} 1
+	{path="two"} 1
+	{path="three"} 1
 
 eval instant at 0 histogram_sum(route)
 	{path="one"} 5
@@ -114,6 +128,9 @@ eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
 
 eval range from 0 to 8m step 1m histogram_count(mixed_metric)
 {} _ _ _ _ _ _ _ 10 10
+
+eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
+{} _ _ _ _ _ _ _ 0.3 0.3
 
 eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
 {} _ _ _ _ _ _ _ 18 18

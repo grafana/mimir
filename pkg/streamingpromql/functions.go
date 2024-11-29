@@ -286,7 +286,7 @@ func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 	}
 }
 
-func HistogramQuantileOperatorFactory() InstantVectorFunctionOperatorFactory {
+func HistogramQuantileFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 2 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -307,6 +307,40 @@ func HistogramQuantileOperatorFactory() InstantVectorFunctionOperatorFactory {
 
 		o := functions.NewHistogramQuantileFunction(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
 		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	}
+}
+
+func HistogramFractionFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 3 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 3 argument for histogram_fraction, got %v", len(args))
+		}
+
+		lower, ok := args[0].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 1st argument for histogram_fraction, got %T", args[0])
+		}
+
+		upper, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for histogram_fraction, got %T", args[1])
+		}
+
+		inner, ok := args[2].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 3rd argument for histogram_fraction, got %T", args[2])
+		}
+
+		f := functions.FunctionOverInstantVectorDefinition{
+			SeriesDataFunc:         functions.HistogramFraction,
+			SeriesMetadataFunction: functions.DropSeriesName,
+		}
+
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{lower, upper}, memoryConsumptionTracker, f, expressionPosition), nil
 	}
 }
 
@@ -335,7 +369,8 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"floor":              InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
 	"histogram_avg":      InstantVectorTransformationFunctionOperatorFactory("histogram_avg", functions.HistogramAvg),
 	"histogram_count":    InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
-	"histogram_quantile": HistogramQuantileOperatorFactory(),
+	"histogram_fraction": HistogramFractionFunctionOperatorFactory(),
+	"histogram_quantile": HistogramQuantileFunctionOperatorFactory(),
 	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
 	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
 	"label_replace":      LabelReplaceFunctionOperatorFactory(),
