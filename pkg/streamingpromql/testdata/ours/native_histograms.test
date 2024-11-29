@@ -13,6 +13,10 @@ eval instant at 5m single_histogram
 eval range from 0 to 5m step 1m single_histogram
 	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
 
+# histogram_avg is sum / count.
+eval range from 0 to 5m step 1m  histogram_avg(single_histogram)
+	{} 1.25 1.25 1.25 1.25 1.25 2.857142857142857
+
 # histogram_count extracts the count property from the histogram.
 eval range from 0 to 5m step 1m  histogram_count(single_histogram)
 	{} 4 4 4 4 4 7
@@ -30,6 +34,9 @@ load 1m
 eval range from 0 to 5m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
 
+eval instant at 3m histogram_avg(mixed_metric)
+	{} 1.25
+
 eval instant at 3m histogram_count(mixed_metric)
 	{} 4
 
@@ -41,6 +48,9 @@ eval range from 0 to 5m step 1m histogram_count(mixed_metric)
 
 eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
 	{} _ _ _ 5 8 8
+
+# histogram_avg ignores any float values
+eval instant at 2m histogram_avg(mixed_metric)
 
 # histogram_count ignores any float values
 eval instant at 2m histogram_count(mixed_metric)
@@ -60,6 +70,11 @@ eval instant at 0 route
 	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
 	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 0 histogram_avg(route)
+	{path="one"} 1.25
+	{path="two"} 0.5
+	{path="three"} 1.2
 
 eval instant at 0 histogram_count(route)
 	{path="one"} 4
@@ -93,6 +108,9 @@ load 1m
 # Instead this is what we get from both engines.
 eval range from 0 to 8m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
+{} _ _ _ _ _ _ _ 1.8 1.8
 
 eval range from 0 to 8m step 1m histogram_count(mixed_metric)
 {} _ _ _ _ _ _ _ 10 10

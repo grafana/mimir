@@ -357,6 +357,9 @@ eval_fail instant at 5m exp({__name__=~"float_metric_.*"})
 eval_fail instant at 5m floor({__name__=~"float_metric_.*"})
   expected_fail_message vector cannot contain metrics with the same labelset
 
+eval_fail instant at 5m histogram_avg({__name__=~"histogram_metric_.*"})
+  expected_fail_message vector cannot contain metrics with the same labelset
+
 eval_fail instant at 5m histogram_count({__name__=~"histogram_metric_.*"})
   expected_fail_message vector cannot contain metrics with the same labelset
 

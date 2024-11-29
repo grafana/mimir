@@ -13,6 +13,28 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+func HistogramAvg(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	floats, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	data := types.InstantVectorSeriesData{
+		Floats: floats,
+	}
+
+	for _, histogram := range seriesData.Histograms {
+		data.Floats = append(data.Floats, promql.FPoint{
+			T: histogram.T,
+			F: histogram.H.Sum / histogram.H.Count,
+		})
+	}
+
+	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+
+	return data, nil
+}
+
 func HistogramCount(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	floats, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
 	if err != nil {
