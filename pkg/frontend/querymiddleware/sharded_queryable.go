@@ -124,10 +124,16 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 		}
 
 		end := req.GetEnd()
+
+		// Align query to absolute time by querying slightly into the future.
+		step := subquery.Step.Milliseconds()
+		if end%step != 0 {
+			end += step - (end % step)
+		}
 		start := end - subquery.Range.Milliseconds()
 
 		headers := req.GetHeaders()
-		headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}})
+		headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}}) // Downstream is the querier, which is HTTP req.
 
 		newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, start, end, subquery.Step.Milliseconds(), req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
 		if q.logger != nil {

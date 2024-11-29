@@ -50,10 +50,12 @@ type querySharding struct {
 }
 
 type queryShardingMetrics struct {
-	shardingAttempts       prometheus.Counter
-	shardingSuccesses      prometheus.Counter
-	shardedQueries         prometheus.Counter
-	shardedQueriesPerQuery prometheus.Histogram
+	shardingAttempts          prometheus.Counter
+	shardingSuccesses         prometheus.Counter
+	shardedQueries            prometheus.Counter
+	shardedQueriesPerQuery    prometheus.Histogram
+	spunOffSubqueries         prometheus.Counter
+	spunOffSubqueriesPerQuery prometheus.Histogram
 }
 
 // newQueryShardingMiddleware creates a middleware that will split queries by shard.
@@ -85,6 +87,15 @@ func newQueryShardingMiddleware(
 		shardedQueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_frontend_sharded_queries_per_query",
 			Help:    "Number of sharded queries a single query has been rewritten to.",
+			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
+		}),
+		spunOffSubqueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_query_sharding_spun_off_subqueries_total",
+			Help: "Total number of subqueries spun off as range queries.",
+		}),
+		spunOffSubqueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_frontend_query_sharding_spun_off_subqueries_per_query",
+			Help:    "Number of subqueries spun off as range queries per query.",
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
@@ -150,10 +161,13 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	s.shardingSuccesses.Inc()
 	s.shardedQueries.Add(float64(shardingStats.GetShardedQueries()))
 	s.shardedQueriesPerQuery.Observe(float64(shardingStats.GetShardedQueries()))
+	s.spunOffSubqueries.Add(float64(shardingStats.GetSpunOffSubqueries()))
+	s.spunOffSubqueriesPerQuery.Observe(float64(shardingStats.GetSpunOffSubqueries()))
 
 	// Update query stats.
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
+	queryStats.AddSpunOffSubqueries(uint32(shardingStats.GetSpunOffSubqueries()))
 
 	r, err = r.WithQuery(shardedQuery)
 	if err != nil {

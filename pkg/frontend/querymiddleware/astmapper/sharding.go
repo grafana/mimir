@@ -160,6 +160,7 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 						Range:          sq.Range,
 					}
 
+					summer.stats.AddSpunOffSubquery()
 					return e, true, nil
 				}
 
