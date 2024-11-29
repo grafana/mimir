@@ -300,6 +300,13 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 }
 
 func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	// Handle special toggles for classic histograms
+	if !q.engine.featureToggles.EnableHistogramQuantileFunction {
+		if e.Func.Name == "histogram_quantile" {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+		}
+	}
+
 	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))

@@ -25,6 +25,7 @@ type FeatureToggles struct {
 	EnableBinaryLogicalOperations                bool `yaml:"enable_binary_logical_operations" category:"experimental"`
 	EnableScalars                                bool `yaml:"enable_scalars" category:"experimental"`
 	EnableSubqueries                             bool `yaml:"enable_subqueries" category:"experimental"`
+	EnableHistogramQuantileFunction              bool `yaml:"enable_histogram_quantile_function" category:"experimental"`
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.
@@ -37,14 +38,16 @@ var EnableAllFeatures = FeatureToggles{
 	true,
 	true,
 	true,
+	true,
 }
 
 func (t *FeatureToggles) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&t.EnableAggregationOperations, "querier.mimir-query-engine.enable-aggregation-operations", true, "Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use.")
-	f.BoolVar(&t.EnableVectorVectorBinaryComparisonOperations, "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations", true, "Enable support for binary comparison operations between two vectors in Mimir's query engine. Only applies if the Mimir query engine is in use.")
-	f.BoolVar(&t.EnableVectorScalarBinaryComparisonOperations, "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations", true, "Enable support for binary comparison operations between a vector and a scalar in Mimir's query engine. Only applies if the Mimir query engine is in use.")
-	f.BoolVar(&t.EnableScalarScalarBinaryComparisonOperations, "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations", true, "Enable support for binary comparison operations between two scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.")
-	f.BoolVar(&t.EnableBinaryLogicalOperations, "querier.mimir-query-engine.enable-binary-logical-operations", true, "Enable support for binary logical operations in Mimir's query engine. Only applies if the Mimir query engine is in use.")
-	f.BoolVar(&t.EnableScalars, "querier.mimir-query-engine.enable-scalars", true, "Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.")
-	f.BoolVar(&t.EnableSubqueries, "querier.mimir-query-engine.enable-subqueries", true, "Enable support for subqueries in Mimir's query engine. Only applies if the Mimir query engine is in use.")
+	f.BoolVar(&t.EnableAggregationOperations, "querier.mimir-query-engine.enable-aggregation-operations", true, "Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableVectorVectorBinaryComparisonOperations, "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations", true, "Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableVectorScalarBinaryComparisonOperations, "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations", true, "Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableScalarScalarBinaryComparisonOperations, "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations", true, "Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableBinaryLogicalOperations, "querier.mimir-query-engine.enable-binary-logical-operations", true, "Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableScalars, "querier.mimir-query-engine.enable-scalars", true, "Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableSubqueries, "querier.mimir-query-engine.enable-subqueries", true, "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableHistogramQuantileFunction, "querier.mimir-query-engine.enable-histogram-quantile-function", true, "Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use.")
 }

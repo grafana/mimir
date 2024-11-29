@@ -286,53 +286,78 @@ func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 	}
 }
 
+func HistogramQuantileOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 2 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 2 argument for histogram_quantile, got %v", len(args))
+		}
+
+		ph, ok := args[0].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 1st argument for histogram_quantile, got %T", args[0])
+		}
+
+		inner, ok := args[1].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 2nd argument for histogram_quantile, got %T", args[1])
+		}
+
+		o := functions.NewHistogramQuantileFunction(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
+		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	}
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
 
-	"abs":               InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
-	"acos":              InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
-	"acosh":             InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
-	"asin":              InstantVectorTransformationFunctionOperatorFactory("asin", functions.Asin),
-	"asinh":             InstantVectorTransformationFunctionOperatorFactory("asinh", functions.Asinh),
-	"atan":              InstantVectorTransformationFunctionOperatorFactory("atan", functions.Atan),
-	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
-	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
-	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
-	"changes":           FunctionOverRangeVectorOperatorFactory("changes", functions.Changes),
-	"clamp":             ClampFunctionOperatorFactory(),
-	"clamp_max":         ClampMinMaxFunctionOperatorFactory("clamp_max", false),
-	"clamp_min":         ClampMinMaxFunctionOperatorFactory("clamp_min", true),
-	"cos":               InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
-	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
-	"count_over_time":   FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
-	"deg":               InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
-	"deriv":             FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
-	"exp":               InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
-	"floor":             InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
-	"histogram_count":   InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
-	"histogram_sum":     InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
-	"increase":          FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
-	"label_replace":     LabelReplaceFunctionOperatorFactory(),
-	"last_over_time":    FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
-	"ln":                InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
-	"log10":             InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
-	"log2":              InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
-	"max_over_time":     FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
-	"min_over_time":     FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
-	"present_over_time": FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
-	"rad":               InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
-	"rate":              FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
-	"resets":            FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
-	"round":             RoundFunctionOperatorFactory(),
-	"sgn":               InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
-	"sin":               InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
-	"sinh":              InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
-	"sqrt":              InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
-	"sum_over_time":     FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
-	"tan":               InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
-	"tanh":              InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
-	"vector":            scalarToInstantVectorOperatorFactory,
+	"abs":                InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
+	"acos":               InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
+	"acosh":              InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
+	"asin":               InstantVectorTransformationFunctionOperatorFactory("asin", functions.Asin),
+	"asinh":              InstantVectorTransformationFunctionOperatorFactory("asinh", functions.Asinh),
+	"atan":               InstantVectorTransformationFunctionOperatorFactory("atan", functions.Atan),
+	"atanh":              InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
+	"avg_over_time":      FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
+	"ceil":               InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"changes":            FunctionOverRangeVectorOperatorFactory("changes", functions.Changes),
+	"clamp":              ClampFunctionOperatorFactory(),
+	"clamp_max":          ClampMinMaxFunctionOperatorFactory("clamp_max", false),
+	"clamp_min":          ClampMinMaxFunctionOperatorFactory("clamp_min", true),
+	"cos":                InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
+	"cosh":               InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
+	"count_over_time":    FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
+	"deg":                InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
+	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
+	"exp":                InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
+	"floor":              InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
+	"histogram_count":    InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
+	"histogram_quantile": HistogramQuantileOperatorFactory(),
+	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
+	"label_replace":      LabelReplaceFunctionOperatorFactory(),
+	"last_over_time":     FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
+	"ln":                 InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
+	"log10":              InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
+	"log2":               InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
+	"max_over_time":      FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
+	"min_over_time":      FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
+	"present_over_time":  FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
+	"rad":                InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
+	"rate":               FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
+	"resets":             FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
+	"round":              RoundFunctionOperatorFactory(),
+	"sgn":                InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
+	"sin":                InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
+	"sinh":               InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
+	"sqrt":               InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
+	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
+	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
+	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
+	"vector":             scalarToInstantVectorOperatorFactory,
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
