@@ -57,7 +57,7 @@ func TestFloatTransformationFunc(t *testing.T) {
 		},
 	}
 
-	modifiedSeriesData, err := transformFunc(seriesData, nil, memoryConsumptionTracker)
+	modifiedSeriesData, err := transformFunc(seriesData, nil, types.QueryTimeRange{}, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
 	require.Equal(t, types.FPointSize*2+types.HPointSize*1, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
@@ -88,7 +88,7 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 		Histograms: nil, // Histograms should be dropped
 	}
 
-	modifiedSeriesData, err := transformFunc(seriesData, nil, memoryConsumptionTracker)
+	modifiedSeriesData, err := transformFunc(seriesData, nil, types.QueryTimeRange{}, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
 	// We expect the dropped histogram to be returned to the pool

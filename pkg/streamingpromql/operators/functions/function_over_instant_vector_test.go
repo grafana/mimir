@@ -39,7 +39,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, types.QueryTimeRange, *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}
@@ -85,7 +85,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		// Verify that the scalar arguments are correctly passed and in the order we expect
 		require.Equal(t, 2, len(scalarArgs))

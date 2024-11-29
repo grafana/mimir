@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func HistogramAvg(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func HistogramAvg(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	floats, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -35,7 +35,7 @@ func HistogramAvg(seriesData types.InstantVectorSeriesData, _ []types.ScalarData
 	return data, nil
 }
 
-func HistogramCount(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func HistogramCount(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	floats, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -57,7 +57,7 @@ func HistogramCount(seriesData types.InstantVectorSeriesData, _ []types.ScalarDa
 	return data, nil
 }
 
-func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	floats, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -69,19 +69,12 @@ func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData 
 
 	lower := scalarArgsData[0]
 	upper := scalarArgsData[1]
-	// There will always be a scalar at every step of the query.
-	// However, there may not be a sample at a step. So we need to
-	// keep track of where we are up to step-wise with the scalars,
-	// incrementing through the scalars until their timestamp matches
-	// the samples.
-	argIdx := 0
 
 	for _, histogram := range seriesData.Histograms {
-		for histogram.T > lower.Samples[argIdx].T {
-			argIdx++
-		}
-		lowerVal := lower.Samples[argIdx].F
-		upperVal := upper.Samples[argIdx].F
+		// Scalars are guaranteed to have a point for each step in the query.
+		idx := timeRange.PointIndex(histogram.T)
+		lowerVal := lower.Samples[idx].F
+		upperVal := upper.Samples[idx].F
 
 		data.Floats = append(data.Floats, promql.FPoint{
 			T: histogram.T,
@@ -94,7 +87,7 @@ func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData 
 	return data, nil
 }
 
-func HistogramSum(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func HistogramSum(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	floats, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err

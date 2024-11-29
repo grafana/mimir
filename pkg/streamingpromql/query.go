@@ -287,7 +287,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		return unaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange()), nil
+		return unaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
