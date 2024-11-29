@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/blockbuilder"
-	"github.com/grafana/mimir/pkg/blockbuilder/schedulerproto"
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -240,19 +240,19 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 }
 
 // AssignJob returns an assigned job for the given workerID.
-func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerproto.AssignJobRequest) (*schedulerproto.AssignJobResponse, error) {
+func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
 	key, spec, err := s.jobs.assign(req.WorkerId)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: eliminate jobSpec duplication.
-	return &schedulerproto.AssignJobResponse{
-		Key: &schedulerproto.JobKey{
+	return &schedulerpb.AssignJobResponse{
+		Key: &schedulerpb.JobKey{
 			Id:    key.id,
 			Epoch: key.epoch,
 		},
-		Spec: &schedulerproto.JobSpec{
+		Spec: &schedulerpb.JobSpec{
 			Topic:          spec.topic,
 			Partition:      spec.partition,
 			StartOffset:    spec.startOffset,
@@ -279,7 +279,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, err
 }
 
 // UpdateJob takes a job update from the client and records it, if necessary.
-func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerproto.UpdateJobRequest) (*schedulerproto.UpdateJobResponse, error) {
+func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
 	if err := s.updateJob(keyFromProtoKey(req.Key), req.WorkerId, req.Complete, jobSpec{
 		topic:          req.Spec.Topic,
 		partition:      req.Spec.Partition,
@@ -291,10 +291,10 @@ func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerproto
 	}); err != nil {
 		return nil, err
 	}
-	return &schedulerproto.UpdateJobResponse{}, nil
+	return &schedulerpb.UpdateJobResponse{}, nil
 }
 
-func keyFromProtoKey(k *schedulerproto.JobKey) jobKey {
+func keyFromProtoKey(k *schedulerpb.JobKey) jobKey {
 	return jobKey{
 		id:    k.Id,
 		epoch: k.Epoch,
@@ -408,4 +408,4 @@ type observation struct {
 	complete bool
 }
 
-var _ schedulerproto.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
+var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)

@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/blockbuilder/schedulerproto"
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -42,7 +42,7 @@ type BlockBuilder struct {
 	kafkaClient *kgo.Client
 	bucket      objstore.Bucket
 
-	scheduler schedulerproto.SchedulerClient
+	scheduler schedulerpb.SchedulerClient
 
 	assignedPartitionIDs []int32
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
@@ -81,16 +81,18 @@ func New(
 
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
-	sched, err := b.makeSchedulerClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create scheduler client: %w", err)
+	if cfg.SchedulerConfig.Address != "" {
+		sched, err := b.makeSchedulerClient()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create scheduler client: %w", err)
+		}
+		b.scheduler = sched
 	}
-	b.scheduler = sched
 
 	return b, nil
 }
 
-func (b *BlockBuilder) makeSchedulerClient() (schedulerproto.SchedulerClient, error) {
+func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, error) {
 	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
 		nil)
@@ -104,7 +106,7 @@ func (b *BlockBuilder) makeSchedulerClient() (schedulerproto.SchedulerClient, er
 		return nil, err
 	}
 
-	return schedulerproto.NewBlockBuilderSchedulerClient(conn), nil
+	return schedulerpb.NewBlockBuilderSchedulerClient(conn), nil
 }
 
 func (b *BlockBuilder) starting(context.Context) (err error) {
