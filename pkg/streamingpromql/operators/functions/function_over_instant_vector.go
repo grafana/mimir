@@ -32,6 +32,7 @@ type FunctionOverInstantVector struct {
 	scalarArgsData []types.ScalarData
 
 	expressionPosition posrange.PositionRange
+	timeRange          types.QueryTimeRange
 }
 
 var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
@@ -42,6 +43,7 @@ func NewFunctionOverInstantVector(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	f FunctionOverInstantVectorDefinition,
 	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{
 		Inner:                    inner,
@@ -50,6 +52,7 @@ func NewFunctionOverInstantVector(
 		Func:                     f,
 
 		expressionPosition: expressionPosition,
+		timeRange:          timeRange,
 	}
 }
 
@@ -99,7 +102,7 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return m.Func.SeriesDataFunc(series, m.scalarArgsData, m.MemoryConsumptionTracker)
+	return m.Func.SeriesDataFunc(series, m.scalarArgsData, m.timeRange, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverInstantVector) Close() {
