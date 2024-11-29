@@ -268,6 +268,140 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	return -math.Exp2(logUpper + (logLower-logUpper)*(1-fraction))
 }
 
+// histogramFraction calculates the fraction of observations between the
+// provided lower and upper bounds, based on the provided histogram.
+//
+// histogramFraction is in a certain way the inverse of histogramQuantile.  If
+// histogramQuantile(0.9, h) returns 123.4, then histogramFraction(-Inf, 123.4, h)
+// returns 0.9.
+//
+// The same notes with regard to interpolation and assumptions about the zero
+// bucket boundaries apply as for histogramQuantile.
+//
+// Whether either boundary is inclusive or exclusive doesn’t actually matter as
+// long as interpolation has to be performed anyway. In the case of a boundary
+// coinciding with a bucket boundary, the inclusive or exclusive nature of the
+// boundary determines the exact behavior of the threshold. With the current
+// implementation, that means that lower is exclusive for positive values and
+// inclusive for negative values, while upper is inclusive for positive values
+// and exclusive for negative values.
+//
+// Special cases:
+//
+// If the histogram has 0 observations, NaN is returned.
+//
+// Use a lower bound of -Inf to get the fraction of all observations below the
+// upper bound.
+//
+// Use an upper bound of +Inf to get the fraction of all observations above the
+// lower bound.
+//
+// If lower or upper is NaN, NaN is returned.
+//
+// If lower >= upper and the histogram has at least 1 observation, zero is returned.
+func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
+	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
+		return math.NaN()
+	}
+	if lower >= upper {
+		return 0
+	}
+
+	var (
+		rank, lowerRank, upperRank float64
+		lowerSet, upperSet         bool
+		it                         = h.AllBucketIterator()
+	)
+	for it.Next() {
+		b := it.At()
+		zeroBucket := false
+
+		// interpolateLinearly is used for custom buckets to be
+		// consistent with the linear interpolation known from classic
+		// histograms. It is also used for the zero bucket.
+		interpolateLinearly := func(v float64) float64 {
+			return rank + b.Count*(v-b.Lower)/(b.Upper-b.Lower)
+		}
+
+		// interpolateExponentially is using the same exponential
+		// interpolation method as above for histogramQuantile. This
+		// method is a better fit for exponential bucketing.
+		interpolateExponentially := func(v float64) float64 {
+			var (
+				logLower = math.Log2(math.Abs(b.Lower))
+				logUpper = math.Log2(math.Abs(b.Upper))
+				logV     = math.Log2(math.Abs(v))
+				fraction float64
+			)
+			if v > 0 {
+				fraction = (logV - logLower) / (logUpper - logLower)
+			} else {
+				fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
+			}
+			return rank + b.Count*fraction
+		}
+
+		if b.Lower <= 0 && b.Upper >= 0 {
+			zeroBucket = true
+			switch {
+			case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
+				// This is the zero bucket and the histogram has only
+				// positive buckets. So we consider 0 to be the lower
+				// bound.
+				b.Lower = 0
+			case len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0:
+				// This is in the zero bucket and the histogram has only
+				// negative buckets. So we consider 0 to be the upper
+				// bound.
+				b.Upper = 0
+			}
+		}
+		if !lowerSet && b.Lower >= lower {
+			// We have hit the lower value at the lower bucket boundary.
+			lowerRank = rank
+			lowerSet = true
+		}
+		if !upperSet && b.Lower >= upper {
+			// We have hit the upper value at the lower bucket boundary.
+			upperRank = rank
+			upperSet = true
+		}
+		if lowerSet && upperSet {
+			break
+		}
+		if !lowerSet && b.Lower < lower && b.Upper > lower {
+			// The lower value is in this bucket.
+			if h.UsesCustomBuckets() || zeroBucket {
+				lowerRank = interpolateLinearly(lower)
+			} else {
+				lowerRank = interpolateExponentially(lower)
+			}
+			lowerSet = true
+		}
+		if !upperSet && b.Lower < upper && b.Upper > upper {
+			// The upper value is in this bucket.
+			if h.UsesCustomBuckets() || zeroBucket {
+				upperRank = interpolateLinearly(upper)
+			} else {
+				upperRank = interpolateExponentially(upper)
+			}
+			upperSet = true
+		}
+		if lowerSet && upperSet {
+			break
+		}
+		rank += b.Count
+	}
+	if !lowerSet || lowerRank > h.Count {
+		lowerRank = h.Count
+	}
+	if !upperSet || upperRank > h.Count {
+		upperRank = h.Count
+	}
+
+	return (upperRank - lowerRank) / h.Count
+}
+
 // coalesceBuckets merges buckets with the same upper bound.
 //
 // The input buckets must be sorted.
