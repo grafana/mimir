@@ -142,7 +142,7 @@
 
 ### Documentation
 
-* [BUGFIX] Send/Native Histograms: update the migration guide with the corrected dashboard query for switching between classic or native histograms queries.
+* [BUGFIX] Send/Native Histograms: update the migration guide with the corrected dashboard query for switching between classic or native histograms queries. #10052
 
 ### Tools
 
