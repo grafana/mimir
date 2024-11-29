@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package schedulerclient
+package schedulerproto
 
 import (
 	"context"
@@ -11,8 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-
-	"github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 )
 
 type SchedulerClient interface{}
@@ -23,21 +21,21 @@ type schedulerClient struct {
 	workerID       string
 	updateInterval time.Duration
 	maxUpdateAge   time.Duration
-	srv            scheduler.BlockBuilderSchedulerServer
+	srv            BlockBuilderSchedulerServer
 	logger         log.Logger
 
 	mu   sync.Mutex
-	jobs map[scheduler.JobKey]job
+	jobs map[JobKey]job
 }
 
 type job struct {
-	spec     scheduler.JobSpec
+	spec     JobSpec
 	complete bool
 	// The time, if non-zero, when this job entry should be expired from the map.
 	forgetTime time.Time
 }
 
-func NewSchedulerClient(workerID string, srv scheduler.BlockBuilderSchedulerServer, logger log.Logger,
+func NewSchedulerClient(workerID string, srv BlockBuilderSchedulerServer, logger log.Logger,
 	updateInterval time.Duration, maxUpdateAge time.Duration) SchedulerClient {
 
 	return &schedulerClient{
@@ -47,7 +45,7 @@ func NewSchedulerClient(workerID string, srv scheduler.BlockBuilderSchedulerServ
 		srv:            srv,
 		logger:         logger,
 
-		jobs: make(map[scheduler.JobKey]job),
+		jobs: make(map[JobKey]job),
 	}
 }
 
@@ -66,11 +64,11 @@ func (s *schedulerClient) Run(ctx context.Context) {
 	}
 }
 
-func (s *schedulerClient) snapshot() map[scheduler.JobKey]job {
+func (s *schedulerClient) snapshot() map[JobKey]job {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	jobs := make(map[scheduler.JobKey]job, len(s.jobs))
+	jobs := make(map[JobKey]job, len(s.jobs))
 	for k, v := range s.jobs {
 		jobs[k] = job{
 			spec:       v.spec,
@@ -83,7 +81,7 @@ func (s *schedulerClient) snapshot() map[scheduler.JobKey]job {
 
 func (s *schedulerClient) sendUpdates(ctx context.Context) {
 	for key, j := range s.snapshot() {
-		_, err := s.srv.UpdateJob(ctx, &scheduler.UpdateJobRequest{
+		_, err := s.srv.UpdateJob(ctx, &UpdateJobRequest{
 			Key:      &key,
 			WorkerId: s.workerID,
 			Spec:     &j.spec,
@@ -111,7 +109,7 @@ func (s *schedulerClient) forgetOldJobs() {
 
 // GetJob returns the job assigned to the worker with the given ID.
 // It will block until a job is available.
-func (s *schedulerClient) GetJob(ctx context.Context) (scheduler.JobKey, scheduler.JobSpec, error) {
+func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
@@ -119,7 +117,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (scheduler.JobKey, schedul
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		response, err := s.srv.AssignJob(ctx, &scheduler.AssignJobRequest{
+		response, err := s.srv.AssignJob(ctx, &AssignJobRequest{
 			WorkerId: s.workerID,
 		})
 		if err != nil {
@@ -144,10 +142,10 @@ func (s *schedulerClient) GetJob(ctx context.Context) (scheduler.JobKey, schedul
 		return key, spec, nil
 	}
 
-	return scheduler.JobKey{}, scheduler.JobSpec{}, lastErr
+	return JobKey{}, JobSpec{}, lastErr
 }
 
-func (s *schedulerClient) CompleteJob(jobKey scheduler.JobKey) error {
+func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
 	level.Info(s.logger).Log("msg", "marking job as completed", "jobID", jobKey.Id, "epoch", jobKey.Epoch)
 
 	s.mu.Lock()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcclient"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -21,14 +22,20 @@ type Config struct {
 	PartitionAssignment map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
 	DataDir             string             `yaml:"data_dir"`
 
-	ConsumerGroup         string        `yaml:"consumer_group"`
-	ConsumeInterval       time.Duration `yaml:"consume_interval"`
-	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
-	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
+	ConsumerGroup         string          `yaml:"consumer_group"`
+	ConsumeInterval       time.Duration   `yaml:"consume_interval"`
+	ConsumeIntervalBuffer time.Duration   `yaml:"consume_interval_buffer"`
+	LookbackOnNoCommit    time.Duration   `yaml:"lookback_on_no_commit" category:"advanced"`
+	SchedulerConfig       SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
 	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
+}
+
+type SchedulerConfig struct {
+	Address          string            `yaml:"address"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the block-builders and block-builder-schedulers."`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -45,6 +52,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
+
+	cfg.SchedulerConfig.GRPCClientConfig.RegisterFlags(f)
+}
+
+func (cfg *SchedulerConfig) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&cfg.Address, "block-builder.scheduler.address", "", "GRPC listen address of the block-builder-scheduler service.")
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("block-builder.scheduler.grpc-client-config", f)
 }
 
 func (cfg *Config) Validate() error {
