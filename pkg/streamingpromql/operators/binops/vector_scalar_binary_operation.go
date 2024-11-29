@@ -174,7 +174,7 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	v.vectorIterator.Reset(series)
 
 	for {
-		t, vectorF, vectorH, keep := v.vectorIterator.Next()
+		t, vectorF, vectorH, vectorHIndex, keep := v.vectorIterator.Next()
 
 		if !keep {
 			// We are done.
@@ -213,6 +213,11 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 				if err := prepareHPointSlice(); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
+			}
+
+			if h == vectorH {
+				// We're reusing the FloatHistogram from the vector. Remove it from the vector so that it is not modified when the slice is reused.
+				series.Histograms[vectorHIndex].H = nil
 			}
 
 			hPoints = append(hPoints, promql.HPoint{T: t, H: h})

@@ -556,8 +556,8 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 	b.rightIterator.Reset(right)
 
 	// Get first sample from left and right
-	lT, lF, lH, lOk := b.leftIterator.Next()
-	rT, rF, rH, rOk := b.rightIterator.Next()
+	lT, lF, lH, lHIndex, lOk := b.leftIterator.Next()
+	rT, rF, rH, rHIndex, rOk := b.rightIterator.Next()
 	// Continue iterating until we exhaust either the LHS or RHS
 	// denoted by lOk or rOk being false.
 	for lOk && rOk {
@@ -586,6 +586,17 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 							return types.InstantVectorSeriesData{}, err
 						}
 					}
+
+					// Check if we're reusing the FloatHistogram from either side.
+					// If so, remove it so that it is not modified when the slice is reused.
+					if resultHist == lH {
+						left.Histograms[lHIndex].H = nil
+					}
+
+					if resultHist == rH {
+						right.Histograms[rHIndex].H = nil
+					}
+
 					hPoints = append(hPoints, promql.HPoint{
 						H: resultHist,
 						T: lT,
@@ -606,12 +617,12 @@ func (b *VectorVectorBinaryOperation) computeResult(left types.InstantVectorSeri
 
 		// Advance the iterator with the lower timestamp, or both if equal
 		if lT == rT {
-			lT, lF, lH, lOk = b.leftIterator.Next()
-			rT, rF, rH, rOk = b.rightIterator.Next()
+			lT, lF, lH, lHIndex, lOk = b.leftIterator.Next()
+			rT, rF, rH, rHIndex, rOk = b.rightIterator.Next()
 		} else if lT < rT {
-			lT, lF, lH, lOk = b.leftIterator.Next()
+			lT, lF, lH, lHIndex, lOk = b.leftIterator.Next()
 		} else {
-			rT, rF, rH, rOk = b.rightIterator.Next()
+			rT, rF, rH, rHIndex, rOk = b.rightIterator.Next()
 		}
 	}
 
@@ -671,7 +682,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		}
 
 		if hlhs != nil && hrhs != nil {
-			res, err := hlhs.Copy().Add(hrhs)
+			res, err := hlhs.Add(hrhs)
 			if err != nil {
 				return 0, nil, false, true, err
 			}
@@ -686,7 +697,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		}
 
 		if hlhs != nil && hrhs != nil {
-			res, err := hlhs.Copy().Sub(hrhs)
+			res, err := hlhs.Sub(hrhs)
 			if err != nil {
 				return 0, nil, false, true, err
 			}
@@ -701,11 +712,11 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		}
 
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Mul(rhs), true, true, nil
+			return 0, hlhs.Mul(rhs), true, true, nil
 		}
 
 		if hlhs == nil && hrhs != nil {
-			return 0, hrhs.Copy().Mul(lhs), true, true, nil
+			return 0, hrhs.Mul(lhs), true, true, nil
 		}
 
 		return 0, nil, false, false, nil
@@ -716,7 +727,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		}
 
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Div(rhs), true, true, nil
+			return 0, hlhs.Div(rhs), true, true, nil
 		}
 
 		return 0, nil, false, false, nil
@@ -753,7 +764,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		if hlhs != nil && hrhs != nil {
 			if hlhs.Equals(hrhs) {
-				return 0, hlhs.Copy(), true, true, nil
+				return 0, hlhs, true, true, nil
 			}
 
 			return 0, nil, false, true, nil
@@ -772,7 +783,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		if hlhs != nil && hrhs != nil {
 			if !hlhs.Equals(hrhs) {
-				return 0, hlhs.Copy(), true, true, nil
+				return 0, hlhs, true, true, nil
 			}
 
 			return 0, nil, false, true, nil
