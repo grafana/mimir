@@ -59,5 +59,5 @@ func (s *ScalarToInstantVector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (s *ScalarToInstantVector) Close() {
-	// Nothing to do.
+	s.Scalar.Close()
 }
