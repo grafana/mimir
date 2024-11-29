@@ -1,4 +1,6 @@
 ---
+aliases:
+  - /docs/helm-charts/mimir-distributed/latest/configure/configure-grafana-enterprise-metrics/
 description: Learn how to deploy Grafana Enterprise Metrics using the Helm chart.
 menuTitle: Deploy GEM
 title: Deploy Grafana Enterprise Metrics using the Helm chart
