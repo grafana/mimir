@@ -92,7 +92,7 @@ func (s *schedulerClient) sendUpdates(ctx context.Context) {
 			Complete: j.complete,
 		})
 		if err != nil {
-			level.Error(s.logger).Log("msg", "failed to update job", "key", key, "err", err)
+			level.Error(s.logger).Log("msg", "failed to update job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
 	}
 }
