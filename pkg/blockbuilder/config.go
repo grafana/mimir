@@ -22,11 +22,12 @@ type Config struct {
 	PartitionAssignment map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
 	DataDir             string             `yaml:"data_dir"`
 
-	ConsumerGroup         string          `yaml:"consumer_group"`
-	ConsumeInterval       time.Duration   `yaml:"consume_interval"`
-	ConsumeIntervalBuffer time.Duration   `yaml:"consume_interval_buffer"`
-	LookbackOnNoCommit    time.Duration   `yaml:"lookback_on_no_commit" category:"advanced"`
-	SchedulerConfig       SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
+	ConsumerGroup         string        `yaml:"consumer_group"`
+	ConsumeInterval       time.Duration `yaml:"consume_interval"`
+	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
+	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
+
+	SchedulerConfig SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
 
 	ApplyMaxGlobalSeriesPerUserBelow int `yaml:"apply_max_global_series_per_user_below" category:"experimental"`
 
@@ -38,6 +39,8 @@ type Config struct {
 type SchedulerConfig struct {
 	Address          string            `yaml:"address"`
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the block-builders and block-builder-schedulers."`
+	UpdateInterval   time.Duration     `yaml:"update_interval" doc:"description=Interval between scheduler updates."`
+	MaxUpdateAge     time.Duration     `yaml:"max_update_age" doc:"description=Maximum age of jobs to continue sending to the scheduler."`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -66,7 +69,11 @@ func (cfg *SchedulerConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *Config) Validate() error {
 	if err := cfg.Kafka.Validate(); err != nil {
-		return err
+		return fmt.Errorf("kafka: %w", err)
+	}
+
+	if err := cfg.SchedulerConfig.GRPCClientConfig.Validate(); err != nil {
+		return fmt.Errorf("scheduler grpc config: %w", err)
 	}
 
 	if len(cfg.PartitionAssignment) == 0 {

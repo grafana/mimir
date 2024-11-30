@@ -13,15 +13,18 @@ import (
 	"github.com/grafana/dskit/backoff"
 )
 
-type SchedulerClient interface{}
-
 // SchedulerClient is a client for the scheduler service.
 // It encapsulates the communication style expected by the scheduler service.
+type SchedulerClient interface {
+	GetJob(context.Context) (JobKey, JobSpec, error)
+	CompleteJob(JobKey) error
+}
+
 type schedulerClient struct {
 	workerID       string
 	updateInterval time.Duration
 	maxUpdateAge   time.Duration
-	srv            BlockBuilderSchedulerServer
+	scheduler      BlockBuilderSchedulerClient
 	logger         log.Logger
 
 	mu   sync.Mutex
@@ -35,14 +38,14 @@ type job struct {
 	forgetTime time.Time
 }
 
-func NewSchedulerClient(workerID string, srv BlockBuilderSchedulerServer, logger log.Logger,
+func NewSchedulerClient(workerID string, srv BlockBuilderSchedulerClient, logger log.Logger,
 	updateInterval time.Duration, maxUpdateAge time.Duration) SchedulerClient {
 
 	return &schedulerClient{
 		workerID:       workerID,
 		updateInterval: updateInterval,
 		maxUpdateAge:   maxUpdateAge,
-		srv:            srv,
+		scheduler:      srv,
 		logger:         logger,
 
 		jobs: make(map[JobKey]job),
@@ -81,7 +84,7 @@ func (s *schedulerClient) snapshot() map[JobKey]job {
 
 func (s *schedulerClient) sendUpdates(ctx context.Context) {
 	for key, j := range s.snapshot() {
-		_, err := s.srv.UpdateJob(ctx, &UpdateJobRequest{
+		_, err := s.scheduler.UpdateJob(ctx, &UpdateJobRequest{
 			Key:      &key,
 			WorkerId: s.workerID,
 			Spec:     &j.spec,
@@ -117,7 +120,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		response, err := s.srv.AssignJob(ctx, &AssignJobRequest{
+		response, err := s.scheduler.AssignJob(ctx, &AssignJobRequest{
 			WorkerId: s.workerID,
 		})
 		if err != nil {
@@ -163,3 +166,5 @@ func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
 	j.forgetTime = time.Now().Add(s.maxUpdateAge)
 	return nil
 }
+
+var _ SchedulerClient = (*schedulerClient)(nil)

@@ -106,7 +106,13 @@ func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, error
 		return nil, err
 	}
 
-	return schedulerpb.NewBlockBuilderSchedulerClient(conn), nil
+	return schedulerpb.NewSchedulerClient(
+		b.cfg.InstanceID,
+		schedulerpb.NewBlockBuilderSchedulerClient(conn),
+		b.logger,
+		b.cfg.SchedulerConfig.UpdateInterval,
+		b.cfg.SchedulerConfig.MaxUpdateAge,
+	), nil
 }
 
 func (b *BlockBuilder) starting(context.Context) (err error) {

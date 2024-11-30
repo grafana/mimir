@@ -23,7 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	bbscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
+	bbschedulerpb "github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
@@ -508,6 +508,6 @@ func (a *API) RegisterMemberlistKV(pathPrefix string, kvs *memberlist.KVInitServ
 	a.RegisterRoute("/memberlist", memberlistStatusHandler(pathPrefix, kvs), false, true, "GET")
 }
 
-func (a *API) RegisterBlockBuilderScheduler(s *bbscheduler.BlockBuilderScheduler) {
-	bbscheduler.RegisterBlockBuilderSchedulerServer(a.server.GRPC, s)
+func (a *API) RegisterBlockBuilderScheduler(s bbschedulerpb.BlockBuilderSchedulerServer) {
+	bbschedulerpb.RegisterBlockBuilderSchedulerServer(a.server.GRPC, s)
 }
