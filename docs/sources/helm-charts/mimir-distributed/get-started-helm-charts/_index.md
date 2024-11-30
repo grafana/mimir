@@ -4,7 +4,7 @@ aliases:
   - /docs/helm-charts/mimir-distributed/latest/get-started/
 description: Learn how to get started with Grafana Mimir and GEM using the Helm chart.
 menuTitle: Get started
-title: Get started with the Helm chart
+title: Get started with Grafana Mimir and GEM using the Helm chart
 weight: 20
 keywords:
   - Helm chart
@@ -12,9 +12,9 @@ keywords:
   - Grafana Mimir
 ---
 
-# Get started with the Helm chart
+# Get started with Grafana Mimir and GEM using the Helm chart
 
-The mimir-distributed Helm chart allows you to configure, install, and upgrade Grafana Mimir and Grafana Enterprise Metrics (GEM) within a Kubernetes cluster.
+The mimir-distributed Helm chart allows you to install, configure, and upgrade Grafana Mimir and Grafana Enterprise Metrics (GEM) within a Kubernetes cluster.
 
 ## Before you begin
 

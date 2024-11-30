@@ -156,7 +156,7 @@ For more information about the `prometheus.remote_write` component, refer to [pr
 
 ## Query metrics in Grafana
 
-You can use the Grafana installed in Kubernetes in the [Start Grafana in Kubernetes and query metrics](#start-grafana-in-kubernetes-and-query-metrics) section as well or follow the instructions bellow.
+You can use the Grafana installed in Kubernetes in the [Start Grafana in Kubernetes and query metrics](https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/#start-grafana-in-kubernetes-and-query-metrics) documentation, or follow the instructions bellow.
 
 > **Note:** If you have the port-forward running for Grafana from an earlier step, stop it.
 
