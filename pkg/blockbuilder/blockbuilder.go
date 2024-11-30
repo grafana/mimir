@@ -156,7 +156,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			continue
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(11 * time.Second)
 
 		if err := b.scheduler.CompleteJob(key); err != nil {
 			level.Warn(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch)
