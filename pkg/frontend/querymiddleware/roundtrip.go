@@ -263,7 +263,8 @@ func newQueryTripperware(
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
 
-		queryrange := NewLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		queryrangeInitial := NewLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		queryrange := queryrangeInitial
 		instant := NewLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
 		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
@@ -302,6 +303,9 @@ func newQueryTripperware(
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var fullRangeHandler MetricsQueryHandler = queryrangeInitial.(limitedParallelismRoundTripper)
+			r = r.WithContext(context.WithValue(r.Context(), fullRangeHandlerContextKey, fullRangeHandler))
+
 			switch {
 			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)

@@ -214,18 +214,7 @@ func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 	}
 }
 
-func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	ctx, cancel := context.WithCancelCause(r.Context())
-	defer cancel(errExecutingParallelQueriesFinished)
-
-	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.AddSpanTags(span)
-	}
+func (rt limitedParallelismRoundTripper) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -247,7 +236,23 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 
 			return rt.downstream.Do(ctx, r)
 		}))
-	response, err := fullHandler.Do(context.WithValue(ctx, fullRangeHandlerContextKey, fullHandler), request)
+	return fullHandler.Do(ctx, r)
+}
+
+func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithCancelCause(r.Context())
+	defer cancel(errExecutingParallelQueriesFinished)
+
+	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		request.AddSpanTags(span)
+	}
+
+	response, err := rt.Do(ctx, request)
 	if err != nil {
 		return nil, err
 	}
