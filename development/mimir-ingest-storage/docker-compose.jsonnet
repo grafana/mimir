@@ -96,10 +96,6 @@ std.manifestYamlDoc({
       name: 'mimir-block-builder-1',
       target: 'block-builder',
       publishedHttpPort: 8008,
-      extraArguments: [
-        '-ingest-storage.kafka.address=kafka_1:29092',
-        '-ingest-storage.kafka.client-id=block-builder-1',
-      ],
     }),
   },
 

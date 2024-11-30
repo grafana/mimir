@@ -169,7 +169,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/mimir-block-builder-1 -ingest-storage.kafka.address=kafka_1:29092 -ingest-storage.kafka.client-id=block-builder-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/mimir-block-builder-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
