@@ -16,6 +16,7 @@ import (
 // SchedulerClient is a client for the scheduler service.
 // It encapsulates the communication style expected by the scheduler service.
 type SchedulerClient interface {
+	Run(context.Context)
 	GetJob(context.Context) (JobKey, JobSpec, error)
 	CompleteJob(JobKey) error
 }
@@ -104,7 +105,7 @@ func (s *schedulerClient) forgetOldJobs() {
 
 	for key, j := range s.jobs {
 		if !j.forgetTime.IsZero() && now.After(j.forgetTime) {
-			level.Info(s.logger).Log("msg", "forgetting old job", "jobID", key.Id, "epoch", key.Epoch)
+			level.Info(s.logger).Log("msg", "forgetting old job", "job_id", key.Id, "epoch", key.Epoch)
 			delete(s.jobs, key)
 		}
 	}
@@ -120,9 +121,11 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		response, err := s.scheduler.AssignJob(ctx, &AssignJobRequest{
+		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		response, err := s.scheduler.AssignJob(callCtx, &AssignJobRequest{
 			WorkerId: s.workerID,
 		})
+		cancel()
 		if err != nil {
 			lastErr = err
 			boff.Wait()
@@ -132,7 +135,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 		// If we get here, we have a newly assigned job. Track it and return it.
 		key := *response.GetKey()
 		spec := *response.GetSpec()
-		level.Info(s.logger).Log("msg", "assigned job", "jobID", key.Id, "epoch", key.Epoch)
+		level.Info(s.logger).Log("msg", "assigned job", "job_id", key.Id, "epoch", key.Epoch)
 
 		s.mu.Lock()
 		s.jobs[key] = job{
@@ -149,7 +152,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 }
 
 func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
-	level.Info(s.logger).Log("msg", "marking job as completed", "jobID", jobKey.Id, "epoch", jobKey.Epoch)
+	level.Info(s.logger).Log("msg", "marking job as completed", "job_id", jobKey.Id, "epoch", jobKey.Epoch)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

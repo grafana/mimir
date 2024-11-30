@@ -68,10 +68,6 @@ func New(
 	}
 
 	b.assignedPartitionIDs = b.cfg.PartitionAssignment[b.cfg.InstanceID]
-	if len(b.assignedPartitionIDs) == 0 {
-		// This is just an assertion check. The config validation prevents this from happening.
-		return nil, fmt.Errorf("no partitions assigned to instance %s", b.cfg.InstanceID)
-	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
 	if err != nil {
@@ -146,6 +142,29 @@ func (b *BlockBuilder) stopping(_ error) error {
 }
 
 func (b *BlockBuilder) running(ctx context.Context) error {
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go b.scheduler.Run(sctx)
+
+	for {
+		key, _, err := b.scheduler.GetJob(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
+			continue
+		}
+
+		time.Sleep(5 * time.Second)
+
+		if err := b.scheduler.CompleteJob(key); err != nil {
+			level.Warn(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch)
+		}
+	}
+}
+
+func (b *BlockBuilder) running_old(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
 	cycleEndTime := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)

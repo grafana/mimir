@@ -241,7 +241,7 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 
 // AssignJob returns an assigned job for the given workerID.
 func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
-	key, spec, err := s.jobs.assign(req.WorkerId)
+	key, spec, err := s.assignJob(req.WorkerId)
 	if err != nil {
 		return nil, err
 	}
@@ -302,22 +302,25 @@ func keyFromProtoKey(k *schedulerpb.JobKey) jobKey {
 }
 
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j jobSpec) error {
+	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch, "worker", workerID)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if !s.observationComplete {
+		// We're still in observation mode. Record the observation.
 		if err := s.updateObservation(key, workerID, complete, j); err != nil {
 			return fmt.Errorf("observe update: %w", err)
 		}
 
-		s.logger.Log("msg", "recovered job", "key", key, "worker", workerID)
+		logger.Log("msg", "recovered job")
 		return nil
 	}
 
 	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
 		if j.startOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
-			s.logger.Log("msg", "ignored historical job", "key", key, "worker", workerID)
+			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
 		}
 	}
@@ -332,13 +335,13 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 		// TODO: Push forward the local notion of the committed offset.
 
-		s.logger.Log("msg", "completed job", "key", key, "worker", workerID)
+		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
-		s.logger.Log("msg", "renewed lease", "key", key, "worker", workerID)
+		logger.Log("msg", "renewed lease")
 	}
 	return nil
 }
@@ -393,7 +396,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			// An in-progress job.
 			// These don't affect offsets (yet), they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to import job", "key", rj.key, "worker", rj.workerID, "err", err)
+				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
 			}
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 var (
@@ -110,6 +111,7 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	if j, ok := s.jobs[id]; ok {
 		// We can only update an unassigned job.
 		if j.assignee == "" {
+			level.Info(s.logger).Log("msg", "updated job", "job_id", id)
 			j.spec = spec
 		}
 		return
@@ -128,6 +130,8 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	}
 	s.jobs[id] = j
 	heap.Push(&s.unassigned, j)
+
+	level.Info(s.logger).Log("msg", "updated job", "job_id", id)
 }
 
 // renewLease renews the lease of the job with the given ID for the given
@@ -155,6 +159,9 @@ func (s *jobQueue) renewLease(key jobKey, workerID string) error {
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
+
+	level.Info(s.logger).Log("msg", "renewed lease", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
+
 	return nil
 }
 
@@ -183,6 +190,8 @@ func (s *jobQueue) completeJob(key jobKey, workerID string) error {
 	}
 
 	delete(s.jobs, key.id)
+
+	level.Info(s.logger).Log("msg", "removed completed job from queue", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
 	return nil
 }
 
@@ -199,6 +208,8 @@ func (s *jobQueue) clearExpiredLeases() {
 			j.assignee = ""
 			j.failCount++
 			heap.Push(&s.unassigned, j)
+
+			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", j.assignee)
 		}
 	}
 }

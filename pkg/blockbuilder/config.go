@@ -64,6 +64,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 func (cfg *SchedulerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Address, "block-builder.scheduler.address", "", "GRPC listen address of the block-builder-scheduler service.")
+	f.DurationVar(&cfg.UpdateInterval, "block-builder.scheduler.update-interval", 20*time.Second, "Interval between scheduler updates.")
+	f.DurationVar(&cfg.MaxUpdateAge, "block-builder.scheduler.max-update-age", 30*time.Minute, "Maximum age of jobs to continue sending to the scheduler.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("block-builder.scheduler.grpc-client-config", f)
 }
 
