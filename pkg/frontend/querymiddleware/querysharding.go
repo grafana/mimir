@@ -42,6 +42,7 @@ type querySharding struct {
 	limit Limits
 
 	engine            *promql.Engine
+	defaultStepFunc   func(rangeMillis int64) int64
 	next              MetricsQueryHandler
 	logger            log.Logger
 	maxSeriesPerShard uint64
@@ -67,6 +68,7 @@ type queryShardingMetrics struct {
 func newQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
+	defaultStepFunc func(rangeMillis int64) int64,
 	limit Limits,
 	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
@@ -99,11 +101,13 @@ func newQueryShardingMiddleware(
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
+
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
 			next:                 next,
 			queryShardingMetrics: metrics,
 			engine:               engine,
+			defaultStepFunc:      defaultStepFunc,
 			logger:               logger,
 			limit:                limit,
 			maxSeriesPerShard:    maxSeriesPerShard,
@@ -176,7 +180,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 
 	annotationAccumulator := NewAnnotationAccumulator()
 
-	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, fullRangeHandler, nil)
+	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, fullRangeHandler, nil, s.defaultStepFunc)
 	shardedQueryable = shardedQueryable.WithLogger(log)
 
 	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)

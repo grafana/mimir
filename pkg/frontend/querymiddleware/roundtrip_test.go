@@ -563,6 +563,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		nil,
 		promql.NewEngine(promql.EngineOpts{}),
 		nil,
+		nil,
 	)
 
 	middlewaresByRequestType := map[string]struct {

@@ -125,6 +125,9 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
+		if strings.Contains(e.String(), AggregatedSubqueryMetricName) {
+			return e, true, nil
+		}
 		if summer.currentShard != nil {
 			return e, false, nil
 		}

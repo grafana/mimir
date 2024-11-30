@@ -46,12 +46,13 @@ type shardedQueryable struct {
 	responseHeaders       *responseHeadersTracker
 	handleEmbeddedQuery   HandleEmbeddedQueryFunc
 	logger                log.Logger
+	defaultStepFunc       func(rangeMillis int64) int64
 }
 
 // NewShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next, upstreamRangeHandler MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
+func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next, upstreamRangeHandler MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc, defaultStepFunc func(rangeMillis int64) int64) *shardedQueryable { //nolint:revive
 	if handleEmbeddedQuery == nil {
 		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc
 	}
@@ -62,6 +63,7 @@ func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *Annotat
 		upstreamRangeHandler:  upstreamRangeHandler,
 		responseHeaders:       newResponseHeadersTracker(),
 		handleEmbeddedQuery:   handleEmbeddedQuery,
+		defaultStepFunc:       defaultStepFunc,
 	}
 }
 
@@ -72,7 +74,7 @@ func (q *shardedQueryable) WithLogger(logger log.Logger) *shardedQueryable {
 
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, upstreamRangeHandler: q.upstreamRangeHandler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery, logger: q.logger}, nil
+	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, upstreamRangeHandler: q.upstreamRangeHandler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery, logger: q.logger, defaultStepFunc: q.defaultStepFunc}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -90,6 +92,7 @@ type shardedQuerier struct {
 	handler               MetricsQueryHandler
 	upstreamRangeHandler  MetricsQueryHandler
 	logger                log.Logger
+	defaultStepFunc       func(rangeMillis int64) int64
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -127,6 +130,12 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 
 		// Align query to absolute time by querying slightly into the future.
 		step := subquery.Step.Milliseconds()
+		if step == 0 {
+			if q.defaultStepFunc == nil {
+				return storage.ErrSeriesSet(errors.New("defaultStepFunc is not set"))
+			}
+			step = q.defaultStepFunc(subquery.Range.Milliseconds())
+		}
 		if end%step != 0 {
 			end += step - (end % step)
 		}
@@ -135,7 +144,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 		headers := req.GetHeaders()
 		headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}}) // Downstream is the querier, which is HTTP req.
 
-		newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, start, end, subquery.Step.Milliseconds(), req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
+		newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, start, end, step, req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
 		if q.logger != nil {
 			level.Info(q.logger).Log("msg", "running subquery as a range query", "query", newRangeRequest.GetQuery())
 		}

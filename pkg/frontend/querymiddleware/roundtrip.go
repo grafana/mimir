@@ -256,7 +256,7 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, engineOpts.NoStepSubqueryIntervalFn, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
@@ -335,6 +335,7 @@ func newQueryMiddlewares(
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
 	engine *promql.Engine,
+	defaultStepFunc func(rangeMillis int64) int64,
 	registerer prometheus.Registerer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
@@ -420,6 +421,7 @@ func newQueryMiddlewares(
 		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
 			engine,
+			defaultStepFunc,
 			limits,
 			cfg.TargetSeriesPerShard,
 			registerer,

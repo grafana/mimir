@@ -181,7 +181,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	}
 
 	annotationAccumulator := NewAnnotationAccumulator()
-	shardedQueryable := NewShardedQueryable(req, annotationAccumulator, s.next, nil, nil)
+	shardedQueryable := NewShardedQueryable(req, annotationAccumulator, s.next, nil, nil, nil)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
