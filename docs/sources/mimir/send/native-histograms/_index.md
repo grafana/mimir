@@ -257,7 +257,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
      (<native_query>) and on() (vector($latency_metrics) == -1)
      ```
 
-     Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax, placed inside a parenthesis. This technique is employed in Mimir's dashboards. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Mimir repository.
+     Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax placed inside parentheses. Mimir dashboards use this technique. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Mimir repository.
 
      This solution allows users to switch between the classic histogram and the native histogram without going to a different dashboard.
 
