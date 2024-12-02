@@ -493,6 +493,14 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 }
 
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Instance ring status", Path: "/usage-tracker/instance-ring"},
+		{Desc: "Partition ring status", Path: "/usage-tracker/partition-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/instance-ring", http.HandlerFunc(t.InstanceRingHandler), false, true, "GET", "POST")
+	a.RegisterRoute("/usage-tracker/partition-ring", http.HandlerFunc(t.PartitionRingHandler), false, true, "GET", "POST")
+
 	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
 }
 

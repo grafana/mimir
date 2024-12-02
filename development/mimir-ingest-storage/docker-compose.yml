@@ -375,14 +375,14 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "usage-tracker":
+  "usage-tracker-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-1"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -397,7 +397,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=usage-tracker"
-    "hostname": "usage-tracker"
+    "hostname": "usage-tracker-1"
     "image": "mimir"
     "ports":
       - "8008:8080"

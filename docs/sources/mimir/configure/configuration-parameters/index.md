@@ -354,6 +354,116 @@ usage_stats:
   # CLI flag: -usage-stats.installation-mode
   [installation_mode: <string> | default = "custom"]
 
+usage_tracker:
+  ring:
+    # The key-value store used to share the hash ring across multiple instances.
+    # When usage-tracker is enabled, this option needs be set on usage-trackers
+    # and distributors.
+    kvstore:
+      # Backend storage to use for the ring. Supported values are: consul, etcd,
+      # inmemory, memberlist, multi.
+      # CLI flag: -usage-tracker.ring.store
+      [store: <string> | default = "memberlist"]
+
+      # (advanced) The prefix for the keys in the store. Should end with a /.
+      # CLI flag: -usage-tracker.ring.prefix
+      [prefix: <string> | default = "collectors/"]
+
+      # The consul block configures the consul client.
+      # The CLI flags prefix for this block configuration is: usage-tracker.ring
+      [consul: <consul>]
+
+      # The etcd block configures the etcd client.
+      # The CLI flags prefix for this block configuration is: usage-tracker.ring
+      [etcd: <etcd>]
+
+      multi:
+        # (advanced) Primary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.ring.multi.primary
+        [primary: <string> | default = ""]
+
+        # (advanced) Secondary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.ring.multi.secondary
+        [secondary: <string> | default = ""]
+
+        # (advanced) Mirror writes to secondary store.
+        # CLI flag: -usage-tracker.ring.multi.mirror-enabled
+        [mirror_enabled: <boolean> | default = false]
+
+        # (advanced) Timeout for storing value to secondary store.
+        # CLI flag: -usage-tracker.ring.multi.mirror-timeout
+        [mirror_timeout: <duration> | default = 2s]
+
+    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+    # CLI flag: -usage-tracker.ring.heartbeat-period
+    [heartbeat_period: <duration> | default = 15s]
+
+    # (advanced) The heartbeat timeout after which usage-trackers are considered
+    # unhealthy within the ring.
+    # CLI flag: -usage-tracker.ring.heartbeat-timeout
+    [heartbeat_timeout: <duration> | default = 1m]
+
+    # (advanced) Instance ID to register in the ring.
+    # CLI flag: -usage-tracker.ring.instance-id
+    [instance_id: <string> | default = "<hostname>"]
+
+    # List of network interface names to look up when finding the instance IP
+    # address.
+    # CLI flag: -usage-tracker.ring.instance-interface-names
+    [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+    # (advanced) Port to advertise in the ring (defaults to
+    # -server.grpc-listen-port).
+    # CLI flag: -usage-tracker.ring.instance-port
+    [instance_port: <int> | default = 0]
+
+    # (advanced) IP address to advertise in the ring. Default is auto-detected.
+    # CLI flag: -usage-tracker.ring.instance-addr
+    [instance_addr: <string> | default = ""]
+
+    # (advanced) Enable using a IPv6 instance address. (default false)
+    # CLI flag: -usage-tracker.ring.instance-enable-ipv6
+    [instance_enable_ipv6: <boolean> | default = false]
+
+  partition_ring:
+    # The key-value store used to share the hash ring across multiple instances.
+    kvstore:
+      # Backend storage to use for the ring. Supported values are: consul, etcd,
+      # inmemory, memberlist, multi.
+      # CLI flag: -usage-tracker.partition-ring.store
+      [store: <string> | default = "memberlist"]
+
+      # (advanced) The prefix for the keys in the store. Should end with a /.
+      # CLI flag: -usage-tracker.partition-ring.prefix
+      [prefix: <string> | default = "collectors/"]
+
+      # The consul block configures the consul client.
+      # The CLI flags prefix for this block configuration is:
+      # usage-tracker.partition-ring
+      [consul: <consul>]
+
+      # The etcd block configures the etcd client.
+      # The CLI flags prefix for this block configuration is:
+      # usage-tracker.partition-ring
+      [etcd: <etcd>]
+
+      multi:
+        # (advanced) Primary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.partition-ring.multi.primary
+        [primary: <string> | default = ""]
+
+        # (advanced) Secondary backend storage used by multi-client.
+        # CLI flag: -usage-tracker.partition-ring.multi.secondary
+        [secondary: <string> | default = ""]
+
+        # (advanced) Mirror writes to secondary store.
+        # CLI flag: -usage-tracker.partition-ring.multi.mirror-enabled
+        [mirror_enabled: <boolean> | default = false]
+
+        # (advanced) Timeout for storing value to secondary store.
+        # CLI flag: -usage-tracker.partition-ring.multi.mirror-timeout
+        [mirror_timeout: <duration> | default = 2s]
+
 overrides_exporter:
   ring:
     # Enable the ring used by override-exporters to deduplicate exported limit
@@ -2807,6 +2917,8 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
+- `usage-tracker.partition-ring`
+- `usage-tracker.ring`
 
 &nbsp;
 
@@ -2912,6 +3024,8 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
+- `usage-tracker.partition-ring`
+- `usage-tracker.ring`
 
 &nbsp;
 
