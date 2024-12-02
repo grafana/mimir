@@ -116,6 +116,7 @@
 * [BUGFIX] Alerts: Exclude failed cache "add" operations from alerting since failures are expected in normal operation. #9658
 * [BUGFIX] Alerts: Exclude read-only replicas from `IngesterInstanceHasNoTenants` alert. #9843
 * [BUGFIX] Alerts: Use resident set memory for the `EtcdAllocatingTooMuchMemory` alert so that ephemeral file cache memory doesn't cause the alert to misfire. #9997
+* [BUGFIX] Query-frontend: support `X-Read-Consistency-Offsets` on labels queries too.
 
 ### Jsonnet
 
