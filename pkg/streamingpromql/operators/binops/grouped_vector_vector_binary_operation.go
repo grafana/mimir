@@ -5,13 +5,16 @@ package binops
 import (
 	"context"
 	"fmt"
+	"sort"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -26,20 +29,67 @@ type GroupedVectorVectorBinaryOperation struct {
 
 	VectorMatching parser.VectorMatching
 
-	// We need to retain these so that NextSeries() can return an error message with the series labels when
-	// multiple points match on a single side.
-	// Note that we don't retain the output series metadata: if we need to return an error message, we can compute
-	// the output series labels from these again.
-	leftMetadata  []types.SeriesMetadata
-	rightMetadata []types.SeriesMetadata
-
 	opFunc binaryOperationFunc
 
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
+
+	remainingSeries []*groupedBinaryOperationOutputSeries
+	oneSide         types.InstantVectorOperator // Either Left or Right
+	manySide        types.InstantVectorOperator
+	oneSideBuffer   *operators.InstantVectorOperatorBuffer
+	manySideBuffer  *operators.InstantVectorOperatorBuffer
+
+	// We need to retain these so that NextSeries() can return an error message with the series labels when
+	// multiple points match on a single side.
+	// Note that we don't retain the output series metadata: if we need to return an error message, we can compute
+	// the output series labels from these again.
+	oneSideMetadata  []types.SeriesMetadata
+	manySideMetadata []types.SeriesMetadata
 }
 
 var _ types.InstantVectorOperator = &GroupedVectorVectorBinaryOperation{}
+
+type groupedBinaryOperationOutputSeries struct {
+	manySideSeriesIndices []int
+	oneSide               *oneSide
+}
+
+// latestManySeries returns the index of the last series from the "many" side needed for this output series.
+//
+// It assumes that manySideSeriesIndices is sorted in ascending order.
+func (s groupedBinaryOperationOutputSeries) latestManySeries() int {
+	return s.manySideSeriesIndices[len(s.manySideSeriesIndices)-1]
+}
+
+// latestOneSeries returns the index of the last series from the "one" side needed for this output series.
+//
+// It assumes that oneSide.outputSeries is sorted in ascending order.
+func (s groupedBinaryOperationOutputSeries) latestOneSeries() int {
+	return s.oneSide.seriesIndices[len(s.oneSide.seriesIndices)-1]
+}
+
+type groupedBinaryOperationOutputSeriesWithLabels struct {
+	labels       labels.Labels
+	outputSeries *groupedBinaryOperationOutputSeries
+}
+
+type oneSide struct {
+	// If this side has not been populated, seriesIndices will not be nil and mergedData will be empty.
+	// If this side has been populated, seriesIndices will be nil.
+	seriesIndices []int
+	mergedData    types.InstantVectorSeriesData
+
+	outputSeriesCount int // The number of output series that refer to this side.
+
+	matchGroup *matchGroup
+}
+
+type matchGroup struct {
+	// Time steps at which we've seen samples for any "one" side in this group.
+	// Each value is the index of the source series of the sample, or -1 if no sample has been seen for this time step yet.
+	presence []int
+}
 
 func NewGroupedVectorVectorBinaryOperation(
 	left types.InstantVectorOperator,
@@ -51,7 +101,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*GroupedVectorVectorBinaryOperation, error) {
-	b := &GroupedVectorVectorBinaryOperation{
+	g := &GroupedVectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		VectorMatching:           vectorMatching,
@@ -64,20 +114,321 @@ func NewGroupedVectorVectorBinaryOperation(
 	}
 
 	if returnBool {
-		b.opFunc = boolComparisonOperationFuncs[op]
+		g.opFunc = boolComparisonOperationFuncs[op]
 	} else {
-		b.opFunc = arithmeticAndComparisonOperationFuncs[op]
+		g.opFunc = arithmeticAndComparisonOperationFuncs[op]
 	}
 
-	if b.opFunc == nil {
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		g.oneSide, g.manySide = g.Left, g.Right
+	case parser.CardManyToOne:
+		g.manySide, g.oneSide = g.Left, g.Right
+	default:
+		return nil, fmt.Errorf("unsupported cardinality '%v'", g.VectorMatching.Card)
+	}
+
+	if g.opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
-	return b, nil
+	return g, nil
 }
 
+// SeriesMetadata returns the series expected to be produced by this operator.
+//
+// Note that it is possible that this method returns a series which will not have any points, as the
+// list of possible output series is generated based solely on the series labels, not their data.
+//
+// For example, if this operator is for a range query with the expression "left_metric + right_metric", but
+// left_metric has points at T=0 and T=1 in the query range, and right_metric has points at T=2 and T=3 in the
+// query range, then SeriesMetadata will return a series, but NextSeries will return no points for that series.
+//
+// If this affects many series in the query, this may cause consuming operators to be less efficient, but in
+// practice this rarely happens.
+//
+// (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
+// contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
+// avoid.)
 func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx); err != nil {
+		return nil, err
+	} else if !canProduceAnySeries {
+		return nil, nil
+	}
+
+	allMetadata, allSeries, oneSideSeriesUsed, manySideSeriesUsed, err := g.computeOutputSeries()
+	if err != nil {
+		return nil, err
+	}
+
+	g.sortSeries(allMetadata, allSeries)
+	g.remainingSeries = allSeries
+
+	g.oneSideBuffer = operators.NewInstantVectorOperatorBuffer(g.oneSide, oneSideSeriesUsed, g.MemoryConsumptionTracker)
+	g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, g.MemoryConsumptionTracker)
+
 	return nil, nil
+}
+
+// loadSeriesMetadata loads series metadata from both sides of this operation.
+// It returns false if one side returned no series and that means there is no way for this operation to return any series.
+// (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
+func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
+	// We retain the series labels for later so we can use them to generate error messages.
+	// We'll return them to the pool in Close().
+
+	var err error
+	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if len(g.oneSideMetadata) == 0 {
+		// No series on left-hand side, we'll never have any output series.
+		return false, nil
+	}
+
+	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if len(g.manySideMetadata) == 0 {
+		// No series on right-hand side, we'll never have any output series.
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// computeOutputSeries determines the possible output series from this operator.
+// It assumes oneSideMetadata and manySideMetadata have already been populated.
+//
+// It returns:
+// - a list of all possible series this operator could return
+// - a corresponding list of the source series for each output series
+// - a list indicating which series from the "one" side are needed to compute the output
+// - a list indicating which series from the "many" side are needed to compute the output
+func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*groupedBinaryOperationOutputSeries, []bool, []bool, error) {
+	groupKeyFunc := vectorMatchingGroupKeyFunc(g.VectorMatching)
+
+	// First, iterate through all the series on the "one" side and determine all the possible groups.
+	// For example, if we are matching on the "env" label and "region" is an additional label,
+	// oneSideMap would look something like this once we're done:
+	// [env=test][region=au]: {...}
+	// [env=test][region=eu]: {...}
+	// [env=test][region=us]: {...}
+	// [env=prod][region=au]: {...}
+	// [env=prod][region=eu]: {...}
+	// [env=prod][region=us]: {...}
+	additionalLabelsKeyFunc := g.additionalLabelsKeyFunc()
+	oneSideMap := map[string]map[string]*oneSide{}
+
+	for idx, s := range g.oneSideMetadata {
+		groupKey := groupKeyFunc(s.Labels)
+		oneSideGroup, exists := oneSideMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+
+		if !exists {
+			oneSideGroup = map[string]*oneSide{}
+			oneSideMap[string(groupKey)] = oneSideGroup
+		}
+
+		additionalLabelsKey := additionalLabelsKeyFunc(s.Labels)
+		side, exists := oneSideGroup[string(additionalLabelsKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+
+		if !exists {
+			side = &oneSide{}
+			oneSideGroup[string(additionalLabelsKey)] = side
+		}
+
+		side.seriesIndices = append(side.seriesIndices, idx)
+	}
+
+	// Now iterate through all series on the "many" side and determine all the possible output series, as
+	// well as which series from the "many" side we'll actually need.
+	outputSeriesMap := map[string]groupedBinaryOperationOutputSeriesWithLabels{}
+	manySideSeriesUsed, err := types.BoolSlicePool.Get(len(g.manySideMetadata), g.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	manySideSeriesUsed = manySideSeriesUsed[:len(g.manySideMetadata)]
+	seriesLabelsFunc := g.seriesLabelsFunc()
+	buf := make([]byte, 0, 1024)
+
+	for idx, s := range g.manySideMetadata {
+		groupKey := groupKeyFunc(s.Labels)
+		oneSideGroup, exists := oneSideMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+
+		if !exists {
+			// There are no series on the "one" side that match this series, so we'll produce no output series for this series.
+			continue
+		}
+
+		manySideSeriesUsed[idx] = true
+
+		for _, oneSide := range oneSideGroup {
+			// Most of the time, the output series won't already exist (unless we have input series with different metric names),
+			// so just create the series labels directly rather than trying to avoid their creation until we know for sure we'll
+			// need them.
+			l := seriesLabelsFunc(g.oneSideMetadata[oneSide.seriesIndices[0]].Labels, s.Labels)
+			outputSeries, exists := outputSeriesMap[string(l.Bytes(buf))]
+
+			if exists {
+				outputSeries.outputSeries.manySideSeriesIndices = append(outputSeries.outputSeries.manySideSeriesIndices, idx)
+			} else {
+				oneSide.outputSeriesCount++
+
+				outputSeries = groupedBinaryOperationOutputSeriesWithLabels{
+					labels: l,
+					outputSeries: &groupedBinaryOperationOutputSeries{
+						manySideSeriesIndices: []int{idx},
+						oneSide:               oneSide,
+					},
+				}
+				outputSeriesMap[string(l.Bytes(buf))] = outputSeries
+			}
+		}
+	}
+
+	// Next, go through all the "one" side groups again, and determine which of the "one" side series
+	// we'll actually need.
+	oneSideSeriesUsed, err := types.BoolSlicePool.Get(len(g.oneSideMetadata), g.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	oneSideSeriesUsed = oneSideSeriesUsed[:len(g.oneSideMetadata)]
+
+	for _, oneSideGroup := range oneSideMap {
+		var thisMatchGroup *matchGroup
+
+		for _, oneSide := range oneSideGroup {
+			if oneSide.outputSeriesCount == 0 {
+				// If any part of a group has no output series, then no parts of that group will have output series.
+				break
+			} else if thisMatchGroup == nil {
+				thisMatchGroup = &matchGroup{}
+			}
+
+			oneSide.matchGroup = thisMatchGroup
+
+			for _, idx := range oneSide.seriesIndices {
+				oneSideSeriesUsed[idx] = true
+			}
+		}
+	}
+
+	// Finally, construct the list of series that this operator will return.
+	outputMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
+	outputSeries := make([]*groupedBinaryOperationOutputSeries, 0, len(outputSeriesMap))
+
+	for _, o := range outputSeriesMap {
+		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
+		outputSeries = append(outputSeries, o.outputSeries)
+	}
+
+	return outputMetadata, outputSeries, oneSideSeriesUsed, manySideSeriesUsed, nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneSideLabels labels.Labels) []byte {
+	if len(g.VectorMatching.Include) == 0 {
+		return func(oneSideLabels labels.Labels) []byte {
+			return nil
+		}
+	}
+
+	buf := make([]byte, 0, 1024)
+
+	return func(oneSideLabels labels.Labels) []byte {
+		return oneSideLabels.BytesWithLabels(buf, g.VectorMatching.MatchingLabels...)
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) seriesLabelsFunc() func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
+	shouldRemoveMetricName := !g.Op.IsComparisonOperator()
+
+	if len(g.VectorMatching.Include) == 0 {
+		if shouldRemoveMetricName {
+			return func(_ labels.Labels, manySideLabels labels.Labels) labels.Labels {
+				return manySideLabels.DropMetricName()
+			}
+		}
+
+		return func(_ labels.Labels, manySideLabels labels.Labels) labels.Labels {
+			return manySideLabels
+		}
+	}
+
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	if shouldRemoveMetricName {
+		return func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
+			lb.Reset(manySideLabels)
+			lb.Del(labels.MetricName)
+
+			for _, l := range g.VectorMatching.Include {
+				lb.Set(l, oneSideLabels.Get(l))
+			}
+
+			return lb.Labels()
+		}
+	}
+
+	return func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
+		lb.Reset(manySideLabels)
+
+		for _, l := range g.VectorMatching.Include {
+			lb.Set(l, oneSideLabels.Get(l))
+		}
+
+		return lb.Labels()
+	}
+}
+
+// sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
+//
+// This is critical for minimising the memory consumption of this operator: if we choose a poor ordering of series,
+// we'll need to buffer many input series in memory.
+//
+// At present, sortSeries uses a very basic heuristic to guess the best way to sort the output series, but we could make
+// this more sophisticated in the future.
+func (g *GroupedVectorVectorBinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*groupedBinaryOperationOutputSeries) {
+	// Each series from the "many" side is used for at most one output series, so sort the output series so that we buffer as little of the
+	// "many" side series as possible.
+	//
+	// This isn't necessarily perfect: it may be that this still requires us to buffer many series from the "many" side if many
+	// series from the "many" side map to one output series, but this is expected to be rare.
+	sort.Sort(newFavourManySideSorter(metadata, series))
+}
+
+type favourManySideSorter struct {
+	metadata []types.SeriesMetadata
+	series   []*groupedBinaryOperationOutputSeries
+}
+
+func newFavourManySideSorter(metadata []types.SeriesMetadata, series []*groupedBinaryOperationOutputSeries) sort.Interface {
+	return favourManySideSorter{metadata, series}
+}
+
+func (s favourManySideSorter) Len() int {
+	return len(s.metadata)
+}
+
+func (s favourManySideSorter) Less(i, j int) bool {
+	iMany := s.series[i].latestManySeries()
+	jMany := s.series[j].latestManySeries()
+	if iMany != jMany {
+		return iMany < jMany
+	}
+
+	return s.series[i].latestOneSeries() < s.series[j].latestOneSeries()
+}
+
+func (s favourManySideSorter) Swap(i, j int) {
+	s.metadata[i], s.metadata[j] = s.metadata[j], s.metadata[i]
+	s.series[i], s.series[j] = s.series[j], s.series[i]
 }
 
 func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -91,13 +442,21 @@ func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.Posit
 func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Left.Close()
 	g.Right.Close()
+	// We don't need to close g.oneSide or g.manySide, as these are either g.Left or g.Right and so have been closed above.
 
-	if g.leftMetadata != nil {
-		types.PutSeriesMetadataSlice(g.leftMetadata)
+	if g.oneSideMetadata != nil {
+		types.PutSeriesMetadataSlice(g.oneSideMetadata)
 	}
 
-	if g.rightMetadata != nil {
-		types.PutSeriesMetadataSlice(g.rightMetadata)
+	if g.manySideMetadata != nil {
+		types.PutSeriesMetadataSlice(g.manySideMetadata)
 	}
 
+	if g.oneSideBuffer != nil {
+		g.oneSideBuffer.Close()
+	}
+
+	if g.manySideBuffer != nil {
+		g.manySideBuffer.Close()
+	}
 }
