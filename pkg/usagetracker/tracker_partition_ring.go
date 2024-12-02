@@ -5,13 +5,13 @@ package usagetracker
 import (
 	"flag"
 	"fmt"
-	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
