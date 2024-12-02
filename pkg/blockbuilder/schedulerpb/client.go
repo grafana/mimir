@@ -14,7 +14,11 @@ import (
 )
 
 // SchedulerClient is a client for the scheduler service.
-// It encapsulates the communication style expected by the scheduler service.
+// It encapsulates the communication style expected by the scheduler service:
+//   - AssignJob is polled repeatedly until a job is available.
+//   - UpdateJob is called periodically to update the status of all known jobs.
+//
+// SchedulerClient maintains a history of locally-known jobs that are expired some time after completion.
 type SchedulerClient interface {
 	Run(context.Context)
 	GetJob(context.Context) (JobKey, JobSpec, error)
