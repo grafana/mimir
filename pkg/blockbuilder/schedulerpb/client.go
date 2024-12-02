@@ -29,13 +29,13 @@ type schedulerClient struct {
 	logger         log.Logger
 
 	mu   sync.Mutex
-	jobs map[JobKey]job
+	jobs map[JobKey]*job
 }
 
 type job struct {
 	spec     JobSpec
 	complete bool
-	// The time, if non-zero, when this job entry should be expired from the map.
+	// The time, if non-zero, when this job entry will become eligible for purging.
 	forgetTime time.Time
 }
 
@@ -49,10 +49,12 @@ func NewSchedulerClient(workerID string, srv BlockBuilderSchedulerClient, logger
 		scheduler:      srv,
 		logger:         logger,
 
-		jobs: make(map[JobKey]job),
+		jobs: make(map[JobKey]*job),
 	}
 }
 
+// Run periodically sends updates to the scheduler service and performs cleanup of old jobs.
+// Run will block and run until the given context is canceled.
 func (s *schedulerClient) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.updateInterval)
 	defer ticker.Stop()
@@ -66,21 +68,6 @@ func (s *schedulerClient) Run(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (s *schedulerClient) snapshot() map[JobKey]job {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	jobs := make(map[JobKey]job, len(s.jobs))
-	for k, v := range s.jobs {
-		jobs[k] = job{
-			spec:       v.spec,
-			complete:   v.complete,
-			forgetTime: v.forgetTime,
-		}
-	}
-	return jobs
 }
 
 func (s *schedulerClient) sendUpdates(ctx context.Context) {
@@ -97,11 +84,27 @@ func (s *schedulerClient) sendUpdates(ctx context.Context) {
 	}
 }
 
-func (s *schedulerClient) forgetOldJobs() {
-	now := time.Now()
-
+// snapshot returns a snapshot of the current jobs map.
+func (s *schedulerClient) snapshot() map[JobKey]*job {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	jobs := make(map[JobKey]*job, len(s.jobs))
+	for k, v := range s.jobs {
+		jobs[k] = &job{
+			spec:       v.spec,
+			complete:   v.complete,
+			forgetTime: v.forgetTime,
+		}
+	}
+	return jobs
+}
+
+func (s *schedulerClient) forgetOldJobs() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
 
 	for key, j := range s.jobs {
 		if !j.forgetTime.IsZero() && now.After(j.forgetTime) {
@@ -138,7 +141,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 		level.Info(s.logger).Log("msg", "assigned job", "job_id", key.Id, "epoch", key.Epoch)
 
 		s.mu.Lock()
-		s.jobs[key] = job{
+		s.jobs[key] = &job{
 			spec:       spec,
 			complete:   false,
 			forgetTime: time.Time{},
@@ -165,6 +168,7 @@ func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
 		return nil
 	}
 
+	// Set it as complete and also set a time when it'll become eligible for forgetting.
 	j.complete = true
 	j.forgetTime = time.Now().Add(s.maxUpdateAge)
 	return nil
