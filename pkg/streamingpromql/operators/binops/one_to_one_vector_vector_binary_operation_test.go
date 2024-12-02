@@ -202,7 +202,7 @@ func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats))+types.HPointSize*uint64(len(s.Histograms))))
 			}
 
-			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
+			result, err := o.mergeSingleSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)

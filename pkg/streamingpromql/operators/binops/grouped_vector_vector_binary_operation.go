@@ -6,13 +6,14 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -29,11 +30,10 @@ type GroupedVectorVectorBinaryOperation struct {
 
 	VectorMatching parser.VectorMatching
 
-	opFunc binaryOperationFunc
-
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 
+	evaluator       vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
 	oneSide         types.InstantVectorOperator // Either Left or Right
 	manySide        types.InstantVectorOperator
@@ -101,6 +101,11 @@ func NewGroupedVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*GroupedVectorVectorBinaryOperation, error) {
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	if err != nil {
+		return nil, err
+	}
+
 	g := &GroupedVectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
@@ -109,14 +114,9 @@ func NewGroupedVectorVectorBinaryOperation(
 		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
+		evaluator:          e,
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
-	}
-
-	if returnBool {
-		g.opFunc = boolComparisonOperationFuncs[op]
-	} else {
-		g.opFunc = arithmeticAndComparisonOperationFuncs[op]
 	}
 
 	switch g.VectorMatching.Card {
@@ -126,10 +126,6 @@ func NewGroupedVectorVectorBinaryOperation(
 		g.manySide, g.oneSide = g.Left, g.Right
 	default:
 		return nil, fmt.Errorf("unsupported cardinality '%v'", g.VectorMatching.Card)
-	}
-
-	if g.opFunc == nil {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
 	return g, nil
@@ -168,7 +164,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	g.oneSideBuffer = operators.NewInstantVectorOperatorBuffer(g.oneSide, oneSideSeriesUsed, g.MemoryConsumptionTracker)
 	g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, g.MemoryConsumptionTracker)
 
-	return nil, nil
+	return allMetadata, nil
 }
 
 // loadSeriesMetadata loads series metadata from both sides of this operation.
@@ -347,7 +343,7 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 }
 
 func (g *GroupedVectorVectorBinaryOperation) seriesLabelsFunc() func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
-	shouldRemoveMetricName := !g.Op.IsComparisonOperator()
+	shouldRemoveMetricName := !g.Op.IsComparisonOperator() || g.ReturnBool
 
 	if len(g.VectorMatching.Include) == 0 {
 		if shouldRemoveMetricName {
@@ -432,7 +428,133 @@ func (s favourManySideSorter) Swap(i, j int) {
 }
 
 func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	return types.InstantVectorSeriesData{}, nil
+	if len(g.remainingSeries) == 0 {
+		return types.InstantVectorSeriesData{}, types.EOS
+	}
+
+	thisSeries := g.remainingSeries[0]
+	g.remainingSeries = g.remainingSeries[1:]
+
+	if err := g.ensureOneSidePopulated(ctx, thisSeries.oneSide); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	manySideSeries, err := g.manySideBuffer.GetSeries(ctx, thisSeries.manySideSeriesIndices)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	mergedManySide, err := g.mergeSingleSide(manySideSeries, thisSeries.manySideSeriesIndices, g.manySideMetadata, g.manySideHandedness())
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	thisSeries.oneSide.outputSeriesCount--
+	isLastOutputSeriesForOneSide := thisSeries.oneSide.outputSeriesCount == 0
+	var result types.InstantVectorSeriesData
+
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		result, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, mergedManySide, isLastOutputSeriesForOneSide, true)
+	case parser.CardManyToOne:
+		result, err = g.evaluator.computeResult(mergedManySide, thisSeries.oneSide.mergedData, true, isLastOutputSeriesForOneSide)
+	default:
+		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
+	}
+
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	return result, nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.Context, oneSide *oneSide) error {
+	if oneSide.seriesIndices == nil {
+		// Already populated.
+		return nil
+	}
+
+	// First time we've used this "one" side, populate it.
+	data, err := g.oneSideBuffer.GetSeries(ctx, oneSide.seriesIndices)
+	if err != nil {
+		return err
+	}
+
+	oneSide.mergedData, err = g.mergeSingleSide(data, oneSide.seriesIndices, g.oneSideMetadata, g.oneSideHandedness())
+	if err != nil {
+		return err
+	}
+
+	// TODO: update oneSide.matchGroup.presence, bail if conflict
+
+	// Clear seriesIndices to indicate that we've populated it.
+	oneSide.seriesIndices = nil
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) mergeSingleSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
+	merged, conflict, err := operators.MergeSeries(data, sourceSeriesIndices, g.MemoryConsumptionTracker)
+
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if conflict != nil {
+		return types.InstantVectorSeriesData{}, g.mergeConflictToError(conflict, sourceSeriesMetadata, side)
+	}
+
+	return merged, nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
+	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
+	groupLabels := groupLabelsFunc(g.VectorMatching, g.ReturnBool)(firstConflictingSeriesLabels)
+
+	if conflict.SecondConflictingSeriesIndex == -1 {
+		return fmt.Errorf(
+			"found %s for the match group %s on the %s side of the operation at timestamp %s",
+			conflict.Description,
+			groupLabels,
+			side,
+			timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
+		)
+	}
+
+	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.SecondConflictingSeriesIndex].Labels
+
+	return fmt.Errorf(
+		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
+		conflict.Description,
+		groupLabels,
+		side,
+		timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
+		firstConflictingSeriesLabels,
+		secondConflictingSeriesLabels,
+	)
+}
+
+func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		return "left"
+	case parser.CardManyToOne:
+		return "right"
+	default:
+		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
+	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) manySideHandedness() string {
+	switch g.VectorMatching.Card {
+	case parser.CardOneToMany:
+		return "right"
+	case parser.CardManyToOne:
+		return "left"
+	default:
+		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
+	}
 }
 
 func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRange {

@@ -13,17 +13,13 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -48,9 +44,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	remainingSeries []*oneToOneBinaryOperationOutputSeries
 	leftBuffer      *operators.InstantVectorOperatorBuffer
 	rightBuffer     *operators.InstantVectorOperatorBuffer
-	leftIterator    types.InstantVectorSeriesDataIterator
-	rightIterator   types.InstantVectorSeriesDataIterator
-	opFunc          binaryOperationFunc
+	evaluator       vectorVectorBinaryOperationEvaluator
 
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
@@ -87,28 +81,22 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
+	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
+	if err != nil {
+		return nil, err
+	}
+
 	b := &OneToOneVectorVectorBinaryOperation{
 		Left:                     left,
 		Right:                    right,
-		leftIterator:             types.InstantVectorSeriesDataIterator{},
-		rightIterator:            types.InstantVectorSeriesDataIterator{},
 		VectorMatching:           vectorMatching,
 		Op:                       op,
 		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
+		evaluator:          e,
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
-	}
-
-	if returnBool {
-		b.opFunc = boolComparisonOperationFuncs[op]
-	} else {
-		b.opFunc = arithmeticAndComparisonOperationFuncs[op]
-	}
-
-	if b.opFunc == nil {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
 	return b, nil
@@ -194,7 +182,7 @@ func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Con
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
 func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, []bool, error) {
-	labelsFunc := b.groupLabelsFunc()
+	labelsFunc := groupLabelsFunc(b.VectorMatching, b.ReturnBool)
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
 	outputSeriesMap := map[string]*oneToOneBinaryOperationOutputSeries{}
 
@@ -360,35 +348,6 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 	return g.series[i].latestLeftSeries() < g.series[j].latestLeftSeries()
 }
 
-// groupLabelsFunc returns a function that computes the labels of the output group this series belongs to.
-func (b *OneToOneVectorVectorBinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
-	lb := labels.NewBuilder(labels.EmptyLabels())
-
-	if b.VectorMatching.On {
-		return func(l labels.Labels) labels.Labels {
-			lb.Reset(l)
-			lb.Keep(b.VectorMatching.MatchingLabels...)
-			return lb.Labels()
-		}
-	}
-
-	if b.Op.IsComparisonOperator() && !b.ReturnBool {
-		// If this is a comparison operator, we want to retain the metric name, as the comparison acts like a filter.
-		return func(l labels.Labels) labels.Labels {
-			lb.Reset(l)
-			lb.Del(b.VectorMatching.MatchingLabels...)
-			return lb.Labels()
-		}
-	}
-
-	return func(l labels.Labels) labels.Labels {
-		lb.Reset(l)
-		lb.Del(labels.MetricName)
-		lb.Del(b.VectorMatching.MatchingLabels...)
-		return lb.Labels()
-	}
-}
-
 func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
 		return types.InstantVectorSeriesData{}, types.EOS
@@ -402,7 +361,7 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	mergedLeftSide, err := b.mergeOneSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
+	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -412,15 +371,15 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	mergedRightSide, err := b.mergeOneSide(allRightSeries, thisSeries.rightSeriesIndices, b.rightMetadata, "right")
+	mergedRightSide, err := b.mergeSingleSide(allRightSeries, thisSeries.rightSeriesIndices, b.rightMetadata, "right")
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return b.computeResult(mergedLeftSide, mergedRightSide)
+	return b.evaluator.computeResult(mergedLeftSide, mergedRightSide, true, true)
 }
 
-// mergeOneSide exists to handle the case where one side of an output series has different source series at different time steps.
+// mergeSingleSide exists to handle the case where one side of an output series has different source series at different time steps.
 //
 // For example, consider the query "left_side + on (env) right_side" with the following source data:
 //
@@ -428,14 +387,12 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 //	left_side{env="test", pod="b"} _ _ 3
 //	right_side{env="test"} 100 200 300
 //
-// mergeOneSide will take in both series for left_side and return a single series with the points [1, 2, 3].
+// mergeSingleSide will take in both series for left_side and return a single series with the points [1, 2, 3].
 //
-// mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
+// mergeSingleSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
-// NOTE: mergeOneSide has the side effect of re-ordering both data and sourceSeriesIndices.
-//
-// FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
-func (b *OneToOneVectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
+// mergeSingleSide has the side effect of re-ordering both data and sourceSeriesIndices.
+func (b *OneToOneVectorVectorBinaryOperation) mergeSingleSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
 	merged, conflict, err := operators.MergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
 
 	if err != nil {
@@ -451,7 +408,7 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeOneSide(data []types.InstantV
 
 func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
-	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
+	groupLabels := groupLabelsFunc(b.VectorMatching, b.ReturnBool)(firstConflictingSeriesLabels)
 
 	if conflict.SecondConflictingSeriesIndex == -1 {
 		return fmt.Errorf(
@@ -476,160 +433,6 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *ope
 	)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
-	var fPoints []promql.FPoint
-	var hPoints []promql.HPoint
-
-	// For one-to-one matching for arithmetic operators, we'll never produce more points than the smaller input side.
-	// Because floats and histograms can be multiplied together, we use the sum of both the float and histogram points.
-	// We also don't know if the output will be exclusively floats or histograms, so we'll use the same size slice for both.
-	// We only assign the slices once we see the associated point type so it shouldn't be common that we allocate both.
-	//
-	// FIXME: this is not safe to do for one-to-many or many-to-one matching, as we may need the input series for later output series.
-	canReturnLeftFPointSlice, canReturnLeftHPointSlice, canReturnRightFPointSlice, canReturnRightHPointSlice := true, true, true, true
-	leftPoints := len(left.Floats) + len(left.Histograms)
-	rightPoints := len(right.Floats) + len(right.Histograms)
-	maxPoints := max(leftPoints, rightPoints)
-
-	// We cannot re-use any slices when the series contain a mix of floats and histograms.
-	// Consider the following, where f is a float at a particular step, and h is a histogram.
-	// load 5m
-	//   series1 f f f h h
-	//   series2 h h f f h
-	// eval range from 0 to 25m step 5m series1 * series2
-	//   {}      h h f h f
-	// We can fit the resulting 3 histograms into series2 existing slice. However, the second
-	// last step (index 3) produces a histogram which would be stored over the existing histogram
-	// at the end of series2 (also index 3).
-	// It should be pretty uncommon that metric contains both histograms and floats, so we will
-	// accept the cost of a new slice.
-	mixedPoints := (len(left.Floats) > 0 && len(left.Histograms) > 0) || (len(right.Floats) > 0 && len(right.Histograms) > 0)
-
-	prepareFSlice := func() error {
-		if !mixedPoints && maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) {
-			// Can fit output in left side, and the left side is smaller than the right
-			canReturnLeftFPointSlice = false
-			fPoints = left.Floats[:0]
-			return nil
-		}
-		if !mixedPoints && maxPoints <= cap(right.Floats) {
-			// Can otherwise fit in the right side
-			canReturnRightFPointSlice = false
-			fPoints = right.Floats[:0]
-			return nil
-		}
-		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
-		var err error
-		if fPoints, err = types.FPointSlicePool.Get(maxPoints, b.MemoryConsumptionTracker); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	prepareHSlice := func() error {
-		if !mixedPoints && maxPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) {
-			// Can fit output in left side, and the left side is smaller than the right
-			canReturnLeftHPointSlice = false
-			hPoints = left.Histograms[:0]
-			return nil
-		}
-		if !mixedPoints && maxPoints <= cap(right.Histograms) {
-			// Can otherwise fit in the right side
-			canReturnRightHPointSlice = false
-			hPoints = right.Histograms[:0]
-			return nil
-		}
-		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
-		var err error
-		if hPoints, err = types.HPointSlicePool.Get(maxPoints, b.MemoryConsumptionTracker); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	b.leftIterator.Reset(left)
-	b.rightIterator.Reset(right)
-
-	// Get first sample from left and right
-	lT, lF, lH, lOk := b.leftIterator.Next()
-	rT, rF, rH, rOk := b.rightIterator.Next()
-	// Continue iterating until we exhaust either the LHS or RHS
-	// denoted by lOk or rOk being false.
-	for lOk && rOk {
-		if lT == rT {
-			// We have samples on both sides at this timestep.
-			resultFloat, resultHist, keep, valid, err := b.opFunc(lF, rF, lH, rH)
-
-			if err != nil {
-				err = functions.NativeHistogramErrorToAnnotation(err, b.emitAnnotation)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-
-				// Else: error was converted to an annotation, continue without emitting a sample here.
-				keep = false
-			}
-
-			if !valid {
-				emitIncompatibleTypesAnnotation(b.annotations, b.Op, lH, rH, b.expressionPosition)
-			}
-
-			if keep {
-				if resultHist != nil {
-					if hPoints == nil {
-						if err = prepareHSlice(); err != nil {
-							return types.InstantVectorSeriesData{}, err
-						}
-					}
-					hPoints = append(hPoints, promql.HPoint{
-						H: resultHist,
-						T: lT,
-					})
-				} else {
-					if fPoints == nil {
-						if err = prepareFSlice(); err != nil {
-							return types.InstantVectorSeriesData{}, err
-						}
-					}
-					fPoints = append(fPoints, promql.FPoint{
-						F: resultFloat,
-						T: lT,
-					})
-				}
-			}
-		}
-
-		// Advance the iterator with the lower timestamp, or both if equal
-		if lT == rT {
-			lT, lF, lH, lOk = b.leftIterator.Next()
-			rT, rF, rH, rOk = b.rightIterator.Next()
-		} else if lT < rT {
-			lT, lF, lH, lOk = b.leftIterator.Next()
-		} else {
-			rT, rF, rH, rOk = b.rightIterator.Next()
-		}
-	}
-
-	// Cleanup the unused slices.
-	if canReturnLeftFPointSlice {
-		types.FPointSlicePool.Put(left.Floats, b.MemoryConsumptionTracker)
-	}
-	if canReturnLeftHPointSlice {
-		types.HPointSlicePool.Put(left.Histograms, b.MemoryConsumptionTracker)
-	}
-	if canReturnRightFPointSlice {
-		types.FPointSlicePool.Put(right.Floats, b.MemoryConsumptionTracker)
-	}
-	if canReturnRightHPointSlice {
-		types.HPointSlicePool.Put(right.Histograms, b.MemoryConsumptionTracker)
-	}
-
-	return types.InstantVectorSeriesData{
-		Floats:     fPoints,
-		Histograms: hPoints,
-	}, nil
-}
-
 func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
@@ -649,10 +452,6 @@ func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	if b.rightBuffer != nil {
 		b.rightBuffer.Close()
 	}
-}
-
-func (b *OneToOneVectorVectorBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
-	b.annotations.Add(generator("", b.expressionPosition))
 }
 
 type binaryOperationFunc func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (f float64, h *histogram.FloatHistogram, keep bool, valid bool, err error)
