@@ -10,6 +10,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -47,4 +48,9 @@ func (t *UsageTracker) run(ctx context.Context) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+// TrackSeries implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) TrackSeries(_ context.Context, _ *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+	return &usagetrackerpb.TrackSeriesResponse{}, nil
 }

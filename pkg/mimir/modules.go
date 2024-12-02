@@ -1089,6 +1089,8 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 func (t *Mimir) initUsageTracker() (services.Service, error) {
 	t.UsageTracker = usagetracker.NewUsageTracker(t.Overrides, util_log.Logger, t.Registerer)
+
+	t.API.RegisterUsageTracker(t.UsageTracker)
 	return t.UsageTracker, nil
 }
 
