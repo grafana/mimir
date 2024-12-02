@@ -293,11 +293,17 @@ func newQueryTripperware(
 			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
 		}
 
-		// Look up cache as first thing.
+		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
+
+		// Validate the request before any processing.
+		queryrange = NewMetricsQueryRequestValidationRoundTripper(codec, queryrange)
+		instant = NewMetricsQueryRequestValidationRoundTripper(codec, instant)
+
+		labels = NewLabelsQueryRequestValidationRoundTripper(codec, labels)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
