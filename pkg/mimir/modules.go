@@ -480,6 +480,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
 	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer, t.Overrides)
+
 	return nil, nil
 }
 
@@ -650,7 +651,6 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	// The cost attribution service is only initilized if the custom registry path is provided.
 	if t.Cfg.CostAttributionRegistryPath != "" {
-		// If custom registry path is provided, create a custom registry and use it for cost attribution service only
 		reg := prometheus.NewRegistry()
 		var err error
 		t.CostAttributionManager, err = costattribution.NewManager(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
@@ -691,7 +691,6 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
 	}
 	t.API.RegisterIngester(ing)
-
 	return nil, nil
 }
 

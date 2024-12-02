@@ -1286,9 +1286,9 @@ Usage of ./cmd/mimir/mimir:
   -config.file value
     	Configuration file to load.
   -cost-attribution.eviction-interval duration
-    	[experimental] Time interval at which inactive cost attributions will be evicted from the counter, so it won't be counted when checking max_cost_attribution_cardinality_per_user. (default 30m0s)
+    	[experimental] Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit. (default 30m0s)
   -cost-attribution.registry-path string
-    	Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
+    	[experimental] Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -3322,9 +3322,9 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
-    	[experimental] Cooldown period for cost attribution labels. This specifies how long the cost attribution tracker remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown will be extended. Set to 0 to disable the cooldown period.
+    	[experimental] Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown is extended. Set to 0 to disable the cooldown.
   -validation.cost-attribution-labels comma-separated-list-of-strings
-    	[experimental] List of labels used to define the cost attribution. This label will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total. Set to an empty string to disable cost attribution.
+    	[experimental] List of labels used to define cost attribution. These labels will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_attributed_received_samples_total, cortex_ingester_attributed_active_series, and cortex_attributed_discarded_samples_total. Set to an empty string to disable cost attribution.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
@@ -3332,7 +3332,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-cost-attribution-cardinality-per-user int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
   -validation.max-cost-attribution-labels-per-user int
-    	[experimental] Maximum number of cost attribution labels allowed per user. 0 to disable. (default 2)
+    	[experimental] Maximum number of cost attribution labels allowed per user. Set to 0 to disable. (default 2)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

@@ -1076,11 +1076,11 @@ metric_relabel_configs:
 			cfg:         `ingest_storage_read_consistency: xyz`,
 			expectedErr: errInvalidIngestStorageReadConsistency.Error(),
 		},
-		"should fail when cost_attribution_labels length exceeds max_cost_attribution_labels_per_user config": {
+		"should fail when cost_attribution_labels exceed max_cost_attribution_labels_per_user": {
 			cfg: `
 cost_attribution_labels: label1, label2, label3,
 max_cost_attribution_labels_per_user: 2`,
-			expectedErr: errSurpassingCostAttributionLabelsLimit.Error(),
+			expectedErr: errCostAttributionLabelsLimitExceeded.Error(),
 		},
 	}
 
