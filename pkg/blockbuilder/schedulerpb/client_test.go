@@ -91,7 +91,6 @@ func TestForget(t *testing.T) {
 	require.Len(t, cli.jobs, 0, "forgetting an empty map should do nothing")
 }
 
-// create a mock for the BlockBuilderSchedulerClient interface
 type mockSchedulerClient struct {
 	mu          sync.Mutex
 	key         JobKey
