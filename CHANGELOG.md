@@ -142,6 +142,8 @@
 
 ### Documentation
 
+* [BUGFIX] Send native histograms: update the migration guide with the corrected dashboard query for switching between classic and native histograms queries. #10052
+
 ### Tools
 
 * [FEATURE] `splitblocks`: add new tool to split blocks larger than a specified duration into multiple blocks. #9517, #9779
