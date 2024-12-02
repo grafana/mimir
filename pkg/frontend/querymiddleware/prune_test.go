@@ -69,7 +69,6 @@ func TestQueryPruning(t *testing.T) {
 			require.Nil(t, err)
 
 			if !template.IsEmpty {
-				fmt.Printf("query1: %s\n", query)
 				// Ensure the query produces some results.
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 				requireValidSamples(t, expectedRes.(*PrometheusResponse).Data.Result)
@@ -81,7 +80,6 @@ func TestQueryPruning(t *testing.T) {
 
 			if !template.IsEmpty {
 				// Ensure the query produces some results.
-				fmt.Printf("query2: %s\n", query)
 				require.NotEmpty(t, prunedRes.(*PrometheusResponse).Data.Result)
 				requireValidSamples(t, prunedRes.(*PrometheusResponse).Data.Result)
 			}
