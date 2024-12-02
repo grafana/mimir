@@ -205,4 +205,4 @@ For additional GEM-specific configurations, refer to [Deploy Grafana Enterprise 
 
 ## Enable external access to Grafana Mimir
 
-To enable write and query access to Grafana Mimir from outside the Kubernetes cluster, refer to [Enable external access to Grafana Mimir](https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/gs-external-access).
+To enable write and query access to Grafana Mimir from outside the Kubernetes cluster, refer to [Enable external access to Grafana Mimir](https://grafana.com/docs/helm-charts/mimir-distributed/<MIMIR_HELM_VERSION>/get-started-helm-charts/gs-external-access).
