@@ -203,7 +203,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 		requestPath         string
 		requestMethod       string
 		backends            []mockedBackend
-		backendConfig       map[string]BackendConfig
+		backendConfig       map[string]*BackendConfig
 		preferredBackendIdx int
 		expectedStatus      int
 		expectedRes         string
@@ -328,7 +328,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			requestPath:         "/api/v1/query",
 			requestMethod:       http.MethodGet,
 			preferredBackendIdx: 0,
-			backendConfig: map[string]BackendConfig{
+			backendConfig: map[string]*BackendConfig{
 				"0": {
 					RequestHeaders: map[string][]string{
 						"X-Test-Header": {"test-value"},

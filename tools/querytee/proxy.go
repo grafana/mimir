@@ -6,6 +6,7 @@
 package querytee
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -34,6 +35,8 @@ type ProxyConfig struct {
 	BackendEndpoints                    string
 	PreferredBackend                    string
 	BackendReadTimeout                  time.Duration
+	BackendConfigStr                    string
+	parsedBackendConfig                 map[string]*BackendConfig
 	CompareResponses                    bool
 	LogSlowQueryResponseThreshold       time.Duration
 	ValueComparisonTolerance            float64
@@ -45,6 +48,23 @@ type ProxyConfig struct {
 	BackendSkipTLSVerify                bool
 	AddMissingTimeParamToInstantQueries bool
 	SecondaryBackendsRequestProportion  float64
+}
+
+type BackendConfig struct {
+	RequestHeaders http.Header `json:"request_headers"`
+}
+
+func exampleBackendConfig() string {
+	cfg := BackendConfig{
+		RequestHeaders: http.Header{
+			"Cache-Control": {"no-store"},
+		},
+	}
+	jsonBytes, err := json.Marshal(cfg)
+	if err != nil {
+		panic("invalid example backend config" + err.Error())
+	}
+	return string(jsonBytes)
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
@@ -62,6 +82,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 150*time.Second, "The timeout when reading the response from a backend.")
+	f.StringVar(&cfg.BackendConfigStr, "backend.config", "{}", "JSON object with backend configuration. Each key is the backend hostname. This is an example value: "+exampleBackendConfig())
 	f.BoolVar(&cfg.CompareResponses, "proxy.compare-responses", false, "Compare responses between preferred and secondary endpoints for supported routes.")
 	f.DurationVar(&cfg.LogSlowQueryResponseThreshold, "proxy.log-slow-query-response-threshold", 10*time.Second, "The minimum difference in response time between slowest and fastest back-end over which to log the query. 0 to disable.")
 	f.Float64Var(&cfg.ValueComparisonTolerance, "proxy.value-comparison-tolerance", 0.000001, "The tolerance to apply when comparing floating point values in the responses. 0 to disable tolerance and require exact match (not recommended).")
@@ -119,6 +140,13 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("preferred backend must be set when secondary backends request proportion is not 1")
 	}
 
+	if len(cfg.BackendConfigStr) > 0 {
+		err := json.Unmarshal([]byte(cfg.BackendConfigStr), &cfg.parsedBackendConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse backend JSON config: %w", err)
+		}
+	}
+
 	p := &Proxy{
 		cfg:        cfg,
 		logger:     logger,
@@ -153,7 +181,15 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 			preferred = preferredIdx == idx
 		}
 
-		p.backends = append(p.backends, NewProxyBackend(name, u, cfg.BackendReadTimeout, preferred, cfg.BackendSkipTLSVerify))
+		backendCfg := cfg.parsedBackendConfig[name]
+		if backendCfg == nil {
+			backendCfg = cfg.parsedBackendConfig[strconv.Itoa(idx)]
+			if backendCfg == nil {
+				backendCfg = &BackendConfig{}
+			}
+		}
+
+		p.backends = append(p.backends, NewProxyBackend(name, u, cfg.BackendReadTimeout, preferred, cfg.BackendSkipTLSVerify, *backendCfg))
 	}
 
 	// At least 1 backend is required

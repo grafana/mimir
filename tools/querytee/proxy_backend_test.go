@@ -84,7 +84,7 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 				orig.Header.Set("X-Scope-OrgID", testData.clientTenant)
 			}
 
-			b := NewProxyBackend("test", u, time.Second, false, false)
+			b := NewProxyBackend("test", u, time.Second, false, false, BackendConfig{})
 			bp, ok := b.(*ProxyBackend)
 			if !ok {
 				t.Fatalf("Type assertion to *ProxyBackend failed")
