@@ -8,10 +8,8 @@ package distributor
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -36,20 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
-
-var addrsOnce sync.Once
-var localhostIP string
-
-func getLocalhostAddrs() []string {
-	addrsOnce.Do(func() {
-		ip, err := net.ResolveIPAddr("ip4", "localhost")
-		if err != nil {
-			localhostIP = "127.0.0.1" // this is the most common answer, try it
-		}
-		localhostIP = ip.String()
-	})
-	return []string{localhostIP}
-}
 
 type dnsProviderMock struct {
 	resolved []string
@@ -265,11 +249,6 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	flagext.DefaultValues(&config)
 	ctx := context.Background()
 
-	config.TCPTransport = memberlist.TCPTransportConfig{
-		BindAddrs: getLocalhostAddrs(),
-		BindPort:  0,
-	}
-
 	config.Codecs = []codec.Codec{
 		GetReplicaDescCodec(),
 	}
@@ -280,12 +259,12 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		&dnsProviderMock{},
 		prometheus.NewPedanticRegistry(),
 	)
-
+	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
 	t.Cleanup(func() {
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
 	})
 
-	c, err := newHaTracker(HATrackerConfig{
+	tracker, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
 			MemberlistKV: memberListSvc.GetMemberlistKV,
@@ -294,40 +273,41 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        failoverTimeout,
 	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
-	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
+
 	t.Cleanup(func() {
-		assert.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, tracker))
 	})
 
 	now := time.Now()
 
 	// Write the first time.
-	err = c.checkReplica(context.Background(), "user", cluster, replica1, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
 	assert.NoError(t, err)
 
 	// Throw away a sample from replica2.
-	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
 	assert.Error(t, err)
 
 	// Wait more than the overwrite timeout.
 	now = now.Add(failoverTimeoutPlus100ms)
 
 	// Another sample from replica2 to update its timestamp.
-	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
 	assert.Error(t, err)
 
 	// Update KVStore - this should elect replica 2.
-	c.updateKVStoreAll(context.Background(), now)
+	tracker.updateKVStoreAll(context.Background(), now)
 
-	checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica2, now, now)
+	checkReplicaTimestamp(t, time.Second, tracker, "user", cluster, replica2, now, now)
 
 	// Now we should accept from replica 2.
-	err = c.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
 	assert.NoError(t, err)
 
 	// We timed out accepting samples from replica 1 and should now reject them.
-	err = c.checkReplica(context.Background(), "user", cluster, replica1, now)
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
 	assert.Error(t, err)
 }
 

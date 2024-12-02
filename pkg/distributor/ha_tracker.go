@@ -90,11 +90,11 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.
 			*r = *other
 		}
 	} else {
-		// keep the most recent Elected to reach consistency
+		// keep the most recent ElectedAt to reach consistency
 		if other.ElectedAt > r.ElectedAt {
 			*r = *other
 		} else if other.ElectedAt == r.ElectedAt {
-			// if the timestamps are equal we compare receivedAt
+			// if the timestamps are equal we compare ReceivedAt
 			if other.ReceivedAt > r.ReceivedAt {
 				*r = *other
 			}
@@ -112,7 +112,8 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.
 }
 
 // MergeContent describes content of this Mergeable.
-// Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains.
+// Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains. By doing this we choose
+// to not make use of the subset invalidation feature of memberlist
 func (r *ReplicaDesc) MergeContent() []string {
 	result := []string(nil)
 	if len(r.Replica) != 0 {
@@ -121,7 +122,7 @@ func (r *ReplicaDesc) MergeContent() []string {
 	return result
 }
 
-// RemoveTombstones noOp.
+// RemoveTombstones is noOp because we will handle replica deletions outside the context of memberlist.
 func (r *ReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
 	return
 }
