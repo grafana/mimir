@@ -203,6 +203,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 		requestPath         string
 		requestMethod       string
 		backends            []mockedBackend
+		backendConfig       map[string]BackendConfig
 		preferredBackendIdx int
 		expectedStatus      int
 		expectedRes         string
@@ -323,6 +324,29 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedStatus: 200,
 			expectedRes:    querySingleMetric1,
 		},
+		"adds request headers to specific backend": {
+			requestPath:         "/api/v1/query",
+			requestMethod:       http.MethodGet,
+			preferredBackendIdx: 0,
+			backendConfig: map[string]BackendConfig{
+				"0": {
+					RequestHeaders: map[string][]string{
+						"X-Test-Header": {"test-value"},
+					},
+				},
+			},
+			backends: []mockedBackend{
+				{handler: func(rw http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, r.Header.Get("X-Test-Header"), "test-value")
+					rw.WriteHeader(http.StatusOK)
+				}},
+				{handler: func(rw http.ResponseWriter, r *http.Request) {
+					assert.Empty(t, r.Header.Get("X-Test-Header"))
+					rw.WriteHeader(http.StatusOK)
+				}},
+			},
+			expectedStatus: http.StatusOK,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -341,6 +365,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:                   strings.Join(backendURLs, ","),
 				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
+				parsedBackendConfig:                testData.backendConfig,
 				ServerHTTPServiceAddress:           "localhost",
 				ServerHTTPServicePort:              0,
 				ServerGRPCServiceAddress:           "localhost",
