@@ -158,7 +158,8 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return s.next.Do(ctx, r)
 	}
 
-	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery, "sharded_queries", shardingStats.GetShardedQueries())
+	// TODO: revert to debug
+	level.Info(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery, "sharded_queries", shardingStats.GetShardedQueries())
 
 	// Update metrics.
 	s.shardingSuccesses.Inc()
