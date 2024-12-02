@@ -3317,6 +3317,124 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.partition-ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -usage-tracker.partition-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -usage-tracker.partition-ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -usage-tracker.partition-ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -usage-tracker.partition-ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -usage-tracker.partition-ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -usage-tracker.partition-ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -usage-tracker.partition-ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -usage-tracker.partition-ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -usage-tracker.partition-ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -usage-tracker.partition-ring.etcd.password string
+    	Etcd password.
+  -usage-tracker.partition-ring.etcd.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -usage-tracker.partition-ring.etcd.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -usage-tracker.partition-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -usage-tracker.partition-ring.etcd.tls-enabled
+    	Enable TLS.
+  -usage-tracker.partition-ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -usage-tracker.partition-ring.etcd.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -usage-tracker.partition-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -usage-tracker.partition-ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -usage-tracker.partition-ring.etcd.username string
+    	Etcd username.
+  -usage-tracker.partition-ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -usage-tracker.partition-ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -usage-tracker.partition-ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -usage-tracker.partition-ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -usage-tracker.partition-ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -usage-tracker.partition-ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -usage-tracker.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -usage-tracker.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -usage-tracker.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -usage-tracker.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -usage-tracker.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -usage-tracker.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -usage-tracker.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -usage-tracker.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -usage-tracker.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -usage-tracker.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -usage-tracker.ring.etcd.password string
+    	Etcd password.
+  -usage-tracker.ring.etcd.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -usage-tracker.ring.etcd.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -usage-tracker.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -usage-tracker.ring.etcd.tls-enabled
+    	Enable TLS.
+  -usage-tracker.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -usage-tracker.ring.etcd.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -usage-tracker.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -usage-tracker.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -usage-tracker.ring.etcd.username string
+    	Etcd username.
+  -usage-tracker.ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+  -usage-tracker.ring.heartbeat-timeout duration
+    	The heartbeat timeout after which usage-trackers are considered unhealthy within the ring. (default 1m0s)
+  -usage-tracker.ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -usage-tracker.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
+  -usage-tracker.ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -usage-tracker.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -usage-tracker.ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -usage-tracker.ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -usage-tracker.ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -usage-tracker.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -usage-tracker.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -usage-tracker.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -usage-tracker.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name

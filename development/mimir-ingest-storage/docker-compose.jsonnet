@@ -91,8 +91,8 @@ std.manifestYamlDoc({
   },
 
   usage_tracker:: {
-    'usage-tracker': mimirService({
-      name: 'usage-tracker',
+    'usage-tracker-1': mimirService({
+      name: 'usage-tracker-1',
       target: 'usage-tracker',
       publishedHttpPort: 8008,
     }),

@@ -215,6 +215,8 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.UsageTracker.InstanceRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.UsageTracker.PartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 
 	// Update Configs - Redis Clients
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
@@ -1047,6 +1049,8 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.UsageTracker.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.UsageTracker.PartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -1088,7 +1092,13 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 }
 
 func (t *Mimir) initUsageTracker() (services.Service, error) {
-	t.UsageTracker = usagetracker.NewUsageTracker(t.Overrides, util_log.Logger, t.Registerer)
+	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
+
+	var err error
+	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.Overrides, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
 
 	t.API.RegisterUsageTracker(t.UsageTracker)
 	return t.UsageTracker, nil
@@ -1203,7 +1213,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                       {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:                {Queryable},
-		UsageTracker:                    {API, Overrides},
+		UsageTracker:                    {API, Overrides, MemberlistKV},
 		BlockBuilder:                    {API, Overrides},
 		BlockBuilderScheduler:           {API},
 		ContinuousTest:                  {API},

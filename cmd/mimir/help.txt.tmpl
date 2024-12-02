@@ -861,6 +861,28 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.partition-ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -usage-tracker.partition-ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -usage-tracker.partition-ring.etcd.password string
+    	Etcd password.
+  -usage-tracker.partition-ring.etcd.username string
+    	Etcd username.
+  -usage-tracker.partition-ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -usage-tracker.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -usage-tracker.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -usage-tracker.ring.etcd.password string
+    	Etcd password.
+  -usage-tracker.ring.etcd.username string
+    	Etcd username.
+  -usage-tracker.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -usage-tracker.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
