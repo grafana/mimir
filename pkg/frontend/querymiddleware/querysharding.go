@@ -137,7 +137,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 
 	var fullRangeHandler MetricsQueryHandler
 	// TODO: Support range
-	if v, ok := ctx.Value(fullRangeHandlerContextKey).(MetricsQueryHandler); ok && IsInstantQuery(r.GetPath()) {
+	if v, ok := ctx.Value(fullRangeHandlerContextKey).(MetricsQueryHandler); ok {
 		fullRangeHandler = v
 	}
 	level.Debug(log).Log(fullRangeHandlerContextKey+" set", fullRangeHandler != nil)

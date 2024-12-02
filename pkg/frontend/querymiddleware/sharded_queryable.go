@@ -113,7 +113,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 
 	// Handle subqueries.
 	req := q.req
-	if aggregatedSubqueryExpr != "" && IsInstantQuery(req.GetPath()) && q.upstreamRangeHandler != nil {
+	if aggregatedSubqueryExpr != "" && q.upstreamRangeHandler != nil {
 		if q.logger != nil {
 			level.Info(q.logger).Log("msg", "handling aggregated subquery", "expr", aggregatedSubqueryExpr)
 		}
@@ -139,12 +139,13 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 		if end%step != 0 {
 			end += step - (end % step)
 		}
-		start := end - subquery.Range.Milliseconds()
+		reqRange := req.GetEnd() - req.GetStart()
+		// Calculate the earliest data point we need to query.
+		start := end - reqRange - subquery.Range.Milliseconds()
 
-		// Too many points to query, split the query into multiple smaller queries (max 10000 points to be safe)
-		// and aggregate the results.
-		var rangeQueries []MetricsQueryRequest
+		// Split queries into multiple smaller queries if they have more than 10000 datapoints
 		rangeStart := start
+		var rangeQueries []MetricsQueryRequest
 		for {
 			var rangeEnd int64
 			if remainingPoints := (end - start) / step; remainingPoints > 10000 {
@@ -154,7 +155,10 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 			}
 
 			headers := req.GetHeaders()
-			headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}}) // Downstream is the querier, which is HTTP req.
+			headers = append(headers,
+				&PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}},
+				&PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
+			) // Downstream is the querier, which is HTTP req.
 
 			newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, rangeStart, rangeEnd, step, req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
 			rangeQueries = append(rangeQueries, newRangeRequest)
