@@ -180,7 +180,6 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	annotationAccumulator := NewAnnotationAccumulator()
 
 	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, fullRangeHandler, nil, s.defaultStepFunc)
-	shardedQueryable = shardedQueryable.WithLogger(log)
 
 	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
 }

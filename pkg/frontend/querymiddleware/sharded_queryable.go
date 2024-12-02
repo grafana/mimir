@@ -12,7 +12,6 @@ import (
 	"math"
 	"sync"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -44,7 +43,6 @@ type shardedQueryable struct {
 	upstreamRangeHandler  MetricsQueryHandler
 	responseHeaders       *responseHeadersTracker
 	handleEmbeddedQuery   HandleEmbeddedQueryFunc
-	logger                log.Logger
 	defaultStepFunc       func(rangeMillis int64) int64
 }
 
@@ -66,14 +64,9 @@ func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *Annotat
 	}
 }
 
-func (q *shardedQueryable) WithLogger(logger log.Logger) *shardedQueryable {
-	q.logger = logger
-	return q
-}
-
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, upstreamRangeHandler: q.upstreamRangeHandler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery, logger: q.logger, defaultStepFunc: q.defaultStepFunc}, nil
+	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, upstreamRangeHandler: q.upstreamRangeHandler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery, defaultStepFunc: q.defaultStepFunc}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -90,7 +83,6 @@ type shardedQuerier struct {
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
 	upstreamRangeHandler  MetricsQueryHandler
-	logger                log.Logger
 	defaultStepFunc       func(rangeMillis int64) int64
 
 	// Keep track of response headers received when running embedded queries.
