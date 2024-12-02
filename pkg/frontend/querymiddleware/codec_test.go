@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -475,11 +476,11 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 }
 
 func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
-	codec := newTestPrometheusCodec()
-
 	for _, testCase := range []struct {
 		name                      string
+		propagateHeaders          []string
 		url                       string
+		headers                   http.Header
 		expectedStruct            LabelsQueryRequest
 		expectedGetLabelName      string
 		expectedGetStartOrDefault int64
@@ -648,42 +649,81 @@ func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 			url:         "/api/v1/label/job/values?limit=-1",
 			expectedErr: "limit parameter must be a positive number: -1",
 		},
+		{
+			name: "propagates headers",
+			headers: http.Header{
+				"X-Special-Header": []string{"some-value"},
+			},
+			url:              "/api/v1/labels?end=1708588800&start=1708502400",
+			propagateHeaders: []string{"X-Special-Header"},
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Headers: httpHeadersToProm(
+					http.Header{"X-Special-Header": []string{"some-value"}},
+				),
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(reqMethod, func(t *testing.T) {
+					var r *http.Request
+					var err error
 
-				var r *http.Request
-				var err error
+					expectedStruct := testCase.expectedStruct
 
-				switch reqMethod {
-				case http.MethodGet:
-					r, err = http.NewRequest(reqMethod, testCase.url, nil)
+					switch reqMethod {
+					case http.MethodGet:
+						r, err = http.NewRequest(reqMethod, testCase.url, nil)
+						require.NoError(t, err)
+					case http.MethodPost:
+						parsedURL, _ := url.Parse(testCase.url)
+						r, err = http.NewRequest(reqMethod, parsedURL.Path, strings.NewReader(parsedURL.RawQuery))
+						require.NoError(t, err)
+						r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+						if expectedStruct != nil {
+							headers := append(expectedStruct.GetHeaders(), &PrometheusHeader{"Content-Type", []string{"application/x-www-form-urlencoded"}})
+
+							// Decoding headers also sorts them. We sort here to be able to make assertions on the slice of headers.
+							sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+							expectedStruct, err = expectedStruct.WithHeaders(headers)
+							require.NoError(t, err)
+						}
+					default:
+						t.Fatalf("unsupported HTTP method %q", reqMethod)
+					}
+
+					ctx := user.InjectOrgID(context.Background(), "1")
+					r = r.WithContext(ctx)
+					for k, v := range testCase.headers {
+						for _, v := range v {
+							r.Header.Add(k, v)
+						}
+					}
+
+					codec := newTestPrometheusCodecWithHeaders(testCase.propagateHeaders)
+					reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
+					if err != nil || testCase.expectedErr != "" {
+						require.EqualError(t, err, testCase.expectedErr)
+						return
+					}
+
+					require.EqualValues(t, expectedStruct, reqDecoded)
+					require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
+					require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
+					require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
+
+					reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
 					require.NoError(t, err)
-				case http.MethodPost:
-					parsedURL, _ := url.Parse(testCase.url)
-					r, err = http.NewRequest(reqMethod, parsedURL.Path, strings.NewReader(parsedURL.RawQuery))
-					require.NoError(t, err)
-					r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-				default:
-					t.Fatalf("unsupported HTTP method %q", reqMethod)
-				}
-
-				ctx := user.InjectOrgID(context.Background(), "1")
-				r = r.WithContext(ctx)
-
-				reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
-				if err != nil || testCase.expectedErr != "" {
-					require.EqualError(t, err, testCase.expectedErr)
-					return
-				}
-				require.EqualValues(t, testCase.expectedStruct, reqDecoded)
-				require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
-				require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
-				require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
-
-				reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
-				require.NoError(t, err)
-				require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
+					require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
+				})
 			}
 		})
 	}
@@ -1848,7 +1888,11 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 }
 
 func newTestPrometheusCodec() Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, nil)
+	return newTestPrometheusCodecWithHeaders(nil)
+}
+
+func newTestPrometheusCodecWithHeaders(propagateHeaders []string) Codec {
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
 }
 
 func mustSucceed[T any](value T, err error) T {
