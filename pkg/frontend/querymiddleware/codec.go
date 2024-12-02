@@ -49,8 +49,10 @@ var (
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
+	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
 	prometheusCodecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
-	prometheusCodecPropagateHeadersLabels  = []string{}
+	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
+	prometheusCodecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
 
 const (
