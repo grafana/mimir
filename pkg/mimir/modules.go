@@ -221,6 +221,8 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.UsageTracker.InstanceRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.UsageTracker.PartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 
 	// Update Configs - Redis Clients
 	// lint:sorted
@@ -1086,6 +1088,8 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.UsageTracker.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.UsageTracker.PartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -1127,7 +1131,13 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 }
 
 func (t *Mimir) initUsageTracker() (services.Service, error) {
-	t.UsageTracker = usagetracker.NewUsageTracker(t.Overrides, util_log.Logger, t.Registerer)
+	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
+
+	var err error
+	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.Overrides, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
 
 	t.API.RegisterUsageTracker(t.UsageTracker)
 	return t.UsageTracker, nil
@@ -1252,7 +1262,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
-		UsageTracker:                     {API, Overrides},
+		UsageTracker:                     {API, Overrides, MemberlistKV},
 
 		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		Read:    {QueryFrontend, Querier},
