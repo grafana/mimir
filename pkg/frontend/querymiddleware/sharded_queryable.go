@@ -141,30 +141,60 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 		}
 		start := end - subquery.Range.Milliseconds()
 
-		headers := req.GetHeaders()
-		headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}}) // Downstream is the querier, which is HTTP req.
+		// Too many points to query, split the query into multiple smaller queries (max 10000 points to be safe)
+		// and aggregate the results.
+		var rangeQueries []MetricsQueryRequest
+		rangeStart := start
+		for {
+			var rangeEnd int64
+			if remainingPoints := (end - start) / step; remainingPoints > 10000 {
+				rangeEnd = start + 10000*step
+			} else {
+				rangeEnd = end
+			}
 
-		newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, start, end, step, req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
-		if q.logger != nil {
-			level.Info(q.logger).Log("msg", "running subquery as a range query", "query", newRangeRequest.GetQuery())
+			headers := req.GetHeaders()
+			headers = append(headers, &PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}}) // Downstream is the querier, which is HTTP req.
+
+			newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, rangeStart, rangeEnd, step, req.GetLookbackDelta(), subquery.Expr, req.GetOptions(), req.GetHints())
+			rangeQueries = append(rangeQueries, newRangeRequest)
+
+			if rangeEnd == end {
+				break
+			}
 		}
 
-		upstreamRangeHandlerResp, err := q.upstreamRangeHandler.Do(ctx, newRangeRequest)
+		// Concurrently run each query. It breaks and cancels each worker context on first error.
+		streams := make([][]SampleStream, len(rangeQueries))
+		err = concurrency.ForEachJob(ctx, len(rangeQueries), len(rangeQueries), func(ctx context.Context, idx int) error {
+			upstreamRangeHandlerResp, err := q.upstreamRangeHandler.Do(ctx, rangeQueries[idx])
+			if err != nil {
+				return err
+			}
+
+			promRes, ok := upstreamRangeHandlerResp.(*PrometheusResponse)
+			if !ok {
+				return errors.Errorf("error invalid response type: %T, expected: %T", upstreamRangeHandlerResp, &PrometheusResponse{})
+			}
+
+			resStreams, err := ResponseToSamples(promRes)
+			if err != nil {
+				return err
+			}
+
+			streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
+
+			q.annotationAccumulator.addInfos(promRes.Infos)
+			q.annotationAccumulator.addWarnings(promRes.Warnings)
+
+			return nil
+		})
+
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
 
-		upstreamRangeHandlerPromRes, ok := upstreamRangeHandlerResp.(*PrometheusResponse)
-		if !ok {
-			return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", upstreamRangeHandlerResp, &PrometheusResponse{}))
-		}
-
-		resStreams, err := ResponseToSamples(upstreamRangeHandlerPromRes)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-
-		return newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
+		return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
 	}
 
 	var embeddedQuery string
