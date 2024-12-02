@@ -1971,7 +1971,7 @@
               "kind": "field",
               "name": "enable_aggregation_operations",
               "required": false,
-              "desc": "Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-aggregation-operations",
@@ -1982,7 +1982,7 @@
               "kind": "field",
               "name": "enable_vector_vector_binary_comparison_operations",
               "required": false,
-              "desc": "Enable support for binary comparison operations between two vectors in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations",
@@ -1993,7 +1993,7 @@
               "kind": "field",
               "name": "enable_vector_scalar_binary_comparison_operations",
               "required": false,
-              "desc": "Enable support for binary comparison operations between a vector and a scalar in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations",
@@ -2004,7 +2004,7 @@
               "kind": "field",
               "name": "enable_scalar_scalar_binary_comparison_operations",
               "required": false,
-              "desc": "Enable support for binary comparison operations between two scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations",
@@ -2015,7 +2015,7 @@
               "kind": "field",
               "name": "enable_binary_logical_operations",
               "required": false,
-              "desc": "Enable support for binary logical operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-binary-logical-operations",
@@ -2026,7 +2026,7 @@
               "kind": "field",
               "name": "enable_scalars",
               "required": false,
-              "desc": "Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-scalars",
@@ -2037,10 +2037,21 @@
               "kind": "field",
               "name": "enable_subqueries",
               "required": false,
-              "desc": "Enable support for subqueries in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "desc": "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-subqueries",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_histogram_quantile_function",
+              "required": false,
+              "desc": "Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-histogram-quantile-function",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -3797,6 +3808,16 @@
         },
         {
           "kind": "field",
+          "name": "max_label_names_per_info_series",
+          "required": false,
+          "desc": "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series)",
+          "fieldValue": null,
+          "fieldDefaultValue": 80,
+          "fieldFlag": "validation.max-label-names-per-info-series",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "max_metadata_length",
           "required": false,
           "desc": "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.",
@@ -4805,6 +4826,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-created-timestamp-zero-ingestion-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "promote_otel_resource_attributes",
+          "required": false,
+          "desc": "Optionally specify OTel resource attributes to promote to labels.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "distributor.otel-promote-resource-attributes",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -10245,6 +10277,17 @@
             },
             {
               "kind": "field",
+              "name": "bigger_out_of_order_blocks_for_old_samples",
+              "required": false,
+              "desc": "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
@@ -12380,6 +12423,67 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
               "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "oauth2",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "client_id",
+                  "required": false,
+                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "client_secret",
+                  "required": false,
+                  "desc": "OAuth2 client secret.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "token_url",
+                  "required": false,
+                  "desc": "Endpoint used to fetch access token.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "scopes",
+                  "required": false,
+                  "desc": "Optional scopes to include with the token request.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
+                  "fieldType": "string"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "proxy_url",
+              "required": false,
+              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.proxy-url",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,

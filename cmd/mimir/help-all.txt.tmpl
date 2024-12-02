@@ -911,6 +911,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -blocks-storage.swift.username string
     	OpenStack Swift username.
+  -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
+    	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
@@ -1283,10 +1285,6 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
-  -cost-attribution.eviction-interval duration
-    	[experimental] Time interval at which inactive cost attributions will be evicted from the counter, so it won't be counted when checking max_cost_attribution_cardinality_per_user. (default 30m0s)
-  -cost-attribution.registry-path string
-    	Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -1393,6 +1391,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
+  -distributor.otel-promote-resource-attributes comma-separated-list-of-strings
+    	[experimental] Optionally specify OTel resource attributes to promote to labels.
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
@@ -2102,19 +2102,21 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.mimir-query-engine.enable-aggregation-operations
-    	[experimental] Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-binary-logical-operations
-    	[experimental] Enable support for binary logical operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
+  -querier.mimir-query-engine.enable-histogram-quantile-function
+    	[experimental] Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalars
-    	[experimental] Enable support for scalars in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-subqueries
-    	[experimental] Enable support for subqueries in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between a vector and a scalar in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two vectors in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+    	[experimental] Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -2823,6 +2825,16 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
+  -ruler.alertmanager-client.oauth.client_id string
+    	OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.
+  -ruler.alertmanager-client.oauth.client_secret string
+    	OAuth2 client secret.
+  -ruler.alertmanager-client.oauth.scopes comma-separated-list-of-strings
+    	Optional scopes to include with the token request.
+  -ruler.alertmanager-client.oauth.token_url string
+    	Endpoint used to fetch access token.
+  -ruler.alertmanager-client.proxy-url string
+    	Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.
   -ruler.alertmanager-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.alertmanager-client.tls-cert-path string
@@ -3153,6 +3165,10 @@ Usage of ./cmd/mimir/mimir:
     	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
+  -server.throughput.latency-cutoff duration
+    	Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.
+  -server.throughput.unit string
+    	Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "total_samples")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
@@ -3301,18 +3317,12 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
-  -validation.cost-attribution-cooldown duration
-    	[experimental] Cooldown period for cost attribution labels. This specifies how long the cost attribution tracker remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown will be extended. Set to 0 to disable the cooldown period.
-  -validation.cost-attribution-labels comma-separated-list-of-strings
-    	[experimental] List of labels used to define the cost attribution. This label will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_received_samples_total, cortex_ingester_active_series and cortex_discarded_samples_attribution_total. Set to an empty string to disable cost attribution.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
-  -validation.max-cost-attribution-cardinality-per-user int
-    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
-  -validation.max-cost-attribution-labels-per-user int
-    	[experimental] Maximum number of cost attribution labels allowed per user. 0 to disable. (default 2)
+  -validation.max-label-names-per-info-series int
+    	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

@@ -86,6 +86,8 @@ The following features are currently experimental:
     - `-distributor.max-request-pool-buffer-size`
   - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
+  - Promote a certain set of OTel resource attributes to labels
+    - `-distributor.promote-otel-resource-attributes`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`

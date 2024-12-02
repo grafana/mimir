@@ -629,7 +629,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.19.1
+        image: grafana/rollout-operator:v0.20.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -678,7 +678,6 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        - --extended=track_sizes
         image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -732,7 +731,6 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        - --extended=track_sizes
         image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -786,7 +784,6 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        - --extended=track_sizes
         image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -840,7 +837,6 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        - --extended=track_sizes
         image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached

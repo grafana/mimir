@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/instrument"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -64,8 +65,8 @@ type fetcher interface {
 	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
 	BufferedBytes() int64
 
-	// BytesPerRecord returns the current estimation for how many bytes each record is.
-	BytesPerRecord() int64
+	// EstimatedBytesPerRecord returns the current estimation for how many bytes each record is.
+	EstimatedBytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -373,7 +374,7 @@ func (r *concurrentFetchers) BufferedBytes() int64 {
 	return r.bufferedFetchedBytes.Load()
 }
 
-func (r *concurrentFetchers) BytesPerRecord() int64 {
+func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
 }
 
@@ -427,7 +428,6 @@ func (r *concurrentFetchers) PollFetches(ctx context.Context) (kgo.Fetches, cont
 
 		f.Records = f.Records[firstUnreturnedRecordIdx:]
 		if len(f.Records) > 0 {
-			instrumentGaps(findGapsInRecords(f.Records, r.lastReturnedOffset), r.metrics.missedRecords, r.logger)
 			r.lastReturnedOffset = f.Records[len(f.Records)-1].Offset
 		}
 
@@ -450,7 +450,6 @@ func instrumentGaps(gaps []offsetRange, records prometheus.Counter, logger log.L
 			"records_offset_gap_end_exclusive", gap.end,
 		)
 		records.Add(float64(gap.numOffsets()))
-		level.Error(logger).Log("msg", "found gap in records", "start", gap.start, "end", gap.end)
 	}
 }
 
@@ -466,14 +465,20 @@ func (g offsetRange) numOffsets() int64 {
 	return g.end - g.start
 }
 
-func findGapsInRecords(records []*kgo.Record, lastReturnedOffset int64) []offsetRange {
+func findGapsInRecords(records kgo.Fetches, lastSeenOffset int64) []offsetRange {
 	var gaps []offsetRange
-	for _, r := range records {
-		if r.Offset != lastReturnedOffset+1 {
-			gaps = append(gaps, offsetRange{start: lastReturnedOffset + 1, end: r.Offset})
-		}
-		lastReturnedOffset = r.Offset
+	if lastSeenOffset < 0 && records.NumRecords() > 0 {
+		// The offset may be -1 when we haven't seen ANY offsets. In this case we don't know what's the first available offset.
+		// So we assume that the first record is the first offset from the ones we're being passed.
+		firstRecord := records.RecordIter().Next()
+		lastSeenOffset = firstRecord.Offset
 	}
+	records.EachRecord(func(r *kgo.Record) {
+		if r.Offset > lastSeenOffset+1 {
+			gaps = append(gaps, offsetRange{start: lastSeenOffset + 1, end: r.Offset})
+		}
+		lastSeenOffset = r.Offset
+	})
 	return gaps
 }
 
@@ -489,7 +494,7 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
 	waitDuration := time.Since(waitStartTime)
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
-	r.metrics.fetchWaitDuration.Observe(waitDuration.Seconds())
+	instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
 
 	var (
 		doubleFetchedBytes             = 0

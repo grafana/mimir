@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 	"time"
 
@@ -265,6 +266,160 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "with service discovery URL, basic auth, and proxy URL",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								BasicAuth: &config_util.BasicAuth{Username: "marco", Password: "hunter2"},
+								ProxyConfig: config_util.ProxyConfig{
+									ProxyURL: config_util.URL{URL: urlMustParse(t, "http://my-proxy.proxy-namespace.svc.cluster.local.:1234")},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with OAuth2",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:     "oauth2-client-id",
+									ClientSecret: "test",
+									TokenURL:     "https://oauth2-token-endpoint.local/token",
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with OAuth2 and optional scopes",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSliceCSV([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:     "oauth2-client-id",
+									ClientSecret: "test",
+									TokenURL:     "https://oauth2-token-endpoint.local/token",
+									Scopes:       []string{"action-1", "action-2"},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "with OAuth2 and proxy_url simultaneously, inheriting proxy",
+			cfg: &Config{
+				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSliceCSV([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			ncfg: &config.Config{
+				AlertingConfig: config.AlertingConfig{
+					AlertmanagerConfigs: []*config.AlertmanagerConfig{
+						{
+							HTTPClientConfig: config_util.HTTPClientConfig{
+								OAuth2: &config_util.OAuth2{
+									ClientID:     "oauth2-client-id",
+									ClientSecret: "test",
+									TokenURL:     "https://oauth2-token-endpoint.local/token",
+									Scopes:       []string{"action-1", "action-2"},
+									ProxyConfig: config_util.ProxyConfig{
+										ProxyURL: config_util.URL{URL: urlMustParse(t, "http://my-proxy.proxy-namespace.svc.cluster.local.:1234")},
+									},
+								},
+								ProxyConfig: config_util.ProxyConfig{
+									ProxyURL: config_util.URL{URL: urlMustParse(t, "http://my-proxy.proxy-namespace.svc.cluster.local.:1234")},
+								},
+							},
+							APIVersion: "v2",
+							Scheme:     "https",
+							PathPrefix: "/alertmanager",
+							ServiceDiscoveryConfigs: discovery.Configs{
+								dnsServiceDiscovery{
+									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									QType: dns.SRV,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "with DNS service discovery and missing scheme",
 			cfg: &Config{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
@@ -285,6 +440,49 @@ func TestBuildNotifierConfig(t *testing.T) {
 			},
 			err: errors.New("invalid DNS service discovery prefix \"dnsserv\""),
 		},
+		{
+			name: "misspelled proxy URL",
+			cfg: &Config{
+				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					ProxyURL: "http://example.local" + string(rune(0x7f)),
+				},
+			},
+			err: errors.New("parse \"http://example.local\\x7f\": net/url: invalid control character in URL"),
+		},
+		{
+			name: "basic auth and oauth provided at the same time",
+			cfg: &Config{
+				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					BasicAuth: util.BasicAuth{
+						Username: "test-user",
+					},
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSliceCSV([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			err: errRulerSimultaneousBasicAuthAndOAuth,
+		},
+		{
+			name: "basic auth via URL and oauth provided at the same time",
+			cfg: &Config{
+				AlertmanagerURL: "http://marco:hunter2@alertmanager.default.svc.cluster.local/alertmanager",
+				Notifier: NotifierConfig{
+					OAuth2: OAuth2Config{
+						ClientID:     "oauth2-client-id",
+						ClientSecret: flagext.SecretWithValue("test"),
+						TokenURL:     "https://oauth2-token-endpoint.local/token",
+						Scopes:       flagext.StringSliceCSV([]string{"action-1", "action-2"}),
+					},
+				},
+			},
+			err: errRulerSimultaneousBasicAuthAndOAuth,
+		},
 	}
 
 	for _, tt := range tests {
@@ -298,4 +496,11 @@ func TestBuildNotifierConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func urlMustParse(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
 }

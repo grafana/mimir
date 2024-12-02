@@ -33,10 +33,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -58,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -80,8 +83,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	)
 
 	type valueResult struct {
-		t int64
-		v float64
+		t  int64
+		v  float64
+		fh *histogram.FloatHistogram
 	}
 
 	type seriesResult struct {
@@ -1509,6 +1513,88 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			`
 			},
 		},
+		"histograms with counter resets in overlapping chunks": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
+							promql.HPoint{T: minT + 7, H: test.GenerateTestFloatHistogram(50)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 2, H: test.GenerateTestFloatHistogram(20)},
+							promql.HPoint{T: minT + 3, H: test.GenerateTestFloatHistogram(60)},
+							promql.HPoint{T: minT + 4, H: test.GenerateTestFloatHistogram(70)},
+							promql.HPoint{T: minT + 5, H: test.GenerateTestFloatHistogram(80)},
+							promql.HPoint{T: minT + 6, H: test.GenerateTestFloatHistogram(90)},
+						),
+						mockHintsResponse(block1, block2),
+						mockStatsResponse(50),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT + 1, fh: test.GenerateTestFloatHistogram(40)},
+						{t: minT + 2, fh: test.GenerateTestFloatHistogram(20)},
+						{t: minT + 3, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(60))},
+						{t: minT + 4, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(70))},
+						{t: minT + 5, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(80))},
+						{t: minT + 6, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(90))},
+						{t: minT + 7, fh: test.GenerateTestFloatHistogram(50)},
+					},
+				},
+			},
+		},
+		"histograms with counter resets with partially matching chunks": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 3, H: test.GenerateTestFloatHistogram(20)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 2, H: test.GenerateTestFloatHistogram(30)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 3, H: test.GenerateTestFloatHistogram(20)},
+						),
+						mockHintsResponse(block1, block2),
+						mockStatsResponse(50),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT + 1, fh: test.GenerateTestFloatHistogram(40)},
+						{t: minT + 2, fh: test.GenerateTestFloatHistogram(30)},
+						{t: minT + 3, fh: test.GenerateTestFloatHistogram(20)},
+					},
+				},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1610,12 +1696,22 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 							it = set.At().Iterator(it)
 							for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-								assert.Equal(t, valType, chunkenc.ValFloat)
-								t, v := it.At()
-								actualValues = append(actualValues, valueResult{
-									t: t,
-									v: v,
-								})
+								switch valType {
+								case chunkenc.ValFloat:
+									t, v := it.At()
+									actualValues = append(actualValues, valueResult{
+										t: t,
+										v: v,
+									})
+								case chunkenc.ValFloatHistogram:
+									t, fh := it.AtFloatHistogram(nil)
+									actualValues = append(actualValues, valueResult{
+										t:  t,
+										fh: fh,
+									})
+								default:
+									require.FailNow(t, "unhandled type")
+								}
 							}
 
 							require.NoError(t, it.Err())
@@ -2830,7 +2926,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
 
 					engine := promql.NewEngine(promql.EngineOpts{
-						Logger:     logger,
+						Logger:     util_log.SlogFromGoKit(logger),
 						Timeout:    10 * time.Second,
 						MaxSamples: 1e6,
 					})
@@ -3130,6 +3226,10 @@ func mockSeriesResponse(lbls labels.Labels, timeMillis int64, value float64) *st
 
 func mockSeriesResponseWithSamples(lbls labels.Labels, samples ...promql.FPoint) *storepb.SeriesResponse {
 	return mockSeriesResponseWithChunks(lbls, createAggrChunkWithSamples(samples...))
+}
+
+func mockSeriesResponseWithFloatHistogramSamples(lbls labels.Labels, samples ...promql.HPoint) *storepb.SeriesResponse {
+	return mockSeriesResponseWithChunks(lbls, createAggrChunkWithFloatHistogramSamples(samples...))
 }
 
 func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChunk) *storepb.SeriesResponse {

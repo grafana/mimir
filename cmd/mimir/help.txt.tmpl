@@ -711,6 +711,14 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
+  -ruler.alertmanager-client.oauth.client_id string
+    	OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.
+  -ruler.alertmanager-client.oauth.client_secret string
+    	OAuth2 client secret.
+  -ruler.alertmanager-client.oauth.scopes comma-separated-list-of-strings
+    	Optional scopes to include with the token request.
+  -ruler.alertmanager-client.oauth.token_url string
+    	Endpoint used to fetch access token.
   -ruler.alertmanager-url string
     	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.
   -ruler.enable-api
@@ -773,6 +781,10 @@ Usage of ./cmd/mimir/mimir:
     	Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
+  -server.throughput.latency-cutoff duration
+    	Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.
+  -server.throughput.unit string
+    	Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "total_samples")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
@@ -849,6 +861,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.max-label-names-per-info-series int
+    	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

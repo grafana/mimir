@@ -53,7 +53,6 @@ memcached {
         max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
         overprovision_factor: 1.05,
         connection_limit: std.toString($._config.cache_frontend_connection_limit),
-        extended_options: ['track_sizes'],
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas),
@@ -68,7 +67,6 @@ memcached {
         max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
         overprovision_factor: 1.05,
         connection_limit: std.toString($._config.cache_index_queries_connection_limit),
-        extended_options: ['track_sizes'],
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas),
@@ -86,7 +84,6 @@ memcached {
         memory_limit_mb: 6 * 1024,
         overprovision_factor: 1.05,
         connection_limit: std.toString($._config.cache_chunks_connection_limit),
-        extended_options: ['track_sizes'],
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas),
@@ -100,7 +97,6 @@ memcached {
         name: 'memcached-metadata',
         max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
         connection_limit: std.toString($._config.cache_metadata_connection_limit),
-        extended_options: ['track_sizes'],
 
         // Metadata cache doesn't need much memory.
         memory_limit_mb: 512,

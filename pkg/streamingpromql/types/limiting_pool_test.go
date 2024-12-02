@@ -28,6 +28,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 		pool.NewBucketedPool(1, 1000, 2, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		FPointSize,
 		false,
+		nil,
 	)
 
 	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested.
@@ -80,6 +81,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 		pool.NewBucketedPool(1, 1000, 2, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		FPointSize,
 		false,
+		nil,
 	)
 
 	// Get a slice from the pool beneath the limit.
@@ -188,6 +190,42 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 		s = s[:2]
 		require.Equal(t, []*histogram.FloatHistogram{nil, nil}, s)
 	})
+}
+
+func TestLimitingPool_Mangling(t *testing.T) {
+	currentEnableManglingReturnedSlices := EnableManglingReturnedSlices
+	defer func() {
+		// Ensure we reset this back to the default state given it applies globally.
+		EnableManglingReturnedSlices = currentEnableManglingReturnedSlices
+	}()
+
+	_, metric := createRejectedMetric()
+	tracker := limiting.NewMemoryConsumptionTracker(0, metric)
+
+	p := NewLimitingBucketedPool(
+		pool.NewBucketedPool(1, 1000, 2, func(size int) []int { return make([]int, 0, size) }),
+		1,
+		false,
+		func(_ int) int { return 123 },
+	)
+
+	// Test with mangling disabled.
+	EnableManglingReturnedSlices = false
+	s, err := p.Get(4, tracker)
+	require.NoError(t, err)
+	s = append(s, 1000, 2000, 3000, 4000)
+
+	p.Put(s, tracker)
+	require.Equal(t, []int{1000, 2000, 3000, 4000}, s, "returned slice should not be mangled when mangling is disabled")
+
+	// Test with mangling enabled.
+	EnableManglingReturnedSlices = true
+	s, err = p.Get(4, tracker)
+	require.NoError(t, err)
+	s = append(s, 1000, 2000, 3000, 4000)
+
+	p.Put(s, tracker)
+	require.Equal(t, []int{123, 123, 123, 123}, s, "returned slice should be mangled when mangling is enabled")
 }
 
 func assertRejectedQueryCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {

@@ -39,6 +39,7 @@ const (
 	MaxEstimatedChunksPerQueryMultiplierFlag  = "querier.max-estimated-fetched-chunks-per-query-multiplier"
 	MaxEstimatedMemoryConsumptionPerQueryFlag = "querier.max-estimated-memory-consumption-per-query"
 	MaxLabelNamesPerSeriesFlag                = "validation.max-label-names-per-series"
+	MaxLabelNamesPerInfoSeriesFlag            = "validation.max-label-names-per-info-series"
 	MaxLabelNameLengthFlag                    = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                   = "validation.max-length-label-value"
 	MaxMetadataLengthFlag                     = "validation.max-metadata-length"
@@ -116,6 +117,7 @@ type Limits struct {
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
 	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxLabelNamesPerInfoSeries                  int                 `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
 	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
 	MaxExemplarsPerSeriesPerRequest             int                 `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
@@ -246,8 +248,9 @@ type Limits struct {
 	AlertmanagerMaxAlertsSizeBytes             int           `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	// OpenTelemetry
-	OTelMetricSuffixesEnabled                bool `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
-	OTelCreatedTimestampZeroIngestionEnabled bool `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
+	OTelMetricSuffixesEnabled                bool                   `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
+	OTelCreatedTimestampZeroIngestionEnabled bool                   `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
+	PromoteOTelResourceAttributes            flagext.StringSliceCSV `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
@@ -272,6 +275,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
+	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
 	f.IntVar(&l.MaxExemplarsPerSeriesPerRequest, "distributor.max-exemplars-per-series-per-request", 0, "Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.")
@@ -284,6 +288,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.")
 	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
+	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -609,6 +614,11 @@ func (o *Overrides) MaxLabelValueLength(userID string) int {
 // MaxLabelNamesPerSeries returns maximum number of label/value pairs timeseries.
 func (o *Overrides) MaxLabelNamesPerSeries(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelNamesPerSeries
+}
+
+// MaxLabelNamesPerInfoSeries returns maximum number of label/value pairs for info timeseries.
+func (o *Overrides) MaxLabelNamesPerInfoSeries(userID string) int {
+	return o.getOverridesForUser(userID).MaxLabelNamesPerInfoSeries
 }
 
 // MaxMetadataLength returns maximum length metadata can be. Metadata refers
@@ -1128,6 +1138,10 @@ func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
 
 func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelCreatedTimestampZeroIngestionEnabled
+}
+
+func (o *Overrides) PromoteOTelResourceAttributes(tenantID string) []string {
+	return o.getOverridesForUser(tenantID).PromoteOTelResourceAttributes
 }
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {

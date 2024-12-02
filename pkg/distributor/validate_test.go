@@ -24,13 +24,18 @@ import (
 )
 
 type validateLabelsCfg struct {
-	maxLabelNamesPerSeries int
-	maxLabelNameLength     int
-	maxLabelValueLength    int
+	maxLabelNamesPerSeries     int
+	maxLabelNamesPerInfoSeries int
+	maxLabelNameLength         int
+	maxLabelValueLength        int
 }
 
 func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
 	return v.maxLabelNamesPerSeries
+}
+
+func (v validateLabelsCfg) MaxLabelNamesPerInfoSeries(_ string) int {
+	return v.maxLabelNamesPerInfoSeries
 }
 
 func (v validateLabelsCfg) MaxLabelNameLength(_ string) int {
@@ -65,6 +70,7 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelValueLength = 25
 	cfg.maxLabelNameLength = 25
 	cfg.maxLabelNamesPerSeries = 2
+	cfg.maxLabelNamesPerInfoSeries = 3
 
 	for _, c := range []struct {
 		metric                   model.Metric
@@ -159,6 +165,31 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
+			// *_info metrics have higher label limits.
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo_info", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			// *_info metrics have higher label limits.
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo_info", "bar": "baz", "blip": "blop", "blap": "blup"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
+				tooManyInfoLabelsMsgFormat,
+				tooManyLabelsArgs(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "foo_info"},
+						{Name: "bar", Value: "baz"},
+						{Name: "blip", Value: "blop"},
+						{Name: "blap", Value: "blup"},
+					},
+					3,
+				)...,
+			),
+		},
+		{
 			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: true,
@@ -207,6 +238,7 @@ func TestValidateLabels(t *testing.T) {
 			cortex_discarded_samples_total{group="custom label",reason="label_value_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_info_series",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 2
 			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1

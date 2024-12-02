@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing/opentracing-go"
@@ -95,8 +96,9 @@ type PartitionReader struct {
 	consumedOffsetWatcher *partitionOffsetWatcher
 	offsetReader          *partitionOffsetReader
 
-	logger log.Logger
-	reg    prometheus.Registerer
+	logger         log.Logger
+	reg            prometheus.Registerer
+	lastSeenOffset int64
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
@@ -163,9 +165,9 @@ func (r *PartitionReader) BufferedBytes() int64 {
 	return fcount + ccount
 }
 
-func (r *PartitionReader) BytesPerRecord() int64 {
+func (r *PartitionReader) EstimatedBytesPerRecord() int64 {
 	if f := r.getFetcher(); f != nil && f != r {
-		return f.BytesPerRecord()
+		return f.EstimatedBytesPerRecord()
 	}
 
 	return 0
@@ -188,6 +190,8 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		return err
 	}
 
+	// lastConsumedOffset could be a special negative offset (e.g. partition start, or partition end).
+	r.lastSeenOffset = lastConsumedOffset
 	// Initialise the last consumed offset only if we've got an actual offset from the consumer group.
 	if lastConsumedOffset >= 0 {
 		r.consumedOffsetWatcher.Notify(lastConsumedOffset)
@@ -375,6 +379,10 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
 
+	// instrument only after we've done all pre-processing of records. We don't expect the set of records to change beyond this point.
+	instrumentGaps(findGapsInRecords(fetches, r.lastSeenOffset), r.metrics.missedRecords, r.logger)
+	r.lastSeenOffset = max(r.lastSeenOffset, lastOffset(fetches))
+
 	err := r.consumeFetches(ctx, fetches)
 	if err != nil {
 		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
@@ -382,6 +390,14 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 	r.enqueueCommit(fetches)
 	r.notifyLastConsumedOffset(fetches)
 	return nil
+}
+
+func lastOffset(fetches kgo.Fetches) int64 {
+	var o int64
+	fetches.EachRecord(func(record *kgo.Record) {
+		o = record.Offset
+	})
+	return o
 }
 
 // processNextFetchesUntilTargetOrMaxLagHonored process records from Kafka until at least the maxLag is honored.
@@ -607,7 +623,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		MaxRetries: 0, // retry forever
 	})
 	defer func(consumeStart time.Time) {
-		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
+		instrument.ObserveWithExemplar(ctx, r.metrics.consumeLatency, time.Since(consumeStart).Seconds())
 	}(time.Now())
 
 	logger := spanlogger.FromContext(ctx, r.logger)
@@ -995,7 +1011,7 @@ type readerMetrics struct {
 
 	bufferedFetchedRecords           prometheus.GaugeFunc
 	bufferedFetchedBytes             prometheus.GaugeFunc
-	bytesPerRecord                   prometheus.Histogram
+	estimatedBytesPerRecord          prometheus.Histogram
 	receiveDelayWhenStarting         prometheus.Observer
 	receiveDelayWhenRunning          prometheus.Observer
 	recordsPerFetch                  prometheus.Histogram
@@ -1013,7 +1029,7 @@ type readerMetrics struct {
 type readerMetricsSource interface {
 	BufferedBytes() int64
 	BufferedRecords() int64
-	BytesPerRecord() int64
+	EstimatedBytesPerRecord() int64
 }
 
 func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource) readerMetrics {
@@ -1047,9 +1063,9 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 			Name: "cortex_ingest_storage_reader_buffered_fetched_bytes",
 			Help: "The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.",
 		}, func() float64 { return float64(metricsSource.BufferedBytes()) }),
-		bytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingest_storage_reader_bytes_per_record",
-			Help:                        "Observations with the current size of records fetched from Kafka. Sampled at 10Hz.",
+		estimatedBytesPerRecord: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_estimated_bytes_per_record",
+			Help:                        "Observations with the current size estimation of records fetched from Kafka. Sampled at 10Hz.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
@@ -1078,7 +1094,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		}),
 		consumeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_records_batch_process_duration_seconds",
-			Help:                        "How long a consumer spent processing a batch of records from Kafka.",
+			Help:                        "How long a consumer spent processing a batch of records from Kafka. This includes retries on server errors.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
@@ -1091,7 +1107,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 	}
 
 	m.Service = services.NewTimerService(100*time.Millisecond, nil, func(context.Context) error {
-		m.bytesPerRecord.Observe(float64(metricsSource.BytesPerRecord()))
+		m.estimatedBytesPerRecord.Observe(float64(metricsSource.EstimatedBytesPerRecord()))
 		return nil
 	}, nil)
 	return m

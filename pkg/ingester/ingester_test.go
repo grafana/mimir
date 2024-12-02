@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -5808,6 +5809,182 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
+}
+
+// This test shows a single ingester returns compacted OOO and in-order chunks separately after compaction, even if they overlap.
+func TestIngester_QueryStream_CounterResets(t *testing.T) {
+	// Create ingester.
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour // Long enough to not be reached during the test.
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+	// Set the OOO window to 30 minutes and enable native histograms.
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow:                model.Duration(30 * time.Minute),
+			OOONativeHistogramsIngestionEnabled: true,
+			NativeHistogramsIngestionEnabled:    true,
+		},
+	}
+	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push series.
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(0), "type", "histogram")
+	histReq := mockHistogramWriteRequest(histLbls, int64(0), 4, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(2), 6, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(4), 8, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(1), 2, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(3), 3, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	// Create a GRPC server used to query back the data.
+	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
+	defer serv.GracefulStop()
+	client.RegisterIngesterServer(serv, i)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
+	require.NoError(t, err)
+	defer c.Close()
+
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+		s, err := c.QueryStream(ctx, &client.QueryRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   5,
+
+			Matchers: []*client.LabelMatcher{{
+				Type:  client.EQUAL,
+				Name:  model.MetricNameLabel,
+				Value: "foo",
+			}},
+		})
+		require.NoError(t, err)
+
+		recvMsgs := 0
+
+		chunks := []client.Chunk{}
+		for {
+			resp, err := s.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+
+			for _, c := range resp.Chunkseries {
+				chunks = append(chunks, c.Chunks...)
+			}
+			recvMsgs++
+		}
+
+		require.Equal(t, recvMsgs, 1)
+		// Sort chunks by time
+		sort.Slice(chunks, func(i, j int) bool {
+			return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+		})
+
+		headers := []chunkenc.CounterResetHeader{}
+		var samples [][]sample
+		for _, c := range chunks {
+			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
+			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
+			require.NoError(t, err)
+
+			s := []sample{}
+			it := chk.Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				ts, h := it.AtHistogram(nil)
+				s = append(s, sample{t: ts, h: h})
+			}
+			samples = append(samples, s)
+			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+		}
+		return headers, samples
+	}
+
+	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
+	actHeaders, actSamples := runQuery()
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
+	require.Equal(t, [][]sample{
+		{
+			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+		},
+		{
+			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+		},
+		{
+			{t: 3, h: histogramWithHint(3, histogram.UnknownCounterReset)},
+			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+		},
+	}, actSamples)
+
+	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
+
+	// Compaction
+	i.compactBlocks(context.Background(), false, 0, nil) // Should be compacted because the TSDB is idle.
+	verifyCompactedHead(t, i, true)
+
+	defer c.Close()
+
+	actHeaders, actSamples = runQuery()
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
+	require.Equal(t, [][]sample{
+		{
+			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+		},
+		{
+			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{t: 3, h: histogramWithHint(3, histogram.NotCounterReset)},
+		},
+	}, actSamples)
+}
+
+func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Histogram {
+	h := util_test.GenerateTestHistogram(idx)
+	h.CounterResetHint = hint
+	return h
+}
+
+type sample struct {
+	t int64
+	h *histogram.Histogram
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {

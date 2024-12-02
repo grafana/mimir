@@ -34,6 +34,7 @@ var (
 	reasonMissingMetricName            = globalerror.MissingMetricName.LabelValue()
 	reasonInvalidMetricName            = globalerror.InvalidMetricName.LabelValue()
 	reasonMaxLabelNamesPerSeries       = globalerror.MaxLabelNamesPerSeries.LabelValue()
+	reasonMaxLabelNamesPerInfoSeries   = globalerror.MaxLabelNamesPerInfoSeries.LabelValue()
 	reasonInvalidLabel                 = globalerror.SeriesInvalidLabel.LabelValue()
 	reasonInvalidLabelValue            = globalerror.SeriesInvalidLabelValue.LabelValue()
 	reasonLabelNameTooLong             = globalerror.SeriesLabelNameTooLong.LabelValue()
@@ -75,10 +76,16 @@ var (
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
 	invalidLabelValueMsgFormat = globalerror.SeriesInvalidLabelValue.Message("received a series with invalid value in label '%.200s': '%.200s' metric: '%.200s'")
 	duplicateLabelMsgFormat    = globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
-	tooManyLabelsMsgFormat     = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
+
+	tooManyLabelsMsgFormat = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
 		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
 		validation.MaxLabelNamesPerSeriesFlag,
 	)
+	tooManyInfoLabelsMsgFormat = globalerror.MaxLabelNamesPerInfoSeries.MessageWithPerTenantLimitConfig(
+		"received an info series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
+		validation.MaxLabelNamesPerInfoSeriesFlag,
+	)
+
 	noMetricNameMsgFormat                 = globalerror.MissingMetricName.Message("received series has no metric name")
 	invalidMetricNameMsgFormat            = globalerror.InvalidMetricName.Message("received a series with invalid metric name: '%.200s'")
 	maxNativeHistogramBucketsMsgFormat    = globalerror.MaxNativeHistogramBuckets.Message("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d")
@@ -127,6 +134,7 @@ type sampleValidationMetrics struct {
 	missingMetricName            *prometheus.CounterVec
 	invalidMetricName            *prometheus.CounterVec
 	maxLabelNamesPerSeries       *prometheus.CounterVec
+	maxLabelNamesPerInfoSeries   *prometheus.CounterVec
 	invalidLabel                 *prometheus.CounterVec
 	invalidLabelValue            *prometheus.CounterVec
 	labelNameTooLong             *prometheus.CounterVec
@@ -143,6 +151,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.missingMetricName.DeletePartialMatch(filter)
 	m.invalidMetricName.DeletePartialMatch(filter)
 	m.maxLabelNamesPerSeries.DeletePartialMatch(filter)
+	m.maxLabelNamesPerInfoSeries.DeletePartialMatch(filter)
 	m.invalidLabel.DeletePartialMatch(filter)
 	m.invalidLabelValue.DeletePartialMatch(filter)
 	m.labelNameTooLong.DeletePartialMatch(filter)
@@ -158,6 +167,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.missingMetricName.DeleteLabelValues(userID, group)
 	m.invalidMetricName.DeleteLabelValues(userID, group)
 	m.maxLabelNamesPerSeries.DeleteLabelValues(userID, group)
+	m.maxLabelNamesPerInfoSeries.DeleteLabelValues(userID, group)
 	m.invalidLabel.DeleteLabelValues(userID, group)
 	m.invalidLabelValue.DeleteLabelValues(userID, group)
 	m.labelNameTooLong.DeleteLabelValues(userID, group)
@@ -174,6 +184,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		missingMetricName:            validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
 		invalidMetricName:            validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
 		maxLabelNamesPerSeries:       validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		maxLabelNamesPerInfoSeries:   validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerInfoSeries),
 		invalidLabel:                 validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
 		invalidLabelValue:            validation.DiscardedSamplesCounter(r, reasonInvalidLabelValue),
 		labelNameTooLong:             validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
@@ -357,6 +368,7 @@ func validateExemplarTimestamp(m *exemplarValidationMetrics, userID string, minT
 // labelValidationConfig helps with getting required config to validate labels.
 type labelValidationConfig interface {
 	MaxLabelNamesPerSeries(userID string) int
+	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
 }
@@ -397,10 +409,19 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	}
 
 	if !skipLabelCountValidation && len(ls) > cfg.MaxLabelNamesPerSeries(userID) {
-		m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
-		cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonMaxLabelNamesPerSeries, ts)
-		metric, ellipsis := getMetricAndEllipsis(ls)
-		return fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
+		if strings.HasSuffix(unsafeMetricName, "_info") {
+			if len(ls) > cfg.MaxLabelNamesPerInfoSeries(userID) {
+				m.maxLabelNamesPerInfoSeries.WithLabelValues(userID, group).Inc()
+				cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonMaxLabelNamesPerInfoSeries, ts)
+				metric, ellipsis := getMetricAndEllipsis(ls)
+				return fmt.Errorf(tooManyInfoLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerInfoSeries(userID), metric, ellipsis)
+			}
+		} else {
+			m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonMaxLabelNamesPerSeries, ts)
+			metric, ellipsis := getMetricAndEllipsis(ls)
+			return fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
+		}
 	}
 
 	maxLabelNameLength := cfg.MaxLabelNameLength(userID)

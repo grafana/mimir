@@ -18,8 +18,8 @@
     autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
 
     autoscaling_distributor_enabled: false,
-    autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
-    autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
+    autoscaling_distributor_min_replicas_per_zone: error 'you must set autoscaling_distributor_min_replicas_per_zone in the _config',
+    autoscaling_distributor_max_replicas_per_zone: error 'you must set autoscaling_distributor_max_replicas_per_zone in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
     autoscaling_distributor_memory_target_utilization: 1,
 
@@ -299,19 +299,6 @@
           )[15m:]
         ) * 1000
       |||
-  ) + (
-    // Ensures that it only returns a result if all expected samples were present for the CPU metric over
-    // the last 15 minutes.
-    |||
-      and
-      count (
-        count_over_time(
-          present_over_time(
-            container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
-          )[15m:1m]
-        ) >= 15
-      )
-    |||
   ),
 
   local memoryHPAQuery(with_ready_trigger) =
@@ -351,10 +338,7 @@
           )
         |||
     ) + (
-      // The first section of the query adds pods that were terminated due to an OOM in the memory calculation.
-      //
-      // The second section of the query ensures that it only returns a result if all expected samples were
-      // present for the memory metric over the last 15 minutes.
+      // Add pods that were terminated due to an OOM in the memory calculation.
       |||
         +
         sum(
@@ -364,14 +348,6 @@
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       |||
     ),
@@ -575,8 +551,8 @@
       container_name='distributor',
       cpu_requests=$.distributor_container.resources.requests.cpu,
       memory_requests=$.distributor_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_distributor_min_replicas,
-      max_replicas=$._config.autoscaling_distributor_max_replicas,
+      min_replicas=$._config.autoscaling_distributor_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_distributor_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
       with_cortex_prefix=true,
