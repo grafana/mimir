@@ -4390,6 +4390,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 1000000]
 
+  # (experimental) When enabled, ingester produces 24h blocks for out-of-order
+  # data that is before the current day, instead of the usual 2h blocks.
+  # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
+  [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
+
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
