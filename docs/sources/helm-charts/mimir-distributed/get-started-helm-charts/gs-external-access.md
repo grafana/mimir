@@ -39,7 +39,7 @@ Verify that an ingress controller is set up in the Kubernetes cluster, for examp
 
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve
    to the external IP address of the Kubernetes cluster.
-   For more information, refer to[Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
+   For more information, refer to [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
 
    > **Note:** On Linux systems, and if it is not possible for you set up local DNS resolution, you can use the `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` command-line flag to define the _`<ingress-host>`_ local address for the `docker` commands in the examples that follow.
 
