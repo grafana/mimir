@@ -51,8 +51,8 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		// "and on()", return the right hand side.
 		return e.RHS, false, nil
 	}
-	// The right hand side is const no empty, so the whole expression is just the
-	// left side.
+	// The right hand side is const and not empty, so the whole expression is
+	// just the left side.
 	return e.LHS, false, nil
 }
 
@@ -71,24 +71,28 @@ func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 		return false, false
 	}
 
+	if vectorAndConst, equals := pruner.isVectorAndNumberEqual(lhs, rhs); vectorAndConst {
+		return true, !equals
+	}
+	if vectorAndConst, equals := pruner.isVectorAndNumberEqual(rhs, lhs); vectorAndConst {
+		return true, !equals
+	}
+	return false, false
+}
+
+// isVectorAndNumberEqual returns whether the lhs is a const vector like
+// "vector(5)"" and the right hand size is a number like "2". Also returns
+// if the values are equal.
+func (pruner *queryPruner) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, bool) {
 	lIsVector, lValue := pruner.isConstVector(lhs)
-	if lIsVector {
-		rIsConst, rValue := pruner.isNumber(rhs)
-		if rIsConst {
-			return true, rValue != lValue
-		}
+	if !lIsVector {
 		return false, false
 	}
-	var lIsConst bool
-	lIsConst, lValue = pruner.isNumber(lhs)
-	if !lIsConst {
+	rIsConst, rValue := pruner.isNumber(rhs)
+	if !rIsConst {
 		return false, false
 	}
-	rIsVector, rValue := pruner.isConstVector(rhs)
-	if !rIsVector {
-		return false, false
-	}
-	return true, lValue != rValue
+	return true, rValue == lValue
 }
 
 func (pruner *queryPruner) isConstVector(expr parser.Expr) (isVector bool, value float64) {
