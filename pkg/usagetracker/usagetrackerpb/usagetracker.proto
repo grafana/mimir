@@ -20,10 +20,10 @@ message TrackSeriesRequest {
   string userID = 1;
 
   // The hashes of the series to track.
-  repeated int64 seriesHashes = 2;
+  repeated uint64 seriesHashes = 2;
 }
 
 message TrackSeriesResponse {
   // The hashes of the series that have been rejected because the tenant is over the limit.
-  repeated int64 rejectedSeriesHashes = 1;
+  repeated uint64 rejectedSeriesHashes = 1;
 }
