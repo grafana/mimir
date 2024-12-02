@@ -1,5 +1,5 @@
 ---
-description: Learn how to enable   access to Grafana Mimir from outside the Kubernetes cluster.
+description: Learn how to enable external access to Grafana Mimir from outside the Kubernetes cluster.
 menuTitle: Enable external access
 title: Enable external access to Grafana Mimir
 weight: 50
