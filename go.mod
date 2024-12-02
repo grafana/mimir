@@ -208,7 +208,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.14.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20241016125027-0a5bcc5aef40
-	github.com/hashicorp/consul/api v1.29.4 // indirect
+	github.com/hashicorp/consul/api v1.30.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
@@ -284,7 +284,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241129100209-5bd08e6831d9
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241201222103-b1e01a8e2b86
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
