@@ -4416,7 +4416,7 @@
           "kind": "field",
           "name": "cost_attribution_cooldown",
           "required": false,
-          "desc": "Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown is extended. Set to 0 to disable the cooldown.",
+          "desc": "Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system will stay in overflow mode and extend the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset will occur once the cardinality falls below the limit.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "validation.cost-attribution-cooldown",
@@ -19689,7 +19689,7 @@
       "required": false,
       "desc": "Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit.",
       "fieldValue": null,
-      "fieldDefaultValue": 1800000000000,
+      "fieldDefaultValue": 1200000000000,
       "fieldFlag": "cost-attribution.eviction-interval",
       "fieldType": "duration",
       "fieldCategory": "experimental"

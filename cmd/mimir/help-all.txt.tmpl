@@ -1286,7 +1286,7 @@ Usage of ./cmd/mimir/mimir:
   -config.file value
     	Configuration file to load.
   -cost-attribution.eviction-interval duration
-    	[experimental] Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit. (default 30m0s)
+    	[experimental] Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit. (default 20m0s)
   -cost-attribution.registry-path string
     	[experimental] Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
@@ -3322,7 +3322,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
-    	[experimental] Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the tracker is still in overflow after this period, the cooldown is extended. Set to 0 to disable the cooldown.
+    	[experimental] Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system will stay in overflow mode and extend the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset will occur once the cardinality falls below the limit.
   -validation.cost-attribution-labels comma-separated-list-of-strings
     	[experimental] List of labels used to define cost attribution. These labels will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_attributed_received_samples_total, cortex_ingester_attributed_active_series, and cortex_attributed_discarded_samples_total. Set to an empty string to disable cost attribution.
   -validation.create-grace-period duration

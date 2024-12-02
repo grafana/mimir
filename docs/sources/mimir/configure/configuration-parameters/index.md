@@ -458,21 +458,21 @@ overrides_exporter:
 # time.
 [common: <common>]
 
-# (advanced) Defines a custom path for the registry. When specified, Mimir will
-# expose cost attribution metrics through this custom path, if not specified,
-# cost attribution metrics won't be exposed.
-# CLI flag: -cost-attribution.registry-path
-[cost_attribution_registry_path: <string> | default = ""]
-
 # (experimental) Enables optimized marshaling of timeseries.
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled
 [timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 
-# (experimental) Time interval at which inactive cost attributions will be
-# evicted from the counter, so it won't be counted when checking
-# max_cost_attribution_cardinality_per_user.
+# (experimental) Time interval at which inactive cost attributions are evicted
+# from the counter, ensuring they are not included in the cost attribution
+# cardinality per user limit.
 # CLI flag: -cost-attribution.eviction-interval
-[cost_attribution_eviction_interval: <duration> | default = 30m]
+[cost_attribution_eviction_interval: <duration> | default = 20m]
+
+# (experimental) Defines a custom path for the registry. When specified, Mimir
+# will expose cost attribution metrics through this custom path, if not
+# specified, cost attribution metrics won't be exposed.
+# CLI flag: -cost-attribution.registry-path
+[cost_attribution_registry_path: <string> | default = ""]
 ```
 
 ### common
@@ -3584,17 +3584,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
-# (experimental) List of labels used to define the cost attribution. This label
+# (experimental) List of labels used to define cost attribution. These labels
 # will be included in the specified distributor and ingester metrics for each
 # write request, allowing them to be distinguished by the label. The label
-# applies to the following metrics: cortex_distributor_received_samples_total,
-# cortex_ingester_active_series and cortex_discarded_samples_attribution_total.
-# Set to an empty string to disable cost attribution.
+# applies to the following metrics:
+# cortex_distributor_attributed_received_samples_total,
+# cortex_ingester_attributed_active_series, and
+# cortex_attributed_discarded_samples_total. Set to an empty string to disable
+# cost attribution.
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 
-# (experimental) Maximum number of cost attribution labels allowed per user. 0
-# to disable.
+# (experimental) Maximum number of cost attribution labels allowed per user. Set
+# to 0 to disable.
 # CLI flag: -validation.max-cost-attribution-labels-per-user
 [max_cost_attribution_labels_per_user: <int> | default = 2]
 
@@ -3603,10 +3605,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-cost-attribution-cardinality-per-user
 [max_cost_attribution_cardinality_per_user: <int> | default = 10000]
 
-# (experimental) Cooldown period for cost attribution labels. This specifies how
-# long the cost attribution tracker remains in overflow before attempting a
-# reset. If the tracker is still in overflow after this period, the cooldown
-# will be extended. Set to 0 to disable the cooldown period.
+# (experimental) Cooldown period for cost attribution labels. Specifies the
+# duration the cost attribution remains in overflow before attempting a reset.
+# If the cardinality remains above the limit after this period, the system will
+# stay in overflow mode and extend the cooldown. Setting this value to 0
+# disables the cooldown, causing the system to continuously check whether the
+# cardinality has dropped below the limit. A reset will occur once the
+# cardinality falls below the limit.
 # CLI flag: -validation.cost-attribution-cooldown
 [cost_attribution_cooldown: <duration> | default = 0s]
 
