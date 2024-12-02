@@ -39,6 +39,8 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -488,6 +490,10 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 		{Desc: "Ring status", Path: "/overrides-exporter/ring"},
 	})
 	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
+	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler
