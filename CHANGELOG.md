@@ -98,7 +98,7 @@
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to always ignore native histograms. #9844
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to treat Infinity consistently. #9844
 * [BUGFIX] Ingester: Chunks could have one unnecessary zero byte at the end. #9844
-* [BUGFIX] OTLP receiver: Preserve colons when generating metric names in suffix adding mode (this mode is always enabled, unless one uses Prometheus as a library). #10075
+* [BUGFIX] OTLP receiver: Preserve colons and combine multiple consecutive underscores into one when generating metric names in suffix adding mode (`-distributor.otel-metric-suffixes-enabled`). #10075
 
 ### Mixin
 
