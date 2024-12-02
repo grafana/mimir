@@ -36,7 +36,7 @@ There are two options:
     contents: "iyJhbGci..."
   ```
 
-- Store the license in a Kubernetes [secret](https://kubernetes.io/docs/concepts/configuration/secret/).
+- Store the license in a Kubernetes [Secret](https://kubernetes.io/docs/concepts/configuration/secret/).
 
   In this case, use the following custom values:
 
