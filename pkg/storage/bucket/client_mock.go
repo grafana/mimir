@@ -24,6 +24,10 @@ type ClientMock struct {
 	mock.Mock
 }
 
+func (m *ClientMock) Provider() objstore.ObjProvider {
+	return objstore.MEMORY
+}
+
 // Upload mocks objstore.Bucket.Upload()
 func (m *ClientMock) Upload(ctx context.Context, name string, r io.Reader) error {
 	args := m.Called(ctx, name, r)
