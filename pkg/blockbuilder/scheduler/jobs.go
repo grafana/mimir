@@ -131,7 +131,7 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	s.jobs[id] = j
 	heap.Push(&s.unassigned, j)
 
-	level.Info(s.logger).Log("msg", "updated job", "job_id", id)
+	level.Info(s.logger).Log("msg", "created job", "job_id", id)
 }
 
 // renewLease renews the lease of the job with the given ID for the given
