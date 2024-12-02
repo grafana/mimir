@@ -157,8 +157,6 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		// noRangeQuery skips the range query (specially made for "string" query as it can't be used for a range query)
 		noRangeQuery bool
 
-		noInstantQuery bool
-
 		// spinOffSubqueries means that subqueries should be rerun on the full range handler
 		spinOffSubqueries bool
 	}{
@@ -166,13 +164,6 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                     `sum_over_time(max(metric_counter)[5m:1m])`,
 			spinOffSubqueries:         true,
 			noRangeQuery:              true,
-			expectedShardedQueries:    1, // max() is sharded
-			expectedSpunOffSubqueries: 1,
-		},
-		"aggregation over subquery (range)": {
-			query:                     `sum_over_time(max(metric_counter)[5m:1m])`,
-			spinOffSubqueries:         true,
-			noInstantQuery:            true,
 			expectedShardedQueries:    1, // max() is sharded
 			expectedSpunOffSubqueries: 1,
 		},
@@ -395,7 +386,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 							[2m:])
 						[10m:])`,
 			expectedShardedQueries:    1,
-			expectedSpunOffSubqueries: 2, // Rewrites the subquery from the instant query + the inner subquery from the spun off range query
+			expectedSpunOffSubqueries: 1,
 			spinOffSubqueries:         true,
 			noRangeQuery:              true,
 		},
@@ -731,13 +722,11 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			reqs := []MetricsQueryRequest{}
-			if !testData.noInstantQuery {
-				reqs = append(reqs, &PrometheusInstantQueryRequest{
-					path:      instantQueryPathSuffix,
-					time:      util.TimeToMillis(end),
-					queryExpr: parseQuery(t, testData.query),
-				})
-			}
+			reqs = append(reqs, &PrometheusInstantQueryRequest{
+				path:      instantQueryPathSuffix,
+				time:      util.TimeToMillis(end),
+				queryExpr: parseQuery(t, testData.query),
+			})
 			if !testData.noRangeQuery {
 				reqs = append(reqs, &PrometheusRangeQueryRequest{
 					path:      queryRangePathSuffix,
