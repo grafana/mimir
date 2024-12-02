@@ -241,8 +241,8 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 	}
 
 	streamReader := createTestStreamReader([]client.QueryStreamSeriesChunks{
-		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4))},
-		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3))},
+		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4), false)},
+		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3), false)},
 	})
 
 	d := &mockDistributor{}
@@ -251,11 +251,11 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1)),
+					Chunks: convertToChunks(t, samplesToInterface(s1), false),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1)),
+					Chunks: convertToChunks(t, samplesToInterface(s1), false),
 				},
 			},
 
@@ -377,11 +377,11 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1)),
+					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1)),
+					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
 				},
 			},
 
@@ -476,11 +476,11 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 			Chunkseries: []client.TimeSeriesChunk{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...)),
+					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...)),
+					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
 				},
 			},
 
@@ -518,6 +518,123 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
+}
+
+func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
+	makeHistogram := func(ts, val int64, hint mimirpb.Histogram_ResetHint) mimirpb.Histogram {
+		return mimirpb.Histogram{
+			Count: &mimirpb.Histogram_CountInt{CountInt: uint64(val)},
+			Sum:   float64(val),
+			PositiveSpans: []mimirpb.BucketSpan{
+				{Offset: 0, Length: 1},
+			},
+			PositiveDeltas: []int64{val},
+			Timestamp:      ts,
+			ResetHint:      hint,
+		}
+	}
+
+	for _, tc := range []struct {
+		name                 string
+		chunks               []client.Chunk
+		queryStart, queryEnd int64
+		expectedSamples      []mimirpb.Histogram
+	}{
+		{
+			// This might happen is when an in-order chunk and OOO chunk are returned from the same ingester.
+			name: "overlapping chunks",
+			chunks: append(
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(700, 50, mimirpb.Histogram_NO),
+				}), false),
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(200, 20, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(300, 60, mimirpb.Histogram_NO),
+					makeHistogram(400, 70, mimirpb.Histogram_NO),
+					makeHistogram(500, 80, mimirpb.Histogram_NO),
+					makeHistogram(600, 90, mimirpb.Histogram_NO),
+				}), false)...),
+			expectedSamples: []mimirpb.Histogram{
+				makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(200, 20, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(300, 60, mimirpb.Histogram_NO),
+				makeHistogram(400, 70, mimirpb.Histogram_NO),
+				makeHistogram(500, 80, mimirpb.Histogram_NO),
+				makeHistogram(600, 90, mimirpb.Histogram_NO),
+				makeHistogram(700, 50, mimirpb.Histogram_UNKNOWN),
+			},
+		},
+		{
+			// This might happen when one of the ingesters hasn't ingested all the samples.
+			name: "duplicate samples in separate chunks",
+			chunks: append(
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(300, 20, mimirpb.Histogram_NO),
+				}), true),
+				convertToChunks(t, histogramsToInterface([]mimirpb.Histogram{
+					makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+					makeHistogram(200, 30, mimirpb.Histogram_NO),
+					makeHistogram(300, 20, mimirpb.Histogram_NO),
+				}), true)...),
+			expectedSamples: []mimirpb.Histogram{
+				makeHistogram(100, 40, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(200, 30, mimirpb.Histogram_UNKNOWN),
+				makeHistogram(300, 20, mimirpb.Histogram_UNKNOWN),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			responseTypes := map[string]struct {
+				combinedResponse client.CombinedQueryStreamResponse
+			}{
+				"chunkseries": {
+					combinedResponse: client.CombinedQueryStreamResponse{
+						Chunkseries: []client.TimeSeriesChunk{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+								Chunks: tc.chunks,
+							},
+						},
+					},
+				},
+				"streamingseries": {
+					combinedResponse: client.CombinedQueryStreamResponse{
+						StreamingSeries: []client.StreamingSeries{
+							{
+								Labels: labels.FromStrings(labels.MetricName, "one"),
+								Sources: []client.StreamingSeriesSource{
+									{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+										{SeriesIndex: 0, Chunks: tc.chunks},
+									})},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			for responseName, responseType := range responseTypes {
+				t.Run(responseName, func(t *testing.T) {
+					d := &mockDistributor{}
+					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
+
+					ctx := user.InjectOrgID(context.Background(), "0")
+					queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
+					require.NoError(t, err)
+
+					seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: tc.queryStart, End: tc.queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+					require.True(t, seriesSet.Next())
+					require.NoError(t, seriesSet.Err())
+
+					verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(tc.expectedSamples))
+					require.False(t, seriesSet.Next())
+				})
+			}
+		})
+	}
 }
 
 func TestDistributorQuerier_LabelNames(t *testing.T) {
@@ -652,21 +769,23 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 	require.Nil(t, it.Err())
 }
 
-func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
+func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []client.Chunk {
 	var (
 		overflow chunk.EncodedChunk
+		enc      chunk.Encoding
+		ts       int64
 		err      error
 	)
 
 	chunks := []chunk.Chunk{}
-	ensureChunk := func(enc chunk.Encoding, ts int64) {
-		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != enc {
-			c, err := chunk.NewForEncoding(enc)
+	ensureChunk := func(reqEnc chunk.Encoding, reqTs int64) {
+		enc = reqEnc
+		ts = reqTs
+		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != reqEnc {
+			c, err := chunk.NewForEncoding(reqEnc)
 			require.NoError(t, err)
-			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts)))
-			return
+			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(reqTs), model.Time(reqTs)))
 		}
-		chunks[len(chunks)-1].Through = model.Time(ts)
 	}
 
 	for _, s := range samples {
@@ -686,7 +805,18 @@ func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 			t.Errorf("convertToChunks - unhandled type: %T", s)
 		}
 		require.NoError(t, err)
-		require.Nil(t, overflow)
+		if overflow == nil {
+			chunks[len(chunks)-1].Through = model.Time(ts)
+			continue
+		}
+		if !allowOverflow {
+			require.Nil(t, overflow)
+			continue
+		}
+		c, err := chunk.NewForEncoding(enc)
+		require.NoError(t, err)
+		chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts)))
+		chunks[len(chunks)-1].Data = overflow
 	}
 
 	clientChunks, err := client.ToChunks(chunks)

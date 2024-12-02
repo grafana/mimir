@@ -99,10 +99,10 @@ func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 
 // RequireHistogramEqual requires the two histograms to be equal.
 func RequireHistogramEqual(t require.TestingT, expected, actual *histogram.Histogram, msgAndArgs ...interface{}) {
-	require.EqualValues(t, expected, actual, msgAndArgs)
+	require.EqualValues(t, expected, actual, msgAndArgs...)
 }
 
 // RequireFloatHistogramEqual requires the two float histograms to be equal.
 func RequireFloatHistogramEqual(t require.TestingT, expected, actual *histogram.FloatHistogram, msgAndArgs ...interface{}) {
-	require.EqualValues(t, expected, actual, msgAndArgs)
+	require.EqualValues(t, expected, actual, msgAndArgs...)
 }
