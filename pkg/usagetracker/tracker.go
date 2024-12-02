@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package usagetracker
 
 import (
@@ -43,8 +45,6 @@ func (t *UsageTracker) stop(_ error) error {
 func (t *UsageTracker) run(ctx context.Context) error {
 	level.Info(t.logger).Log("msg", "Usage tracker service is running")
 
-	select {
-	case <-ctx.Done():
-		return nil
-	}
+	<-ctx.Done()
+	return nil
 }
