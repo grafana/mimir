@@ -1721,6 +1721,10 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 // TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
 // labels query request multiple times does not lose relevant information about the original request.
 func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
+
+	defaultHeaders := httpHeadersToProm(http.Header{
+		"Accept": {"application/json"},
+	})
 	codec := newTestPrometheusCodec().(prometheusCodec)
 	for _, tc := range []struct {
 		name     string
@@ -1731,18 +1735,20 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			name:     "label names - minimal",
 			queryURL: "/api/v1/labels?end=1708588800&start=1708502400",
 			request: &PrometheusLabelNamesQueryRequest{
-				Path:  "/api/v1/labels",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/labels",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 			},
 		},
 		{
 			name:     "label names - all",
 			queryURL: "/api/v1/labels?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusLabelNamesQueryRequest{
-				Path:  "/api/v1/labels",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/labels",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 				LabelMatcherSets: []string{
 					"go_goroutines{container=~\"quer.*\"}",
 					"go_goroutines{container!=\"query-scheduler\"}",
@@ -1755,6 +1761,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			queryURL: "/api/v1/label/job/values?end=1708588800&start=1708502400",
 			request: &PrometheusLabelValuesQueryRequest{
 				Path:      "/api/v1/label/job/values",
+				Headers:   defaultHeaders,
 				LabelName: "job",
 				Start:     1708502400000,
 				End:       1708588800000,
@@ -1765,6 +1772,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			queryURL: "/api/v1/label/job/values?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusLabelValuesQueryRequest{
 				Path:      "/api/v1/label/job/values",
+				Headers:   defaultHeaders,
 				LabelName: "job",
 				Start:     1708502400000,
 				End:       1708588800000,
@@ -1779,9 +1787,10 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			name:     "series - minimal",
 			queryURL: "/api/v1/series?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusSeriesQueryRequest{
-				Path:  "/api/v1/series",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/series",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 				LabelMatcherSets: []string{
 					"go_goroutines{container!=\"query-scheduler\"}",
 				},
@@ -1791,9 +1800,10 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			name:     "series - all",
 			queryURL: "/api/v1/series?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusSeriesQueryRequest{
-				Path:  "/api/v1/series",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/series",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 				LabelMatcherSets: []string{
 					"go_goroutines{container=~\"quer.*\"}",
 					"go_goroutines{container!=\"query-scheduler\"}",
