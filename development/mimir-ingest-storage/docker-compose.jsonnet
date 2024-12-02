@@ -4,6 +4,7 @@ std.manifestYamlDoc({
     self.write +
     self.read +
     self.backend +
+    self.usage_tracker +
     self.nginx +
     self.minio +
     self.grafana +
@@ -86,6 +87,14 @@ std.manifestYamlDoc({
       name: 'mimir-backend-2',
       target: 'backend',
       publishedHttpPort: 8007,
+    }),
+  },
+
+  usage_tracker:: {
+    'usage-tracker': mimirService({
+      name: 'usage-tracker',
+      target: 'usage-tracker',
+      publishedHttpPort: 8008,
     }),
   },
 

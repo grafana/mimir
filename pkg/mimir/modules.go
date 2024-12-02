@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
+	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -102,6 +103,7 @@ const (
 	Vault                           string = "vault"
 	TenantFederation                string = "tenant-federation"
 	UsageStats                      string = "usage-stats"
+	UsageTracker                    string = "usage-tracker"
 	BlockBuilder                    string = "block-builder"
 	BlockBuilderScheduler           string = "block-builder-scheduler"
 	ContinuousTest                  string = "continuous-test"
@@ -1085,6 +1087,11 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	return t.UsageStatsReporter, nil
 }
 
+func (t *Mimir) initUsageTracker() (services.Service, error) {
+	t.UsageTracker = usagetracker.NewUsageTracker(t.Overrides, util_log.Logger, t.Registerer)
+	return t.UsageTracker, nil
+}
+
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.Cfg.BlockBuilder.BlocksStorage = t.Cfg.BlocksStorage
@@ -1156,6 +1163,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageTracker, t.initUsageTracker)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
@@ -1193,6 +1201,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                       {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:                {Queryable},
+		UsageTracker:                    {API, Overrides},
 		BlockBuilder:                    {API, Overrides},
 		BlockBuilderScheduler:           {API},
 		ContinuousTest:                  {API},
