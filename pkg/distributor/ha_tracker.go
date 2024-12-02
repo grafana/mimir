@@ -21,6 +21,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -58,6 +59,77 @@ func ProtoReplicaDescFactory() proto.Message {
 // NewReplicaDesc returns an empty *distributor.ReplicaDesc.
 func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
+}
+
+// Merge merges other ReplicaDesc into this one.
+// The decision is made based on the ReceivedAt timestamp, if the Replica name is the same and at the ElectedAt if the
+// Replica name is different
+func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
+	return r.mergeWithTime(other)
+}
+
+func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.Mergeable, error) {
+	if mergeable == nil {
+		return nil, nil
+	}
+
+	other, ok := mergeable.(*ReplicaDesc)
+	if !ok {
+		return nil, fmt.Errorf("expected *distributor.ReplicaDesc, got %T", mergeable)
+	}
+
+	if other == nil {
+		return nil, nil
+	}
+
+	if other.Replica == r.Replica {
+		// Keeping the one with the most recent receivedAt timestamp
+		if other.ReceivedAt > r.ReceivedAt {
+			*r = *other
+		} else if r.ReceivedAt == other.ReceivedAt && r.DeletedAt == 0 && other.DeletedAt != 0 {
+			*r = *other
+		}
+	} else {
+		// keep the most recent ElectedAt to reach consistency
+		if other.ElectedAt > r.ElectedAt {
+			*r = *other
+		} else if other.ElectedAt == r.ElectedAt {
+			// if the timestamps are equal we compare ReceivedAt
+			if other.ReceivedAt > r.ReceivedAt {
+				*r = *other
+			}
+		}
+	}
+
+	// No changes
+	if *r != *other {
+		return nil, nil
+	}
+
+	out := NewReplicaDesc()
+	*out = *r
+	return out, nil
+}
+
+// MergeContent describes content of this Mergeable.
+// Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains. By doing this we choose
+// to not make use of the subset invalidation feature of memberlist
+func (r *ReplicaDesc) MergeContent() []string {
+	result := []string(nil)
+	if len(r.Replica) != 0 {
+		result = append(result, r.String())
+	}
+	return result
+}
+
+// RemoveTombstones is noOp because we will handle replica deletions outside the context of memberlist.
+func (r *ReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
+	return
+}
+
+// Clone returns a deep copy of the ReplicaDesc.
+func (r *ReplicaDesc) Clone() memberlist.Mergeable {
+	return proto.Clone(r).(*ReplicaDesc)
 }
 
 // HATrackerConfig contains the configuration required to
