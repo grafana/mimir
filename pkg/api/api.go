@@ -493,15 +493,23 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 }
 
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
+	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
+}
+
+func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
 		{Desc: "Instance ring status", Path: "/usage-tracker/instance-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/instance-ring", instanceRingHandler, false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTrackerPartitionRing(partitionRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
 		{Desc: "Partition ring status", Path: "/usage-tracker/partition-ring"},
 	})
 
-	a.RegisterRoute("/usage-tracker/instance-ring", http.HandlerFunc(t.InstanceRingHandler), false, true, "GET", "POST")
-	a.RegisterRoute("/usage-tracker/partition-ring", http.HandlerFunc(t.PartitionRingHandler), false, true, "GET", "POST")
-
-	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
+	a.RegisterRoute("/usage-tracker/partition-ring", partitionRingHandler, false, true, "GET", "POST")
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler

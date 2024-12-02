@@ -387,6 +387,8 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -distributor.usage-tracker-client.prefer-availability-zone string
+    	Preferred availability zone to query usage-trackers.
   -h
     	Print basic help.
   -help
@@ -861,6 +863,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.enabled
+    	True to enable the usage-tracker.
   -usage-tracker.idle-timeout duration
     	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.
   -usage-tracker.partition-ring.consul.hostname string

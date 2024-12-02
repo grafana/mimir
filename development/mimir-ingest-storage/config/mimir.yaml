@@ -94,6 +94,9 @@ overrides_exporter:
     enabled: true
     wait_stability_min_duration: 30s
 
+usage_tracker:
+  enabled: true
+
 limits:
   native_histograms_ingestion_enabled: true
   ingestion_rate: 100000

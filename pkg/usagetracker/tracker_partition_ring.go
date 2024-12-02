@@ -50,12 +50,12 @@ func (cfg *PartitionRingConfig) ToLifecyclerConfig(partitionID int32, instanceID
 	}
 }
 
-func NewPartitionRingKVClient(cfg PartitionRingConfig, logger log.Logger, registerer prometheus.Registerer) (kv.Client, error) {
+func NewPartitionRingKVClient(cfg PartitionRingConfig, component string, logger log.Logger, registerer prometheus.Registerer) (kv.Client, error) {
 	if cfg.KVStore.Mock != nil {
 		return cfg.KVStore.Mock, nil
 	}
 
-	client, err := kv.NewClient(cfg.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
+	client, err := kv.NewClient(cfg.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-"+component), logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating KV store for usage-tracker partition ring")
 	}

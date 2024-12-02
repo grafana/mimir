@@ -68,7 +68,7 @@ type UsageTrackerClient struct {
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
 }
 
-func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.PartitionInstanceRing, instanceRing *ring.Ring, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
+func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.PartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
 	c := &UsageTrackerClient{
 		cfg:                    clientCfg,
 		logger:                 logger,
