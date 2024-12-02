@@ -71,10 +71,10 @@ func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 		return false, false
 	}
 
-	if vectorAndConst, equals := pruner.isVectorAndNumberEqual(lhs, rhs); vectorAndConst {
+	if vectorAndNumber, equals := pruner.isVectorAndNumberEqual(lhs, rhs); vectorAndNumber {
 		return true, !equals
 	}
-	if vectorAndConst, equals := pruner.isVectorAndNumberEqual(rhs, lhs); vectorAndConst {
+	if vectorAndNumber, equals := pruner.isVectorAndNumberEqual(rhs, lhs); vectorAndNumber {
 		return true, !equals
 	}
 	return false, false
