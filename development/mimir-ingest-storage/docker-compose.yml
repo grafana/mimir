@@ -375,3 +375,33 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
+  "usage-tracker":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=usage-tracker"
+    "hostname": "usage-tracker"
+    "image": "mimir"
+    "ports":
+      - "8008:8080"
+      - "11008:11008"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
