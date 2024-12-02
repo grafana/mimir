@@ -106,9 +106,17 @@ func From(buf []uint64) *BitSet {
 	return FromWithLength(uint(len(buf))*64, buf)
 }
 
-// FromWithLength constructs from an array of words and length.
-func FromWithLength(len uint, set []uint64) *BitSet {
-	return &BitSet{len, set}
+// FromWithLength constructs from an array of words and length in bits.
+// This function is for advanced users, most users should prefer
+// the From function.
+// As a user of FromWithLength, you are responsible for ensuring
+// that the length is correct: your slice should have length at
+// least (length+63)/64 in 64-bit words.
+func FromWithLength(length uint, set []uint64) *BitSet {
+	if len(set) < wordsNeeded(length) {
+		panic("BitSet.FromWithLength: slice is too short")
+	}
+	return &BitSet{length, set}
 }
 
 // Bytes returns the bitset as array of 64-bit words, giving direct access to the internal representation.
@@ -137,7 +145,10 @@ func wordsIndex(i uint) uint {
 	return i & (wordSize - 1)
 }
 
-// New creates a new BitSet with a hint that length bits will be required
+// New creates a new BitSet with a hint that length bits will be required.
+// The memory usage is at least length/8 bytes.
+// In case of allocation failure, the function will return a BitSet with zero
+// capacity.
 func New(length uint) (bset *BitSet) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -154,6 +165,19 @@ func New(length uint) (bset *BitSet) {
 	}
 
 	return bset
+}
+
+// MustNew creates a new BitSet with the given length bits.
+// It panics if length exceeds the possible capacity or by a lack of memory.
+func MustNew(length uint) (bset *BitSet) {
+	if length >= Cap() {
+		panic("You are exceeding the capacity")
+	}
+
+	return &BitSet{
+		length,
+		make([]uint64, wordsNeeded(length)), // may panic on lack of memory
+	}
 }
 
 // Cap returns the total possible capacity, or number of bits
@@ -195,6 +219,26 @@ func (b *BitSet) Test(i uint) bool {
 		return false
 	}
 	return b.set[i>>log2WordSize]&(1<<wordsIndex(i)) != 0
+}
+
+// GetWord64AtBit retrieves bits i through i+63 as a single uint64 value
+func (b *BitSet) GetWord64AtBit(i uint) uint64 {
+	firstWordIndex := int(i >> log2WordSize)
+	subWordIndex := wordsIndex(i)
+
+	// The word that the index falls within, shifted so the index is at bit 0
+	var firstWord, secondWord uint64
+	if firstWordIndex < len(b.set) {
+		firstWord = b.set[firstWordIndex] >> subWordIndex
+	}
+
+	// The next word, masked to only include the necessary bits and shifted to cover the
+	// top of the word
+	if (firstWordIndex + 1) < len(b.set) {
+		secondWord = b.set[firstWordIndex+1] << uint64(wordSize-subWordIndex)
+	}
+
+	return firstWord | secondWord
 }
 
 // Set bit i to 1, the capacity of the bitset is automatically
@@ -558,6 +602,56 @@ func (b *BitSet) NextClear(i uint) (uint, bool) {
 	return 0, false
 }
 
+// PreviousSet returns the previous set bit from the specified index,
+// including possibly the current index
+// along with an error code (true = valid, false = no bit found i.e. all bits are clear)
+func (b *BitSet) PreviousSet(i uint) (uint, bool) {
+	x := int(i >> log2WordSize)
+	if x >= len(b.set) {
+		return 0, false
+	}
+	w := b.set[x]
+	// Clear the bits above the index
+	w = w & ((1 << (wordsIndex(i) + 1)) - 1)
+	if w != 0 {
+		return uint(x<<log2WordSize) + len64(w) - 1, true
+	}
+	for x--; x >= 0; x-- {
+		w = b.set[x]
+		if w != 0 {
+			return uint(x<<log2WordSize) + len64(w) - 1, true
+		}
+	}
+	return 0, false
+}
+
+// PreviousClear returns the previous clear bit from the specified index,
+// including possibly the current index
+// along with an error code (true = valid, false = no clear bit found i.e. all bits are set)
+func (b *BitSet) PreviousClear(i uint) (uint, bool) {
+	x := int(i >> log2WordSize)
+	if x >= len(b.set) {
+		return 0, false
+	}
+	w := b.set[x]
+	// Flip all bits and find the highest one bit
+	w = ^w
+	// Clear the bits above the index
+	w = w & ((1 << (wordsIndex(i) + 1)) - 1)
+	if w != 0 {
+		return uint(x<<log2WordSize) + len64(w) - 1, true
+	}
+
+	for x--; x >= 0; x-- {
+		w = b.set[x]
+		w = ^w
+		if w != 0 {
+			return uint(x<<log2WordSize) + len64(w) - 1, true
+		}
+	}
+	return 0, false
+}
+
 // ClearAll clears the entire BitSet.
 // It does not free the memory.
 func (b *BitSet) ClearAll() *BitSet {
@@ -586,7 +680,8 @@ func (b *BitSet) wordCount() int {
 	return wordsNeededUnbound(b.length)
 }
 
-// Clone this BitSet
+// Clone this BitSet, returning a new BitSet that has the same bits set.
+// In case of allocation failure, the function will return an empty BitSet.
 func (b *BitSet) Clone() *BitSet {
 	c := New(b.length)
 	if b.set != nil { // Clone should not modify current object
@@ -744,6 +839,7 @@ func sortByLength(a *BitSet, b *BitSet) (ap *BitSet, bp *BitSet) {
 
 // Intersection of base set and other set
 // This is the BitSet equivalent of & (and)
+// In case of allocation failure, the function will return an empty BitSet.
 func (b *BitSet) Intersection(compare *BitSet) (result *BitSet) {
 	panicIfNull(b)
 	panicIfNull(compare)
@@ -918,6 +1014,7 @@ func (b *BitSet) cleanLastWord() {
 }
 
 // Complement computes the (local) complement of a bitset (up to length bits)
+// In case of allocation failure, the function will return an empty BitSet.
 func (b *BitSet) Complement() (result *BitSet) {
 	panicIfNull(b)
 	result = New(b.length)

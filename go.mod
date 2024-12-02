@@ -107,6 +107,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
 	github.com/at-wat/mqtt-go v0.19.4 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
+	github.com/bits-and-blooms/bloom/v3 v3.7.0 // indirect
 	github.com/ebitengine/purego v0.8.1 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
@@ -168,7 +169,7 @@ require (
 	github.com/aws/smithy-go v1.11.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.14.3 // indirect
+	github.com/bits-and-blooms/bitset v1.17.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/coreos/go-semver v0.3.0 // indirect
