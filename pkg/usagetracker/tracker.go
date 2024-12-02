@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 // SPDX-License-Identifier: AGPL-3.0-only
 
-=======
->>>>>>> 49ab609d27 (Add usage-tracker module)
 package usagetracker
 
 import (
