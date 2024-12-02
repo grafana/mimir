@@ -1294,11 +1294,7 @@ func TestSubqueries(t *testing.T) {
 				require.NoError(t, err)
 
 				res := qry.Exec(context.Background())
-<<<<<<< HEAD
-				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
-=======
 				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
->>>>>>> origin/main
 				qry.Close()
 			}
 
