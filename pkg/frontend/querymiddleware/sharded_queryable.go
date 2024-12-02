@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -119,9 +118,6 @@ func (q *shardedQuerier) SelectAggregatedSubquery(ctx context.Context, hints *st
 		return nil, false
 	}
 
-	if q.logger != nil {
-		level.Info(q.logger).Log("msg", "handling aggregated subquery", "expr", aggregatedSubqueryExpr)
-	}
 	parsedExpr, err := parser.ParseExpr(aggregatedSubqueryExpr)
 	if err != nil {
 		return storage.ErrSeriesSet(err), true
