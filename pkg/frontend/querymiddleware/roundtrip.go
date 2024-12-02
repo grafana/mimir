@@ -491,12 +491,16 @@ func NewQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripp
 		if details := QueryDetailsFromContext(req.Context()); details != nil {
 			if startMs, _ := util.ParseTime(params.Get("start")); startMs != 0 {
 				details.Start = time.UnixMilli(startMs)
-				details.MinT = details.Start
+				if details.Start.Before(details.MinT) {
+					details.MinT = details.Start
+				}
 			}
 
 			if endMs, _ := util.ParseTime(params.Get("end")); endMs != 0 {
 				details.End = time.UnixMilli(endMs)
-				details.MaxT = details.End
+				if details.End.After(details.MaxT) {
+					details.MaxT = details.End
+				}
 			}
 		}
 		return next.RoundTrip(req)
