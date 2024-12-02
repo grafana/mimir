@@ -235,8 +235,21 @@ func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 	return offsets
 }
 
+func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
+	cp := make(kadm.Offsets)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.committed.Each(func(o kadm.Offset) {
+		cp.Add(o)
+	})
+	return cp
+}
+
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
-	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, s.committed)
+	offsets := s.snapCommitted()
+	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
 }
 
 // AssignJob returns an assigned job for the given workerID.
