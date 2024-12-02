@@ -90,7 +90,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
 	golang.org/x/term v0.26.0
-	google.golang.org/api v0.206.0
+	google.golang.org/api v0.209.0
 	google.golang.org/protobuf v1.35.2
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
@@ -275,7 +275,7 @@ require (
 	golang.org/x/sys v0.27.0 // indirect
 	golang.org/x/text v0.20.0 // indirect
 	golang.org/x/tools v0.27.0 // indirect
-	google.golang.org/genproto v0.0.0-20241104194629-dd2ea8efbc28 // indirect
+	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241118233622-e639e219e697
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
