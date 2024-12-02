@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
+	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -108,6 +109,7 @@ const (
 	StoreQueryable                   string = "store-queryable"
 	TenantFederation                 string = "tenant-federation"
 	UsageStats                       string = "usage-stats"
+	UsageTracker                     string = "usage-tracker"
 	Vault                            string = "vault"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
@@ -1124,6 +1126,11 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	return t.UsageStatsReporter, nil
 }
 
+func (t *Mimir) initUsageTracker() (services.Service, error) {
+	t.UsageTracker = usagetracker.NewUsageTracker(t.Overrides, util_log.Logger, t.Registerer)
+	return t.UsageTracker, nil
+}
+
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.Cfg.BlockBuilder.BlocksStorage = t.Cfg.BlocksStorage
@@ -1201,6 +1208,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageTracker, t.initUsageTracker)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 
 	mm.RegisterModule(Write, nil)
@@ -1242,6 +1250,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
+		UsageTracker:                     {API, Overrides},
 
 		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		Read:    {QueryFrontend, Querier},

@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
+	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -743,6 +744,7 @@ type Mimir struct {
 	ActivityTracker                  *activitytracker.ActivityTracker
 	Vault                            *vault.Vault
 	UsageStatsReporter               *usagestats.Reporter
+	UsageTracker                     *usagetracker.UsageTracker
 	BlockBuilder                     *blockbuilder.BlockBuilder
 	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
 	ContinuousTestManager            *continuoustest.Manager

@@ -4,6 +4,7 @@ std.manifestYamlDoc({
     self.write +
     self.read +
     self.backend +
+    self.usage_tracker +
     self.nginx +
     self.minio +
     self.grafana +
@@ -95,6 +96,14 @@ std.manifestYamlDoc({
       name: 'mimir-block-builder-1',
       target: 'block-builder',
       publishedHttpPort: 8008,
+    }),
+  },
+
+  usage_tracker:: {
+    'usage-tracker': mimirService({
+      name: 'usage-tracker',
+      target: 'usage-tracker',
+      publishedHttpPort: 8009,
     }),
   },
 
