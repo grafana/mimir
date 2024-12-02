@@ -98,7 +98,7 @@ type mockSchedulerClient struct {
 	updateCalls int
 }
 
-func (m *mockSchedulerClient) AssignJob(_ context.Context, req *AssignJobRequest, opts ...grpc.CallOption) (*AssignJobResponse, error) {
+func (m *mockSchedulerClient) AssignJob(_ context.Context, _ *AssignJobRequest, _ ...grpc.CallOption) (*AssignJobResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.assignCalls++
@@ -113,7 +113,7 @@ func (m *mockSchedulerClient) AssignJob(_ context.Context, req *AssignJobRequest
 	}, nil
 }
 
-func (m *mockSchedulerClient) UpdateJob(_ context.Context, req *UpdateJobRequest, opts ...grpc.CallOption) (*UpdateJobResponse, error) {
+func (m *mockSchedulerClient) UpdateJob(_ context.Context, _ *UpdateJobRequest, _ ...grpc.CallOption) (*UpdateJobResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.updateCalls++
