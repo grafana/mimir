@@ -303,8 +303,8 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 
 func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark minutes) {
 	// Work on the stack.
-	// If we have 1e9 series, 33% of that churning every 2 hours, that's ~45K per shard.
-	// This is 512K on the stack, which is fine, but it saves lots of allocations.
+	// If we have 1e9 series, 33% of that churning every 2 hours, that's ~21K per shard (1e9/3/120/128).
+	// This is ~168K on the stack, which is fine, but it saves lots of allocations.
 	// This should only make the stack grow once.
 	var stackSeries [1 << 16]uint64
 	candidates := stackSeries[:0]
