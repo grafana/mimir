@@ -314,11 +314,6 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 	return ctx, queriers, nil
 }
 func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *storage.SelectHints, matchers ...*labels.Matcher) (storage.SeriesSet, bool) {
-	sendBackURL := mq.cfg.SendBackSubqueries
-	if sendBackURL == "" {
-		return nil, false
-	}
-
 	var aggregatedSubqueryExpr string
 	for _, matcher := range matchers {
 		if matcher.Name == "__aggregated_subquery__" {
@@ -329,6 +324,11 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 
 	if aggregatedSubqueryExpr == "" {
 		return nil, false
+	}
+
+	sendBackURL := mq.cfg.SendBackSubqueries
+	if sendBackURL == "" {
+		return storage.ErrSeriesSet(errors.New("aggregated subqueries are not enabled")), true
 	}
 
 	parsedExpr, err := parser.ParseExpr(aggregatedSubqueryExpr)
