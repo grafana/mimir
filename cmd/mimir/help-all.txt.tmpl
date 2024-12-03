@@ -3317,6 +3317,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.idle-timeout duration
+    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.
   -usage-tracker.partition-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -usage-tracker.partition-ring.consul.cas-retry-delay duration

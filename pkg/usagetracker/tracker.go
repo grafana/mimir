@@ -5,9 +5,12 @@ package usagetracker
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -20,15 +23,20 @@ import (
 type Config struct {
 	InstanceRing  InstanceRingConfig  `yaml:"ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
+
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
+	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", c.IdleTimeout, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
 }
 
 type UsageTracker struct {
 	services.Service
+
+	store *trackerStore
 
 	overrides *validation.Overrides
 	logger    log.Logger
@@ -46,6 +54,10 @@ type UsageTracker struct {
 }
 
 func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+	if cfg.IdleTimeout <= 0 || cfg.IdleTimeout > time.Hour {
+		return nil, fmt.Errorf("invalid idle timeout %q, should be greater than 0 and less than 1 hour", cfg.IdleTimeout)
+	}
+
 	t := &UsageTracker{
 		overrides: overrides,
 		logger:    logger,
@@ -77,6 +89,8 @@ func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Log
 
 	t.partitionWatcher = ring.NewPartitionRingWatcher(partitionRingName, partitionRingKey, partitionKVClient, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	t.partitionPageHandler = ring.NewPartitionRingPageHandler(t.partitionWatcher, ring.NewPartitionRingEditor(partitionRingKey, partitionKVClient))
+
+	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, notImplementedEventsPublisher{logger: logger})
 
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 
@@ -114,8 +128,13 @@ func (t *UsageTracker) stop(_ error) error {
 
 // run implements services.RunningFn.
 func (t *UsageTracker) run(ctx context.Context) error {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
 	for {
 		select {
+		case now := <-ticker.C:
+			t.store.cleanup(now)
 		case <-ctx.Done():
 			return nil
 		case err := <-t.subservicesWatcher.Chan():
@@ -125,8 +144,12 @@ func (t *UsageTracker) run(ctx context.Context) error {
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(_ context.Context, _ *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	return &usagetrackerpb.TrackSeriesResponse{}, nil
+func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+	rejected, err := t.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
 func (t *UsageTracker) InstanceRingHandler(w http.ResponseWriter, req *http.Request) {
@@ -135,4 +158,23 @@ func (t *UsageTracker) InstanceRingHandler(w http.ResponseWriter, req *http.Requ
 
 func (t *UsageTracker) PartitionRingHandler(w http.ResponseWriter, req *http.Request) {
 	t.partitionPageHandler.ServeHTTP(w, req)
+}
+
+func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
+	globalLimit := t.overrides.MaxGlobalSeriesPerUser(userID) // TODO: use a new active series limit.
+	if globalLimit <= 0 {
+		return 0
+	}
+
+	// Global limit is equally distributed among all active partitions.
+	return uint64(float64(globalLimit) / float64(t.partitionWatcher.PartitionRing().ActivePartitionsCount()))
+}
+
+type notImplementedEventsPublisher struct {
+	logger log.Logger
+}
+
+func (ev notImplementedEventsPublisher) publishCreatedSeries(_ context.Context, userID string, series []uint64) error {
+	level.Info(ev.logger).Log("msg", "publishCreatedSeries not implemented", "userID", userID, "series", len(series))
+	return nil
 }

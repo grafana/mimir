@@ -464,6 +464,11 @@ usage_tracker:
         # CLI flag: -usage-tracker.partition-ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
+  # The time after which series are considered idle and not active anymore. Must
+  # be greater than 0 and less than 1 hour.
+  # CLI flag: -usage-tracker.idle-timeout
+  [idle_timeout: <duration> | default = 0s]
+
 overrides_exporter:
   ring:
     # Enable the ring used by override-exporters to deduplicate exported limit
