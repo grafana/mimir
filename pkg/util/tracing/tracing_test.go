@@ -280,7 +280,7 @@ func TestOpenTelemetrySpanBridge_EndIdempotency(t *testing.T) {
 			// Create bridge
 			s := NewOpenTelemetrySpanBridge(m, nil)
 
-			// Call End multiple times
+			// Call End potentially multiple times
 			for i := 0; i < testData.endCalls; i++ {
 				if testData.withOptions {
 					s.End(trace.WithTimestamp(time.Now()))
@@ -290,12 +290,8 @@ func TestOpenTelemetrySpanBridge_EndIdempotency(t *testing.T) {
 			}
 
 			// Assert expectations
-			if testData.finishCalls > 0 {
-				m.AssertNumberOfCalls(t, "Finish", testData.finishCalls)
-			}
-			if testData.finishOpts > 0 {
-				m.AssertNumberOfCalls(t, "FinishWithOptions", testData.finishOpts)
-			}
+			m.AssertNumberOfCalls(t, "Finish", testData.finishCalls)
+			m.AssertNumberOfCalls(t, "FinishWithOptions", testData.finishOpts)
 		})
 	}
 }
