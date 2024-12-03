@@ -32,6 +32,7 @@ type GroupedVectorVectorBinaryOperation struct {
 
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
+	timeRange          types.QueryTimeRange
 
 	evaluator       vectorVectorBinaryOperationEvaluator
 	remainingSeries []*groupedBinaryOperationOutputSeries
@@ -71,7 +72,7 @@ type manySide struct {
 
 // latestSeries returns the index of the last series from this side.
 //
-// It assumes that outputSeries is sorted in ascending order.
+// It assumes that seriesIndices is sorted in ascending order.
 func (s manySide) latestSeries() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
@@ -84,13 +85,31 @@ type oneSide struct {
 
 	outputSeriesCount int // The number of output series that refer to this side.
 
-	matchGroup *matchGroup
+	matchGroup *matchGroup // nil if this is the only "one" side in this group.
+}
+
+// latestSeries returns the index of the last series from this side.
+//
+// It assumes that seriesIndices is sorted in ascending order.
+func (s oneSide) latestSeries() int {
+	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
 type matchGroup struct {
 	// Time steps at which we've seen samples for any "one" side in this group.
 	// Each value is the index of the source series of the sample, or -1 if no sample has been seen for this time step yet.
 	presence []int
+
+	oneSideCount int
+}
+
+func (g *matchGroup) updatePresence(timestampIdx int64, seriesIdx int) int {
+	if existing := g.presence[timestampIdx]; existing != -1 {
+		return existing
+	}
+
+	g.presence[timestampIdx] = seriesIdx
+	return -1
 }
 
 func NewGroupedVectorVectorBinaryOperation(
@@ -102,6 +121,7 @@ func NewGroupedVectorVectorBinaryOperation(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
 ) (*GroupedVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -119,6 +139,7 @@ func NewGroupedVectorVectorBinaryOperation(
 		evaluator:          e,
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
+		timeRange:          timeRange,
 	}
 
 	switch g.VectorMatching.Card {
@@ -321,8 +342,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 			if oneSide.outputSeriesCount == 0 {
 				// If any part of a group has no output series, then no parts of that group will have output series.
 				break
-			} else if thisMatchGroup == nil {
-				thisMatchGroup = &matchGroup{}
+			} else if thisMatchGroup == nil && len(oneSideGroup) > 1 {
+				thisMatchGroup = &matchGroup{oneSideCount: len(oneSideGroup)}
 			}
 
 			oneSide.matchGroup = thisMatchGroup
@@ -522,15 +543,67 @@ func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.
 		return err
 	}
 
+	if err := g.updateOneSidePresence(side, data); err != nil {
+		return err
+	}
+
 	side.mergedData, err = g.mergeSingleSide(data, side.seriesIndices, g.oneSideMetadata, g.oneSideHandedness())
 	if err != nil {
 		return err
 	}
 
-	// TODO: update side.matchGroup.presence, bail if conflict
-
 	// Clear seriesIndices to indicate that we've populated it.
 	side.seriesIndices = nil
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide, data []types.InstantVectorSeriesData) error {
+	matchGroup := side.matchGroup
+	if matchGroup == nil {
+		// If there is only one set of additional labels for this set of grouping labels, then there's nothing to do.
+		return nil
+	}
+
+	// If there are multiple sets of additional labels for the same set of grouping labels, check that there is only one series at each
+	// time step for each set of grouping labels.
+
+	if matchGroup.presence == nil {
+		var err error
+		matchGroup.presence, err = types.IntSlicePool.Get(g.timeRange.StepCount, g.MemoryConsumptionTracker)
+
+		if err != nil {
+			return err
+		}
+
+		matchGroup.presence = matchGroup.presence[:g.timeRange.StepCount]
+
+		for idx := range matchGroup.presence {
+			matchGroup.presence[idx] = -1
+		}
+	}
+
+	for dataIdx, seriesData := range data {
+		seriesIdx := side.seriesIndices[dataIdx]
+
+		for _, p := range seriesData.Floats {
+			if otherSeriesIdx := matchGroup.updatePresence(g.timeRange.PointIndex(p.T), seriesIdx); otherSeriesIdx != -1 {
+				return g.formatConflictError(otherSeriesIdx, seriesIdx, "duplicate series", p.T, g.oneSideMetadata, g.oneSideHandedness())
+			}
+		}
+
+		for _, p := range seriesData.Histograms {
+			if otherSeriesIdx := matchGroup.updatePresence(g.timeRange.PointIndex(p.T), seriesIdx); otherSeriesIdx != -1 {
+				return g.formatConflictError(otherSeriesIdx, seriesIdx, "duplicate series", p.T, g.oneSideMetadata, g.oneSideHandedness())
+			}
+		}
+	}
+
+	matchGroup.oneSideCount--
+
+	if matchGroup.oneSideCount == 0 {
+		types.IntSlicePool.Put(matchGroup.presence, g.MemoryConsumptionTracker)
+	}
 
 	return nil
 }
@@ -573,27 +646,38 @@ func (g *GroupedVectorVectorBinaryOperation) mergeSingleSide(data []types.Instan
 }
 
 func (g *GroupedVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
-	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
+	return g.formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, sourceSeriesMetadata, side)
+}
+
+func (g *GroupedVectorVectorBinaryOperation) formatConflictError(
+	firstConflictingSeriesIndex int,
+	secondConflictingSeriesIndex int,
+	description string,
+	ts int64,
+	sourceSeriesMetadata []types.SeriesMetadata,
+	side string,
+) error {
+	firstConflictingSeriesLabels := sourceSeriesMetadata[firstConflictingSeriesIndex].Labels
 	groupLabels := groupLabelsFunc(g.VectorMatching, g.ReturnBool)(firstConflictingSeriesLabels)
 
-	if conflict.SecondConflictingSeriesIndex == -1 {
+	if secondConflictingSeriesIndex == -1 {
 		return fmt.Errorf(
 			"found %s for the match group %s on the %s side of the operation at timestamp %s",
-			conflict.Description,
+			description,
 			groupLabels,
 			side,
-			timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
+			timestamp.Time(ts).Format(time.RFC3339Nano),
 		)
 	}
 
-	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.SecondConflictingSeriesIndex].Labels
+	secondConflictingSeriesLabels := sourceSeriesMetadata[secondConflictingSeriesIndex].Labels
 
 	return fmt.Errorf(
 		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
-		conflict.Description,
+		description,
 		groupLabels,
 		side,
-		timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
+		timestamp.Time(ts).Format(time.RFC3339Nano),
 		firstConflictingSeriesLabels,
 		secondConflictingSeriesLabels,
 	)

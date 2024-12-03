@@ -271,7 +271,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		default:
 			switch e.VectorMatching.Card {
 			case parser.CardOneToMany, parser.CardManyToOne:
-				return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+				return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange(), timeRange)
 			case parser.CardOneToOne:
 				return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 			default:

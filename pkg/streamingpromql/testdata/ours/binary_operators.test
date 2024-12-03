@@ -1068,25 +1068,19 @@ eval range from 0 to 6m step 6m method_code:http_errors:rate5m / on(method) grou
   {method="post", code="500", foo="blah"} 0.05  0.6
   {method="post", code="404", foo="blah"} 0.175 2.1
 
-# Fail if multiple series on "one" side, even if they differ on the additional labels
-eval_fail instant at 12m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+# Fail if multiple series on "one" side, even if they differ on the additional labels.
+# We run these tests as range queries with a single step to avoid promqltest's instant query time shifting, which makes using an explicit error message pattern more difficult.
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
-eval_fail instant at 12m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
-eval_fail instant at 12m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
-eval_fail instant at 12m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
-
-# Fail if multiple series on "one" side, even if there is no matching point on the "many" side
-eval_fail instant at 18m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
-
-eval_fail instant at 18m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
 # Same cases as above, but with group_right and expressions swapped.
 eval instant at 0 method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
@@ -1166,24 +1160,18 @@ eval range from 0 to 6m step 6m method:http_requests:rate5m / on(method) group_r
   {method="post", code="404", foo="blah"} 5.7142857143 0.4761904762
 
 # Fail if multiple series on "one" side, even if they differ on the additional labels
-eval_fail instant at 12m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+# We run these tests as range queries with a single step to avoid promqltest's instant query time shifting, which makes using an explicit error message pattern more difficult.
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
-eval_fail instant at 12m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
-eval_fail instant at 12m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
-eval_fail instant at 12m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
-
-# Fail if multiple series on "one" side, even if there is no matching point on the "many" side
-eval_fail instant at 18m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
-
-eval_fail instant at 18m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
-  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left hand-side of the operation: \[\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}, \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}\];many-to-many matching not allowed: matching labels must be unique on one side
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
 
 clear
 
