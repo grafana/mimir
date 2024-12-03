@@ -287,7 +287,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 // RegisterUsageMetricsRoute registers a Prometheus HTTP handler for the custom registry.
 func (a *API) RegisterUsageMetricsRoute(customRegistryPath string, reg *prometheus.Registry) {
-	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), true, false, "GET")
+	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
 // Ingester is defined as an interface to allow for alternative implementations
