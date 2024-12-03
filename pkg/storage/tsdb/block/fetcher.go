@@ -286,6 +286,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 
 type response struct {
 	metas   map[ulid.ULID]*Meta
+	staged  map[ulid.ULID]*Meta
 	partial map[ulid.ULID]error
 
 	// If metaErr > 0 it means incomplete view, so some metas, failed to be loaded.
@@ -295,26 +296,38 @@ type response struct {
 	noMetasCount           float64
 	corruptedMetasCount    float64
 	markedForDeletionCount float64
+	stagedBlocksCount      float64
 }
 
 func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*Meta),
+			staged:  make(map[ulid.ULID]*Meta),
 			partial: make(map[ulid.ULID]error),
 		}
-		eg  errgroup.Group
-		ch  = make(chan ulid.ULID, f.concurrency)
-		mtx sync.Mutex
+
+		eg       errgroup.Group
+		ch       = make(chan ulid.ULID, f.concurrency)
+		stagedCh = make(chan ulid.ULID, f.concurrency)
+		mtx      sync.Mutex
 	)
 	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency)
 
 	// Get the list of blocks marked for deletion so that we'll exclude them (if required).
-	var markedForDeletion map[ulid.ULID]struct{}
+	var (
+		markedForDeletion map[ulid.ULID]struct{}
+		stagedBlocks      map[ulid.ULID]struct{}
+	)
 	if excludeMarkedForDeletion {
 		var err error
 
+		// TODO(leizor): These two can be combined.
 		markedForDeletion, err = ListBlockDeletionMarks(ctx, f.bkt)
+		if err != nil {
+			return nil, err
+		}
+		stagedBlocks, err = ListStagedMarks(ctx, f.bkt)
 		if err != nil {
 			return nil, err
 		}
@@ -355,9 +368,31 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 		})
 	}
 
+	for i := 0; i < f.concurrency; i++ {
+		eg.Go(func() error {
+			for id := range stagedCh {
+				meta, err := f.loadMeta(ctx, id)
+				if err == nil {
+					mtx.Lock()
+					resp.staged[id] = meta
+					mtx.Unlock()
+					continue
+				}
+
+				// TODO(leizor): What to do about partial staged?
+			}
+
+			return nil
+		})
+	}
+
 	// Workers scheduled, distribute blocks.
 	eg.Go(func() error {
-		defer close(ch)
+		defer func() {
+			close(ch)
+			close(stagedCh)
+		}()
+
 		return f.bkt.Iter(ctx, "", func(name string) error {
 			id, ok := IsBlockDir(name)
 			if !ok {
@@ -368,6 +403,16 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 			if _, marked := markedForDeletion[id]; excludeMarkedForDeletion && marked {
 				resp.markedForDeletionCount++
 				return nil
+			}
+
+			if _, staged := stagedBlocks[id]; staged {
+				resp.stagedBlocksCount++
+
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case stagedCh <- id:
+				}
 			}
 
 			select {
@@ -434,8 +479,8 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
-func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, false)
+func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, staged map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
+	metas, staged, partials, err = f.fetch(ctx, false)
 	return
 }
 
@@ -444,12 +489,12 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, par
 // It's caller responsibility to not change the returned metadata files. Maps can be modified.
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
-func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, true)
+func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, staged map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
+	metas, staged, partials, err = f.fetch(ctx, true)
 	return
 }
 
-func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_, _ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -466,14 +511,18 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	resp := v.(response)
 
-	// Copy as same response might be reused by different goroutines.
+	// Copy resp.metas and resp.staged as same response might be reused by different goroutines.
 	metas := make(map[ulid.ULID]*Meta, len(resp.metas))
 	for id, m := range resp.metas {
 		metas[id] = m
+	}
+	staged := make(map[ulid.ULID]*Meta, len(resp.staged))
+	for id, m := range resp.staged {
+		staged[id] = m
 	}
 
 	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
@@ -482,11 +531,12 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	if excludeMarkedForDeletion {
 		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
 	}
+	// TODO(leizor): Add and update metric for resp.stagedBlocksCount
 
 	for _, filter := range f.filters {
 		// NOTE: filter can update synced metric accordingly to the reason of the exclude.
 		if err := filter.Filter(ctx, metas, f.metrics.Synced); err != nil {
-			return nil, nil, errors.Wrap(err, "filter metas")
+			return nil, nil, nil, errors.Wrap(err, "filter metas")
 		}
 	}
 
@@ -494,11 +544,11 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.Submit()
 
 	if len(resp.metaErrs) > 0 {
-		return metas, resp.partial, errors.Wrap(resp.metaErrs.Err(), "incomplete view")
+		return metas, staged, resp.partial, errors.Wrap(resp.metaErrs.Err(), "incomplete view")
 	}
 
 	level.Info(f.logger).Log("msg", "successfully synchronized block metadata", "duration", time.Since(start).String(), "duration_ms", time.Since(start).Milliseconds(), "cached", f.countCached(), "returned", len(metas), "partial", len(resp.partial))
-	return metas, resp.partial, nil
+	return metas, staged, resp.partial, nil
 }
 
 func (f *MetaFetcher) countCached() int {

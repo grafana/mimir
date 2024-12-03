@@ -65,6 +65,14 @@ func IsNoCompactMarkFilename(name string) (ulid.ULID, bool) {
 	return isMarkFilename(name, NoCompactMarkFilename)
 }
 
+func StagedMarkFilepath(blockID ulid.ULID) string {
+	return markFilepath(blockID, StagedMarkFilename)
+}
+
+func IsStagedMarkFilename(name string) (ulid.ULID, bool) {
+	return isMarkFilename(name, StagedMarkFilename)
+}
+
 // ListBlockDeletionMarks looks for block deletion marks in the global markers location
 // and returns a map containing all blocks having a deletion mark and their location in the
 // bucket.
@@ -85,4 +93,22 @@ func ListBlockDeletionMarks(ctx context.Context, bkt objstore.BucketReader) (map
 	})
 
 	return discovered, errors.Wrap(err, "list block deletion marks")
+}
+
+func ListStagedMarks(ctx context.Context, bkt objstore.BucketReader) (map[ulid.ULID]struct{}, error) {
+	discovered := map[ulid.ULID]struct{}{}
+
+	err := bkt.Iter(ctx, MarkersPathname+"/", func(name string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if blockID, ok := IsStagedMarkFilename(path.Base(name)); ok {
+			discovered[blockID] = struct{}{}
+		}
+
+		return nil
+	})
+
+	return discovered, errors.Wrap(err, "list staged block marks")
 }

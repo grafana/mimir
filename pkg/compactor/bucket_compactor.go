@@ -8,9 +8,11 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,13 +29,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var errCompactionIterationCancelled = cancellation.NewErrorf("compaction iteration cancelled")
@@ -54,6 +61,7 @@ type metaSyncer struct {
 	fetcher                 *block.MetaFetcher
 	mtx                     sync.Mutex
 	blocks                  map[ulid.ULID]*block.Meta
+	stagedBlocks            map[ulid.ULID]*block.Meta
 	metrics                 *syncerMetrics
 	deduplicateBlocksFilter deduplicateFilter
 }
@@ -98,6 +106,7 @@ func newMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 		bkt:                     bkt,
 		fetcher:                 fetcher,
 		blocks:                  map[ulid.ULID]*block.Meta{},
+		stagedBlocks:            map[ulid.ULID]*block.Meta{},
 		metrics:                 newSyncerMetrics(reg, blocksMarkedForDeletion),
 		deduplicateBlocksFilter: deduplicateBlocksFilter,
 	}, nil
@@ -110,11 +119,12 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 
 	// While fetching blocks, we filter out blocks marked for deletion.
 	// No deletion delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
-	metas, _, err := s.fetcher.FetchWithoutMarkedForDeletion(ctx)
+	metas, staged, _, err := s.fetcher.FetchWithoutMarkedForDeletion(ctx)
 	if err != nil {
 		return err
 	}
 	s.blocks = metas
+	s.stagedBlocks = staged
 	return nil
 }
 
@@ -124,6 +134,12 @@ func (s *metaSyncer) Metas() map[ulid.ULID]*block.Meta {
 	defer s.mtx.Unlock()
 
 	return s.blocks
+}
+
+func (s *metaSyncer) StagedMetas() map[ulid.ULID]*block.Meta {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return s.stagedBlocks
 }
 
 // GarbageCollect marks blocks for deletion from bucket if their data is available as part of a
@@ -343,6 +359,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		if err := stats.OutOfOrderLabelsErr(); err != nil {
 			return errors.Wrapf(err, "block id %s", meta.ULID)
 		}
+
+		if err := c.rewriteBlockWithStagedContent(ctx, meta, bdir); err != nil {
+			return errors.Wrapf(err, "rewrite block %s with staged content", bdir)
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -459,6 +480,293 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	return true, compIDs, nil
+}
+
+type blockReader struct {
+	b   *tsdb.Block
+	idx tsdb.IndexReader
+	chk tsdb.ChunkReader
+}
+
+func (br *blockReader) Close() error {
+	merr := multierror.MultiError{}
+
+	merr.Add(br.b.Close())
+	merr.Add(br.idx.Close())
+	merr.Add(br.chk.Close())
+
+	return merr.Err()
+}
+
+type series struct {
+	stagedBlockID string
+	lset          labels.Labels
+	chks          []chunks.Meta
+}
+
+func (c *BucketCompactor) rewriteBlockWithStagedContent(ctx context.Context, blockMeta *block.Meta, blockDir string) (err error) {
+	if !c.staged.hasStagedBlocks() {
+		// Nothing to rewrite; exit early.
+		return nil
+	}
+
+	// Open original block for reading.
+	b, err := openBlockForReading(c.logger, blockDir)
+	if err != nil {
+		return err
+	}
+	defer runutil.CloseWithErrCapture(&err, b, "close block reader")
+
+	// Open destination block for writing.
+	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+	resID := ulid.MustNew(ulid.Now(), entropy)
+	resDir := filepath.Join(c.compactDir, resID.String())
+
+	idxWriter, err := index.NewWriter(ctx, filepath.Join(resDir, block.IndexFilename))
+	if err != nil {
+		return errors.Wrap(err, "open index writer")
+	}
+	defer runutil.CloseWithErrCapture(&err, idxWriter, "close index writer")
+
+	chkWriter, err := chunks.NewWriter(filepath.Join(resDir, block.ChunksDirname))
+	if err != nil {
+		return errors.Wrap(err, "open chunks writer")
+	}
+	defer runutil.CloseWithErrCapture(&err, chkWriter, "close chunks writer")
+
+	// Open staged blocks for reading.
+	stagedBlockReaders := make(map[string]*blockReader) // Lookup blockReader by block ULID string.
+	for _, s := range c.staged.staged {
+		blockID := s.meta.ULID.String()
+		if _, ok := stagedBlockReaders[blockID]; ok {
+			continue
+		}
+
+		br, err := openBlockForReading(c.logger, s.blockDir)
+		if err != nil {
+			return err
+		}
+
+		stagedBlockReaders[blockID] = br
+	}
+	defer func() {
+		for _, sr := range stagedBlockReaders {
+			runutil.CloseWithErrCapture(&err, sr, "close block reader")
+		}
+	}()
+
+	// Gather all symbols, sort them, write them to the index.
+	// TODO(leizor): We don't actually always need *all* the symbols from all the staged blocks
+	uniqueSymbols := make(map[string]struct{})
+
+	symbolItrs := []index.StringIter{b.idx.Symbols()}
+	for _, sbr := range stagedBlockReaders {
+		symbolItrs = append(symbolItrs, sbr.idx.Symbols())
+	}
+	for _, symbolItr := range symbolItrs {
+		for symbolItr.Next() {
+			uniqueSymbols[symbolItr.At()] = struct{}{}
+		}
+		if symbolItr.Err() != nil {
+			return errors.Wrap(symbolItr.Err(), "next symbol")
+		}
+	}
+
+	allSymbols := make([]string, 0, len(uniqueSymbols))
+	for s := range uniqueSymbols {
+		allSymbols = append(allSymbols, s)
+	}
+	slices.Sort(allSymbols)
+
+	for _, s := range allSymbols {
+		if err = idxWriter.AddSymbol(s); err != nil {
+			return errors.Wrap(err, "add symbol")
+		}
+	}
+
+	// Iterate through postings: if there is corresponding staged content, skip the original content.
+	n, v := index.AllPostingsKey()
+	origPostings, err := b.idx.Postings(ctx, n, v)
+	if err != nil {
+		return errors.Wrap(err, "postings")
+	}
+
+	var (
+		builder   labels.ScratchBuilder
+		resSeries []series
+	)
+
+	for origPostings.Next() {
+		seriesID := origPostings.At()
+
+		var chks []chunks.Meta
+		if err = b.idx.Series(seriesID, &builder, &chks); err != nil {
+			return errors.Wrap(err, "series")
+		}
+
+		builder.Sort()
+		lbls := builder.Labels()
+
+		if tr, ok := c.staged.targetLabelSets[lbls.String()]; ok {
+			filteredChks, err := filterChunksNotInRange(tr.minTime, tr.maxTime, chks)
+			if err != nil {
+				return errors.Wrap(err, "filter chunks")
+			}
+
+			resSeries = append(resSeries, series{lset: lbls, chks: filteredChks})
+			continue
+		}
+
+		resSeries = append(resSeries, series{lset: lbls, chks: chks})
+	}
+
+	// Add the staged content, filtered by the block's min and max time, and sharded.
+	for _, sb := range c.staged.staged {
+		if sb.meta.MinTime > blockMeta.MaxTime || sb.meta.MaxTime < blockMeta.MinTime {
+			continue
+		}
+
+		blockID := sb.meta.ULID.String()
+		sbr := stagedBlockReaders[blockID]
+
+		stagedPostings, err := sbr.idx.Postings(ctx, n, v)
+		if err != nil {
+			return errors.Wrap(err, "postings")
+		}
+
+		var stagedBuilder labels.ScratchBuilder
+
+		for stagedPostings.Next() {
+			stagedSeriesID := stagedPostings.At()
+
+			var stagedChks []chunks.Meta
+			if err = sbr.idx.Series(stagedSeriesID, &stagedBuilder, &stagedChks); err != nil {
+				return errors.Wrap(err, "series")
+			}
+
+			stagedBuilder.Sort()
+
+			// If the block we're inserting into is sharded, only insert the series that belong to this shard.
+			shardLabel, isSharded := blockMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]
+			if isSharded {
+				shardID, shardCount, _ := sharding.ParseShardIDLabelValue(shardLabel)
+				stagedShardID := labels.StableHash(stagedBuilder.Labels()) % shardCount
+				if shardID != stagedShardID {
+					continue
+				}
+			}
+
+			filteredChks, err := filterChunksInRange(blockMeta.MinTime, blockMeta.MaxTime, stagedChks)
+			if err != nil {
+				return errors.Wrap(err, "filter chunks")
+			}
+
+			lbls := stagedBuilder.Labels()
+
+			resSeries = append(resSeries, series{
+				stagedBlockID: blockID,
+				lset:          lbls,
+				chks:          filteredChks,
+			})
+
+			sb.registerUnstaged(blockMeta.MinTime, blockMeta.MaxTime, lbls)
+		}
+	}
+
+	// Sort the resulting series.
+	slices.SortFunc(resSeries, func(a, b series) int {
+		return labels.Compare(a.lset, b.lset)
+	})
+
+	nilSeriesRef := storage.SeriesRef(0)
+
+	// For each resulting series, write its chunks and add it to the index.
+	for i, s := range resSeries {
+		for j, chkMeta := range s.chks {
+			var (
+				chk    chunkenc.Chunk
+				chkItr chunkenc.Iterable
+			)
+
+			if s.stagedBlockID == "" {
+				chk, chkItr, err = b.chk.ChunkOrIterable(chkMeta)
+			} else {
+				chk, chkItr, err = stagedBlockReaders[s.stagedBlockID].chk.ChunkOrIterable(chkMeta)
+			}
+			if err != nil {
+				return errors.Wrap(err, "read chunk")
+			}
+			if chkItr != nil {
+				return errors.New("unexpected chunk iterable returned")
+			}
+
+			resSeries[i].chks[j].Chunk = chk
+		}
+
+		if err = chkWriter.WriteChunks(resSeries[i].chks...); err != nil {
+			return errors.Wrap(err, "write chunks")
+		}
+		if err = idxWriter.AddSeries(nilSeriesRef, s.lset, resSeries[i].chks...); err != nil {
+			return errors.Wrap(err, "add series")
+		}
+	}
+
+	return err
+}
+
+func filterChunksInRange(minTime, maxTime int64, chks []chunks.Meta) ([]chunks.Meta, error) {
+	var res []chunks.Meta
+
+	for _, chk := range chks {
+		if chk.MinTime >= minTime && chk.MaxTime <= maxTime {
+			// Chunk is completely within the block; include it as-is.
+			res = append(res, chk)
+		} else if chk.OverlapsClosedInterval(minTime, maxTime) {
+			// The staging mechanism cuts chunks in a way where this shouldn't happen. If we do end up here though,
+			// return an error.
+			return nil, errors.New("chunk only partially fits into selected block")
+		}
+	}
+
+	return res, nil
+}
+
+func filterChunksNotInRange(minTime, maxTime int64, chks []chunks.Meta) ([]chunks.Meta, error) {
+	var res []chunks.Meta
+
+	for _, chk := range chks {
+		if chk.MinTime < minTime || chk.MaxTime > maxTime {
+			// Chunk is completely outside the block; include it as-is.
+			res = append(res, chk)
+		} else if chk.OverlapsClosedInterval(minTime, maxTime) {
+			// The staging mechanism cuts chunks in a way where this shouldn't happen. If we do end up here though,
+			// return an error.
+			return nil, errors.New("chunk only partially fits into selected block")
+		}
+	}
+
+	return res, nil
+}
+
+// openBlockForReading returns a *tsdb.Block, a tsdb.IndexReader, and a tsdb.ChunkReader. It is the caller's
+// responsibility to close them when they are finished.
+func openBlockForReading(logger log.Logger, blockDir string) (*blockReader, error) {
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "open block")
+	}
+
+	idxReader, err := b.Index()
+	if err != nil {
+		return nil, errors.Wrap(err, "open index")
+	}
+
+	chkReader, err := b.Chunks()
+	if err != nil {
+		return nil, errors.Wrap(err, "open chunks")
+	}
+
+	return &blockReader{b: b, idx: idxReader, chk: chkReader}, nil
 }
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
@@ -761,6 +1069,7 @@ type BucketCompactor struct {
 	waitPeriod           time.Duration
 	blockSyncConcurrency int
 	metrics              *BucketCompactorMetrics
+	staged               *stagedBlocks
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -798,6 +1107,7 @@ func NewBucketCompactor(
 		waitPeriod:           waitPeriod,
 		blockSyncConcurrency: blockSyncConcurrency,
 		metrics:              metrics,
+		staged:               newStagedBlocks(bkt, logger, filepath.Join(compactDir, "staged")),
 	}, nil
 }
 
@@ -944,6 +1254,10 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			return errors.Wrap(err, "build compaction jobs")
 		}
 
+		if err := c.staged.addStagedBlocks(ctx, c.sy.StagedMetas()); err != nil {
+			return errors.Wrap(err, "consolidate staged blocks")
+		}
+
 		// There is another check just before we start processing the job, but we can avoid sending it
 		// to the goroutine in the first place.
 		jobs, err = c.filterOwnJobs(jobs)
@@ -1008,6 +1322,8 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		if len(jobErrs) > 0 {
 			return jobErrs.Err()
 		}
+
+		// TODO(leizor): Clean up staged blocks; filter unstaged content.
 
 		if maxCompactionTimeReached || finishedAllJobs {
 			break

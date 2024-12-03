@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 )
 
@@ -26,6 +27,11 @@ const (
 	// NoCompactMarkFilename is the known json filename for optional file storing details about why block has to be excluded from compaction.
 	// If such file is present in block dir, it means the block has to excluded from compaction (both vertical and horizontal) or rewrite (e.g deletions).
 	NoCompactMarkFilename = "no-compact-mark.json"
+	// StagedMarkFilename is the known json filename for optional file storing details about blocks that are staged for
+	// inclusion in the TSDB.
+	// If such a file is present in the block dir, it means the block's contents are meant to override part(s) of
+	// existing block(s) contents upon compaction.
+	StagedMarkFilename = "staged-mark.json"
 
 	// DeletionMarkVersion1 is the version of deletion-mark file supported by Thanos.
 	DeletionMarkVersion1 = 1
@@ -94,6 +100,31 @@ type NoCompactMark struct {
 
 func (n NoCompactMark) BlockULID() ulid.ULID   { return n.ID }
 func (n NoCompactMark) markerFilename() string { return NoCompactMarkFilename }
+
+// StagedMark is used to mark blocks that have been staged for inclusion in the TSDB.
+type StagedMark struct {
+	// ID of the tsdb block.
+	ID ulid.ULID `json:"id"`
+
+	// Version of the file.
+	Version int `json:"version"`
+
+	// Details is a human-readable string giving details of reason.
+	Details string `json:"details,omitempty"`
+
+	// StagedTime is the unix timestamp of when this block was staged.
+	StagedTime int64 `json:"staged_time"`
+
+	TargetLabelSets []labels.Labels `json:"target_label_sets"`
+}
+
+func (s StagedMark) BlockULID() ulid.ULID {
+	return s.ID
+}
+
+func (s StagedMark) markerFilename() string {
+	return StagedMarkFilename
+}
 
 // ReadMarker reads the given mark file from <dir>/<marker filename>.json in bucket.
 // ReadMarker has a one-minute timeout for completing the read against the bucket.
