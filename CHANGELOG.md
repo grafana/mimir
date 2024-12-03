@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.13.1
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.22.9 to address [CVE-2024-34156](https://nvd.nist.gov/vuln/detail/CVE-2024-34156). #10097
+
 ## 2.13.0
 
 ### Grafana Mimir
