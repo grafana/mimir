@@ -4,6 +4,7 @@ package binops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -19,6 +20,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+var errMultipleMatchesOnManySide = errors.New("multiple matches for labels: grouping labels must ensure unique matches")
 
 // GroupedVectorVectorBinaryOperation represents a one-to-many or many-to-one binary operation between instant vectors such as "<expr> + group_left <expr>" or "<expr> - group_right <expr>".
 // One-to-one binary operations between instant vectors are not supported.
@@ -561,7 +564,7 @@ func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.
 		return err
 	}
 
-	side.mergedData, err = g.mergeSingleSide(data, side.seriesIndices, g.oneSideMetadata, g.oneSideHandedness())
+	side.mergedData, err = g.mergeOneSide(data, side.seriesIndices)
 	if err != nil {
 		return err
 	}
@@ -622,6 +625,20 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 	return nil
 }
 
+func (g *GroupedVectorVectorBinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int) (types.InstantVectorSeriesData, error) {
+	merged, conflict, err := operators.MergeSeries(data, sourceSeriesIndices, g.MemoryConsumptionTracker)
+
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if conflict != nil {
+		return types.InstantVectorSeriesData{}, g.formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, g.oneSideMetadata, g.oneSideHandedness())
+	}
+
+	return merged, nil
+}
+
 func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context.Context, side *manySide) error {
 	if side.seriesIndices == nil {
 		// Already populated.
@@ -634,7 +651,7 @@ func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context
 		return err
 	}
 
-	side.mergedData, err = g.mergeSingleSide(data, side.seriesIndices, g.manySideMetadata, g.manySideHandedness())
+	side.mergedData, err = g.mergeManySide(data, side.seriesIndices)
 	if err != nil {
 		return err
 	}
@@ -645,7 +662,7 @@ func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context
 	return nil
 }
 
-func (g *GroupedVectorVectorBinaryOperation) mergeSingleSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
+func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int) (types.InstantVectorSeriesData, error) {
 	merged, conflict, err := operators.MergeSeries(data, sourceSeriesIndices, g.MemoryConsumptionTracker)
 
 	if err != nil {
@@ -653,14 +670,10 @@ func (g *GroupedVectorVectorBinaryOperation) mergeSingleSide(data []types.Instan
 	}
 
 	if conflict != nil {
-		return types.InstantVectorSeriesData{}, g.mergeConflictToError(conflict, sourceSeriesMetadata, side)
+		return types.InstantVectorSeriesData{}, errMultipleMatchesOnManySide
 	}
 
 	return merged, nil
-}
-
-func (g *GroupedVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
-	return g.formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, sourceSeriesMetadata, side)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) formatConflictError(
