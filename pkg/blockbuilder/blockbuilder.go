@@ -75,7 +75,7 @@ func New(
 	}
 	b.bucket = bucketClient
 
-	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
+	runFunc := b.runningStandaloneMode
 
 	if cfg.SchedulerConfig.Address != "" {
 		sched, err := b.makeSchedulerClient()
@@ -83,7 +83,12 @@ func New(
 			return nil, fmt.Errorf("failed to create scheduler client: %w", err)
 		}
 		b.scheduler = sched
+
+		// If a scheduler is configured, we run in pull mode.
+		runFunc = b.runningPullMode
 	}
+
+	b.Service = services.NewBasicService(b.starting, runFunc, b.stopping)
 
 	return b, nil
 }
@@ -137,34 +142,12 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 
 func (b *BlockBuilder) stopping(_ error) error {
 	b.kafkaClient.Close()
-
 	return nil
 }
 
-func (b *BlockBuilder) running(ctx context.Context) error {
-	sctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go b.scheduler.Run(sctx)
-
-	for {
-		key, _, err := b.scheduler.GetJob(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
-			continue
-		}
-
-		time.Sleep(11 * time.Second)
-
-		if err := b.scheduler.CompleteJob(key); err != nil {
-			level.Warn(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch)
-		}
-	}
-}
-
-func (b *BlockBuilder) running_old(ctx context.Context) error {
+// This is a service `running` function for standalone mode, where we consume
+// from statically assigned partitions.
+func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
 	cycleEndTime := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
@@ -194,6 +177,31 @@ func (b *BlockBuilder) running_old(ctx context.Context) error {
 		case <-ctx.Done():
 			level.Info(b.logger).Log("msg", "context cancelled, stopping")
 			return nil
+		}
+	}
+}
+
+// This is a service `running` function for pull mode, where we learn about
+// jobs from a block-builder-scheduler.
+func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go b.scheduler.Run(sctx)
+
+	for {
+		key, _, err := b.scheduler.GetJob(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
+			continue
+		}
+
+		time.Sleep(11 * time.Second)
+
+		if err := b.scheduler.CompleteJob(key); err != nil {
+			level.Warn(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch)
 		}
 	}
 }
