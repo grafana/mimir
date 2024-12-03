@@ -252,6 +252,26 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
 }
 
+// advanceCommittedOffset advances the committed offset for the given topic/partition.
+// It is a no-op if the new offset is not greater than the current committed offset.
+// Assumes the lock is held.
+func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition int32, newOffset int64, metadata string) {
+	if o, ok := s.committed.Lookup(topic, partition); ok {
+		if newOffset > o.At {
+			o.At = newOffset
+			o.Metadata = metadata
+			s.committed[topic][partition] = o
+		}
+	} else {
+		s.committed.Add(kadm.Offset{
+			Topic:     topic,
+			Partition: partition,
+			At:        newOffset,
+			Metadata:  metadata,
+		})
+	}
+}
+
 // AssignJob returns an assigned job for the given workerID.
 func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
 	key, spec, err := s.assignJob(req.WorkerId)
@@ -346,8 +366,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
-		// TODO: Push forward the local notion of the committed offset.
-
+		s.advanceCommittedOffset(j.topic, j.partition, j.endOffset, "{}")
 		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
