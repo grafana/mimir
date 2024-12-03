@@ -72,7 +72,7 @@ func (l limiterMock) localSeriesLimit(userID string) uint64 { return l[userID] }
 
 type noopEvents struct{}
 
-func (n noopEvents) publishCreatedSeries(ctx context.Context, userID string, series []uint64) error {
+func (n noopEvents) publishCreatedSeries(_ context.Context, _ string, _ []uint64) error {
 	return nil
 }
 
