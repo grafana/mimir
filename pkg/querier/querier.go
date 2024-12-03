@@ -387,6 +387,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 		if err != nil {
 			return fmt.Errorf("error encoding request: %w", err)
 		}
+		httpReq.RequestURI = "" // Reset RequestURI to force URL reconstruction.
 
 		if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
 			return fmt.Errorf("error injecting org ID into request: %w", err)
