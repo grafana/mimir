@@ -10,15 +10,20 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	stdlibMath "math"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -26,10 +31,13 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddlewareextract"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
@@ -54,6 +62,7 @@ type Config struct {
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+	SendBackSubqueries                             string        `yaml:"send_back_subqueries" category:"advanced"`
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
@@ -87,6 +96,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.QueryEngine, "querier.query-engine", prometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
+
+	f.StringVar(&cfg.SendBackSubqueries, "querier.send-back-subqueries", "", "URL to send back subqueries to. If empty, subqueries are not sent back.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -144,7 +155,9 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		},
 	})
 
-	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
+	codec := querymiddlewareextract.NewPrometheusCodec(cfg.EngineConfig.LookbackDelta, "protobuf", nil)
+
+	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger, codec)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -217,6 +230,7 @@ func newQueryable(
 	limits *validation.Overrides,
 	queryMetrics *stats.QueryMetrics,
 	logger log.Logger,
+	codec querymiddlewareextract.Codec,
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		return multiQuerier{
@@ -227,6 +241,7 @@ func newQueryable(
 			maxT:         maxT,
 			limits:       limits,
 			logger:       logger,
+			codec:        codec,
 		}, nil
 
 	})
@@ -255,6 +270,7 @@ type multiQuerier struct {
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
 	minT, maxT   int64
+	codec        querymiddlewareextract.Codec
 
 	limits *validation.Overrides
 
@@ -297,12 +313,249 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 
 	return ctx, queriers, nil
 }
+func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *storage.SelectHints, matchers ...*labels.Matcher) (storage.SeriesSet, bool) {
+	sendBackURL := mq.cfg.SendBackSubqueries
+	if sendBackURL == "" {
+		return nil, false
+	}
+
+	var aggregatedSubqueryExpr string
+	for _, matcher := range matchers {
+		if matcher.Name == "__aggregated_subquery__" {
+			aggregatedSubqueryExpr = matcher.Value
+			break
+		}
+	}
+
+	if aggregatedSubqueryExpr == "" {
+		return nil, false
+	}
+
+	parsedExpr, err := parser.ParseExpr(aggregatedSubqueryExpr)
+	if err != nil {
+		return storage.ErrSeriesSet(err), true
+	}
+	subquery, ok := parsedExpr.(*parser.SubqueryExpr)
+	if !ok {
+		return storage.ErrSeriesSet(fmt.Errorf("expected subquery expression, got %s (%T)", parsedExpr, parsedExpr)), true
+	}
+
+	end := hints.End
+
+	// Align query to absolute time by querying slightly into the future.
+	step := subquery.Step.Milliseconds()
+	if step == 0 {
+		step = mq.cfg.EngineConfig.DefaultEvaluationInterval.Milliseconds()
+	}
+	if end%step != 0 {
+		end += step - (end % step)
+	}
+	reqRange := hints.End - hints.Start
+	// Calculate the earliest data point we need to query.
+	start := end - reqRange - subquery.Range.Milliseconds()
+
+	// Split queries into multiple smaller queries if they have more than 10000 datapoints
+	rangeStart := start
+	var rangeQueries []querymiddlewareextract.MetricsQueryRequest
+	for {
+		var rangeEnd int64
+		if remainingPoints := (end - start) / step; remainingPoints > 10000 {
+			rangeEnd = start + 10000*step
+		} else {
+			rangeEnd = end
+		}
+
+		headers := []*querymiddlewareextract.PrometheusHeader{}
+		headers = append(headers,
+			&querymiddlewareextract.PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}},
+			&querymiddlewareextract.PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
+		) // Downstream is the querier, which is HTTP req.
+
+		newRangeRequest := querymiddlewareextract.NewPrometheusRangeQueryRequest("/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddlewareextract.Options{}, &querymiddlewareextract.Hints{})
+		rangeQueries = append(rangeQueries, newRangeRequest)
+
+		if rangeEnd == end {
+			break
+		}
+	}
+
+	// Concurrently run each query. It breaks and cancels each worker context on first error.
+	streams := make([][]querymiddlewareextract.SampleStream, len(rangeQueries))
+	err = concurrency.ForEachJob(ctx, len(rangeQueries), len(rangeQueries), func(ctx context.Context, idx int) error {
+		req := rangeQueries[idx]
+		httpReq, err := mq.codec.EncodeMetricsQueryRequest(ctx, req)
+		if err != nil {
+			return fmt.Errorf("error encoding request: %w", err)
+		}
+
+		if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
+			return fmt.Errorf("error injecting org ID into request: %w", err)
+		}
+
+		client := http.DefaultClient
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return fmt.Errorf("error sending request: %w", err)
+		}
+		defer resp.Body.Close()
+		decoded, err := mq.codec.DecodeMetricsQueryResponse(ctx, resp, req, mq.logger)
+		if err != nil {
+			return fmt.Errorf("error decoding response: %w", err)
+		}
+		promRes, ok := decoded.(*querymiddlewareextract.PrometheusResponse)
+		if !ok {
+			return fmt.Errorf("expected PrometheusResponse, got %T", decoded)
+		}
+
+		resStreams, err := ResponseToSamples(promRes)
+		if err != nil {
+			return err
+		}
+
+		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
+
+		return nil
+	})
+
+	if err != nil {
+		return storage.ErrSeriesSet(err), true
+	}
+
+	return newSeriesSetFromEmbeddedQueriesResults(streams, hints), true
+}
+
+// newSeriesSetFromEmbeddedQueriesResults returns an in memory storage.SeriesSet from embedded queries results.
+// The passed hints (if any) is used to inject stale markers at the beginning of each gap in the embedded query
+// results.
+//
+// The returned storage.SeriesSet series is sorted.
+func newSeriesSetFromEmbeddedQueriesResults(results [][]querymiddlewareextract.SampleStream, hints *storage.SelectHints) storage.SeriesSet {
+	totalLen := 0
+	for _, r := range results {
+		totalLen += len(r)
+	}
+
+	var (
+		set  = make([]storage.Series, 0, totalLen)
+		step int64
+	)
+
+	// Get the query step from hints (if they've been passed).
+	if hints != nil {
+		step = hints.Step
+	}
+
+	for _, result := range results {
+		for _, stream := range result {
+			// We add an extra 10 items to account for some stale markers that could be injected.
+			// We're trading a lower chance of reallocation in case stale markers are added for a
+			// slightly higher memory utilisation.
+			samples := make([]model.SamplePair, 0, len(stream.Samples)+10)
+
+			for idx, sample := range stream.Samples {
+				// When an embedded query is executed by PromQL engine, any stale marker in the time-series
+				// data is used the engine to stop applying the lookback delta but the stale marker is removed
+				// from the query results. The result of embedded queries, which we are processing in this function,
+				// is then used as input to run an outer query in the PromQL engine. This data will not contain
+				// the stale marker (because has been removed when running the embedded query) but we still need
+				// the PromQL engine to not apply the lookback delta when there are gaps in the embedded queries
+				// results. For this reason, here we do inject a stale marker at the beginning of each gap in the
+				// embedded queries results.
+				if step > 0 && idx > 0 && sample.TimestampMs > stream.Samples[idx-1].TimestampMs+step {
+					samples = append(samples, model.SamplePair{
+						Timestamp: model.Time(stream.Samples[idx-1].TimestampMs + step),
+						Value:     model.SampleValue(stdlibMath.Float64frombits(value.StaleNaN)),
+					})
+				}
+
+				samples = append(samples, model.SamplePair{
+					Timestamp: model.Time(sample.TimestampMs),
+					Value:     model.SampleValue(sample.Value),
+				})
+			}
+
+			// In case the embedded query processed series which all ended before the end of the query time range,
+			// we don't want the outer query to apply the lookback at the end of the embedded query results. To keep it
+			// simple, it's safe always to add an extra stale marker at the end of the query results.
+			//
+			// This could result in an extra sample (stale marker) after the end of the query time range, but that's
+			// not a problem when running the outer query because it will just be discarded.
+			if len(samples) > 0 && step > 0 {
+				samples = append(samples, model.SamplePair{
+					Timestamp: samples[len(samples)-1].Timestamp + model.Time(step),
+					Value:     model.SampleValue(stdlibMath.Float64frombits(value.StaleNaN)),
+				})
+			}
+
+			// same logic as samples above
+			var histograms []mimirpb.Histogram
+			if len(stream.Histograms) > 0 {
+				// If there are histograms, which is less likely currently,
+				// we add an extra 10 items to account for some stale markers that could be injected.
+				// We're trading a lower chance of reallocation in case stale markers are added for a
+				// slightly higher memory utilisation.
+				histograms = make([]mimirpb.Histogram, 0, len(stream.Histograms)+10)
+			} else {
+				histograms = make([]mimirpb.Histogram, 0)
+			}
+
+			for idx, histogram := range stream.Histograms {
+				if step > 0 && idx > 0 && histogram.TimestampMs > stream.Histograms[idx-1].TimestampMs+step {
+					histograms = append(histograms, mimirpb.Histogram{
+						Timestamp: stream.Histograms[idx-1].TimestampMs + step,
+						Sum:       stdlibMath.Float64frombits(value.StaleNaN),
+					})
+				}
+
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel()))
+			}
+
+			if len(histograms) > 0 && step > 0 {
+				histograms = append(histograms, mimirpb.Histogram{
+					Timestamp: histograms[len(histograms)-1].Timestamp + step,
+					Sum:       stdlibMath.Float64frombits(value.StaleNaN),
+				})
+			}
+
+			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
+		}
+	}
+	return series.NewConcreteSeriesSetFromUnsortedSeries(set)
+}
+
+// ResponseToSamples is needed to map back from api response to the underlying series data
+func ResponseToSamples(resp *querymiddlewareextract.PrometheusResponse) ([]querymiddlewareextract.SampleStream, error) {
+	if resp.Error != "" {
+		return nil, errors.New(resp.Error)
+	}
+
+	switch resp.Data.ResultType {
+	case string(parser.ValueTypeString),
+		string(parser.ValueTypeScalar),
+		string(parser.ValueTypeVector),
+		string(parser.ValueTypeMatrix):
+		return resp.Data.Result, nil
+	}
+
+	return nil, fmt.Errorf(
+		"invalid promql.Value type: [%s]. Only %s, %s, %s and %s supported",
+		resp.Data.ResultType,
+		parser.ValueTypeString,
+		parser.ValueTypeScalar,
+		parser.ValueTypeVector,
+		parser.ValueTypeMatrix,
+	)
+}
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
+
+	if seriesSet, finished := mq.SelectAggregatedSubquery(ctx, sp, matchers...); finished {
+		return seriesSet
+	}
 
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {

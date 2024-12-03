@@ -355,6 +355,12 @@ func newQueryMiddlewares(
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("spinoff_subqueries", metrics),
+		newSubquerySpinoff(log, limits, registerer),
+	)
+
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
