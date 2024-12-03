@@ -91,7 +91,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, req *usagetrackerpb.Trac
 		return int((a%shards+tenantStartingShard)%shards) - int((b%shards+tenantStartingShard)%shards)
 	})
 
-	nowMinutes := int32(now.Sub(now.Truncate(4 * time.Hour)).Minutes())
+	nowMinutes := toMinutes(now)
 
 	created := make([]uint64, 0, len(series))
 	rejected := series[:0]
@@ -103,16 +103,16 @@ func (t *trackerStore) trackSeries(ctx context.Context, req *usagetrackerpb.Trac
 		}
 	}
 
-	level.Debug(t.logger).Log("msg", "tracked series", "userID", req.UserID, "received_len", len(series), "created_len", len(created), "rejected_len", len(rejected))
+	level.Debug(t.logger).Log("msg", "tracked series", "userID", req.UserID, "received_len", len(series), "created_len", len(created), "rejected_len", len(rejected), "now", now.Unix(), "now_minutes", nowMinutes)
 	if err := t.events.publishCreatedSeries(ctx, req.UserID, created); err != nil {
-		level.Error(t.logger).Log("msg", "failed to publish created series", "userID", req.UserID, "err", err, "created_len", len(created), "now", now.Unix())
+		level.Error(t.logger).Log("msg", "failed to publish created series", "userID", req.UserID, "err", err, "created_len", len(created), "now", now.Unix(), "now_minutes", nowMinutes)
 		return nil, err
 	}
 
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
-func (t *trackerStore) trackShardSeries(userID string, info *tenantInfo, series []uint64, limit uint64, created, rejected []uint64, now int32) (_created, _rejected []uint64) {
+func (t *trackerStore) trackShardSeries(userID string, info *tenantInfo, series []uint64, limit uint64, created, rejected []uint64, now minutes) (_created, _rejected []uint64) {
 	shard := series[0] % shards
 	m := t.getOrCreateTenantShard(userID, shard, limit)
 
@@ -152,7 +152,7 @@ func (t *trackerStore) trackShardSeries(userID string, info *tenantInfo, series 
 				// other request may have increased the series count in a different shard.
 				break
 			} else {
-				m.series[s] = atomic.NewInt32(now)
+				m.series[s] = atomic.NewInt32(int32(now))
 				created = append(created, s)
 				info.series.Inc()
 			}
@@ -209,20 +209,28 @@ func (t *trackerStore) getOrCreateUpdatedTenantInfo(tenantID string, now time.Ti
 	return info
 }
 
-func casIfGreater(now int32, ts *atomic.Int32) {
-	for val := ts.Load(); minutesGreater(now, val) && !ts.CompareAndSwap(val, now); val = ts.Load() {
+func casIfGreater(now minutes, ts *atomic.Int32) {
+	for val := ts.Load(); now.greaterThan(minutes(val)) && !ts.CompareAndSwap(val, int32(now)); val = ts.Load() {
 	}
 }
 
-// minutesGreater returns true if a is greater than b as minutes values on a four-hour clock face assuming that none of the values is ever older than 1h.
-func minutesGreater(a, b int32) bool {
-	if a > b {
+func toMinutes(t time.Time) minutes {
+	return minutes(t.Sub(t.Truncate(4 * time.Hour)).Minutes())
+}
+
+// minutes represents the minutes passed since the last 4-hour boundary (00:00, 04:00, 08:00, 12:00, 16:00, 20:00).
+// This value only makes sense within the last hour (it could make sense in the last 2 hours, but we don't want to get close to the ambiguous values).
+type minutes int32
+
+// minutesGreater returns true if this value is greater than otheron a four-hour clock face assuming that none of the values is ever older than 1h.
+func (m minutes) greaterThan(other minutes) bool {
+	if m > other {
 		// true: 40-20 = 20
 		// true: 130-100 = 30
 		// false: 190-10 = 180 (that 190 is from the previous hour)
-		return a-b < 60
+		return m-other < 60
 	}
 	// true: 10, 190: 250-195 = 55
 	// false: 10, 120: 250-120 = 130
-	return a+(4*60)-b < 60
+	return m+(4*60)-other < 60
 }
