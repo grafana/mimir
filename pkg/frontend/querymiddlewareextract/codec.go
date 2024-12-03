@@ -85,7 +85,7 @@ type Codec interface {
 	// to merge result or build the result correctly.
 	DecodeLabelsQueryResponse(context.Context, *http.Response, LabelsQueryRequest, log.Logger) (Response, error)
 	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
-	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
+	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest, *url.URL) (*http.Request, error)
 	// EncodeLabelsQueryRequest encodes a LabelsQueryRequest into an http request.
 	EncodeLabelsQueryRequest(context.Context, LabelsQueryRequest) (*http.Request, error)
 	// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
@@ -548,7 +548,7 @@ func decodeCacheDisabledOption(r *http.Request) bool {
 	return false
 }
 
-func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest) (*http.Request, error) {
+func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequest, baseURL *url.URL) (*http.Request, error) {
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -573,6 +573,9 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", r)
 	}
+
+	u.Host = baseURL.Host
+	u.Scheme = baseURL.Scheme
 
 	req := &http.Request{
 		Method:     "GET",

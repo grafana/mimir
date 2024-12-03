@@ -12,6 +12,7 @@ import (
 	"fmt"
 	stdlibMath "math"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -330,6 +331,10 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 	if sendBackURL == "" {
 		return storage.ErrSeriesSet(errors.New("aggregated subqueries are not enabled")), true
 	}
+	baseURL, err := url.Parse(sendBackURL)
+	if err != nil {
+		return storage.ErrSeriesSet(fmt.Errorf("invalid send back URL: %w", err)), true
+	}
 
 	parsedExpr, err := parser.ParseExpr(aggregatedSubqueryExpr)
 	if err != nil {
@@ -350,9 +355,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 	if end%step != 0 {
 		end += step - (end % step)
 	}
-	reqRange := hints.End - hints.Start
-	// Calculate the earliest data point we need to query.
-	start := end - reqRange - subquery.Range.Milliseconds()
+	start := end - subquery.Range.Milliseconds()
 
 	// Split queries into multiple smaller queries if they have more than 10000 datapoints
 	rangeStart := start
@@ -383,7 +386,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 	streams := make([][]querymiddlewareextract.SampleStream, len(rangeQueries))
 	err = concurrency.ForEachJob(ctx, len(rangeQueries), len(rangeQueries), func(ctx context.Context, idx int) error {
 		req := rangeQueries[idx]
-		httpReq, err := mq.codec.EncodeMetricsQueryRequest(ctx, req)
+		httpReq, err := mq.codec.EncodeMetricsQueryRequest(ctx, req, baseURL)
 		if err != nil {
 			return fmt.Errorf("error encoding request: %w", err)
 		}

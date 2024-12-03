@@ -8,6 +8,8 @@ package querier
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -66,13 +68,73 @@ type query struct {
 }
 
 func TestQuerier(t *testing.T) {
+	serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/prometheus/api/v1/query_range" {
+			http.Error(w, "expected range query", http.StatusBadRequest)
+		}
+		if r.URL.Query().Get("query") != `hello` {
+			http.Error(w, "expected query hello", http.StatusBadRequest)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+   "status":"success",
+   "data":{
+      "resultType":"matrix",
+      "result":[
+         {
+            "metric":{
+               "__name__":"hello",
+               "instance":"localhost:9090",
+               "job":"prometheus"
+            },
+            "values":[
+               [
+                  1,
+                  "1"
+               ],
+               [
+                  2,
+                  "2"
+               ],
+               [
+                  3,
+                  "3"
+               ]
+            ]
+         }
+      ]
+   }
+}`))
+	}))
+	defer serv.Close()
+
 	var cfg Config
 	flagext.DefaultValues(&cfg)
+
+	cfg.SendBackSubqueries = serv.URL
 
 	const chunks = 24
 	secondChunkStart := model.Time(0).Add(chunkOffset)
 
 	queries := map[string]query{
+		// Aggregated subquery
+		"aggregated subquery": {
+			query: `max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[1h:1m]"}[1h])`,
+			step:  sampleRate * 4,
+			labels: labels.Labels{
+				{Name: "instance", Value: "localhost:9090"},
+				{Name: "job", Value: "prometheus"},
+			},
+			samples: func(from, through time.Time, step time.Duration) int {
+				return int(through.Sub(from) / step)
+			},
+			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloat },
+			assertFPoint: func(t testing.TB, ts int64, point promql.FPoint) {
+				require.Equal(t, ts+int64((sampleRate*4)/time.Millisecond), point.T)
+				require.True(t, almost.Equal(1000.0, point.F, epsilon))
+			},
+		},
+
 		// Windowed rates with small step;  This will cause BufferedIterator to read
 		// all the samples.
 		"float: windowed rates with small step": {
