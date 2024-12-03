@@ -14,7 +14,7 @@ This guide focuses specifically on deploying the federation-frontend component a
 
 ## Before you begin
 
-1. Set up a GEM cluster: For information about setting up and configuring a GEM deployment, refer to [Configure Grafana Enterprise Metrics]({{< relref "./configure-grafana-enterprise-metrics" >}}) and [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}).
+1. Set up a GEM cluster: For information about setting up and configuring a GEM deployment, refer to [Deploy Grafana Enterprise Metrics using the Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/gs-gem/).
 2. Provision an access token with the `metrics:read` scope for each cluster that you want to query. For more information, refer to [Set up a GEM tenant](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/set-up-gem-tenant).
 
 ## Deploy the GEM federation-frontend
