@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
@@ -234,4 +235,67 @@ func TestOpenTelemetryTracerBridge_Start(t *testing.T) {
 	ctxSpan := trace.SpanFromContext(ctx)
 
 	require.Same(t, span, ctxSpan, "returned context should contain span")
+}
+
+func TestOpenTelemetrySpanBridge_EndIdempotency(t *testing.T) {
+	tests := map[string]struct {
+		endCalls    int
+		withOptions bool
+		finishCalls int
+		finishOpts  int
+	}{
+		"single end without options": {
+			endCalls:    1,
+			withOptions: false,
+			finishCalls: 1,
+			finishOpts:  0,
+		},
+		"multiple ends without options": {
+			endCalls:    3,
+			withOptions: false,
+			finishCalls: 1,
+			finishOpts:  0,
+		},
+		"single end with options": {
+			endCalls:    1,
+			withOptions: true,
+			finishCalls: 0,
+			finishOpts:  1,
+		},
+		"multiple ends with options": {
+			endCalls:    3,
+			withOptions: true,
+			finishCalls: 0,
+			finishOpts:  1,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Setup mock
+			m := &TracingSpanMock{}
+			m.On("Finish").Return()
+			m.On("FinishWithOptions", mock.Anything).Return()
+
+			// Create bridge
+			s := NewOpenTelemetrySpanBridge(m, nil)
+
+			// Call End multiple times
+			for i := 0; i < testData.endCalls; i++ {
+				if testData.withOptions {
+					s.End(trace.WithTimestamp(time.Now()))
+				} else {
+					s.End()
+				}
+			}
+
+			// Assert expectations
+			if testData.finishCalls > 0 {
+				m.AssertNumberOfCalls(t, "Finish", testData.finishCalls)
+			}
+			if testData.finishOpts > 0 {
+				m.AssertNumberOfCalls(t, "FinishWithOptions", testData.finishOpts)
+			}
+		})
+	}
 }
