@@ -140,16 +140,16 @@ type MetricsQueryHandler interface {
 }
 
 // LabelsHandlerFunc is like http.HandlerFunc, but for LabelsQueryHandler.
-type LabelsHandlerFunc func(context.Context, LabelsQueryRequest) (Response, error)
+type LabelsHandlerFunc func(context.Context, LabelsSeriesQueryRequest) (Response, error)
 
 // Do implements LabelsQueryHandler.
-func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsQueryRequest) (Response, error) {
+func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsSeriesQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
 // LabelsQueryHandler is like http.Handler, but specifically for Prometheus label names and values calls.
 type LabelsQueryHandler interface {
-	Do(context.Context, LabelsQueryRequest) (Response, error)
+	Do(context.Context, LabelsSeriesQueryRequest) (Response, error)
 }
 
 // MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.

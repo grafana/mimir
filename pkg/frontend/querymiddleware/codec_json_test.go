@@ -242,7 +242,7 @@ func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
 
 	for _, tc := range []struct {
 		name             string
-		request          LabelsQueryRequest
+		request          LabelsSeriesQueryRequest
 		isSeriesResponse bool
 		responseHeaders  http.Header
 		resp             prometheusAPIResponse

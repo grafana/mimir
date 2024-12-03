@@ -475,13 +475,13 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
+func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 	for _, testCase := range []struct {
 		name                      string
 		propagateHeaders          []string
 		url                       string
 		headers                   http.Header
-		expectedStruct            LabelsQueryRequest
+		expectedStruct            LabelsSeriesQueryRequest
 		expectedGetLabelName      string
 		expectedGetStartOrDefault int64
 		expectedGetEndOrDefault   int64
@@ -709,7 +709,7 @@ func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 					}
 
 					codec := newTestPrometheusCodecWithHeaders(testCase.propagateHeaders)
-					reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
+					reqDecoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, r)
 					if err != nil || testCase.expectedErr != "" {
 						require.EqualError(t, err, testCase.expectedErr)
 						return
@@ -1729,7 +1729,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		queryURL string
-		request  LabelsQueryRequest
+		request  LabelsSeriesQueryRequest
 	}{
 		{
 			name:     "label names - minimal",
@@ -1824,7 +1824,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			expected.Header.Set("Accept", "application/json")
 			ctx := context.Background()
 
-			decoded, err := codec.DecodeLabelsQueryRequest(ctx, expected)
+			decoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, expected)
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
@@ -1833,7 +1833,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
 
-			decoded, err = codec.DecodeLabelsQueryRequest(ctx, encoded)
+			decoded, err = codec.DecodeLabelsSeriesQueryRequest(ctx, encoded)
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 

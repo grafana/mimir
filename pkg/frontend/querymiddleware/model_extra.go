@@ -510,12 +510,12 @@ func (r *PrometheusSeriesQueryRequest) GetHeaders() []*PrometheusHeader {
 }
 
 // WithLabelName clones the current `PrometheusLabelNamesQueryRequest` with a new label name param.
-func (r *PrometheusLabelNamesQueryRequest) WithLabelName(string) (LabelsQueryRequest, error) {
+func (r *PrometheusLabelNamesQueryRequest) WithLabelName(string) (LabelsSeriesQueryRequest, error) {
 	panic("PrometheusLabelNamesQueryRequest.WithLabelName is not implemented")
 }
 
 // WithLabelName clones the current `PrometheusLabelValuesQueryRequest` with a new label name param.
-func (r *PrometheusLabelValuesQueryRequest) WithLabelName(name string) (LabelsQueryRequest, error) {
+func (r *PrometheusLabelValuesQueryRequest) WithLabelName(name string) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.Path = labelValuesPathSuffix.ReplaceAllString(r.Path, `/api/v1/label/`+name+`/values`)
 	newRequest.LabelName = name
@@ -523,12 +523,12 @@ func (r *PrometheusLabelValuesQueryRequest) WithLabelName(name string) (LabelsQu
 }
 
 // WithLabelName clones the current `PrometheusSeriesQueryRequest` with a new label name param.
-func (r *PrometheusSeriesQueryRequest) WithLabelName(string) (LabelsQueryRequest, error) {
+func (r *PrometheusSeriesQueryRequest) WithLabelName(string) (LabelsSeriesQueryRequest, error) {
 	panic("PrometheusSeriesQueryRequest.WithLabelName is not implemented")
 }
 
 // WithLabelMatcherSets clones the current `PrometheusLabelNamesQueryRequest` with new label matcher sets.
-func (r *PrometheusLabelNamesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsQueryRequest, error) {
+func (r *PrometheusLabelNamesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.LabelMatcherSets = make([]string, len(labelMatcherSets))
 	copy(newRequest.LabelMatcherSets, labelMatcherSets)
@@ -536,7 +536,7 @@ func (r *PrometheusLabelNamesQueryRequest) WithLabelMatcherSets(labelMatcherSets
 }
 
 // WithLabelMatcherSets clones the current `PrometheusLabelValuesQueryRequest` with new label matcher sets.
-func (r *PrometheusLabelValuesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsQueryRequest, error) {
+func (r *PrometheusLabelValuesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.LabelMatcherSets = make([]string, len(labelMatcherSets))
 	copy(newRequest.LabelMatcherSets, labelMatcherSets)
@@ -544,7 +544,7 @@ func (r *PrometheusLabelValuesQueryRequest) WithLabelMatcherSets(labelMatcherSet
 }
 
 // WithLabelMatcherSets clones the current `PrometheusSeriesQueryRequest` with new label matcher sets.
-func (r *PrometheusSeriesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsQueryRequest, error) {
+func (r *PrometheusSeriesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.LabelMatcherSets = make([]string, len(labelMatcherSets))
 	copy(newRequest.LabelMatcherSets, labelMatcherSets)
@@ -552,21 +552,21 @@ func (r *PrometheusSeriesQueryRequest) WithLabelMatcherSets(labelMatcherSets []s
 }
 
 // WithHeaders clones the current `PrometheusLabelNamesQueryRequest` with new headers.
-func (r *PrometheusLabelNamesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsQueryRequest, error) {
+func (r *PrometheusLabelNamesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.Headers = cloneHeaders(headers)
 	return &newRequest, nil
 }
 
 // WithHeaders clones the current `PrometheusLabelValuesQueryRequest` with new headers.
-func (r *PrometheusLabelValuesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsQueryRequest, error) {
+func (r *PrometheusLabelValuesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.Headers = cloneHeaders(headers)
 	return &newRequest, nil
 }
 
 // WithHeaders clones the current `PrometheusSeriesQueryRequest` with new headers.
-func (r *PrometheusSeriesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsQueryRequest, error) {
+func (r *PrometheusSeriesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsSeriesQueryRequest, error) {
 	newRequest := *r
 	newRequest.Headers = cloneHeaders(headers)
 	return &newRequest, nil

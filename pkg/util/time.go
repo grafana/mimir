@@ -6,15 +6,13 @@
 package util
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/grafana/dskit/httpgrpc"
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/common/model"
 )
 
@@ -37,19 +35,6 @@ func FormatTimeModel(t model.Time) string {
 	return TimeFromMillis(int64(t)).String()
 }
 
-// ParseTimeParam parses the desired time param from a Prometheus http request into an int64, milliseconds since epoch.
-func ParseTimeParam(r *http.Request, paramName string, defaultValue int64) (int64, error) {
-	val := r.FormValue(paramName)
-	if val == "" {
-		return defaultValue, nil
-	}
-	result, err := ParseTime(val)
-	if err != nil {
-		return 0, fmt.Errorf("invalid time value for '%s': %w", paramName, err)
-	}
-	return result, nil
-}
-
 // ParseTime parses the string into an int64, milliseconds since epoch.
 func ParseTime(s string) (int64, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
@@ -61,7 +46,21 @@ func ParseTime(s string) (int64, error) {
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return TimeToMillis(t), nil
 	}
-	return 0, httpgrpc.Errorf(http.StatusBadRequest, "cannot parse %q to a valid timestamp", s)
+	return 0, errors.Newf("cannot parse %q to a valid timestamp", s)
+}
+
+func ParseDurationMS(s string) (int64, error) {
+	if d, err := strconv.ParseFloat(s, 64); err == nil {
+		ts := d * float64(time.Second/time.Millisecond)
+		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+			return 0, errors.Newf("cannot parse %q to a valid duration. It overflows int64", s)
+		}
+		return int64(ts), nil
+	}
+	if d, err := model.ParseDuration(s); err == nil {
+		return int64(d) / int64(time.Millisecond/time.Nanosecond), nil
+	}
+	return 0, errors.Newf("cannot parse %q to a valid duration", s)
 }
 
 // DurationWithJitter returns random duration from "input - input*variance" to "input + input*variance" interval.
