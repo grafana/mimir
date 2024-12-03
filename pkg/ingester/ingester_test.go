@@ -3677,9 +3677,10 @@ func BenchmarkIngesterPush(b *testing.B) {
 					_, err = ingester.Push(ctx, currTimeReq)
 					require.NoError(b, err)
 
+					// so we are benchmark 5000 series with 10 sample each
 					const (
-						series  = 50
-						samples = 1
+						series  = 5000
+						samples = 10
 					)
 
 					allLabels, allSamples := benchmarkData(series)

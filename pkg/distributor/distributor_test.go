@@ -2012,17 +2012,17 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		cfg            func(limits *validation.Limits)
 	}{
 		{
+			state:          "disabled",
+			customRegistry: nil,
+			cfg:            func(_ *validation.Limits) {},
+		},
+		{
 			state:          "enabled",
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
 				limits.CostAttributionLabels = []string{"team"}
 				limits.MaxCostAttributionCardinalityPerUser = 100
 			},
-		},
-		{
-			state:          "disabled",
-			customRegistry: nil,
-			cfg:            func(_ *validation.Limits) {},
 		},
 	}
 

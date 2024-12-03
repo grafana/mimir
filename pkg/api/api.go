@@ -285,10 +285,8 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
 }
 
-// Function to register the usage metrics route
+// RegisterUsageMetricsRoute registers a Prometheus HTTP handler for the custom registry.
 func (a *API) RegisterUsageMetricsRoute(customRegistryPath string, reg *prometheus.Registry) {
-	// Create a Prometheus HTTP handler for the custom registry
-	// Register the handler with the API's routing system
 	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), true, false, "GET")
 }
 
