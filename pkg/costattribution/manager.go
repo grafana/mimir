@@ -27,37 +27,58 @@ type Manager struct {
 	limits          *validation.Overrides
 
 	// mu protects the trackersByUserID map
-	mtx              sync.RWMutex
-	trackersByUserID map[string]*Tracker
-	reg              *prometheus.Registry
+	mtx                   sync.RWMutex
+	trackersByUserID      map[string]*Tracker
+	reg                   *prometheus.Registry
+	cleanupInterval       time.Duration
+	metricsExportInterval time.Duration
 }
 
 // NewManager creates a new cost attribution manager. which is responsible for managing the cost attribution of series.
 // It will clean up inactive series and update the cost attribution of series every 3 minutes.
-func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
+func NewManager(cleanupInterval, exportInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
 	m := &Manager{
-		trackersByUserID: make(map[string]*Tracker),
-		limits:           limits,
-		mtx:              sync.RWMutex{},
-		inactiveTimeout:  inactiveTimeout,
-		logger:           logger,
-		reg:              reg,
+		trackersByUserID:      make(map[string]*Tracker),
+		limits:                limits,
+		mtx:                   sync.RWMutex{},
+		inactiveTimeout:       inactiveTimeout,
+		logger:                logger,
+		reg:                   reg,
+		cleanupInterval:       cleanupInterval,
+		metricsExportInterval: exportInterval,
 	}
 
-	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
+	m.Service = services.NewBasicService(nil, m.running, nil).WithName("cost attribution manager")
 	if err := reg.Register(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (m *Manager) iteration(_ context.Context) error {
+func (m *Manager) running(ctx context.Context) error {
 	if m == nil {
 		return nil
 	}
 	currentTime := time.Now()
-	m.purgeInactiveAttributionsUntil(currentTime.Add(-m.inactiveTimeout).Unix())
-	return nil
+	t := time.NewTicker(m.cleanupInterval)
+	defer t.Stop()
+
+	tMupdate := time.NewTicker(m.metricsExportInterval)
+	defer tMupdate.Stop()
+
+	for {
+		select {
+		case <-t.C:
+			err := m.purgeInactiveAttributionsUntil(currentTime.Add(-m.inactiveTimeout).Unix())
+			if err != nil {
+				return err
+			}
+		case <-tMupdate.C:
+			m.updateMetrics()
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 // EnabledForUser returns true if the cost attribution is enabled for the user
@@ -109,14 +130,14 @@ func (m *Manager) deleteUserTracer(userID string) {
 	defer m.mtx.Unlock()
 	if _, exists := m.trackersByUserID[userID]; exists {
 		// clean up tracker metrics and delete the tracker
-		m.trackersByUserID[userID].cleanupTracker(userID)
+		m.trackersByUserID[userID].cleanupTracker()
 		delete(m.trackersByUserID, userID)
 	}
 }
 
-func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
+func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 	if m == nil {
-		return
+		return nil
 	}
 	// Get all userIDs from the map
 	m.mtx.RLock()
@@ -135,13 +156,14 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 		}
 
 		// get all inactive attributions for the user and clean up the tracker
-		inactiveObs := m.purgeInactiveObservationsForUser(userID, deadline)
-		for _, ob := range inactiveObs {
-			m.trackersByUserID[userID].cleanupTrackerAttribution(ob.lvalues)
+		invalidKeys := m.getInactiveObservationsForUser(userID, deadline)
+
+		cat := m.TrackerForUser(userID)
+		for _, key := range invalidKeys {
+			cat.cleanupTrackerAttribution(key)
 		}
 
 		// if the tracker is no longer overflowed, and it is currently in overflow state, check the cooldown and create new tracker
-		cat := m.TrackerForUser(userID)
 		if cat != nil && cat.cooldownUntil != nil && cat.cooldownUntil.Load() < deadline {
 			if len(cat.observed) <= cat.MaxCardinality() {
 				m.deleteUserTracer(userID)
@@ -150,6 +172,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) {
 			}
 		}
 	}
+	return nil
 }
 
 // compare two sorted string slices
@@ -166,7 +189,7 @@ func CompareCALabels(a, b []string) bool {
 	return true
 }
 
-func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64) []*Observation {
+func (m *Manager) getInactiveObservationsForUser(userID string, deadline int64) []string {
 	cat := m.TrackerForUser(userID)
 	if cat == nil {
 		return nil
@@ -196,5 +219,17 @@ func (m *Manager) purgeInactiveObservationsForUser(userID string, deadline int64
 		}
 	}
 
-	return cat.PurgeInactiveObservations(deadline)
+	return cat.GetInactiveObservations(deadline)
+}
+
+func (m *Manager) updateMetrics() {
+	if m == nil {
+		return
+	}
+
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	for _, tracker := range m.trackersByUserID {
+		tracker.updateMetrics()
+	}
 }

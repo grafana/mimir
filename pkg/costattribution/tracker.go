@@ -15,13 +15,17 @@ import (
 )
 
 type Observation struct {
-	lvalues    []string
-	lastUpdate *atomic.Int64
+	lastUpdate      *atomic.Int64
+	activeSerie     *atomic.Int64
+	receivedSample  *atomic.Int64
+	discardSamplemu sync.RWMutex
+	discardedSample map[string]*atomic.Int64
 }
 
 const (
-	TrackerLabel = "tracker"
-	TenantLabel  = "tenant"
+	TrackerLabel       = "tracker"
+	TenantLabel        = "tenant"
+	defaultTrackerName = "cost-attribution"
 )
 
 type Tracker struct {
@@ -32,12 +36,10 @@ type Tracker struct {
 	receivedSamplesAttribution     *prometheus.CounterVec
 	discardedSampleAttribution     *prometheus.CounterVec
 
+	overflowLabels []string
 	// obseveredMtx protects the observed map
 	obseveredMtx sync.RWMutex
-	observed     map[uint64]*Observation
-
-	activeSerieMtx             sync.RWMutex
-	activeSeriesAttributionMap map[string]*atomic.Int64
+	observed     map[string]*Observation
 
 	hashBuffer       []byte
 	isOverflow       bool
@@ -56,31 +58,37 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		caLabels:       trackedLabels,
 		maxCardinality: limit,
 		obseveredMtx:   sync.RWMutex{},
-		observed:       map[uint64]*Observation{},
+		observed:       map[string]*Observation{},
 		//lint:ignore faillint the metrics are registered in the mimir package
 		discardedSampleAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name:        "cortex_discarded_attributed_samples_total",
 			Help:        "The total number of samples that were discarded per attribution.",
-			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
+			ConstLabels: prometheus.Labels{TrackerLabel: defaultTrackerName},
 		}, append(trackedLabels, TenantLabel, "reason")),
 		//lint:ignore faillint the metrics are registered in the mimir package
 		receivedSamplesAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name:        "cortex_received_attributed_samples_total",
 			Help:        "The total number of samples that were received per attribution.",
-			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
+			ConstLabels: prometheus.Labels{TrackerLabel: defaultTrackerName},
 		}, append(trackedLabels, TenantLabel)),
 		//lint:ignore faillint the metrics are registered in the mimir package
 		activeSeriesPerUserAttribution: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "cortex_ingester_attributed_active_series",
 			Help:        "The total number of active series per user and attribution.",
-			ConstLabels: prometheus.Labels{TrackerLabel: "custom_attribution"},
+			ConstLabels: prometheus.Labels{TrackerLabel: defaultTrackerName},
 		}, append(trackedLabels, TenantLabel)),
-		hashBuffer:                 make([]byte, 0, 1024),
-		cooldownDuration:           int64(cooldown.Seconds()),
-		logger:                     logger,
-		activeSerieMtx:             sync.RWMutex{},
-		activeSeriesAttributionMap: map[string]*atomic.Int64{},
+		hashBuffer:       make([]byte, 0, 1024),
+		cooldownDuration: int64(cooldown.Seconds()),
+		logger:           logger,
 	}
+
+	// set overflow label values to export when the tracker is in overflow state
+	m.overflowLabels = make([]string, len(trackedLabels)+2)
+	for i := 0; i < len(trackedLabels); i++ {
+		m.overflowLabels[i] = overflowValue
+	}
+	m.overflowLabels[len(trackedLabels)] = userID
+	m.overflowLabels[len(trackedLabels)+1] = overflowValue
 	return m, nil
 }
 
@@ -108,22 +116,17 @@ func (t *Tracker) CooldownDuration() int64 {
 // sep is used to separate the labels in the key, it is not a valid label caracter
 const sep = rune(0x80)
 
-func (t *Tracker) cleanupTrackerAttribution(vals []string) {
+func (t *Tracker) cleanupTrackerAttribution(key string) {
 	if t == nil {
 		return
 	}
 
-	var sb strings.Builder
-	for i, v := range vals {
-		if i > 0 {
-			sb.WriteRune(sep)
-		}
-		sb.WriteString(v)
-	}
-	t.activeSerieMtx.Lock()
-	delete(t.activeSeriesAttributionMap, sb.String())
-	t.activeSerieMtx.Unlock()
+	t.obseveredMtx.Lock()
+	delete(t.observed, key)
+	t.obseveredMtx.Unlock()
 
+	vals := strings.Split(key, string(sep))
+	vals = append(vals, t.userID)
 	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
 	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
 
@@ -132,18 +135,15 @@ func (t *Tracker) cleanupTrackerAttribution(vals []string) {
 	for i := 0; i < len(t.caLabels); i++ {
 		filter[t.caLabels[i]] = vals[i]
 	}
-	filter[TenantLabel] = vals[len(vals)-1]
+	filter[TenantLabel] = t.userID
 	t.discardedSampleAttribution.DeletePartialMatch(filter)
 }
 
-func (t *Tracker) cleanupTracker(userID string) {
+func (t *Tracker) cleanupTracker() {
 	if t == nil {
 		return
 	}
-	t.activeSerieMtx.Lock()
-	t.activeSeriesAttributionMap = map[string]*atomic.Int64{}
-	t.activeSerieMtx.Unlock()
-	filter := prometheus.Labels{TenantLabel: userID}
+	filter := prometheus.Labels{TenantLabel: t.userID}
 	t.activeSeriesPerUserAttribution.DeletePartialMatch(filter)
 	t.receivedSamplesAttribution.DeletePartialMatch(filter)
 	t.discardedSampleAttribution.DeletePartialMatch(filter)
@@ -153,74 +153,35 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix())
-	var sb strings.Builder
-	for i, v := range vals {
-		if i > 0 {
-			sb.WriteRune(sep)
-		}
-		sb.WriteString(v)
-	}
-	t.activeSerieMtx.Lock()
-	if cnt, ok := t.activeSeriesAttributionMap[sb.String()]; !ok {
-		t.activeSeriesAttributionMap[sb.String()] = atomic.NewInt64(1)
-	} else {
-		cnt.Inc()
-	}
-	t.activeSerieMtx.Unlock()
+	t.updateCounters(lbs, now.Unix(), 1, 0, 0, nil)
 }
 
 func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix())
-	var sb strings.Builder
-	for i, v := range vals {
-		if i > 0 {
-			sb.WriteRune(sep)
-		}
-		sb.WriteString(v)
-	}
-	t.activeSerieMtx.Lock()
-	if cnt, ok := t.activeSeriesAttributionMap[sb.String()]; ok {
-		cnt.Dec()
-	}
-	t.activeSerieMtx.Unlock()
+	t.updateCounters(lbs, now.Unix(), -1, 0, 0, nil)
 }
 
 func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix())
-	if t.isOverflow {
-		vals = append(vals, overflowValue)
-	} else {
-		vals = append(vals, reason)
-	}
-	t.discardedSampleAttribution.WithLabelValues(vals...).Add(value)
+	t.updateCounters(lbs, now.Unix(), 0, 0, int64(value), &reason)
 }
 
 func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
 	if t == nil {
 		return
 	}
-	vals := t.getKeyValues(lbs, now.Unix())
-	t.receivedSamplesAttribution.WithLabelValues(vals...).Add(value)
+	t.updateCounters(lbs, now.Unix(), 0, int64(value), 0, nil)
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 	if t == nil {
 		return
 	}
-	t.activeSerieMtx.Lock()
-	for key, c := range t.activeSeriesAttributionMap {
-		if c != nil {
-			t.activeSeriesPerUserAttribution.WithLabelValues(strings.Split(key, string(sep))...).Set(float64(c.Load()))
-		}
-	}
-	t.activeSerieMtx.Unlock()
+
 	t.activeSeriesPerUserAttribution.Collect(out)
 	t.receivedSamplesAttribution.Collect(out)
 	t.discardedSampleAttribution.Collect(out)
@@ -234,43 +195,64 @@ func (t *Tracker) Describe(chan<- *prometheus.Desc) {
 	}
 }
 
-func (t *Tracker) getKeyValues(lbls labels.Labels, ts int64) []string {
+func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement int64, reason *string) {
 	if t == nil {
-		return nil
+		return
 	}
-	values := make([]string, len(t.caLabels)+1)
-	for i, l := range t.caLabels {
-		values[i] = lbls.Get(l)
-		if values[i] == "" {
-			values[i] = missingValue
+	labelValues := make([]string, len(t.caLabels)+1)
+	for i, label := range t.caLabels {
+		labelValues[i] = lbls.Get(label)
+		if labelValues[i] == "" {
+			labelValues[i] = missingValue
 		}
 	}
-	values[len(values)-1] = t.userID
-	var stream uint64
-	stream, _ = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
+	labelValues[len(labelValues)-1] = t.userID
 
-	if t.overflow(stream, values, ts) {
-		// Omit last label.
-		for i := range values[:len(values)-1] {
-			values[i] = overflowValue
+	var sb strings.Builder
+	for i, value := range labelValues[:len(labelValues)-1] {
+		if i > 0 {
+			sb.WriteRune(sep)
 		}
+		sb.WriteString(value)
 	}
-	return values
+
+	t.updateOverflow(sb.String(), ts, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement, reason)
 }
 
-func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
+func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement int64, reason *string) {
 	if t == nil {
-		return false
+		return
 	}
 
 	t.obseveredMtx.Lock()
 	// we store up to 2 * maxCardinality observations, if we have seen the stream before, we update the last update time
-	if o, known := t.observed[stream]; known && o.lastUpdate != nil && o.lastUpdate.Load() < ts {
-		o.lastUpdate.Store(ts)
+	if o, known := t.observed[stream]; known && o.lastUpdate != nil {
+		if o.lastUpdate.Load() < ts {
+			o.lastUpdate.Store(ts)
+		}
+		if activeSeriesIncrement != 0 {
+			o.activeSerie.Add(activeSeriesIncrement)
+		}
+		if receviedSampleIncrement > 0 {
+			o.receivedSample.Add(receviedSampleIncrement)
+		}
+		if discardedSampleIncrement > 0 && reason != nil {
+			o.discardSamplemu.Lock()
+			o.discardedSample[*reason] = atomic.NewInt64(discardedSampleIncrement)
+			o.discardSamplemu.Unlock()
+		}
 	} else if len(t.observed) < t.maxCardinality*2 {
 		t.observed[stream] = &Observation{
-			lvalues:    values,
-			lastUpdate: atomic.NewInt64(ts),
+			lastUpdate:      atomic.NewInt64(ts),
+			activeSerie:     atomic.NewInt64(activeSeriesIncrement),
+			receivedSample:  atomic.NewInt64(receviedSampleIncrement),
+			discardedSample: map[string]*atomic.Int64{},
+			discardSamplemu: sync.RWMutex{},
+		}
+		if discardedSampleIncrement > 0 && reason != nil {
+			t.observed[stream].discardSamplemu.Lock()
+			t.observed[stream].discardedSample[*reason] = atomic.NewInt64(discardedSampleIncrement)
+			t.observed[stream].discardSamplemu.Unlock()
 		}
 	}
 	t.obseveredMtx.Unlock()
@@ -279,48 +261,27 @@ func (t *Tracker) overflow(stream uint64, values []string, ts int64) bool {
 	// the origin labels ovserved time is not updated, but the overflow hash is updated.
 	if !t.isOverflow && len(t.observed) > t.maxCardinality {
 		t.isOverflow = true
-		t.cleanupTracker(t.userID)
+		t.cleanupTracker()
 		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
 	}
-
-	return t.isOverflow
 }
 
-func (t *Tracker) PurgeInactiveObservations(deadline int64) []*Observation {
+func (t *Tracker) GetInactiveObservations(deadline int64) []string {
 	if t == nil {
 		return nil
 	}
 
 	// otherwise, we need to check all observations and clean up the ones that are inactive
-	var invalidKeys []uint64
-	t.obseveredMtx.Lock()
-	defer t.obseveredMtx.Unlock()
-	for labHash, ob := range t.observed {
+	var invalidKeys []string
+	t.obseveredMtx.RLock()
+	defer t.obseveredMtx.RUnlock()
+	for labkey, ob := range t.observed {
 		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline {
-			invalidKeys = append(invalidKeys, labHash)
+			invalidKeys = append(invalidKeys, labkey)
 		}
 	}
 
-	if len(invalidKeys) == 0 {
-		return nil
-	}
-
-	// Cleanup inactive observations and return all invalid observations to clean up metrics for them
-	res := make([]*Observation, len(invalidKeys))
-	for i := 0; i < len(invalidKeys); {
-		inactiveLab := invalidKeys[i]
-		ob := t.observed[inactiveLab]
-		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline {
-			delete(t.observed, inactiveLab)
-			res[i] = ob
-			i++
-		} else {
-			invalidKeys[i] = invalidKeys[len(invalidKeys)-1]
-			invalidKeys = invalidKeys[:len(invalidKeys)-1]
-		}
-	}
-
-	return res[:len(invalidKeys)]
+	return invalidKeys
 }
 
 func (t *Tracker) UpdateMaxCardinality(limit int) {
@@ -335,4 +296,39 @@ func (t *Tracker) UpdateCooldownDuration(cooldownDuration int64) {
 		return
 	}
 	t.cooldownDuration = cooldownDuration
+}
+
+func (t *Tracker) updateMetrics() {
+	if t == nil {
+		return
+	}
+
+	if t.isOverflow {
+		// if we are in overflow state, we only report the overflow metric
+		t.activeSeriesPerUserAttribution.WithLabelValues(t.overflowLabels[:len(t.overflowLabels)-1]...).Set(float64(1))
+		t.receivedSamplesAttribution.WithLabelValues(t.overflowLabels[:len(t.overflowLabels)-1]...).Add(float64(1))
+		t.discardedSampleAttribution.WithLabelValues(t.overflowLabels...).Add(float64(1))
+	} else {
+		t.obseveredMtx.Lock()
+		for key, c := range t.observed {
+			if c != nil {
+				keys := strings.Split(key, string(sep))
+				keys = append(keys, t.userID)
+				if c.activeSerie.Load() != 0 {
+					t.activeSeriesPerUserAttribution.WithLabelValues(keys...).Add(float64(c.activeSerie.Swap(0)))
+				}
+				if c.receivedSample.Load() > 0 {
+					t.receivedSamplesAttribution.WithLabelValues(keys...).Add(float64(c.receivedSample.Swap(0)))
+				}
+				c.discardSamplemu.Lock()
+				for reason, cnt := range c.discardedSample {
+					if cnt.Load() > 0 {
+						t.discardedSampleAttribution.WithLabelValues(append(keys, reason)...).Add(float64(cnt.Swap(0)))
+					}
+				}
+				c.discardSamplemu.Unlock()
+			}
+		}
+		t.obseveredMtx.Unlock()
+	}
 }
