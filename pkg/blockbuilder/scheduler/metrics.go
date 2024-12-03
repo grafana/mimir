@@ -12,6 +12,7 @@ type schedulerMetrics struct {
 	partitionStartOffset     *prometheus.GaugeVec
 	partitionCommittedOffset *prometheus.GaugeVec
 	partitionEndOffset       *prometheus.GaugeVec
+	flushFailed              prometheus.Counter
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -34,5 +35,9 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
 			Help: "The observed committed offset of each partition.",
 		}, []string{"partition"}),
+		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
+			Help: "The total number of Kafka flushes that failed.",
+		}),
 	}
 }

@@ -123,7 +123,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 			if err := s.flushOffsetsToKafka(context.WithoutCancel(ctx)); err != nil {
 				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
-				// TODO: increment a metric.
+				s.metrics.flushFailed.Inc()
 			}
 
 			s.updateSchedule(ctx)
