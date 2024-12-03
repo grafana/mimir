@@ -126,6 +126,7 @@ type Limits struct {
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
+	DistributorArtificialIngestionDelay         model.Duration      `yaml:"distributor_artificial_ingestion_delay" json:"distributor_artificial_ingestion_delay" category:"experimental"`
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -280,6 +281,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
+	f.Var(&l.DistributorArtificialIngestionDelay, "distributor.artificial-ingestion-latency", "Target ingestion delay. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -1109,6 +1111,11 @@ func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bo
 
 func (o *Overrides) PromoteOTelResourceAttributes(tenantID string) []string {
 	return o.getOverridesForUser(tenantID).PromoteOTelResourceAttributes
+}
+
+// DistributorArtificialIngestionDelay returns the artificial ingestion latency for a given use.
+func (o *Overrides) DistributorArtificialIngestionDelay(tenantID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(tenantID).DistributorArtificialIngestionDelay)
 }
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {

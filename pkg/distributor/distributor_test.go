@@ -8004,3 +8004,59 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	require.NotNil(t, err)
 	require.ErrorContains(t, err, "rpc error: code = Internal desc = distributor is unavailable (current state: New)")
 }
+
+func TestMaybeDelayIngestion(t *testing.T) {
+	tests := []struct {
+		name          string
+		userID        string
+		delay         time.Duration
+		startTime     time.Time
+		expectedSleep time.Duration
+	}{
+		{
+			name:          "No delay configured",
+			userID:        "user1",
+			delay:         0,
+			startTime:     time.Now(),
+			expectedSleep: 0,
+		},
+		{
+			name:          "Delay configured but request took longer than delay",
+			userID:        "user2",
+			delay:         1 * time.Second,
+			startTime:     time.Now().Add(-2 * time.Second),
+			expectedSleep: 0,
+		},
+		{
+			name:          "Delay configured and request took less than delay",
+			userID:        "user3",
+			delay:         2 * time.Second,
+			startTime:     time.Now().Add(-500 * time.Millisecond),
+			expectedSleep: 1500 * time.Millisecond,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := validation.NewMockTenantLimits(map[string]*validation.Limits{
+				tc.userID: {
+					DistributorArtificialIngestionDelay: model.Duration(tc.delay),
+				},
+			})
+			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
+			require.NoError(t, err)
+			distributor := &Distributor{
+				limits: overrides,
+			}
+
+			// Measure the time taken by MaybeDelayIngestion
+			start := time.Now()
+			ctx := user.InjectOrgID(context.Background(), tc.userID)
+			distributor.MaybeDelayIngestion(ctx, tc.startTime)
+			elapsed := time.Since(start)
+
+			// Assert the sleep time is as expected (allowing a small margin for runtime delays).
+			require.InDelta(t, tc.expectedSleep, elapsed, float64(100*time.Millisecond))
+		})
+	}
+}

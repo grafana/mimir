@@ -1401,17 +1401,35 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	start := time.Now()
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
 	pushErr := d.PushWithMiddlewares(ctx, pushReq)
+
+	// TODO(gotjosh): Is this better as a middleware?
+	d.MaybeDelayIngestion(ctx, start)
+
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
 	handledErr := d.handlePushError(ctx, pushErr)
 	return nil, handledErr
+}
+
+func (d *Distributor) MaybeDelayIngestion(ctx context.Context, start time.Time) {
+	// Produce an artificial delay before we respond back to the client if configured.
+	userID, err := tenant.TenantID(ctx) // Log tenant ID if available.
+	if err != nil {
+		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", err)
+		return
+	}
+
+	// Target delay - time spent processing the request.
+	// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a non-zero value.
+	time.Sleep(d.limits.DistributorArtificialIngestionDelay(userID) - time.Since(start))
 }
 
 func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
