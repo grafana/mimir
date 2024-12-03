@@ -31,6 +31,7 @@ type trackerStore struct {
 
 	// dependencies
 	limiter limiter
+	events  events
 
 	// misc
 	logger log.Logger
@@ -40,10 +41,15 @@ type limiter interface {
 	localSeriesLimit(userID string) uint64
 }
 
-func newTrackerStore(logger log.Logger, l limiter) *trackerStore {
+type events interface {
+	publishCreatedSeries(ctx context.Context, userID string, series []uint64) error
+}
+
+func newTrackerStore(logger log.Logger, l limiter, ev events) *trackerStore {
 	t := &trackerStore{
 		tenants: make(map[string]*tenantInfo),
 		limiter: l,
+		events:  ev,
 		logger:  logger,
 	}
 	for i := range t.data {
@@ -70,7 +76,7 @@ type tenantInfo struct {
 }
 
 // trackSeries is used in tests so we can provide custom time.Now() value.
-func (t *trackerStore) trackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest, now time.Time) (*usagetrackerpb.TrackSeriesResponse, error) {
+func (t *trackerStore) trackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest, now time.Time) (*usagetrackerpb.TrackSeriesResponse, error) {
 	info := t.getOrCreateUpdatedTenantInfo(req.UserID, now)
 	limit := t.limiter.localSeriesLimit(req.UserID)
 	if limit == 0 {
@@ -97,8 +103,11 @@ func (t *trackerStore) trackSeries(_ context.Context, req *usagetrackerpb.TrackS
 		}
 	}
 
-	// TODO: send the created series to Kafka events topic.
-	level.Info(t.logger).Log("msg", "tracked series", "userID", req.UserID, "received", len(series), "created", len(created), "rejected", len(rejected))
+	level.Debug(t.logger).Log("msg", "tracked series", "userID", req.UserID, "received_len", len(series), "created_len", len(created), "rejected_len", len(rejected))
+	if err := t.events.publishCreatedSeries(ctx, req.UserID, created); err != nil {
+		level.Error(t.logger).Log("msg", "failed to publish created series", "userID", req.UserID, "err", err, "created_len", len(created), "now", now.Unix())
+		return nil, err
+	}
 
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }

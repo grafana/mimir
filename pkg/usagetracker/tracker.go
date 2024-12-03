@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -81,7 +82,7 @@ func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Log
 	t.partitionWatcher = ring.NewPartitionRingWatcher(partitionRingName, partitionRingKey, partitionKVClient, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	t.partitionPageHandler = ring.NewPartitionRingPageHandler(t.partitionWatcher, ring.NewPartitionRingEditor(partitionRingKey, partitionKVClient))
 
-	t.store = newTrackerStore(logger, t)
+	t.store = newTrackerStore(logger, t, notImplementedEventsPublisher{logger: logger})
 
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 
@@ -150,4 +151,13 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 
 	// Global limit is equally distributed among all active partitions.
 	return uint64(float64(globalLimit) / float64(t.partitionWatcher.PartitionRing().ActivePartitionsCount()))
+}
+
+type notImplementedEventsPublisher struct {
+	logger log.Logger
+}
+
+func (ev notImplementedEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64) error {
+	level.Info(ev.logger).Log("msg", "publishCreatedSeries not implemented", "userID", userID, "series", len(series))
+	return nil
 }
