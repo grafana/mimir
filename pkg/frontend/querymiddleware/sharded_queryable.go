@@ -10,9 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"sync"
-	"time"
 
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
@@ -112,10 +110,6 @@ func (q *shardedQuerier) SelectAggregatedSubquery(ctx context.Context, hints *st
 		return nil, false
 	}
 
-	fmt.Fprintln(os.Stderr, "starting subquery")
-
-	time.Sleep(5 * time.Second)
-
 	parsedExpr, err := parser.ParseExpr(aggregatedSubqueryExpr)
 	if err != nil {
 		return storage.ErrSeriesSet(err), true
@@ -204,7 +198,6 @@ func (q *shardedQuerier) SelectAggregatedSubquery(ctx context.Context, hints *st
 // The sorted bool is ignored because the series is always sorted.
 func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if seriesSet, finished := q.SelectAggregatedSubquery(ctx, hints, matchers...); finished {
-		fmt.Fprintln(os.Stderr, "finished subquery")
 		return seriesSet
 	}
 

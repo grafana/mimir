@@ -50,6 +50,15 @@ func TestShardSummer(t *testing.T) {
 			spinOffSubqueries:      true,
 		},
 		{
+			in: `1 - grafana_slo_sli_6h{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044 and 1 - grafana_slo_sli_3d{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044 and 300 * (sum_over_time((grafana_slo_total_rate_5m{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} < 1e+308)[3d:5m]) - sum_over_time((grafana_slo_success_rate_5m{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} < 1e+308)[3d:5m])) > 4`,
+			out: concat(`1 - grafana_slo_sli_6h{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044 and 1 - grafana_slo_sli_3d{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044`) +
+				"and 300 * " +
+				`(sum_over_time(__aggregated_subquery__{__aggregated_subquery__="(grafana_slo_total_rate_5m{grafana_slo_uuid=\"q97zal7potjxfz38y6xcs\"} < 1e+308)[3d:5m]"}[3d]) - ` +
+				`sum_over_time(__aggregated_subquery__{__aggregated_subquery__="(grafana_slo_success_rate_5m{grafana_slo_uuid=\"q97zal7potjxfz38y6xcs\"} < 1e+308)[3d:5m]"}[3d])) > 4`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
+		},
+		{
 			in:                     `min by (asserts_env, asserts_site, namespace) (1 - avg_over_time(((asserts:latency:p99{asserts_request_context!~"/v1/stack/(sanity|vendor-integration)",asserts_request_type=~"inbound|outbound",job="api-server"}) > bool 12)[1d:]))`,
 			out:                    `min by (asserts_env,asserts_site,namespace) (1 - avg_over_time(__aggregated_subquery__{__aggregated_subquery__="((asserts:latency:p99{asserts_request_context!~\"/v1/stack/(sanity|vendor-integration)\",asserts_request_type=~\"inbound|outbound\",job=\"api-server\"}) > bool 12)[1d:]"}[1d]))`,
 			expectedShardedQueries: 0,
