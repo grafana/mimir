@@ -192,7 +192,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	var fPoints []promql.FPoint
 	var hPoints []promql.HPoint
 
-	// For one-to-one matching for arithmetic operators, we'll never produce more points than the smaller input side.
+	// For arithmetic and comparison operators, we'll never produce more points than the smaller input side.
 	// Because floats and histograms can be multiplied together, we use the sum of both the float and histogram points.
 	// We also don't know if the output will be exclusively floats or histograms, so we'll use the same size slice for both.
 	// We only assign the slices once we see the associated point type so it shouldn't be common that we allocate both.

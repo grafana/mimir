@@ -282,11 +282,6 @@ func (b *OneToOneVectorVectorBinaryOperation) sortSeries(metadata []types.Series
 	// If we do this, then in the worst case, we'll have to buffer the whole of the lower cardinality side.
 	// (Compare this with sorting so that we read the lowest cardinality side in order: in the worst case, we'll have
 	// to buffer the whole of the higher cardinality side.)
-	//
-	// FIXME: this is reasonable for one-to-one matching, but likely not for one-to-many / many-to-one.
-	// For one-to-many / many-to-one, it would likely be best to buffer the side used for multiple output series (the "one" side),
-	// as we'll need to retain these series for multiple output series anyway.
-
 	var sortInterface sort.Interface
 
 	if len(b.leftMetadata) < len(b.rightMetadata) {

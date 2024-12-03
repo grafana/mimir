@@ -471,7 +471,7 @@ func (g *GroupedVectorVectorBinaryOperation) shouldRemoveMetricNameFromManySide(
 // At present, sortSeries uses a very basic heuristic to guess the best way to sort the output series, but we could make
 // this more sophisticated in the future.
 func (g *GroupedVectorVectorBinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*groupedBinaryOperationOutputSeries) {
-	// Each series from the "many" side is used for at most one output series, so sort the output series so that we buffer as little of the
+	// Each series from the "many" side is usually used for at most one output series, so sort the output series so that we buffer as little of the
 	// "many" side series as possible.
 	//
 	// This isn't necessarily perfect: it may be that this still requires us to buffer many series from the "many" side if many
