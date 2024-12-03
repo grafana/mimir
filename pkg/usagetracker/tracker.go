@@ -5,6 +5,7 @@ package usagetracker
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -22,11 +23,14 @@ import (
 type Config struct {
 	InstanceRing  InstanceRingConfig  `yaml:"ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
+
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
+	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", c.IdleTimeout, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
 }
 
 type UsageTracker struct {
@@ -50,6 +54,10 @@ type UsageTracker struct {
 }
 
 func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+	if cfg.IdleTimeout <= 0 || cfg.IdleTimeout > time.Hour {
+		return nil, fmt.Errorf("invalid idle timeout %q, should be greater than 0 and less than 1 hour", cfg.IdleTimeout)
+	}
+
 	t := &UsageTracker{
 		overrides: overrides,
 		logger:    logger,
@@ -82,7 +90,7 @@ func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Log
 	t.partitionWatcher = ring.NewPartitionRingWatcher(partitionRingName, partitionRingKey, partitionKVClient, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	t.partitionPageHandler = ring.NewPartitionRingPageHandler(t.partitionWatcher, ring.NewPartitionRingEditor(partitionRingKey, partitionKVClient))
 
-	t.store = newTrackerStore(logger, t, notImplementedEventsPublisher{logger: logger})
+	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, notImplementedEventsPublisher{logger: logger})
 
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 

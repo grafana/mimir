@@ -33,6 +33,9 @@ type trackerStore struct {
 	limiter limiter
 	events  events
 
+	// config
+	idleTimeout time.Duration
+
 	// misc
 	logger log.Logger
 }
@@ -45,12 +48,13 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, userID string, series []uint64) error
 }
 
-func newTrackerStore(logger log.Logger, l limiter, ev events) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev events) *trackerStore {
 	t := &trackerStore{
-		tenants: make(map[string]*tenantInfo),
-		limiter: l,
-		events:  ev,
-		logger:  logger,
+		tenants:     make(map[string]*tenantInfo),
+		limiter:     l,
+		events:      ev,
+		logger:      logger,
+		idleTimeout: idleTimeout,
 	}
 	for i := range t.data {
 		t.data[i] = make(map[string]*tenantShard)
