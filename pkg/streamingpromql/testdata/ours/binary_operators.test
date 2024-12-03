@@ -1191,21 +1191,74 @@ eval instant at 0 right / on(method) group_right(foo) left
 
 clear
 
+# Test group_left / group_right where both sides contain the additional labels.
 load 6m
-  left{method="get", code="500", foo="left-1"}   1 _ 10
-  left{method="get", code="404", foo="left-2"}   _ 4 20
-  right{method="get", code="999", foo="right-1"} 4 8 40
+  series_a{method="get", code="500", foo="left-1"}   1 _ 10
+  series_a{method="get", code="404", foo="left-2"}   _ 4 20
+  series_b{method="get", code="999", foo="right-1"}  4 8 40
 
-eval range from 0 to 6m step 6m left / on(method) group_left(foo, code) right
+eval range from 0 to 6m step 6m series_a / on(method) group_left(foo, code) series_b
   {method="get", code="999", foo="right-1"} 0.25 0.5
 
-eval range from 0 to 6m step 6m right / on(method) group_right(foo, code) left
+eval range from 0 to 6m step 6m series_b / on(method) group_right(foo, code) series_a
   {method="get", code="999", foo="right-1"} 4 2
 
-eval_fail instant at 12m left / on(method) group_left(foo, code) right
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / on(method) group_left(foo, code) series_b
   expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
 
-eval_fail instant at 12m right / on(method) group_right(foo, code) left
+eval_fail instant at 12m series_b / on(method) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+# Same thing, but with 'ignoring'.
+eval range from 0 to 6m step 6m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  {method="get", code="999", foo="right-1"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  {method="get", code="999", foo="right-1"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+clear
+
+# Same as above, but this time where the additional labels are present on the "many" side but not the "one" side.
+# (They should be taken from the "one" side.)
+
+load 6m
+  series_a{method="get", code="500", foo="left-1"} 1 _ 10
+  series_a{method="get", code="404", foo="left-2"} _ 4 20
+  series_b{method="get", code="999"}               4 8 40
+
+eval range from 0 to 6m step 6m series_a / on(method) group_left(foo, code) series_b
+  {method="get", code="999"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / on(method) group_right(foo, code) series_a
+  {method="get", code="999"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / on(method) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / on(method) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+# Same thing, but with 'ignoring'.
+eval range from 0 to 6m step 6m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  {method="get", code="999"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  {method="get", code="999"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / ignoring(code, foo) group_right(foo, code) series_a
   expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
 
 clear

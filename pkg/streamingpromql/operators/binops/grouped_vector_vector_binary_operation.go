@@ -5,6 +5,7 @@ package binops
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -382,19 +383,32 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 	}
 }
 
-// manySideGroupKeyFunc returns a function that extracts a key representing the set of series from the "many" side that will contribute
+// manySideGroupKeyFunc returns a function that extracts a key representing the set of labels from the "many" side that will contribute
 // to the same set of output series.
 func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySideLabels labels.Labels) []byte {
 	buf := make([]byte, 0, 1024)
 
-	if g.shouldRemoveMetricNameFromManySide() {
+	if !g.shouldRemoveMetricNameFromManySide() && len(g.VectorMatching.Include) == 0 {
+		return func(manySideLabels labels.Labels) []byte {
+			return manySideLabels.Bytes(buf) // FIXME: it'd be nice if we could avoid copying the bytes here
+		}
+	}
+
+	if len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
 			return manySideLabels.BytesWithoutLabels(buf, labels.MetricName)
 		}
 	}
 
+	labelsToRemove := g.VectorMatching.Include
+
+	if g.shouldRemoveMetricNameFromManySide() {
+		labelsToRemove = append(labelsToRemove, labels.MetricName)
+		slices.Sort(labelsToRemove)
+	}
+
 	return func(manySideLabels labels.Labels) []byte {
-		return manySideLabels.Bytes(buf) // FIXME: it'd be nice if we could avoid copying the bytes here
+		return manySideLabels.BytesWithoutLabels(buf, labelsToRemove...)
 	}
 }
 
