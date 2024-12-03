@@ -13,7 +13,6 @@ import (
 func TestTrackerStore_HappyCase(t *testing.T) {
 	const defaultIdleTimeout = 20 * time.Minute
 	const testUser1 = "user1"
-	const testUser2 = "user2"
 	limits := limiterMock{testUser1: 3}
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
