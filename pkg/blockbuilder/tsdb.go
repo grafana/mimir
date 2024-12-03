@@ -119,6 +119,8 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 		allSamplesProcessed = true
 		discardedSamples    = 0
+
+		nativeHistogramsIngestionEnabled = b.limits.NativeHistogramsIngestionEnabled(userID)
 	)
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
@@ -158,6 +160,10 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 				}
 				discardedSamples++
 			}
+		}
+
+		if !nativeHistogramsIngestionEnabled {
+			continue
 		}
 
 		for _, h := range ts.Histograms {
