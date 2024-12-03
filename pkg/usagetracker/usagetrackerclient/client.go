@@ -108,7 +108,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		keys[i] = uint32(hash)
 	}
 
-	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, c.partitionBatchRing, keys,
+	err := ring.DoBatchWithOptions(ctx, trackSeriesOp, c.partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
