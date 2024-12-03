@@ -38,13 +38,14 @@ import (
 )
 
 type Settings struct {
-	ExternalLabels                             map[string]string
 	Namespace                                  string
-	PromoteResourceAttributes                  []string
+	ExternalLabels                             map[string]string
 	DisableTargetInfo                          bool
 	ExportCreatedMetric                        bool
 	AddMetricSuffixes                          bool
 	SendMetadata                               bool
+	AllowUTF8                                  bool
+	PromoteResourceAttributes                  []string
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
@@ -98,7 +99,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
