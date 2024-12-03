@@ -15,11 +15,15 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -37,6 +41,8 @@ type BlockBuilder struct {
 	limits      *validation.Overrides
 	kafkaClient *kgo.Client
 	bucket      objstore.Bucket
+
+	scheduler schedulerpb.SchedulerClient
 
 	assignedPartitionIDs []int32
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
@@ -62,10 +68,6 @@ func New(
 	}
 
 	b.assignedPartitionIDs = b.cfg.PartitionAssignment[b.cfg.InstanceID]
-	if len(b.assignedPartitionIDs) == 0 {
-		// This is just an assertion check. The config validation prevents this from happening.
-		return nil, fmt.Errorf("no partitions assigned to instance %s", b.cfg.InstanceID)
-	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
 	if err != nil {
@@ -75,7 +77,38 @@ func New(
 
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
+	if cfg.SchedulerConfig.Address != "" {
+		sched, err := b.makeSchedulerClient()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create scheduler client: %w", err)
+		}
+		b.scheduler = sched
+	}
+
 	return b, nil
+}
+
+func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, error) {
+	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
+		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
+		nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
+	conn, err := grpc.Dial(b.cfg.SchedulerConfig.Address, dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return schedulerpb.NewSchedulerClient(
+		b.cfg.InstanceID,
+		schedulerpb.NewBlockBuilderSchedulerClient(conn),
+		b.logger,
+		b.cfg.SchedulerConfig.UpdateInterval,
+		b.cfg.SchedulerConfig.MaxUpdateAge,
+	), nil
 }
 
 func (b *BlockBuilder) starting(context.Context) (err error) {
@@ -109,6 +142,29 @@ func (b *BlockBuilder) stopping(_ error) error {
 }
 
 func (b *BlockBuilder) running(ctx context.Context) error {
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go b.scheduler.Run(sctx)
+
+	for {
+		key, _, err := b.scheduler.GetJob(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
+			continue
+		}
+
+		time.Sleep(11 * time.Second)
+
+		if err := b.scheduler.CompleteJob(key); err != nil {
+			level.Warn(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch)
+		}
+	}
+}
+
+func (b *BlockBuilder) running_old(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
 	cycleEndTime := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
