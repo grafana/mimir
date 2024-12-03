@@ -380,6 +380,60 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].Close())
 }
 
+// TestTSDBBuilderNativeHistogramEnabledError tests that when native histograms are disabled for a tenant,
+// the TSDB builder does not error out when trying to ingest native histogram for that tenant.
+func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
+	var (
+		user1 = "user1"
+		user2 = "user2"
+	)
+
+	limits := map[string]*validation.Limits{
+		user1: {
+			NativeHistogramsIngestionEnabled: true,
+		},
+		user2: {
+			NativeHistogramsIngestionEnabled: false,
+		},
+	}
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	var (
+		processingRange = time.Hour.Milliseconds()
+		lastEnd         = 2 * processingRange
+		currEnd         = 3 * processingRange
+		ts              = lastEnd + (processingRange / 2)
+	)
+	for seriesID := 1; seriesID <= 100; seriesID++ {
+		for userID := range limits {
+			rec := &kgo.Record{
+				Key:   []byte(userID),
+				Value: createWriteRequest(t, strconv.Itoa(seriesID), nil, histogramSample(ts)),
+			}
+			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+			require.NoError(t, err)
+			require.Equal(t, true, allProcessed)
+		}
+	}
+
+	// user1 had native histograms enabled. We should see it in the TSDB.
+	db, err := builder.getOrCreateTSDB(tsdbTenant{tenantID: user1})
+	require.NoError(t, err)
+	require.Equal(t, uint64(100), db.Head().NumSeries())
+
+	// user2 had native histograms disabled. Nothing should be in the TSDB.
+	db, err = builder.getOrCreateTSDB(tsdbTenant{tenantID: user2})
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), db.Head().NumSeries())
+}
+
 func defaultLimitsTestConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
