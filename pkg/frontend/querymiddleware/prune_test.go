@@ -46,17 +46,10 @@ func TestQueryPruning(t *testing.T) {
 	}
 
 	templates := []template{
-		{`avg(rate(%s[1m1s])) < (-1 * +Inf)`, true},
-		{`avg(rate(%s[1m1s])) < (+1 * +Inf)`, false},
-		{`avg(rate(%s[1m1s])) < (-1 * -Inf)`, false},
-		{`avg(rate(%s[1m1s])) < (+1 * -Inf)`, true},
-		{`(-1 * -Inf) < avg(rate(%s[1m1s]))`, true},
-		{`((-1 * -Inf) < avg(rate(foo[2m1s]))) or avg(rate(%s[1m1s]))`, false},
-		{`((-1 * -Inf) < avg(rate(foo[2m1s]))) and avg(rate(%s[1m1s]))`, true},
-		{`((-1 * -Inf) < avg(rate(foo[2m1s]))) unless avg(rate(%s[1m1s]))`, true},
-		{`avg(rate(%s[1m1s])) unless ((-1 * -Inf) < avg(rate(foo[2m1s])))`, false},
-		{`(((-1 * -Inf) < avg(rate(foo[3m1s]))) unless avg(rate(foo[2m1s]))) or avg(rate(%s[1m1s]))`, true},
-		{`((((-1 * -Inf) < avg(rate(foo[4m1s]))) unless avg(rate(foo[3m1s]))) and avg(rate(foo[2m1s]))) or avg(rate(%s[1m1s]))`, true},
+		{`(avg(rate(%s[1m1s])))`, false},
+		{`(avg(rate(%s[1m1s]))) and on() (vector(0) == 1)`, true},
+		{`(avg(rate(%s[1m1s]))) and on() (vector(1) == 1)`, false},
+		{`avg(rate(%s[1m1s])) or (avg(rate(test_float[1m1s]))) and on() (vector(0) == 1)`, false},
 	}
 	for _, template := range templates {
 		t.Run(template.query, func(t *testing.T) {
