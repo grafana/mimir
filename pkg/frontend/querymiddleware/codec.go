@@ -83,18 +83,18 @@ type Codec interface {
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
 	DecodeMetricsQueryResponse(context.Context, *http.Response, MetricsQueryRequest, log.Logger) (Response, error)
-	// DecodeLabelsQueryResponse decodes a Response from an http response.
+	// DecodeLabelsSeriesQueryResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeLabelsQueryResponse(context.Context, *http.Response, LabelsSeriesQueryRequest, log.Logger) (Response, error)
+	DecodeLabelsSeriesQueryResponse(context.Context, *http.Response, LabelsSeriesQueryRequest, log.Logger) (Response, error)
 	// EncodeMetricsQueryRequest encodes a MetricsQueryRequest into an http request.
 	EncodeMetricsQueryRequest(context.Context, MetricsQueryRequest) (*http.Request, error)
-	// EncodeLabelsQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
-	EncodeLabelsQueryRequest(context.Context, LabelsSeriesQueryRequest) (*http.Request, error)
+	// EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
+	EncodeLabelsSeriesQueryRequest(context.Context, LabelsSeriesQueryRequest) (*http.Request, error)
 	// EncodeMetricsQueryResponse encodes a Response from a MetricsQueryRequest into an http response.
 	EncodeMetricsQueryResponse(context.Context, *http.Request, Response) (*http.Response, error)
-	// EncodeLabelsQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
-	EncodeLabelsQueryResponse(context.Context, *http.Request, Response, bool) (*http.Response, error)
+	// EncodeLabelsSeriesQueryResponse encodes a Response from a LabelsSeriesQueryRequest into an http response.
+	EncodeLabelsSeriesQueryResponse(context.Context, *http.Request, Response, bool) (*http.Response, error)
 }
 
 // Merger is used by middlewares making multiple requests to merge back all responses into a single one.
@@ -691,7 +691,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	return req.WithContext(ctx), nil
 }
 
-func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req LabelsSeriesQueryRequest) (*http.Request, error) {
+func (c prometheusCodec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSeriesQueryRequest) (*http.Request, error) {
 	var u *url.URL
 	switch req := req.(type) {
 	case *PrometheusLabelNamesQueryRequest:
@@ -865,7 +865,7 @@ func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http
 	return resp, nil
 }
 
-func (c prometheusCodec) DecodeLabelsQueryResponse(ctx context.Context, r *http.Response, lr LabelsSeriesQueryRequest, logger log.Logger) (Response, error) {
+func (c prometheusCodec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r *http.Response, lr LabelsSeriesQueryRequest, logger log.Logger) (Response, error) {
 	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
@@ -1001,7 +1001,7 @@ func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *ht
 	return &resp, nil
 }
 
-func (c prometheusCodec) EncodeLabelsQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
+func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 

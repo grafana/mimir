@@ -308,7 +308,7 @@ func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			decoded, err := codec.DecodeLabelsQueryResponse(context.Background(), httpResponse, tc.request, log.NewNopLogger())
+			decoded, err := codec.DecodeLabelsSeriesQueryResponse(context.Background(), httpResponse, tc.request, log.NewNopLogger())
 			if err != nil || tc.expectedErr != nil {
 				require.Equal(t, tc.expectedErr, err)
 				return
@@ -328,7 +328,7 @@ func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			encoded, err := codec.EncodeLabelsQueryResponse(context.Background(), httpRequest, decoded, tc.isSeriesResponse)
+			encoded, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, decoded, tc.isSeriesResponse)
 			require.NoError(t, err)
 
 			expectedJSON, err := readResponseBody(httpResponse)
@@ -554,7 +554,7 @@ func TestPrometheusCodec_JSONEncoding_Labels(t *testing.T) {
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
 
-			encoded, err := codec.EncodeLabelsQueryResponse(context.Background(), httpRequest, tc.response, tc.isSeriesResponse)
+			encoded, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, tc.response, tc.isSeriesResponse)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, encoded.StatusCode)
 			require.Equal(t, "application/json", encoded.Header.Get("Content-Type"))

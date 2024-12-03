@@ -720,7 +720,7 @@ func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 					require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
 					require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
 
-					reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
+					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(context.Background(), reqDecoded)
 					require.NoError(t, err)
 					require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
 				})
@@ -1819,7 +1819,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			require.NoError(t, err)
 			expected.Body = http.NoBody
 			expected.Header = make(http.Header)
-			// This header is set by EncodeLabelsQueryRequest according to the codec's config, so we
+			// This header is set by EncodeLabelsSeriesQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
 			ctx := context.Background()
@@ -1828,7 +1828,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
-			encoded, err := codec.EncodeLabelsQueryRequest(ctx, decoded)
+			encoded, err := codec.EncodeLabelsSeriesQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
@@ -1837,7 +1837,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
-			encoded, err = codec.EncodeLabelsQueryRequest(ctx, decoded)
+			encoded, err = codec.EncodeLabelsSeriesQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
