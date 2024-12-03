@@ -13,6 +13,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 - Include or exclude users from having blocks copied (`--enabled-users` and `--disabled-users`)
 - Configurable minimum block duration (`--min-block-duration`) and (`--skip-no-compact-block-duration-check`) to target blocks that are not awaiting compaction
 - Configurable time range (`--min-time` and `--max-time`) to only copy blocks inclusively within a provided range
+- Copy blocks between tenants with `--cross-tenant-mapping`. For instance, `--cross-tenant-mapping="tenant1:tenant2,tenant3:tenant4"` would copy source blocks from `tenant1` to `tenant2` and source blocks from `tenant3` to tenant `tenant4`. If a mapping is not provided for a tenant it is assumed to be identical to the source tenant.
 - Log what would be copied without actually copying anything with `--dry-run`
 
 ## Running
