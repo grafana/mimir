@@ -320,7 +320,12 @@ func newConcurrentFetchers(
 		startOffset++
 	}
 	if err != nil {
-		return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
+		if errors.Is(err, kerr.UnknownTopicOrPartition) {
+			level.Warn(logger).Log("msg", "starting concurrent fetchers: topic or partition not found, starting from offset 0", "err", err.Error())
+			startOffset = 0
+		} else {
+			return nil, fmt.Errorf("resolving offset to start consuming from: %w", err)
+		}
 	}
 
 	if maxBufferedBytesLimit <= 0 {
@@ -346,22 +351,48 @@ func newConcurrentFetchers(
 		fetchBackoffConfig:      fetchBackoffConfig,
 	}
 
-	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
+	err = f.resolveTopicID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find topic ID: %w", err)
+		return nil, err
 	}
-	if !topics.Has(topic) {
-		return nil, fmt.Errorf("failed to find topic ID: topic not found")
-	}
-	if err := topics.Error(); err != nil {
-		return nil, fmt.Errorf("failed to find topic ID: %w", err)
-	}
-	f.topicID = topics[topic].ID
 
 	f.wg.Add(1)
 	go f.start(ctx, startOffset, concurrency)
 
 	return f, nil
+}
+
+func (r *concurrentFetchers) resolveTopicID(ctx context.Context) error {
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: time.Second,
+		MaxBackoff: 5 * time.Second,
+		MaxRetries: 10,
+	})
+
+	var lastErr error
+	for ; boff.Ongoing(); boff.Wait() {
+		lastErr = r.resolveTopicIDOnce(ctx)
+		if lastErr == nil {
+			return nil
+		}
+		level.Warn(r.logger).Log("msg", "failed to resolve topic ID, retrying", "err", lastErr)
+	}
+	return fmt.Errorf("failed to find topic ID: %w", lastErr)
+}
+
+func (r *concurrentFetchers) resolveTopicIDOnce(ctx context.Context) error {
+	topics, err := kadm.NewClient(r.client).ListTopics(ctx, r.topicName)
+	if err != nil {
+		return err
+	}
+	if !topics.Has(r.topicName) {
+		return fmt.Errorf("topic not found")
+	}
+	if err = topics.Error(); err != nil {
+		return err
+	}
+	r.topicID = topics[r.topicName].ID
+	return nil
 }
 
 // BufferedRecords implements fetcher.

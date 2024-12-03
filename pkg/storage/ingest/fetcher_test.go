@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -1109,6 +1110,68 @@ func TestConcurrentFetchers(t *testing.T) {
 		waitForStableBufferedRecords(t, fetchers)
 
 		pollFetchesAndAssertNoRecords(t, fetchers)
+	})
+
+	t.Run("should retry after being started against a topic which doesn't exist", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		t.Cleanup(cancel)
+
+		// Create a cluster with a topic we don't use so we can create the topic when we need it.
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, "topic-we-wont-use")
+
+		client := newKafkaProduceClient(t, clusterAddr)
+
+		logger := testingLogger.WithT(t)
+		reg := prometheus.NewPedanticRegistry()
+		metrics := newReaderMetrics(partitionID, reg, noopReaderMetricsSource{})
+		metrics.kprom.OnNewClient(client)
+		offsetReader := newPartitionOffsetClient(client, topicName, reg, logger)
+
+		startOffsetsReader := newGenericOffsetReader(func(ctx context.Context) (int64, error) {
+			return offsetReader.FetchPartitionStartOffset(ctx, partitionID)
+		}, time.Second, logger)
+
+		verifiedFetchersWorking := make(chan struct{})
+		// start creating fetchers in a goroutine, so we can block creating the topic for a bit
+		go func() {
+			defer close(verifiedFetchersWorking)
+			f, err := newConcurrentFetchers(
+				ctx,
+				client,
+				logger,
+				topicName,
+				partitionID,
+				kafkaOffsetEnd, // provide a special offset so we have to resolve it on start
+				concurrency,
+				math.MaxInt32,
+				true,
+				time.Second,
+				offsetReader,
+				startOffsetsReader,
+				fastFetchBackoffConfig,
+				&metrics,
+			)
+			assert.NoError(t, err)
+			t.Cleanup(f.Stop)
+
+			records := longPollFetches(f, 1, 30*time.Second).Records()
+			assert.Equal(t, "record-1", string(records[0].Value))
+		}()
+
+		// Wait for a bit and then create the topic
+		time.Sleep(5 * time.Second)
+
+		resp, err := kadm.NewClient(client).CreateTopic(context.Background(), partitionID+1, 1, nil, topicName)
+		require.NoError(t, err)
+		require.NoError(t, resp.Err)
+
+		produceRecord(ctx, t, client, topicName, partitionID, []byte("record-1"))
+
+		select {
+		case <-ctx.Done():
+			assert.Fail(t, "timed out waiting for fetchers to be created")
+		case <-verifiedFetchersWorking:
+		}
 	})
 }
 
