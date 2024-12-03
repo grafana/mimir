@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/dskit/spanlogger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/yaml.v3"
 )
 
 type ProxyConfig struct {
@@ -35,7 +37,7 @@ type ProxyConfig struct {
 	BackendEndpoints                    string
 	PreferredBackend                    string
 	BackendReadTimeout                  time.Duration
-	BackendConfigStr                    string
+	BackendConfigFile                   string
 	parsedBackendConfig                 map[string]*BackendConfig
 	CompareResponses                    bool
 	LogSlowQueryResponseThreshold       time.Duration
@@ -51,10 +53,10 @@ type ProxyConfig struct {
 }
 
 type BackendConfig struct {
-	RequestHeaders http.Header `json:"request_headers"`
+	RequestHeaders http.Header `json:"request_headers" yaml:"request_headers"`
 }
 
-func exampleBackendConfig() string {
+func exampleJSONBackendConfig() string {
 	cfg := BackendConfig{
 		RequestHeaders: http.Header{
 			"Cache-Control": {"no-store"},
@@ -82,7 +84,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 150*time.Second, "The timeout when reading the response from a backend.")
-	f.StringVar(&cfg.BackendConfigStr, "backend.config", "{}", "JSON object with backend configuration. Each key is the backend hostname. This is an example value: "+exampleBackendConfig())
+	f.StringVar(&cfg.BackendConfigFile, "backend.config-file", "", "Path to a file with YAML or JSON configuration for each backend. Each key in the YAML/JSON document is a backend hostname. This is an example configuration value for a backend in JSON: "+exampleJSONBackendConfig())
 	f.BoolVar(&cfg.CompareResponses, "proxy.compare-responses", false, "Compare responses between preferred and secondary endpoints for supported routes.")
 	f.DurationVar(&cfg.LogSlowQueryResponseThreshold, "proxy.log-slow-query-response-threshold", 10*time.Second, "The minimum difference in response time between slowest and fastest back-end over which to log the query. 0 to disable.")
 	f.Float64Var(&cfg.ValueComparisonTolerance, "proxy.value-comparison-tolerance", 0.000001, "The tolerance to apply when comparing floating point values in the responses. 0 to disable tolerance and require exact match (not recommended).")
@@ -140,10 +142,14 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("preferred backend must be set when secondary backends request proportion is not 1")
 	}
 
-	if len(cfg.BackendConfigStr) > 0 {
-		err := json.Unmarshal([]byte(cfg.BackendConfigStr), &cfg.parsedBackendConfig)
+	if len(cfg.BackendConfigFile) > 0 {
+		configBytes, err := os.ReadFile(cfg.BackendConfigFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse backend JSON config: %w", err)
+			return nil, fmt.Errorf("failed to read backend config file (%s): %w", cfg.BackendConfigFile, err)
+		}
+		err = yaml.Unmarshal(configBytes, &cfg.parsedBackendConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse backend YAML config: %w", err)
 		}
 	}
 
