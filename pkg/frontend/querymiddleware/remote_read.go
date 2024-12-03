@@ -19,16 +19,16 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 // To keep logs and error messages in sync, we define the following keys:
 const (
-	endLogKey      = "end"
-	hintsLogKey    = "hints"
-	matchersLogKey = "matchers"
-	startLogKey    = "start"
+	endLogKey              = "end"
+	hintsLogKey            = "hints"
+	matchersLogKey         = "matchers"
+	startLogKey            = "start"
+	MaxRemoteReadQuerySize = 1024 * 1024
 )
 
 type remoteReadRoundTripper struct {
@@ -147,7 +147,7 @@ func parseRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.Read
 func unmarshalRemoteReadRequest(ctx context.Context, reader io.ReadCloser, contentLength int) (*prompb.ReadRequest, error) {
 	remoteReadRequest := &prompb.ReadRequest{}
 
-	_, err := util.ParseProtoReader(ctx, reader, contentLength, querier.MaxRemoteReadQuerySize, nil, remoteReadRequest, util.RawSnappy)
+	_, err := util.ParseProtoReader(ctx, reader, contentLength, MaxRemoteReadQuerySize, nil, remoteReadRequest, util.RawSnappy)
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddlewareextract"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -156,8 +156,8 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		},
 	})
 
-	codec := querymiddlewareextract.NewPrometheusCodec(cfg.EngineConfig.LookbackDelta, "json", nil)
-
+	r := prometheus.NewRegistry()
+	codec := querymiddleware.NewPrometheusCodec(r, cfg.EngineConfig.LookbackDelta, "json", nil)
 	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger, codec)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
@@ -231,7 +231,7 @@ func newQueryable(
 	limits *validation.Overrides,
 	queryMetrics *stats.QueryMetrics,
 	logger log.Logger,
-	codec querymiddlewareextract.Codec,
+	codec querymiddleware.Codec,
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		return multiQuerier{
@@ -271,7 +271,7 @@ type multiQuerier struct {
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
 	minT, maxT   int64
-	codec        querymiddlewareextract.Codec
+	codec        querymiddleware.Codec
 
 	limits *validation.Overrides
 
@@ -359,7 +359,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 
 	// Split queries into multiple smaller queries if they have more than 10000 datapoints
 	rangeStart := start
-	var rangeQueries []querymiddlewareextract.MetricsQueryRequest
+	var rangeQueries []querymiddleware.MetricsQueryRequest
 	for {
 		var rangeEnd int64
 		if remainingPoints := (end - start) / step; remainingPoints > 10000 {
@@ -368,13 +368,13 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 			rangeEnd = end
 		}
 
-		headers := []*querymiddlewareextract.PrometheusHeader{}
+		headers := []*querymiddleware.PrometheusHeader{}
 		headers = append(headers,
-			&querymiddlewareextract.PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}},
-			&querymiddlewareextract.PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
+			&querymiddleware.PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}},
+			&querymiddleware.PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
 		) // Downstream is the querier, which is HTTP req.
 
-		newRangeRequest := querymiddlewareextract.NewPrometheusRangeQueryRequest(sendBackURL+"/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddlewareextract.Options{}, &querymiddlewareextract.Hints{})
+		newRangeRequest := querymiddleware.NewPrometheusRangeQueryRequest(sendBackURL+"/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddleware.Options{}, &querymiddleware.Hints{})
 		rangeQueries = append(rangeQueries, newRangeRequest)
 
 		if rangeEnd == end {
@@ -383,14 +383,16 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 	}
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
-	streams := make([][]querymiddlewareextract.SampleStream, len(rangeQueries))
+	streams := make([][]querymiddleware.SampleStream, len(rangeQueries))
 	err = concurrency.ForEachJob(ctx, len(rangeQueries), len(rangeQueries), func(ctx context.Context, idx int) error {
 		req := rangeQueries[idx]
-		httpReq, err := mq.codec.EncodeMetricsQueryRequest(ctx, req, baseURL)
+		httpReq, err := mq.codec.EncodeMetricsQueryRequest(ctx, req)
 		if err != nil {
 			return fmt.Errorf("error encoding request: %w", err)
 		}
 		httpReq.RequestURI = "" // Reset RequestURI to force URL reconstruction.
+		httpReq.URL.Host = baseURL.Host
+		httpReq.URL.Scheme = baseURL.Scheme
 
 		if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
 			return fmt.Errorf("error injecting org ID into request: %w", err)
@@ -406,7 +408,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 		if err != nil {
 			return fmt.Errorf("error decoding response: %w", err)
 		}
-		promRes, ok := decoded.(*querymiddlewareextract.PrometheusResponse)
+		promRes, ok := decoded.(*querymiddleware.PrometheusResponse)
 		if !ok {
 			return fmt.Errorf("expected PrometheusResponse, got %T", decoded)
 		}
@@ -433,7 +435,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 // results.
 //
 // The returned storage.SeriesSet series is sorted.
-func newSeriesSetFromEmbeddedQueriesResults(results [][]querymiddlewareextract.SampleStream, hints *storage.SelectHints) storage.SeriesSet {
+func newSeriesSetFromEmbeddedQueriesResults(results [][]querymiddleware.SampleStream, hints *storage.SelectHints) storage.SeriesSet {
 	totalLen := 0
 	for _, r := range results {
 		totalLen += len(r)
@@ -528,7 +530,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]querymiddlewareextract.S
 }
 
 // ResponseToSamples is needed to map back from api response to the underlying series data
-func ResponseToSamples(resp *querymiddlewareextract.PrometheusResponse) ([]querymiddlewareextract.SampleStream, error) {
+func ResponseToSamples(resp *querymiddleware.PrometheusResponse) ([]querymiddleware.SampleStream, error) {
 	if resp.Error != "" {
 		return nil, errors.New(resp.Error)
 	}

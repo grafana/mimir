@@ -38,9 +38,10 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -1539,7 +1540,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			return nil, apierror.New(apierror.TypeInternal, "some internal error")
 		})
 		queryablePrometheusExecErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
-			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
+			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
 			newSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, factor(5)),
@@ -1592,7 +1593,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
 			queryable:        queryablePrometheusExecErr,
-			expError:         apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
+			expError:         apierror.Newf(apierror.TypeExec, "expanding series: %s", NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2538,4 +2539,9 @@ func TestRemoveAnnotationPositionInformation(t *testing.T) {
 			require.Equal(t, expectedOutput, removeAnnotationPositionInformation(input))
 		})
 	}
+}
+func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) validation.LimitError {
+	return validation.NewLimitError(globalerror.MaxQueryLength.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
+		validation.MaxPartialQueryLengthFlag))
 }
