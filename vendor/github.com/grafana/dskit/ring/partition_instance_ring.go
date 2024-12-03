@@ -63,46 +63,64 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 	zonesBuffer := make([]string, 0, 3) // Pre-allocate buffer assuming 3 zones.
 
 	for partitionID := range partitionsRingDesc.Partitions {
-		ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
-		instances := make([]InstanceDesc, 0, len(ownerIDs))
-
-		for _, instanceID := range ownerIDs {
-			instance, err := r.instancesRing.GetInstance(instanceID)
-			if err != nil {
-				// If an instance doesn't exist in the instances ring we don't return an error
-				// but lookup for other instances of the partition.
-				continue
-			}
-
-			if !instance.IsHealthy(op, r.heartbeatTimeout, now) {
-				continue
-			}
-
-			instances = append(instances, instance)
+		replicationSet, err := r.getReplicationSetForPartitionAndOperation(partitionID, op, now, zonesBuffer)
+		if err != nil {
+			return nil, err
 		}
 
-		if len(instances) == 0 {
-			return nil, fmt.Errorf("partition %d: %w", partitionID, ErrTooManyUnhealthyInstances)
-		}
-
-		// Count the number of unique zones among instances.
-		zonesBuffer = uniqueZonesFromInstances(instances, zonesBuffer[:0])
-		uniqueZones := len(zonesBuffer)
-
-		result = append(result, ReplicationSet{
-			Instances: instances,
-
-			// Partitions has no concept of zone, but we enable it in order to support ring's requests
-			// minimization feature.
-			ZoneAwarenessEnabled: true,
-
-			// We need response from at least 1 owner. The assumption is that we have 1 owner per zone
-			// but it's not guaranteed (depends on how the application was deployed). The safest thing
-			// we can do here is to just request a successful response from at least 1 zone.
-			MaxUnavailableZones: uniqueZones - 1,
-		})
+		result = append(result, replicationSet)
 	}
 	return result, nil
+}
+
+// GetReplicationSetForPartitionAndOperation returns a ReplicationSet for the input partition. If the partition doesn't
+// exist or there are no healthy owners for the partition, an error is returned.
+func (r *PartitionInstanceRing) GetReplicationSetForPartitionAndOperation(partitionID int32, op Operation) (ReplicationSet, error) {
+	zonesBuffer := make([]string, 0, 3) // Pre-allocate buffer assuming 3 zones.
+
+	return r.getReplicationSetForPartitionAndOperation(partitionID, op, time.Now(), zonesBuffer)
+}
+
+func (r *PartitionInstanceRing) getReplicationSetForPartitionAndOperation(partitionID int32, op Operation, now time.Time, zonesBuffer []string) (ReplicationSet, error) {
+	partitionsRing := r.PartitionRing()
+	ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
+	instances := make([]InstanceDesc, 0, len(ownerIDs))
+
+	for _, instanceID := range ownerIDs {
+		instance, err := r.instancesRing.GetInstance(instanceID)
+		if err != nil {
+			// If an instance doesn't exist in the instances ring we don't return an error
+			// but lookup for other instances of the partition.
+			continue
+		}
+
+		if !instance.IsHealthy(op, r.heartbeatTimeout, now) {
+			continue
+		}
+
+		instances = append(instances, instance)
+	}
+
+	if len(instances) == 0 {
+		return ReplicationSet{}, fmt.Errorf("partition %d: %w", partitionID, ErrTooManyUnhealthyInstances)
+	}
+
+	// Count the number of unique zones among instances.
+	zonesBuffer = uniqueZonesFromInstances(instances, zonesBuffer[:0])
+	uniqueZones := len(zonesBuffer)
+
+	return ReplicationSet{
+		Instances: instances,
+
+		// Partitions has no concept of zone, but we enable it in order to support ring's requests
+		// minimization feature.
+		ZoneAwarenessEnabled: true,
+
+		// We need response from at least 1 owner. The assumption is that we have 1 owner per zone
+		// but it's not guaranteed (depends on how the application was deployed). The safest thing
+		// we can do here is to just request a successful response from at least 1 zone.
+		MaxUnavailableZones: uniqueZones - 1,
+	}, nil
 }
 
 // ShuffleShard wraps PartitionRing.ShuffleShard().
