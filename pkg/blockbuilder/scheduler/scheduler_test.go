@@ -303,25 +303,38 @@ func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int3
 
 func TestOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t)
+
+	sched.committed = kadm.Offsets{
+		"ingest": {
+			1: kadm.Offset{
+				Topic:     "ingest",
+				Partition: 1,
+				At:        5000,
+			},
+		},
+	}
 	sched.completeObservationMode()
 
-	// We have some client updates.
-	require.NoError(t, sched.updateJob(jobKey{id: "ingest/1/5524", epoch: 10}, "w0", false, jobSpec{
+	spec := jobSpec{
 		topic:       "ingest",
 		partition:   1,
 		commitRecTs: time.Unix(200, 0),
+		startOffset: 5000,
 		endOffset:   6000,
-	}))
+	}
 
-	requireOffset(t, sched.committed, "ingest", 1, 0, "ingest/1 is in progress, so we should not move the offset")
+	sched.jobs.addOrUpdate("ingest/1/5524", spec)
+	key, _, err := sched.jobs.assign("w0")
+	require.NoError(t, err)
 
-	require.NoError(t, sched.updateJob(jobKey{id: "ingest/1/5524", epoch: 10}, "w0", true, jobSpec{
-		topic:       "ingest",
-		partition:   1,
-		commitRecTs: time.Unix(200, 0),
-		endOffset:   6000,
-	}))
-
+	require.NoError(t, sched.updateJob(key, "w0", false, spec))
+	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
+	require.NoError(t, sched.updateJob(key, "w0", true, spec))
+	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
+	require.NoError(t, sched.updateJob(key, "w0", true, spec))
+	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
+	sched.advanceCommittedOffset("ingest", 1, 2000, "{}")
+	requireOffset(t, sched.committed, "ingest", 1, 6000, "committed offsets cannot rewind")
 }
 
 func TestMonitor(t *testing.T) {

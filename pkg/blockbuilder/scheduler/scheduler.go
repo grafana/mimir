@@ -351,7 +351,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	}
 
 	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
-		if j.startOffset <= c.At {
+		if j.endOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
 			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
