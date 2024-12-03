@@ -75,7 +75,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			// Ignore, as these labels are generated from service.name and service.instance.id
 			continue
 		default:
-			k = prometheustranslator.NormalizeLabel(k)
+			k = prometheustranslator.NormalizeLabel(k, false)
 		}
 		expTargetInfoLabels = append(expTargetInfoLabels, mimirpb.LabelAdapter{
 			Name:  k,
