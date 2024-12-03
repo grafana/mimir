@@ -167,6 +167,13 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			expectedShardedQueries:    1, // max() is sharded
 			expectedSpunOffSubqueries: 1,
 		},
+		"aggregation over subquery multiplied": {
+			query:                     `sum_over_time(max(metric_counter)[5m:1m]) * max_over_time(max(metric_counter)[5m:1m]) * min_over_time(max(metric_counter)[5m:1m])`,
+			spinOffSubqueries:         true,
+			noRangeQuery:              true,
+			expectedShardedQueries:    3,
+			expectedSpunOffSubqueries: 3,
+		},
 		"sum() no grouping": {
 			query:                  `sum(metric_counter)`,
 			expectedShardedQueries: 1,

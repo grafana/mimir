@@ -40,6 +40,22 @@ func TestShardSummer(t *testing.T) {
 			spinOffSubqueries:      true,
 		},
 		{
+			in: "max_over_time(hello[5m:1m]) * " +
+				"max_over_time(hello[5m:1m]) / " +
+				"(1 - max_over_time(hello[5m:1m]))",
+			out: `max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[5m:1m]"}[5m]) * ` +
+				`max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[5m:1m]"}[5m]) / ` +
+				`(1 - max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[5m:1m]"}[5m]))`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
+		},
+		{
+			in:                     `min by (asserts_env, asserts_site, namespace) (1 - avg_over_time(((asserts:latency:p99{asserts_request_context!~"/v1/stack/(sanity|vendor-integration)",asserts_request_type=~"inbound|outbound",job="api-server"}) > bool 12)[1d:]))`,
+			out:                    `min by (asserts_env,asserts_site,namespace) (1 - avg_over_time(__aggregated_subquery__{__aggregated_subquery__="((asserts:latency:p99{asserts_request_context!~\"/v1/stack/(sanity|vendor-integration)\",asserts_request_type=~\"inbound|outbound\",job=\"api-server\"}) > bool 12)[1d:]"}[1d]))`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
+		},
+		{
 			in:                     `quantile(0.9,foo)`,
 			out:                    concat(`quantile(0.9,foo)`),
 			expectedShardedQueries: 0,
@@ -537,9 +553,15 @@ func TestShardSummer(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewMapperStats()
-			summer, err := NewQueryShardSummer(context.Background(), 3, VectorSquasher, log.NewNopLogger(), stats, tt.spinOffSubqueries)
+			summer, err := NewQueryShardSummer(context.Background(), 3, VectorSquasher, log.NewNopLogger(), stats)
 			require.NoError(t, err)
-			mapper := NewSharding(summer)
+
+			var subqueryMapper ASTMapper
+			if tt.spinOffSubqueries {
+				subqueryMapper = NewSubqueryMapper(stats)
+			}
+
+			mapper := NewSharding(summer, subqueryMapper)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
@@ -600,7 +622,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
-			summer, err := NewQueryShardSummer(context.Background(), c.shards, VectorSquasher, log.NewNopLogger(), stats, false)
+			summer, err := NewQueryShardSummer(context.Background(), c.shards, VectorSquasher, log.NewNopLogger(), stats)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
