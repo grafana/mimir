@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	partitionRingKey  = "usage-tracker-partitions"
-	partitionRingName = "usage-tracker-partitions"
+	PartitionRingKey  = "usage-tracker-partitions"
+	PartitionRingName = "usage-tracker-partitions"
 )
 
 var (
@@ -30,7 +30,7 @@ type PartitionRingConfig struct {
 	KVStore kv.Config `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances."`
 
 	// lifecyclerPollingInterval is the lifecycler polling interval. This setting is used to lower it in tests.
-	lifecyclerPollingInterval time.Duration
+	lifecyclerPollingInterval time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -55,7 +55,7 @@ func NewPartitionRingKVClient(cfg PartitionRingConfig, logger log.Logger, regist
 		return cfg.KVStore.Mock, nil
 	}
 
-	client, err := kv.NewClient(cfg.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, partitionRingName+"-lifecycler"), logger)
+	client, err := kv.NewClient(cfg.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating KV store for usage-tracker partition ring")
 	}
@@ -66,11 +66,15 @@ func NewPartitionRingKVClient(cfg PartitionRingConfig, logger log.Logger, regist
 func NewPartitionRingLifecycler(cfg PartitionRingConfig, partitionID int32, instanceID string, partitionRingKV kv.Client, logger log.Logger, registerer prometheus.Registerer) (*ring.PartitionInstanceLifecycler, error) {
 	return ring.NewPartitionInstanceLifecycler(
 		cfg.ToLifecyclerConfig(partitionID, instanceID),
-		partitionRingName,
-		partitionRingKey,
+		PartitionRingName,
+		PartitionRingKey,
 		partitionRingKV,
 		logger,
 		prometheus.WrapRegistererWithPrefix("cortex_", registerer)), nil
+}
+
+func NewPartitionRingWatcher(partitionRingKV kv.Client, logger log.Logger, registerer prometheus.Registerer) *ring.PartitionRingWatcher {
+	return ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, partitionRingKV, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 }
 
 // partitionIDFromInstanceID returns the partition ID from the instance ID.

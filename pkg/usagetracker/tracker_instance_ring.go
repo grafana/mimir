@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	instanceRingKey  = "usage-tracker-instances"
-	instanceRingName = "usage-tracker-instances"
+	InstanceRingKey  = "usage-tracker-instances"
+	InstanceRingName = "usage-tracker-instances"
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
@@ -120,7 +120,7 @@ func NewInstanceRingLifecycler(cfg InstanceRingConfig, logger log.Logger, reg pr
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.HeartbeatTimeout, delegate, logger)
 
-	lifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, instanceRingName, instanceRingKey, kvStore, delegate, logger, reg)
+	lifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, InstanceRingName, InstanceRingKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize usage-trackers' lifecycler")
 	}
@@ -130,7 +130,7 @@ func NewInstanceRingLifecycler(cfg InstanceRingConfig, logger log.Logger, reg pr
 
 // NewInstanceRingClient creates a client for the usage-trackers instance ring.
 func NewInstanceRingClient(cfg InstanceRingConfig, component string, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
-	client, err := ring.New(cfg.ToRingConfig(), component, instanceRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	client, err := ring.New(cfg.ToRingConfig(), component, InstanceRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize usage-trackers' ring client")
 	}

@@ -87,8 +87,8 @@ func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Log
 		return nil, err
 	}
 
-	t.partitionWatcher = ring.NewPartitionRingWatcher(partitionRingName, partitionRingKey, partitionKVClient, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
-	t.partitionPageHandler = ring.NewPartitionRingPageHandler(t.partitionWatcher, ring.NewPartitionRingEditor(partitionRingKey, partitionKVClient))
+	t.partitionWatcher = NewPartitionRingWatcher(partitionKVClient, logger, registerer)
+	t.partitionPageHandler = ring.NewPartitionRingPageHandler(t.partitionWatcher, ring.NewPartitionRingEditor(PartitionRingKey, partitionKVClient))
 
 	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, notImplementedEventsPublisher{logger: logger})
 
