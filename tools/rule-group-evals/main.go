@@ -30,6 +30,7 @@ type Data struct {
 }
 
 type Group struct {
+	Tenant          string
 	Name            string  `json:"name"`
 	IntervalSeconds float64 `json:"interval"`
 	Rules           []*Rule `json:"rules"`
@@ -80,6 +81,11 @@ func readRuleGroups(dir string) []*Group {
 
 		result := &Result{}
 		noErr(json.Unmarshal(groupsBytes, result))
+
+		// Add the tenantID to each group.
+		for _, g := range result.Data.Groups {
+			g.Tenant = strings.TrimSuffix(entry.Name(), ".json")
+		}
 
 		groups = append(groups, result.Data.Groups...)
 	}
@@ -135,7 +141,7 @@ func printAnalysisResultsCSV(groups []*Group) {
 		}
 
 		fmt.Println(strings.Join([]string{
-			group.Name,
+			fmt.Sprintf("%s - %s", group.Tenant, group.Name),
 			fmt.Sprintf("%.0f", group.EvaluationInterval().Seconds()),
 			strconv.Itoa(len(group.Rules)),
 			strconv.Itoa(group.rulesStrongConsistencyCount),
@@ -214,7 +220,7 @@ func tenantNames() []string {
 	noErr(err)
 	respBody, err := io.ReadAll(resp.Body)
 	noErr(err)
-	//fmt.Println(string(respBody))
+	// fmt.Println(string(respBody))
 	noErr(yaml.Unmarshal(respBody, &respMap))
 	names := make([]string, 0, len(respMap))
 	for tenant := range respMap {
