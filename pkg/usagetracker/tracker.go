@@ -128,8 +128,13 @@ func (t *UsageTracker) stop(_ error) error {
 
 // run implements services.RunningFn.
 func (t *UsageTracker) run(ctx context.Context) error {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
 	for {
 		select {
+		case now := <-ticker.C:
+			t.store.cleanup(now)
 		case <-ctx.Done():
 			return nil
 		case err := <-t.subservicesWatcher.Chan():
@@ -140,7 +145,11 @@ func (t *UsageTracker) run(ctx context.Context) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	return t.store.trackSeries(context.Background(), req, time.Now())
+	rejected, err := t.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
 func (t *UsageTracker) InstanceRingHandler(w http.ResponseWriter, req *http.Request) {
@@ -165,7 +174,7 @@ type notImplementedEventsPublisher struct {
 	logger log.Logger
 }
 
-func (ev notImplementedEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64) error {
+func (ev notImplementedEventsPublisher) publishCreatedSeries(_ context.Context, userID string, series []uint64) error {
 	level.Info(ev.logger).Log("msg", "publishCreatedSeries not implemented", "userID", userID, "series", len(series))
 	return nil
 }
