@@ -861,6 +861,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.idle-timeout duration
+    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.
   -usage-tracker.partition-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -usage-tracker.partition-ring.etcd.endpoints string

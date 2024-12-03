@@ -18861,6 +18861,16 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "idle_timeout",
+          "required": false,
+          "desc": "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "usage-tracker.idle-timeout",
+          "fieldType": "duration"
         }
       ],
       "fieldValue": null,
