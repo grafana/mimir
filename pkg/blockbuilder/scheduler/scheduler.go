@@ -366,6 +366,9 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
+		// TODO: More information to pass from block-builder here:
+		// - the true commit offset
+		// - metadata blob
 		s.advanceCommittedOffset(j.topic, j.partition, j.endOffset, "{}")
 		logger.Log("msg", "completed job")
 	} else {
@@ -409,24 +412,10 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			if o, ok := s.committed.Lookup(rj.spec.topic, rj.spec.partition); ok {
-				if rj.spec.endOffset > o.At {
-					// Completed jobs can push forward the offsets we've learned from Kafka.
-					o.At = rj.spec.endOffset
-					o.Metadata = "{}" // TODO: take the new meta from the completion message.
-					s.committed[rj.spec.topic][rj.spec.partition] = o
-				}
-			} else {
-				s.committed.Add(kadm.Offset{
-					Topic:     rj.spec.topic,
-					Partition: rj.spec.partition,
-					At:        rj.spec.endOffset,
-					Metadata:  "{}", // TODO: take the new meta from the completion message.
-				})
-			}
+			s.advanceCommittedOffset(rj.spec.topic, rj.spec.partition, rj.spec.endOffset, "{}")
 		} else {
 			// An in-progress job.
-			// These don't affect offsets (yet), they just get added to the job queue.
+			// These don't affect offsets, they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
 			}

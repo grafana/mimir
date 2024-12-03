@@ -301,6 +301,29 @@ func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int3
 	require.Equal(t, expected, o.At, msgAndArgs...)
 }
 
+func TestOffsetMovement(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.completeObservationMode()
+
+	// We have some client updates.
+	require.NoError(t, sched.updateJob(jobKey{id: "ingest/1/5524", epoch: 10}, "w0", false, jobSpec{
+		topic:       "ingest",
+		partition:   1,
+		commitRecTs: time.Unix(200, 0),
+		endOffset:   6000,
+	}))
+
+	requireOffset(t, sched.committed, "ingest", 1, 0, "ingest/1 is in progress, so we should not move the offset")
+
+	require.NoError(t, sched.updateJob(jobKey{id: "ingest/1/5524", epoch: 10}, "w0", true, jobSpec{
+		topic:       "ingest",
+		partition:   1,
+		commitRecTs: time.Unix(200, 0),
+		endOffset:   6000,
+	}))
+
+}
+
 func TestMonitor(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
