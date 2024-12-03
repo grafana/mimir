@@ -357,7 +357,7 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 	buf := make([]byte, 0, 1024)
 
 	return func(oneSideLabels labels.Labels) []byte {
-		return oneSideLabels.BytesWithLabels(buf, g.VectorMatching.MatchingLabels...)
+		return oneSideLabels.BytesWithLabels(buf, g.VectorMatching.Include...)
 	}
 }
 
