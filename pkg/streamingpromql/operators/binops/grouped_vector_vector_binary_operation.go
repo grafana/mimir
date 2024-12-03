@@ -51,27 +51,29 @@ type GroupedVectorVectorBinaryOperation struct {
 var _ types.InstantVectorOperator = &GroupedVectorVectorBinaryOperation{}
 
 type groupedBinaryOperationOutputSeries struct {
-	manySideSeriesIndices []int
-	oneSide               *oneSide
-}
-
-// latestManySeries returns the index of the last series from the "many" side needed for this output series.
-//
-// It assumes that manySideSeriesIndices is sorted in ascending order.
-func (s groupedBinaryOperationOutputSeries) latestManySeries() int {
-	return s.manySideSeriesIndices[len(s.manySideSeriesIndices)-1]
-}
-
-// latestOneSeries returns the index of the last series from the "one" side needed for this output series.
-//
-// It assumes that oneSide.outputSeries is sorted in ascending order.
-func (s groupedBinaryOperationOutputSeries) latestOneSeries() int {
-	return s.oneSide.seriesIndices[len(s.oneSide.seriesIndices)-1]
+	manySide *manySide
+	oneSide  *oneSide
 }
 
 type groupedBinaryOperationOutputSeriesWithLabels struct {
 	labels       labels.Labels
 	outputSeries *groupedBinaryOperationOutputSeries
+}
+
+type manySide struct {
+	// If this side has not been populated, seriesIndices will not be nil and mergedData will be empty.
+	// If this side has been populated, seriesIndices will be nil.
+	seriesIndices []int
+	mergedData    types.InstantVectorSeriesData
+
+	outputSeriesCount int
+}
+
+// latestSeries returns the index of the last series from this side.
+//
+// It assumes that outputSeries is sorted in ascending order.
+func (s manySide) latestSeries() int {
+	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
 type oneSide struct {
@@ -249,8 +251,10 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		return nil, nil, nil, nil, err
 	}
 
+	manySideMap := map[string]*manySide{}
 	manySideSeriesUsed = manySideSeriesUsed[:len(g.manySideMetadata)]
-	seriesLabelsFunc := g.seriesLabelsFunc()
+	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
+	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
 	buf := make([]byte, 0, 1024)
 
 	for idx, s := range g.manySideMetadata {
@@ -263,26 +267,39 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		}
 
 		manySideSeriesUsed[idx] = true
+		manySideGroupKey := manySideGroupKeyFunc(s.Labels)
+		thisManySide, exists := manySideMap[string(manySideGroupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+
+		if exists {
+			thisManySide.seriesIndices = append(thisManySide.seriesIndices, idx)
+			continue
+		}
+
+		thisManySide = &manySide{
+			seriesIndices: []int{idx},
+		}
+
+		manySideMap[string(manySideGroupKey)] = thisManySide
 
 		for _, oneSide := range oneSideGroup {
 			// Most of the time, the output series won't already exist (unless we have input series with different metric names),
 			// so just create the series labels directly rather than trying to avoid their creation until we know for sure we'll
 			// need them.
-			l := seriesLabelsFunc(g.oneSideMetadata[oneSide.seriesIndices[0]].Labels, s.Labels)
+			l := outputSeriesLabelsFunc(g.oneSideMetadata[oneSide.seriesIndices[0]].Labels, s.Labels)
 			outputSeries, exists := outputSeriesMap[string(l.Bytes(buf))]
 
-			if exists {
-				outputSeries.outputSeries.manySideSeriesIndices = append(outputSeries.outputSeries.manySideSeriesIndices, idx)
-			} else {
+			if !exists {
 				oneSide.outputSeriesCount++
+				thisManySide.outputSeriesCount++
 
 				outputSeries = groupedBinaryOperationOutputSeriesWithLabels{
 					labels: l,
 					outputSeries: &groupedBinaryOperationOutputSeries{
-						manySideSeriesIndices: []int{idx},
-						oneSide:               oneSide,
+						manySide: thisManySide,
+						oneSide:  oneSide,
 					},
 				}
+
 				outputSeriesMap[string(l.Bytes(buf))] = outputSeries
 			}
 		}
@@ -328,6 +345,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	return outputMetadata, outputSeries, oneSideSeriesUsed, manySideSeriesUsed, nil
 }
 
+// additionalLabelsKeyFunc returns a function that extracts a key representing the additional labels from a "one" side series that will
+// be included in the final output series labels.
 func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneSideLabels labels.Labels) []byte {
 	if len(g.VectorMatching.Include) == 0 {
 		return func(oneSideLabels labels.Labels) []byte {
@@ -342,11 +361,26 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 	}
 }
 
-func (g *GroupedVectorVectorBinaryOperation) seriesLabelsFunc() func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
-	shouldRemoveMetricName := !g.Op.IsComparisonOperator() || g.ReturnBool
+// manySideGroupKeyFunc returns a function that extracts a key representing the set of series from the "many" side that will contribute
+// to the same set of output series.
+func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySideLabels labels.Labels) []byte {
+	buf := make([]byte, 0, 1024)
 
+	if g.shouldRemoveMetricNameFromManySide() {
+		return func(manySideLabels labels.Labels) []byte {
+			return manySideLabels.BytesWithoutLabels(buf, labels.MetricName)
+		}
+	}
+
+	return func(manySideLabels labels.Labels) []byte {
+		return manySideLabels.Bytes(buf) // FIXME: it'd be nice if we could avoid copying the bytes here
+	}
+}
+
+// outputSeriesLabelsFunc returns a function that determines the final output series labels for given series on both sides.
+func (g *GroupedVectorVectorBinaryOperation) outputSeriesLabelsFunc() func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
 	if len(g.VectorMatching.Include) == 0 {
-		if shouldRemoveMetricName {
+		if g.shouldRemoveMetricNameFromManySide() {
 			return func(_ labels.Labels, manySideLabels labels.Labels) labels.Labels {
 				return manySideLabels.DropMetricName()
 			}
@@ -359,7 +393,7 @@ func (g *GroupedVectorVectorBinaryOperation) seriesLabelsFunc() func(oneSideLabe
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
-	if shouldRemoveMetricName {
+	if g.shouldRemoveMetricNameFromManySide() {
 		return func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
 			lb.Reset(manySideLabels)
 			lb.Del(labels.MetricName)
@@ -381,6 +415,14 @@ func (g *GroupedVectorVectorBinaryOperation) seriesLabelsFunc() func(oneSideLabe
 
 		return lb.Labels()
 	}
+}
+
+func (g *GroupedVectorVectorBinaryOperation) shouldRemoveMetricNameFromManySide() bool {
+	if g.Op.IsComparisonOperator() {
+		return g.ReturnBool
+	}
+
+	return true
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
@@ -413,13 +455,13 @@ func (s favourManySideSorter) Len() int {
 }
 
 func (s favourManySideSorter) Less(i, j int) bool {
-	iMany := s.series[i].latestManySeries()
-	jMany := s.series[j].latestManySeries()
+	iMany := s.series[i].manySide.latestSeries()
+	jMany := s.series[j].manySide.latestSeries()
 	if iMany != jMany {
 		return iMany < jMany
 	}
 
-	return s.series[i].latestOneSeries() < s.series[j].latestOneSeries()
+	return s.series[i].oneSide.latestSeries() < s.series[j].oneSide.latestSeries()
 }
 
 func (s favourManySideSorter) Swap(i, j int) {
@@ -439,25 +481,24 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	manySideSeries, err := g.manySideBuffer.GetSeries(ctx, thisSeries.manySideSeriesIndices)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	mergedManySide, err := g.mergeSingleSide(manySideSeries, thisSeries.manySideSeriesIndices, g.manySideMetadata, g.manySideHandedness())
-	if err != nil {
+	if err := g.ensureManySidePopulated(ctx, thisSeries.manySide); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
 	thisSeries.oneSide.outputSeriesCount--
 	isLastOutputSeriesForOneSide := thisSeries.oneSide.outputSeriesCount == 0
+
+	thisSeries.manySide.outputSeriesCount--
+	isLastOutputSeriesForManySide := thisSeries.manySide.outputSeriesCount == 0
+
 	var result types.InstantVectorSeriesData
+	var err error
 
 	switch g.VectorMatching.Card {
 	case parser.CardOneToMany:
-		result, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, mergedManySide, isLastOutputSeriesForOneSide, true)
+		result, err = g.evaluator.computeResult(thisSeries.oneSide.mergedData, thisSeries.manySide.mergedData, isLastOutputSeriesForOneSide, isLastOutputSeriesForManySide)
 	case parser.CardManyToOne:
-		result, err = g.evaluator.computeResult(mergedManySide, thisSeries.oneSide.mergedData, true, isLastOutputSeriesForOneSide)
+		result, err = g.evaluator.computeResult(thisSeries.manySide.mergedData, thisSeries.oneSide.mergedData, isLastOutputSeriesForManySide, isLastOutputSeriesForOneSide)
 	default:
 		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
 	}
@@ -469,27 +510,50 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 	return result, nil
 }
 
-func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.Context, oneSide *oneSide) error {
-	if oneSide.seriesIndices == nil {
+func (g *GroupedVectorVectorBinaryOperation) ensureOneSidePopulated(ctx context.Context, side *oneSide) error {
+	if side.seriesIndices == nil {
 		// Already populated.
 		return nil
 	}
 
 	// First time we've used this "one" side, populate it.
-	data, err := g.oneSideBuffer.GetSeries(ctx, oneSide.seriesIndices)
+	data, err := g.oneSideBuffer.GetSeries(ctx, side.seriesIndices)
 	if err != nil {
 		return err
 	}
 
-	oneSide.mergedData, err = g.mergeSingleSide(data, oneSide.seriesIndices, g.oneSideMetadata, g.oneSideHandedness())
+	side.mergedData, err = g.mergeSingleSide(data, side.seriesIndices, g.oneSideMetadata, g.oneSideHandedness())
 	if err != nil {
 		return err
 	}
 
-	// TODO: update oneSide.matchGroup.presence, bail if conflict
+	// TODO: update side.matchGroup.presence, bail if conflict
 
 	// Clear seriesIndices to indicate that we've populated it.
-	oneSide.seriesIndices = nil
+	side.seriesIndices = nil
+
+	return nil
+}
+
+func (g *GroupedVectorVectorBinaryOperation) ensureManySidePopulated(ctx context.Context, side *manySide) error {
+	if side.seriesIndices == nil {
+		// Already populated.
+		return nil
+	}
+
+	// First time we've used this "one" side, populate it.
+	data, err := g.manySideBuffer.GetSeries(ctx, side.seriesIndices)
+	if err != nil {
+		return err
+	}
+
+	side.mergedData, err = g.mergeSingleSide(data, side.seriesIndices, g.manySideMetadata, g.manySideHandedness())
+	if err != nil {
+		return err
+	}
+
+	// Clear seriesIndices to indicate that we've populated it.
+	side.seriesIndices = nil
 
 	return nil
 }
