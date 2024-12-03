@@ -330,12 +330,6 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	headers := make([]*PrometheusHeader, 0, len(r.Header))
-	for h, hv := range r.Header {
-		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
-	}
-	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
-
 	start, end, step, err := DecodeRangeQueryTimeParams(&reqValues)
 	if err != nil {
 		return nil, err
@@ -351,7 +345,7 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	decodeOptions(r, &options)
 
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, headers, start, end, step, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil,
 	)
 	return req, nil
 }
@@ -361,12 +355,6 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
-
-	headers := make([]*PrometheusHeader, 0, len(r.Header))
-	for h, hv := range r.Header {
-		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
-	}
-	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
 
 	time, err := DecodeInstantQueryTimeParams(&reqValues, time.Now)
 	if err != nil {
@@ -383,9 +371,21 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	decodeOptions(r, &options)
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, headers, time, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil,
 	)
 	return req, nil
+}
+
+func httpHeadersToProm(httpH http.Header) []*PrometheusHeader {
+	if len(httpH) == 0 {
+		return nil
+	}
+	headers := make([]*PrometheusHeader, 0, len(httpH))
+	for h, hv := range httpH {
+		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
+	}
+	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+	return headers
 }
 
 func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Request) (LabelsQueryRequest, error) {
@@ -411,10 +411,12 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 			return nil, apierror.New(apierror.TypeBadData, fmt.Sprintf("limit parameter must be a positive number: %s", limitStr))
 		}
 	}
+	headers := httpHeadersToProm(r.Header)
 
 	if IsSeriesQuery(r.URL.Path) {
 		return &PrometheusSeriesQueryRequest{
 			Path:             r.URL.Path,
+			Headers:          headers,
 			Start:            start,
 			End:              end,
 			LabelMatcherSets: labelMatcherSets,
@@ -424,6 +426,7 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 	if IsLabelNamesQuery(r.URL.Path) {
 		return &PrometheusLabelNamesQueryRequest{
 			Path:             r.URL.Path,
+			Headers:          headers,
 			Start:            start,
 			End:              end,
 			LabelMatcherSets: labelMatcherSets,
@@ -433,6 +436,7 @@ func (prometheusCodec) DecodeLabelsQueryRequest(_ context.Context, r *http.Reque
 	// else, must be Label Values Request due to IsLabelsQuery check at beginning of func
 	return &PrometheusLabelValuesQueryRequest{
 		Path:             r.URL.Path,
+		Headers:          headers,
 		LabelName:        labelValuesPathSuffix.FindStringSubmatch(r.URL.Path)[1],
 		Start:            start,
 		End:              end,
