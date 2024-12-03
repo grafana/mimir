@@ -575,11 +575,12 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		},
 		"range query": {
 			instances:  queryRangeMiddlewares,
-			exceptions: []string{"splitInstantQueryByIntervalMiddleware"},
+			exceptions: []string{"splitInstantQueryByIntervalMiddleware", "subquerySpinoff"},
 		},
 		"remote read": {
 			instances: remoteReadMiddlewares,
 			exceptions: []string{
+				"subquerySpinoff",
 				"instrumentMiddleware",
 				"querySharding", // No query sharding support.
 				"retry",

@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/queryrange.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
+syntax = "proto3";
+
+// Uses queryrange package to offer backwards compatibility with cached extents.
+package queryrange;
+
+option go_package = "querymiddleware";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "google/protobuf/any.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message PrometheusHeader {
+  string Name = 1 [(gogoproto.jsontag) = "-"];
+  repeated string Values = 2 [(gogoproto.jsontag) = "-"];
+}
+
+message PrometheusResponse {
+  string Status = 1 [(gogoproto.jsontag) = "status"];
+  PrometheusData Data = 2 [(gogoproto.jsontag) = "data,omitempty"];
+  string ErrorType = 3 [(gogoproto.jsontag) = "errorType,omitempty"];
+  string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
+  repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
+  repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
+  repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
+}
+
+message PrometheusData {
+  string ResultType = 1 [(gogoproto.jsontag) = "resultType"];
+  repeated SampleStream Result = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "result"];
+}
+
+message SampleStream {
+  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
+}
+
+message CachedError {
+  string key = 1 [(gogoproto.jsontag) = "key"];
+  string errorType = 2 [(gogoproto.jsontag) = "errorType"];
+  string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
+}
+
+message CachedResponse  {
+  string key = 1 [(gogoproto.jsontag) = "key"];
+
+  // List of cached responses; non-overlapping and in order.
+  repeated Extent extents = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "extents"];
+}
+
+message Extent  {
+  int64 start = 1 [(gogoproto.jsontag) = "start"];
+  int64 end = 2 [(gogoproto.jsontag) = "end"];
+  // reserved the previous key to ensure cache transition
+  reserved 3;
+  string trace_id = 4 [(gogoproto.jsontag) = "-"];
+  google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
+  // Unix timestamp when the query with this response was executed.
+  // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
+  // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
+  int64 query_timestamp_ms = 6;
+}
+
+message Options {
+  bool CacheDisabled = 1;
+  bool ShardingDisabled = 2;
+  int32 TotalShards = 3;
+  bool InstantSplitDisabled = 4;
+  // Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
+  int64 InstantSplitInterval = 5;
+}
+
+message QueryStatistics {
+  uint64 EstimatedSeriesCount = 1;
+}
+
+// CachedHTTPResponse holds a generic HTTP response in the query results cache.
+message CachedHTTPResponse  {
+  // cacheKey contains the non-hashed cache key, used to guarantee there haven't
+  // been any hashed cache key collision.
+  string cache_key = 1;
+
+  // statusCode contains the HTTP response status code.
+  int32 status_code = 2;
+
+  // headers contains the HTTP response headers.
+  repeated CachedHTTPHeader headers = 3;
+
+  // body contains the HTTP response body.
+  bytes body = 4;
+}
+
+// CachedHTTPHeader holds a HTTP header.
+message CachedHTTPHeader {
+  string name = 1;
+  string value = 2;
+}

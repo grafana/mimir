@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -627,7 +628,8 @@ func (e *Extent) toResponse() (Response, error) {
 
 	resp, ok := msg.(Response)
 	if !ok {
-		return nil, fmt.Errorf("bad cached type")
+		debug.PrintStack()
+		return nil, fmt.Errorf("bad cached type, got %T", msg)
 	}
 	return resp, nil
 }
