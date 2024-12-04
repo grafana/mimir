@@ -342,15 +342,6 @@ type PartitionState struct {
 	LastBlockEnd time.Time
 }
 
-func (s PartitionState) Clone() PartitionState {
-	return PartitionState{
-		Commit:                s.Commit,
-		CommitRecordTimestamp: s.CommitRecordTimestamp,
-		LastSeenOffset:        s.LastSeenOffset,
-		LastBlockEnd:          s.LastBlockEnd,
-	}
-}
-
 func PartitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackMillis int64) PartitionState {
 	commitRecTs, lastSeenOffset, lastBlockEndTs, err := unmarshallCommitMeta(lag.Commit.Metadata)
 	if err != nil {
