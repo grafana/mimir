@@ -18,6 +18,7 @@ import (
 )
 
 const shards = 128
+const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
 // trackerStore should not depend on wall clock: time.Now() should be always injected as a parameter,
@@ -135,7 +136,13 @@ func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint8, limit 
 		return m
 	}
 
-	m = &tenantShard{series: make(map[uint64]*atomic.Int32, int(limit/shards))}
+	var series map[uint64]*atomic.Int32
+	if limit == noLimit {
+		series = make(map[uint64]*atomic.Int32)
+	} else {
+		series = make(map[uint64]*atomic.Int32, int(limit/shards))
+	}
+	m = &tenantShard{series: series}
 	t.data[shard][userID] = m
 	return m
 }
