@@ -3307,14 +3307,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
 [service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
 
-# (experimental) Target ingestion delay. If set to a non-zero value, the
-# distributor will artificially delay ingestion time-frame by the specified
-# duration by computing the difference between actual ingestion and the target.
-# There is no delay on actual ingestion of samples, it is only the response back
-# to the client.
-# CLI flag: -distributor.artificial-ingestion-latency
-[distributor_artificial_ingestion_delay: <duration> | default = 0s]
-
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user

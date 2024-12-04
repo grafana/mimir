@@ -126,7 +126,7 @@ type Limits struct {
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
-	DistributorArtificialIngestionDelay         model.Duration      `yaml:"distributor_artificial_ingestion_delay" json:"distributor_artificial_ingestion_delay" category:"experimental"`
+	DistributorArtificialIngestionDelay         model.Duration      `yaml:"distributor_artificial_ingestion_delay" json:"distributor_artificial_ingestion_delay" category:"experimental" doc:"hidden"`
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
