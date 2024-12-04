@@ -46,7 +46,7 @@ type config struct {
 	copyPeriod                      time.Duration
 	enabledUsers                    flagext.StringSliceCSV
 	disabledUsers                   flagext.StringSliceCSV
-	crossTenantMapping              flagext.StringSliceCSV
+	userMapping                     flagext.StringSliceCSV
 	dryRun                          bool
 	skipNoCompactBlockDurationCheck bool
 	httpListen                      string
@@ -62,9 +62,9 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.DurationVar(&c.copyPeriod, "copy-period", 0, "How often to repeat the copy. If set to 0, copy is done once, and the program stops. Otherwise, the program keeps running and copying blocks until it is terminated.")
 	f.Var(&c.enabledUsers, "enabled-users", "If not empty, only blocks for these users are copied.")
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
-	f.Var(&c.crossTenantMapping, "cross-tenant-mapping", "A comma-separated list of (source tenant):(destination tenant). If a source tenant is not mapped then its destination tenant is assumed to be identical.")
+	f.Var(&c.userMapping, "user-mapping", "A comma-separated list of (source user):(destination user). If a user is not mapped then its destination user is assumed to be identical.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform any copy; only log what would happen.")
-	f.BoolVar(&c.skipNoCompactBlockDurationCheck, "skip-no-compact-block-duration-check", false, "If set, blocks marked as no-compact are not checked against min-block-duration")
+	f.BoolVar(&c.skipNoCompactBlockDurationCheck, "skip-no-compact-block-duration-check", false, "If set, blocks marked as no-compact are not checked against min-block-duration.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
 }
 
@@ -84,19 +84,23 @@ func (c *config) validate() error {
 	return nil
 }
 
-func (c *config) parseCrossTenantMapping() (map[string]string, error) {
-	m := make(map[string]string, len(c.crossTenantMapping))
-	for _, mapping := range c.crossTenantMapping {
+func (c *config) parseUserMapping() (map[string]string, error) {
+	m := make(map[string]string, len(c.userMapping))
+	for _, mapping := range c.userMapping {
 		splitMapping := strings.Split(mapping, ":")
 		if len(splitMapping) != 2 || slices.Contains(splitMapping, "") {
-			return nil, fmt.Errorf("invalid tenant mapping: %s", mapping)
+			return nil, fmt.Errorf("invalid user mapping: %s", mapping)
 		}
 		for _, id := range splitMapping {
 			if err := tenant.ValidTenantID(id); err != nil {
 				return nil, err
 			}
 		}
-		m[splitMapping[0]] = splitMapping[1]
+		source := splitMapping[0]
+		if _, ok := m[source]; ok {
+			return nil, fmt.Errorf("multiple user mappings for source user: %s", source)
+		}
+		m[source] = splitMapping[1]
 	}
 	return m, nil
 }
@@ -147,7 +151,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	crossTenantMapping, err := cfg.parseCrossTenantMapping()
+	userMapping, err := cfg.parseUserMapping()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
@@ -171,7 +175,7 @@ func main() {
 		}
 	}()
 
-	success := runCopy(ctx, cfg, crossTenantMapping, logger, m)
+	success := runCopy(ctx, cfg, userMapping, logger, m)
 	if cfg.copyPeriod <= 0 {
 		if success {
 			os.Exit(0)
@@ -185,14 +189,14 @@ func main() {
 	for ctx.Err() == nil {
 		select {
 		case <-t.C:
-			_ = runCopy(ctx, cfg, crossTenantMapping, logger, m)
+			_ = runCopy(ctx, cfg, userMapping, logger, m)
 		case <-ctx.Done():
 		}
 	}
 }
 
-func runCopy(ctx context.Context, cfg config, crossTenantMapping map[string]string, logger log.Logger, m *metrics) bool {
-	err := copyBlocks(ctx, cfg, crossTenantMapping, logger, m)
+func runCopy(ctx context.Context, cfg config, userMapping map[string]string, logger log.Logger, m *metrics) bool {
+	err := copyBlocks(ctx, cfg, userMapping, logger, m)
 	if err != nil {
 		m.copyCyclesFailed.Inc()
 		level.Error(logger).Log("msg", "failed to copy blocks", "err", err, "dryRun", cfg.dryRun)
@@ -204,7 +208,7 @@ func runCopy(ctx context.Context, cfg config, crossTenantMapping map[string]stri
 	return true
 }
 
-func copyBlocks(ctx context.Context, cfg config, crossTenantMapping map[string]string, logger log.Logger, m *metrics) error {
+func copyBlocks(ctx context.Context, cfg config, userMapping map[string]string, logger log.Logger, m *metrics) error {
 	sourceBucket, destBucket, copyFunc, err := cfg.copyConfig.ToBuckets(ctx)
 	if err != nil {
 		return err
@@ -229,7 +233,7 @@ func copyBlocks(ctx context.Context, cfg config, crossTenantMapping map[string]s
 			return nil
 		}
 
-		destinationTenantID, ok := crossTenantMapping[sourceTenantID]
+		destinationTenantID, ok := userMapping[sourceTenantID]
 		if !ok {
 			destinationTenantID = sourceTenantID
 		}
@@ -329,6 +333,8 @@ func copyBlocks(ctx context.Context, cfg config, crossTenantMapping map[string]s
 			m.blocksCopied.Inc()
 			level.Info(logger).Log("msg", "block copied successfully")
 
+			// Note that only the blockID and destination bucket are considered in the copy marker.
+			// If multiple tenants in the same destination bucket are copied to from the same source tenant the markers will currently clash.
 			err = uploadCopiedMarkerFile(ctx, sourceBucket, sourceTenantID, blockID, destBucket.Name())
 			if err != nil {
 				level.Error(logger).Log("msg", "failed to upload copied-marker file for block", "block", blockID.String(), "err", err)
