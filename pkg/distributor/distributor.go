@@ -1188,7 +1188,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
 func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		if !d.cfg.UsageTrackerEnabled {
+		// If the usage-tracker client hasn't been created it means usage-tracker is disabled
+		// for this instance.
+		if d.usageTrackerClient == nil {
 			return next(ctx, pushReq)
 		}
 
