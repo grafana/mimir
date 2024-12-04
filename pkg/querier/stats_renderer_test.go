@@ -116,7 +116,7 @@ func TestStatsRenderer(t *testing.T) {
 			require.Equal(t, http.StatusOK, rec.Code)
 			stats := mimir_stats.FromContext(ctx)
 			require.NotNil(t, stats)
-			require.Equal(t, tc.samples, stats.LoadTotalSamples())
+			require.Equal(t, tc.samples, stats.LoadSamplesProcessed())
 		})
 	}
 }

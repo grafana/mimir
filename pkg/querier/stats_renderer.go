@@ -14,7 +14,7 @@ import (
 func StatsRenderer(ctx context.Context, s *promql_stats.Statistics, param string) promql_stats.QueryStats {
 	mimirStats := stats.FromContext(ctx)
 	if mimirStats != nil && s != nil {
-		mimirStats.AddTotalSamples(uint64(s.Samples.TotalSamples))
+		mimirStats.AddSamplesProcessed(uint64(s.Samples.TotalSamples))
 	}
 	return prom_api.DefaultStatsRenderer(ctx, s, param)
 }

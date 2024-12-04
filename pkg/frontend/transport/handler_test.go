@@ -304,7 +304,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
-				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "total_samples;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
 			},
 		},
 	} {
