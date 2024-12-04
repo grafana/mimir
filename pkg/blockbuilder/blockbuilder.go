@@ -43,6 +43,7 @@ type BlockBuilder struct {
 	bucket      objstore.Bucket
 
 	scheduler schedulerpb.SchedulerClient
+	committer stateCommitter
 
 	assignedPartitionIDs []int32
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
@@ -75,7 +76,9 @@ func New(
 	}
 	b.bucket = bucketClient
 
-	runFunc := b.runningStandaloneMode
+	// The running func and committed impl are different based on the presence of a scheduler.
+	runningFunc := b.runningStandaloneMode
+	b.committer = &kafkaCommitter{}
 
 	if cfg.SchedulerConfig.Address != "" {
 		sched, err := b.makeSchedulerClient()
@@ -85,11 +88,11 @@ func New(
 		b.scheduler = sched
 
 		// If a scheduler is configured, we run in pull mode.
-		runFunc = b.runningPullMode
+		runningFunc = b.runningPullMode
+		b.committer = &noOpCommitter{}
 	}
 
-	b.Service = services.NewBasicService(b.starting, runFunc, b.stopping)
-
+	b.Service = services.NewBasicService(b.starting, runningFunc, b.stopping)
 	return b, nil
 }
 
@@ -145,8 +148,58 @@ func (b *BlockBuilder) stopping(_ error) error {
 	return nil
 }
 
-// This is a service `running` function for standalone mode, where we consume
-// from statically assigned partitions.
+// runningPullMode is a service `running` function for pull mode, where we learn
+// about jobs from a block-builder-scheduler.
+func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
+	// Kick off the scheduler's run loop with its own dependent subcontext.
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go b.scheduler.Run(sctx)
+
+	for {
+		key, spec, err := b.scheduler.GetJob(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
+			continue
+		}
+
+		if _, err := b.consumeJob(ctx, key, spec); err != nil {
+			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+			continue // ?
+		}
+
+		// TODO: CompleteJob needs to accept the new state returned from consumeJob.
+
+		if err := b.scheduler.CompleteJob(key); err != nil {
+			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
+		}
+	}
+}
+
+func (b *BlockBuilder) consumeJob(ctx context.Context, _ schedulerpb.JobKey, jobSpec schedulerpb.JobSpec) (PartitionState, error) {
+	state := PartitionState{
+		Commit: kadm.Offset{
+			Topic:     jobSpec.Topic,
+			Partition: jobSpec.Partition,
+			At:        jobSpec.StartOffset,
+			Metadata:  "{}", // FIXME. This and other fields need to be plumbed in via the scheduler RPC layer.
+		},
+		CommitRecordTimestamp: jobSpec.CommitRecTs,
+		LastSeenOffset:        jobSpec.LastSeenOffset,
+		LastBlockEnd:          jobSpec.LastBlockEndTs,
+	}
+
+	cycleEndTime := jobSpec.LastBlockEndTs // ???
+	cycleEndOffset := jobSpec.EndOffset    // ???
+
+	return b.consumePartition(ctx, jobSpec.Partition, state, cycleEndTime, cycleEndOffset)
+}
+
+// runningStandaloneMode is a service `running` function for standalone mode,
+// where we consume from statically assigned partitions.
 func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
@@ -177,31 +230,6 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 		case <-ctx.Done():
 			level.Info(b.logger).Log("msg", "context cancelled, stopping")
 			return nil
-		}
-	}
-}
-
-// This is a service `running` function for pull mode, where we learn about
-// jobs from a block-builder-scheduler.
-func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
-	sctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go b.scheduler.Run(sctx)
-
-	for {
-		key, _, err := b.scheduler.GetJob(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
-			continue
-		}
-
-		time.Sleep(11 * time.Second)
-
-		if err := b.scheduler.CompleteJob(key); err != nil {
-			level.Warn(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch)
 		}
 	}
 }
@@ -268,7 +296,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEndTime time.T
 		}
 
 		state := PartitionStateFromLag(b.logger, lag, b.fallbackOffsetMillis)
-		if err := b.consumePartition(ctx, partition, state, cycleEndTime, lag.End.Offset); err != nil {
+		if _, err := b.consumePartition(ctx, partition, state, cycleEndTime, lag.End.Offset); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "partition", partition)
 		}
 	}
@@ -314,6 +342,15 @@ type PartitionState struct {
 	LastBlockEnd time.Time
 }
 
+func (s PartitionState) Clone() PartitionState {
+	return PartitionState{
+		Commit:                s.Commit,
+		CommitRecordTimestamp: s.CommitRecordTimestamp,
+		LastSeenOffset:        s.LastSeenOffset,
+		LastBlockEnd:          s.LastBlockEnd,
+	}
+}
+
 func PartitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackMillis int64) PartitionState {
 	commitRecTs, lastSeenOffset, lastBlockEndTs, err := unmarshallCommitMeta(lag.Commit.Metadata)
 	if err != nil {
@@ -353,7 +390,7 @@ func PartitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // If the partition is lagging behind, it takes care of consuming it in sections.
-func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state PartitionState, cycleEndTime time.Time, cycleEndOffset int64) (err error) {
+func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state PartitionState, cycleEndTime time.Time, cycleEndOffset int64) (finalState PartitionState, err error) {
 	sp, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BlockBuilder.consumePartition")
 	defer sp.Finish()
 
@@ -381,12 +418,12 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 		logger := log.With(logger, "section_end", sectionEndTime, "offset", state.Commit.At)
 		state, err = b.consumePartitionSection(ctx, logger, builder, partition, state, sectionEndTime, cycleEndOffset)
 		if err != nil {
-			return fmt.Errorf("consume partition %d: %w", partition, err)
+			return PartitionState{}, fmt.Errorf("consume partition %d: %w", partition, err)
 		}
 		sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
 	}
 
-	return nil
+	return state, nil
 }
 
 func (b *BlockBuilder) consumePartitionSection(
@@ -555,14 +592,20 @@ consumerLoop:
 		LastSeenOffset:        lastSeenOffset,
 		LastBlockEnd:          lastBlockEnd,
 	}
-	if err := b.commitState(ctx, logger, b.cfg.ConsumerGroup, newState); err != nil {
+	if err := b.committer.commitState(ctx, b, logger, b.cfg.ConsumerGroup, newState); err != nil {
 		return state, err
 	}
 
 	return newState, nil
 }
 
-func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group string, state PartitionState) error {
+type stateCommitter interface {
+	commitState(context.Context, *BlockBuilder, log.Logger, string, PartitionState) error
+}
+
+type kafkaCommitter struct{}
+
+func (c *kafkaCommitter) commitState(ctx context.Context, b *BlockBuilder, logger log.Logger, group string, state PartitionState) error {
 	offsets := make(kadm.Offsets)
 	offsets.Add(state.Commit)
 
@@ -584,9 +627,18 @@ func (b *BlockBuilder) commitState(ctx context.Context, logger log.Logger, group
 	}
 
 	level.Info(logger).Log("msg", "successfully committed offset to kafka", "offset", state.Commit.At)
-
 	return nil
 }
+
+var _ stateCommitter = &kafkaCommitter{}
+
+type noOpCommitter struct{}
+
+func (c *noOpCommitter) commitState(ctx context.Context, b *BlockBuilder, logger log.Logger, _ string, state PartitionState) error {
+	return nil
+}
+
+var _ stateCommitter = &noOpCommitter{}
 
 func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, blockIDs []string) error {
 	buc := bucket.NewUserBucketClient(tenantID, b.bucket, b.limits)
