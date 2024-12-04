@@ -206,6 +206,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("at least 1 backend is required")
 	}
 
+	err := validateBackendConfig(p.backends, cfg.parsedBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("validating external backend configs: %w", err)
+	}
+
 	// If the preferred backend is configured, then it must exist among the actual backends.
 	if cfg.PreferredBackend != "" {
 		exists := false
@@ -231,6 +236,22 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	}
 
 	return p, nil
+}
+
+func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*BackendConfig) error {
+	for configuredBackend := range config {
+		backendExists := false
+		for _, actualBacked := range backends {
+			if actualBacked.Name() == configuredBackend {
+				backendExists = true
+				break
+			}
+		}
+		if !backendExists {
+			return fmt.Errorf("configured backend %s does not exist in the list of actual backends", configuredBackend)
+		}
+	}
+	return nil
 }
 
 func (p *Proxy) Start() error {

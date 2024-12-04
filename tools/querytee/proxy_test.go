@@ -756,6 +756,35 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 				},
 			},
 		},
+		"configured backend which doesn't exist": {
+			createFile: true,
+			configContent: `
+              backend1:
+                request_headers:
+                  X-Custom-Header: ["value1", "value2"]
+                  Cache-Control: ["no-store"]
+              backend2:
+                request_headers:
+                  Authorization: ["Bearer token123"]
+              backend3:
+                request_headers:
+                  Authorization: ["Bearer token123"]
+            `,
+			expectedError: "backend3 does not exist in the list of actual backends",
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1", "value2"},
+						"Cache-Control":   {"no-store"},
+					},
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+				},
+			},
+		},
 	}
 
 	for testName, testCase := range tests {
