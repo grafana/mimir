@@ -11,6 +11,8 @@ import (
 	"go.uber.org/atomic"
 )
 
+const snapshotEncodingVersion = 1
+
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	t.lock[shard].RLock()
 	shardTenants := maps.Clone(t.data[shard])

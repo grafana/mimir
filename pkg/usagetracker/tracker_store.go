@@ -17,8 +17,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-const snapshotEncodingVersion = 1
-
 const shards = 128
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
