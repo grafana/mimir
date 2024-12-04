@@ -152,9 +152,9 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	}
 }
 
-// createTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
+// CreateTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
 // If the topic already exists, then the function logs a message and returns nil.
-func createTopic(cfg KafkaConfig, logger log.Logger) error {
+func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
 	logger = log.With(logger, "task", "autocreate_topic")
 
 	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)

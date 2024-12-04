@@ -175,7 +175,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, createTopic(cfg, logger))
+		require.NoError(t, CreateTopic(cfg, logger))
 	})
 
 	t.Run("should return an error if the request fails", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, createTopic(cfg, logger))
+		require.NoError(t, CreateTopic(cfg, logger))
 	})
 
 	t.Run("should return an error if the request succeed but the response contains an error", func(t *testing.T) {
@@ -230,7 +230,7 @@ func TestCreateTopic(t *testing.T) {
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, createTopic(cfg, logger))
+		require.NoError(t, CreateTopic(cfg, logger))
 	})
 
 	t.Run("should not return error when topic already exists", func(t *testing.T) {
@@ -245,9 +245,9 @@ func TestCreateTopic(t *testing.T) {
 		)
 
 		// First call should create the topic
-		assert.NoError(t, createTopic(cfg, logger))
+		assert.NoError(t, CreateTopic(cfg, logger))
 
 		// Second call should succeed because topic already exists
-		assert.NoError(t, createTopic(cfg, logger))
+		assert.NoError(t, CreateTopic(cfg, logger))
 	})
 }
