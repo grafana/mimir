@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -65,6 +66,9 @@ type UsageTrackerClient struct {
 
 	// trackSeriesWorkersPool is the pool of workers used to send requests to usage-tracker instances.
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
+
+	// Metrics.
+	trackSeriesDuration *prometheus.HistogramVec
 }
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.PartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
@@ -74,6 +78,14 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		partitionRing:          partitionRing,
 		clientsPool:            newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
 		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
+		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_usage_tracker_client_track_series_duration_seconds",
+			Help:                            "Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			Buckets:                         prometheus.DefBuckets,
+		}, []string{"status_code"}),
 	}
 
 	c.Service = services.NewIdleService(nil, c.stop)
@@ -87,7 +99,7 @@ func (c *UsageTrackerClient) stop(_ error) error {
 	return nil
 }
 
-func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error) {
+func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) (_ []uint64, returnErr error) {
 	var (
 		batchOptions = ring.DoBatchOptions{
 			Cleanup:       nil,
@@ -95,9 +107,18 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 			Go:            c.trackSeriesWorkersPool.Go,
 		}
 
+		startTime  = time.Now()
 		rejectedMx sync.Mutex
 		rejected   []uint64
 	)
+
+	defer func() {
+		statusCode := "OK"
+		if returnErr != nil {
+			statusCode = "error"
+		}
+		c.trackSeriesDuration.WithLabelValues(statusCode).Observe(time.Since(startTime).Seconds())
+	}()
 
 	// Create the partition ring view as late as possible, because we want to get the most updated
 	// snapshot of the ring.
