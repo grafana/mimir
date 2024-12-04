@@ -64,6 +64,9 @@ var (
 	// reasonTooManyHAClusters is one of the reasons for discarding samples.
 	reasonTooManyHAClusters = "too_many_ha_clusters"
 
+	// TODO copied from ingester
+	reasonPerUserSeriesLimit = "per_user_series_limit"
+
 	labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
 		"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
 		validation.MaxLabelNameLengthFlag,
