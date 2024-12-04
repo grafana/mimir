@@ -26,6 +26,11 @@ func TestShardSummer(t *testing.T) {
 		expectedShardedQueries int
 	}{
 		{
+			`sum by (asserts_env, asserts_site, namespace, job, service, workload, pod, instance) (rate({asserts_env!="",asserts_metric_request="total",asserts_request_type="inbound"}[5m])) > 0 or avg_over_time(__aggregated_subquery__{__aggregated_subquery__="(sum by (asserts_env, asserts_site, namespace, job, service, workload, pod, instance) ({asserts_env!=\"\",asserts_metric_request=\"gauge\",asserts_request_type=\"inbound\"}))[5m:]"}[5m]) > 0`,
+			`test`,
+			0,
+		},
+		{
 			`quantile(0.9,foo)`,
 			concat(`quantile(0.9,foo)`),
 			0,

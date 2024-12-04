@@ -7,6 +7,7 @@ package astmapper
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -58,6 +59,10 @@ var FuncsWithDefaultTimeArg = []string{
 // CanParallelize tests if a subtree is parallelizable.
 // A subtree is parallelizable if all of its components are parallelizable.
 func CanParallelize(expr parser.Expr, logger log.Logger) bool {
+	if strings.Contains(expr.String(), AggregatedSubqueryMetricName) {
+		return false
+	}
+
 	switch e := expr.(type) {
 	case nil:
 		// nil handles cases where we check optional fields that are not set

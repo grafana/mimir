@@ -373,7 +373,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 			&querymiddleware.PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
 		) // Downstream is the querier, which is HTTP req.
 
-		newRangeRequest := querymiddleware.NewPrometheusRangeQueryRequest(sendBackURL+"/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddleware.Options{ShardingDisabled: true}, &querymiddleware.Hints{})
+		newRangeRequest := querymiddleware.NewPrometheusRangeQueryRequest(sendBackURL+"/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddleware.Options{}, &querymiddleware.Hints{})
 		rangeQueries = append(rangeQueries, newRangeRequest)
 
 		if rangeEnd == end {
