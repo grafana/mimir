@@ -52,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
@@ -182,6 +183,11 @@ type Distributor struct {
 
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
+
+	// usageTrackerClient is the client that should be used to track per-tenant series and
+	// enforce max series limit in the distributor. This field is nil if usage-tracker
+	// is disabled.
+	usageTrackerClient *usagetrackerclient.UsageTrackerClient
 }
 
 // OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
@@ -241,6 +247,10 @@ type Config struct {
 
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
+
+	// Usage-tracker (optional).
+	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
+	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -252,6 +262,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
+	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client", f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -320,7 +331,7 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, usageTrackerPartitionRing *ring.PartitionInstanceRing, usageTrackerInstanceRing ring.ReadRing, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -554,6 +565,19 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+	}
+
+	// Init usage-tracker client (if enabled).
+	if canJoinDistributorsRing && cfg.UsageTrackerEnabled {
+		if usageTrackerPartitionRing == nil {
+			return nil, errors.New("usage-tracker partition ring is required")
+		}
+		if usageTrackerInstanceRing == nil {
+			return nil, errors.New("usage-tracker instance ring is required")
+		}
+
+		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, log, reg)
+		subservices = append(subservices, d.usageTrackerClient)
 	}
 
 	// Register each metric only if the corresponding storage is enabled.

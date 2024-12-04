@@ -104,6 +104,8 @@ const (
 	TenantFederation                string = "tenant-federation"
 	UsageStats                      string = "usage-stats"
 	UsageTracker                    string = "usage-tracker"
+	UsageTrackerInstanceRing        string = "usage-tracker-instance-ring"
+	UsageTrackerPartitionRing       string = "usage-tracker-partition-ring"
 	BlockBuilder                    string = "block-builder"
 	BlockBuilderScheduler           string = "block-builder-scheduler"
 	ContinuousTest                  string = "continuous-test"
@@ -235,6 +237,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Distributor.UsageTrackerClient.TLS.Reader = t.Vault
 
 	// Update the Server
 	updateServerTLSCfgFunc := func(vault *vault.Vault, tlsConfig *server.TLSConfig) error {
@@ -465,8 +468,9 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
+	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1091,11 +1095,54 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	return t.UsageStatsReporter, nil
 }
 
+func (t *Mimir) initUsageTrackerInstanceRing() (services.Service, error) {
+	if !t.Cfg.UsageTracker.Enabled {
+		return nil, nil
+	}
+
+	var err error
+
+	// Init instance ring.
+	t.UsageTrackerInstanceRing, err = usagetracker.NewInstanceRingClient(t.Cfg.UsageTracker.InstanceRing, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	// Expose a web page to view the instances ring state.
+	t.API.RegisterUsageTrackerInstanceRing(t.UsageTrackerInstanceRing)
+
+	return t.UsageTrackerInstanceRing, nil
+}
+
+func (t *Mimir) initUsageTrackerPartitionRing() (services.Service, error) {
+	if !t.Cfg.UsageTracker.Enabled {
+		return nil, nil
+	}
+
+	var err error
+
+	// Init the partition ring.
+	partitionKVClient, err := usagetracker.NewPartitionRingKVClient(t.Cfg.UsageTracker.PartitionRing, "watcher", util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	partitionRingWatcher := usagetracker.NewPartitionRingWatcher(partitionKVClient, util_log.Logger, t.Registerer)
+	t.UsageTrackerPartitionRing = ring.NewPartitionInstanceRing(partitionRingWatcher, t.UsageTrackerInstanceRing, t.Cfg.UsageTracker.InstanceRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partitions ring state.
+	t.API.RegisterUsageTrackerPartitionRing(
+		ring.NewPartitionRingPageHandler(partitionRingWatcher, ring.NewPartitionRingEditor(usagetracker.PartitionRingKey, partitionKVClient)),
+	)
+
+	return partitionRingWatcher, nil
+}
+
 func (t *Mimir) initUsageTracker() (services.Service, error) {
 	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var err error
-	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.Overrides, util_log.Logger, t.Registerer)
+	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.UsageTrackerPartitionRing, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -1176,6 +1223,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageTracker, t.initUsageTracker)
+	mm.RegisterModule(UsageTrackerInstanceRing, t.initUsageTrackerInstanceRing, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageTrackerPartitionRing, t.initUsageTrackerPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
@@ -1195,7 +1244,7 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                       {RuntimeConfig},
 		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
 		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
@@ -1213,7 +1262,9 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                       {API, MemberlistKV, Overrides, Vault},
 		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
 		TenantFederation:                {Queryable},
-		UsageTracker:                    {API, Overrides, MemberlistKV},
+		UsageTracker:                    {API, Overrides, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
+		UsageTrackerInstanceRing:        {MemberlistKV},
+		UsageTrackerPartitionRing:       {MemberlistKV, UsageTrackerInstanceRing},
 		BlockBuilder:                    {API, Overrides},
 		BlockBuilderScheduler:           {API},
 		ContinuousTest:                  {API},

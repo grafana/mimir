@@ -1475,6 +1475,28 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
     	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
+  -distributor.usage-tracker-client.prefer-availability-zone string
+    	Preferred availability zone to query usage-trackers.
+  -distributor.usage-tracker-client.requests-hedging-delay duration
+    	Delay before initiating requests to further usage-trackers (e.g. in other zones). (default 100ms)
+  -distributor.usage-tracker-client.reusable-workers int
+    	Number of pre-allocated workers used to send requests to usage-trackers. If 0, no workers pool will be used and a new goroutine will be spawned for each request. (default 500)
+  -distributor.usage-tracker-client.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -distributor.usage-tracker-client.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.usage-tracker-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -distributor.usage-tracker-client.tls-enabled
+    	Enable TLS for gRPC client connecting to usage-tracker.
+  -distributor.usage-tracker-client.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -distributor.usage-tracker-client.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -distributor.usage-tracker-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -distributor.usage-tracker-client.tls-server-name string
+    	Override the expected name on the server certificate.
   -distributor.write-requests-buffer-pooling-enabled
     	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics
@@ -3317,8 +3339,10 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.enabled
+    	True to enable the usage-tracker.
   -usage-tracker.idle-timeout duration
-    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.
+    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour. (default 20m0s)
   -usage-tracker.partition-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -usage-tracker.partition-ring.consul.cas-retry-delay duration

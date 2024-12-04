@@ -355,6 +355,10 @@ usage_stats:
   [installation_mode: <string> | default = "custom"]
 
 usage_tracker:
+  # True to enable the usage-tracker.
+  # CLI flag: -usage-tracker.enabled
+  [enabled: <boolean> | default = false]
+
   ring:
     # The key-value store used to share the hash ring across multiple instances.
     # When usage-tracker is enabled, this option needs be set on usage-trackers
@@ -467,7 +471,7 @@ usage_tracker:
   # The time after which series are considered idle and not active anymore. Must
   # be greater than 0 and less than 1 hour.
   # CLI flag: -usage-tracker.idle-timeout
-  [idle_timeout: <duration> | default = 0s]
+  [idle_timeout: <duration> | default = 20m]
 
 overrides_exporter:
   ring:
@@ -1078,6 +1082,88 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
+
+usage_tracker_client:
+  # Preferred availability zone to query usage-trackers.
+  # CLI flag: -distributor.usage-tracker-client.prefer-availability-zone
+  [prefer_availability_zone: <string> | default = ""]
+
+  # (advanced) Delay before initiating requests to further usage-trackers (e.g.
+  # in other zones).
+  # CLI flag: -distributor.usage-tracker-client.requests-hedging-delay
+  [requests_hedging_delay: <duration> | default = 100ms]
+
+  # (advanced) Number of pre-allocated workers used to send requests to
+  # usage-trackers. If 0, no workers pool will be used and a new goroutine will
+  # be spawned for each request.
+  # CLI flag: -distributor.usage-tracker-client.reusable-workers
+  [reusable_workers: <int> | default = 500]
+
+  # (advanced) Enable TLS for gRPC client connecting to usage-tracker.
+  # CLI flag: -distributor.usage-tracker-client.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -distributor.usage-tracker-client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -distributor.usage-tracker-client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -distributor.usage-tracker-client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -distributor.usage-tracker-client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -distributor.usage-tracker-client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -distributor.usage-tracker-client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -distributor.usage-tracker-client.tls-min-version
+  [tls_min_version: <string> | default = ""]
 ```
 
 ### ingester
