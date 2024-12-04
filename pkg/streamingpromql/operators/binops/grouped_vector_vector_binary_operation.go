@@ -158,6 +158,8 @@ func NewGroupedVectorVectorBinaryOperation(
 		return nil, fmt.Errorf("unsupported cardinality '%v'", g.VectorMatching.Card)
 	}
 
+	slices.Sort(g.VectorMatching.Include)
+
 	return g, nil
 }
 
