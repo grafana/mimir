@@ -159,10 +159,8 @@ func (b *BlockBuilder) stopping(_ error) error {
 // runningPullMode is a service `running` function for pull mode, where we learn
 // about jobs from a block-builder-scheduler.
 func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
-	// Kick off the scheduler's run loop with its own dependent subcontext.
-	sctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go b.scheduler.Run(sctx)
+	// Kick off the scheduler's run loop.
+	go b.scheduler.Run(ctx)
 
 	for {
 		key, spec, err := b.scheduler.GetJob(ctx)
@@ -633,7 +631,7 @@ var _ stateCommitter = &kafkaCommitter{}
 
 type noOpCommitter struct{}
 
-func (c *noOpCommitter) commitState(ctx context.Context, b *BlockBuilder, logger log.Logger, _ string, state PartitionState) error {
+func (c *noOpCommitter) commitState(_ context.Context, _ *BlockBuilder, _ log.Logger, _ string, _ PartitionState) error {
 	return nil
 }
 
