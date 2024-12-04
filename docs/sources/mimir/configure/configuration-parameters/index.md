@@ -471,7 +471,7 @@ usage_tracker:
   # The time after which series are considered idle and not active anymore. Must
   # be greater than 0 and less than 1 hour.
   # CLI flag: -usage-tracker.idle-timeout
-  [idle_timeout: <duration> | default = 0s]
+  [idle_timeout: <duration> | default = 20m]
 
 overrides_exporter:
   ring:

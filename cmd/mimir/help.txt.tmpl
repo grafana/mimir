@@ -866,7 +866,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-tracker.enabled
     	True to enable the usage-tracker.
   -usage-tracker.idle-timeout duration
-    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.
+    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour. (default 20m0s)
   -usage-tracker.partition-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -usage-tracker.partition-ring.etcd.endpoints string

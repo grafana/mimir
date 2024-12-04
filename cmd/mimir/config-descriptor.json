@@ -19008,7 +19008,7 @@
           "required": false,
           "desc": "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 1200000000000,
           "fieldFlag": "usage-tracker.idle-timeout",
           "fieldType": "duration"
         }
