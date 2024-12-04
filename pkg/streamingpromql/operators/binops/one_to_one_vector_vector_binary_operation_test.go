@@ -25,7 +25,7 @@ import (
 //
 // Most of the edge cases are already covered by TestMergeSeries, so we focus on the logic
 // unique to OneToOneVectorVectorBinaryOperation: converting conflicts to user-friendly error messages.
-func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
+func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 	testCases := map[string]struct {
 		input                []types.InstantVectorSeriesData
 		sourceSeriesIndices  []int
@@ -214,7 +214,7 @@ func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 	}
 }
 
-func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
+func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 	testCases := map[string]struct {
 		series []*oneToOneBinaryOperationOutputSeries
 
