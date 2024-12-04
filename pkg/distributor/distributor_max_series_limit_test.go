@@ -27,20 +27,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 		userID = "user-1"
 	)
 
-	var (
-		now        = time.Now()
-		testConfig = prepConfig{
-			numDistributors:         1,
-			ingestStorageEnabled:    true,
-			ingestStoragePartitions: 1,
-			limits:                  prepareDefaultLimits(),
-			configure: func(cfg *Config) {
-				// Run a number of clients equal to the number of partitions, so that each partition
-				// has its own client, as requested by some test cases.
-				cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
-			},
-		}
-	)
+	now := time.Now()
 
 	// To keep this test simpler, every test case creates the same write request.
 	createWriteRequest := func() *mimirpb.WriteRequest {
@@ -90,6 +77,18 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
+			testConfig := prepConfig{
+				numDistributors:         1,
+				ingestStorageEnabled:    true,
+				ingestStoragePartitions: 1,
+				limits:                  prepareDefaultLimits(),
+				configure: func(cfg *Config) {
+					// Run a number of clients equal to the number of partitions, so that each partition
+					// has its own client, as requested by some test cases.
+					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
+				},
+			}
+
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, regs, 1)
@@ -129,7 +128,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
-					cortex_discarded_samples_total{group="",reason="per_user_series_limit",user="user-1"} %d
+					cortex_discarded_samples_total{group="",reason="pre_ingestion_per_user_series_limit",user="user-1"} %d
 				`, expectedDiscardedSamples)), "cortex_discarded_samples_total"))
 			} else {
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(""), "cortex_discarded_samples_total"))
@@ -202,7 +201,7 @@ func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
 			distributors[0].usageTrackerClient = usageTracker
 
 			// Get the middleware function.
-			noop := func(ctx context.Context, req *Request) error { return nil }
+			noop := func(_ context.Context, _ *Request) error { return nil }
 			fn := distributors[0].prePushMaxSeriesLimitMiddleware(noop)
 
 			b.ResetTimer()
