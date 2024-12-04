@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/common/promslog"
@@ -86,6 +87,7 @@ func (c *BlockSubsetCommand) checkSubset(_ *kingpin.ParseContext) error {
 	s1Exists := subSeries.Next()
 	s2Exists := supSeries.Next()
 	svMismatch := 0
+	seriesMis := 0
 	var s1It, s2It chunkenc.Iterator
 	for {
 
@@ -106,6 +108,7 @@ func (c *BlockSubsetCommand) checkSubset(_ *kingpin.ParseContext) error {
 
 		if cmp == 0 {
 			// Check for samples to be subset
+			mismatch := false
 
 			s1It = s1.Iterator(s1It)
 			s2It = s2.Iterator(s2It)
@@ -125,8 +128,9 @@ func (c *BlockSubsetCommand) checkSubset(_ *kingpin.ParseContext) error {
 				s2T, s2V := s2It.At()
 
 				if s1T == s2T {
-					if s1V != s2V {
+					if s1V != s2V && (!math.IsNaN(s1V) || !math.IsNaN(s2V)) {
 						svMismatch++
+						mismatch = true
 					}
 
 					s1Type = s1It.Next()
@@ -141,6 +145,10 @@ func (c *BlockSubsetCommand) checkSubset(_ *kingpin.ParseContext) error {
 				}
 			}
 
+			if mismatch {
+				seriesMis++
+			}
+
 			s1Exists = subSeries.Next()
 			s2Exists = supSeries.Next()
 		} else if cmp < 0 {
@@ -153,7 +161,7 @@ func (c *BlockSubsetCommand) checkSubset(_ *kingpin.ParseContext) error {
 	}
 
 	if svMismatch > 0 {
-		fmt.Printf("%d samples mismatch in value for the same timestamp\n", svMismatch)
+		fmt.Printf("%d samples mismatch in value for the same timestamp in %d series\n", svMismatch, seriesMis)
 	}
 
 	return nil
