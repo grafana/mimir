@@ -273,17 +273,17 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 
 	// Now iterate through all series on the "many" side and determine all the possible output series, as
 	// well as which series from the "many" side we'll actually need.
-	outputSeriesMap := map[string]groupedBinaryOperationOutputSeriesWithLabels{}
+	outputSeriesMap := map[string]groupedBinaryOperationOutputSeriesWithLabels{} // All output series, keyed by their labels.
+	manySideMap := map[string]*manySide{}                                        // Series from the "many" side, grouped by which output series they'll contribute to.
+	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
+	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
+	buf := make([]byte, 0, 1024)
+
 	manySideSeriesUsed, err := types.BoolSlicePool.Get(len(g.manySideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-
-	manySideMap := map[string]*manySide{}
 	manySideSeriesUsed = manySideSeriesUsed[:len(g.manySideMetadata)]
-	manySideGroupKeyFunc := g.manySideGroupKeyFunc()
-	outputSeriesLabelsFunc := g.outputSeriesLabelsFunc()
-	buf := make([]byte, 0, 1024)
 
 	for idx, s := range g.manySideMetadata {
 		groupKey := groupKeyFunc(s.Labels)
@@ -299,6 +299,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		thisManySide, exists := manySideMap[string(manySideGroupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if exists {
+			// There is already at least one other "many" side series that contributes to the same set of output series, so just append this series to the same output series.
 			thisManySide.seriesIndices = append(thisManySide.seriesIndices, idx)
 			continue
 		}
@@ -331,8 +332,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		}
 	}
 
-	// Next, go through all the "one" side groups again, and determine which of the "one" side series
-	// we'll actually need.
+	// Next, go through all the "one" side groups again, and determine which of the "one" side series we'll actually need.
 	oneSideSeriesUsed, err := types.BoolSlicePool.Get(len(g.oneSideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -348,6 +348,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 				// If any part of a group has no output series, then no parts of that group will have output series.
 				break
 			} else if thisMatchGroup == nil && len(oneSideGroup) > 1 {
+				// We only need a matchGroup to detect conflicts between series on the "one" side that have the same grouping labels.
+				// So if there is only one "one" side, we don't need to bother with this and can skip creating the matchGroup.
 				thisMatchGroup = &matchGroup{oneSideCount: len(oneSideGroup)}
 			}
 
