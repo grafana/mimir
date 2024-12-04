@@ -446,25 +446,28 @@ func (prometheusCodec) DecodeLabelsSeriesQueryRequest(_ context.Context, r *http
 	}, nil
 }
 
-// timeParamType enumerates the types of time parameters in Prometheus API.
+// TimeParamType enumerates the types of time parameters in Prometheus API.
 // https://prometheus.io/docs/prometheus/latest/querying/api/
-type timeParamType int
+type TimeParamType int
 
 const (
-	RFC3339OrUnixMS     timeParamType = iota // <rfc3339 | unix_timestamp> in Prometheus docs
-	DurationMS                               // <duration> in Prometheus docs
-	DurationMSOrFloatMS                      // <duration | float> in Prometheus docs
+	// RFC3339OrUnixMS represents the <rfc3339 | unix_timestamp> type in Prometheus Querying API docs
+	RFC3339OrUnixMS TimeParamType = iota
+	// DurationMS represents the <duration> type in Prometheus Querying API docs
+	DurationMS
+	// DurationMSOrFloatMS represents the <duration | float> in Prometheus Querying API docs
+	DurationMSOrFloatMS
 )
 
-// promTimeParamDecodable provides common functionality for decoding Prometheus time parameters.
-type promTimeParamDecodable struct {
+// PromTimeParamDecoder provides common functionality for decoding Prometheus time parameters.
+type PromTimeParamDecoder struct {
 	paramName     string
-	timeType      timeParamType
+	timeType      TimeParamType
 	isOptional    bool
 	defaultMSFunc func() int64
 }
 
-func (p promTimeParamDecodable) Decode(reqValues *url.Values) (int64, error) {
+func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 	rawValue := reqValues.Get(p.paramName)
 	if rawValue == "" {
 		if p.isOptional {
@@ -483,6 +486,8 @@ func (p promTimeParamDecodable) Decode(reqValues *url.Values) (int64, error) {
 		t, err = util.ParseTime(rawValue)
 	case DurationMS, DurationMSOrFloatMS:
 		t, err = util.ParseDurationMS(rawValue)
+	default:
+		return 0, apierror.New(apierror.TypeInternal, fmt.Sprintf("unknown time type %v", p.timeType))
 	}
 	if err != nil {
 		return 0, DecorateWithParamName(err, p.paramName)
@@ -491,9 +496,9 @@ func (p promTimeParamDecodable) Decode(reqValues *url.Values) (int64, error) {
 	return t, nil
 }
 
-var rangeStartParamDecodable = promTimeParamDecodable{"start", RFC3339OrUnixMS, false, nil}
-var rangeEndParamDecodable = promTimeParamDecodable{"end", RFC3339OrUnixMS, false, nil}
-var rangeStepEndParamDecodable = promTimeParamDecodable{"step", DurationMSOrFloatMS, false, nil}
+var rangeStartParamDecodable = PromTimeParamDecoder{"start", RFC3339OrUnixMS, false, nil}
+var rangeEndParamDecodable = PromTimeParamDecoder{"end", RFC3339OrUnixMS, false, nil}
+var rangeStepEndParamDecodable = PromTimeParamDecoder{"step", DurationMSOrFloatMS, false, nil}
 
 // DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
@@ -531,10 +536,10 @@ func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, 
 }
 
 func instantTimeParamNow() int64 {
-	return time.Now().UnixMilli()
+	return time.Now().UTC().UnixMilli()
 }
 
-var instantTimeParamDecodable = promTimeParamDecodable{"time", RFC3339OrUnixMS, true, instantTimeParamNow}
+var instantTimeParamDecodable = PromTimeParamDecoder{"time", RFC3339OrUnixMS, true, instantTimeParamNow}
 
 // DecodeInstantQueryTimeParams encapsulates Prometheus instant query time param parsing,
 // emulating the logic in prometheus/prometheus/web/api/v1#API.query.
@@ -551,14 +556,14 @@ func DecodeInstantQueryTimeParams(reqValues *url.Values) (time int64, err error)
 // with GetStartOrDefault/GetEndOrDefault, so we don't need to apply them with a defaultMSFunc here.
 // This allows the object to be symmetrically decoded and encoded to and from the http request format,
 // as well as indicating when an optional time parameter was not included in the original request.
-var labelsStartParamDecodable = promTimeParamDecodable{"start", RFC3339OrUnixMS, true, nil}
-var labelsEndParamDecodable = promTimeParamDecodable{"end", RFC3339OrUnixMS, true, nil}
+var labelsStartParamDecodable = PromTimeParamDecoder{"start", RFC3339OrUnixMS, true, nil}
+var labelsEndParamDecodable = PromTimeParamDecoder{"end", RFC3339OrUnixMS, true, nil}
 
 // DecodeLabelsSeriesQueryTimeParams encapsulates Prometheus query time param parsing
 // for label names, label values, and series endpoints, emulating prometheus/prometheus/web/api/v1.
 // Note: the Prometheus HTTP API spec claims that the series endpoint `start` and `end` parameters
 // are not optional, but the Prometheus implementation allows them to be optional.
-// Until this changes we can reuse the same promTimeParamDecodable structs as the label names and values endpoints.
+// Until this changes we can reuse the same PromTimeParamDecoder structs as the label names and values endpoints.
 func DecodeLabelsSeriesQueryTimeParams(reqValues *url.Values) (start, end int64, err error) {
 	start, err = labelsStartParamDecodable.Decode(reqValues)
 	if err != nil {

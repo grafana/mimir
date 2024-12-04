@@ -25,17 +25,17 @@ func TimeFromMillis(ms int64) time.Time {
 	return time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond)).UTC()
 }
 
-// FormatTimeMillis returns a human readable version of the input time (in milliseconds).
+// FormatTimeMillis returns a human-readable version of the input time (in milliseconds).
 func FormatTimeMillis(ms int64) string {
 	return TimeFromMillis(ms).String()
 }
 
-// FormatTimeModel returns a human readable version of the input time.
+// FormatTimeModel returns a human-readable version of the input time.
 func FormatTimeModel(t model.Time) string {
 	return TimeFromMillis(int64(t)).String()
 }
 
-// ParseTime parses the string into an int64, milliseconds since epoch.
+// ParseTime parses the string into an int64 time, unix milliseconds since epoch.
 func ParseTime(s string) (int64, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
 		s, ns := math.Modf(t)
@@ -49,6 +49,7 @@ func ParseTime(s string) (int64, error) {
 	return 0, errors.Newf("cannot parse %q to a valid timestamp", s)
 }
 
+// ParseDurationMS parses the string into an int64 duration, the elapsed nanoseconds between two instants
 func ParseDurationMS(s string) (int64, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second/time.Millisecond)
