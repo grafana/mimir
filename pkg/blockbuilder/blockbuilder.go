@@ -76,20 +76,28 @@ func New(
 	}
 	b.bucket = bucketClient
 
-	// The running func and committed impl are different based on the presence of a scheduler.
-	runningFunc := b.runningStandaloneMode
-	b.committer = &kafkaCommitter{}
+	var runningFunc services.RunningFn
 
 	if cfg.SchedulerConfig.Address != "" {
+		// Pull mode: we learn about jobs from a block-builder-scheduler.
+
 		sched, err := b.makeSchedulerClient()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create scheduler client: %w", err)
 		}
 		b.scheduler = sched
-
-		// If a scheduler is configured, we run in pull mode.
 		runningFunc = b.runningPullMode
 		b.committer = &noOpCommitter{}
+	} else {
+		// Standalone mode: we consume from statically assigned partitions.
+
+		if len(b.assignedPartitionIDs) == 0 {
+			// This is just an assertion check. The config validation prevents this from happening.
+			return nil, fmt.Errorf("no partitions assigned to instance %s", b.cfg.InstanceID)
+		}
+
+		runningFunc = b.runningStandaloneMode
+		b.committer = &kafkaCommitter{}
 	}
 
 	b.Service = services.NewBasicService(b.starting, runningFunc, b.stopping)
