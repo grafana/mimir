@@ -131,7 +131,23 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		// Series should be the same in both now.
 		requireSameSeries(t, tracker1, tracker2)
 	}
-	now = now.Add(defaultIdleTimeout)
+	now = now.Add(10 * time.Minute)
+	{
+		tracker1.cleanup(now)
+		tracker2.cleanup(now)
+		// Only last 2 series remaining
+		require.Equal(t, uint64(2), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
+	}
+	now = now.Add(5 * time.Minute)
+	{
+		tracker1.cleanup(now)
+		tracker2.cleanup(now)
+		// Only last 1 series remaining (the one that we pushed to tracker2)
+		// This tests that creation event uses the correct creation timestamp.
+		require.Equal(t, uint64(1), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(1), tracker2.tenants[testUser1].series.Load())
+	}
 }
 
 func TestTrackerStore_Snapshot(t *testing.T) {

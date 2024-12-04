@@ -140,7 +140,7 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	}
 
 	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
-	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(a%shards) })
+	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
 
 	timestamp := toMinutes(eventTimestamp)
 	i0 := 0
