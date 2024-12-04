@@ -189,6 +189,9 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 
 		backendCfg := cfg.parsedBackendConfig[name]
 		if backendCfg == nil {
+			// In tests, we have the same hostname for all backends, so we also
+			// support a numeric preferred backend which is the index in the list
+			// of backends.
 			backendCfg = cfg.parsedBackendConfig[strconv.Itoa(idx)]
 			if backendCfg == nil {
 				backendCfg = &BackendConfig{}
