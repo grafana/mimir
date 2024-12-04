@@ -96,6 +96,10 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		}),
 	}
 
+	if cfg.AutoCreateTopicEnabled {
+		opts = append(opts, kgo.AllowAutoTopicCreation())
+	}
+
 	// SASL plain auth.
 	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
 		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
