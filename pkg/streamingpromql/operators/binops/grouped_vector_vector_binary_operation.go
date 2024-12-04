@@ -311,21 +311,19 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 			// so just create the series labels directly rather than trying to avoid their creation until we know for sure we'll
 			// need them.
 			l := outputSeriesLabelsFunc(g.oneSideMetadata[oneSide.seriesIndices[0]].Labels, s.Labels)
-			outputSeries, exists := outputSeriesMap[string(l.Bytes(buf))]
+			_, exists := outputSeriesMap[string(l.Bytes(buf))]
 
 			if !exists {
 				oneSide.outputSeriesCount++
 				thisManySide.outputSeriesCount++
 
-				outputSeries = groupedBinaryOperationOutputSeriesWithLabels{
+				outputSeriesMap[string(l.Bytes(buf))] = groupedBinaryOperationOutputSeriesWithLabels{
 					labels: l,
 					outputSeries: &groupedBinaryOperationOutputSeries{
 						manySide: thisManySide,
 						oneSide:  oneSide,
 					},
 				}
-
-				outputSeriesMap[string(l.Bytes(buf))] = outputSeries
 			}
 		}
 	}
@@ -374,7 +372,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 // be included in the final output series labels.
 func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneSideLabels labels.Labels) []byte {
 	if len(g.VectorMatching.Include) == 0 {
-		return func(oneSideLabels labels.Labels) []byte {
+		return func(_ labels.Labels) []byte {
 			return nil
 		}
 	}
@@ -716,17 +714,6 @@ func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {
 		return "left"
 	case parser.CardManyToOne:
 		return "right"
-	default:
-		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
-	}
-}
-
-func (g *GroupedVectorVectorBinaryOperation) manySideHandedness() string {
-	switch g.VectorMatching.Card {
-	case parser.CardOneToMany:
-		return "right"
-	case parser.CardManyToOne:
-		return "left"
 	default:
 		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
 	}
