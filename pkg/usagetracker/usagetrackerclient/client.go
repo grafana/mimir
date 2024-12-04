@@ -59,8 +59,7 @@ type UsageTrackerClient struct {
 	cfg    Config
 	logger log.Logger
 
-	partitionRing      *ring.PartitionInstanceRing
-	partitionBatchRing *ring.ActivePartitionBatchRing
+	partitionRing *ring.PartitionInstanceRing
 
 	clientsPool *client.Pool
 
@@ -73,7 +72,6 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		cfg:                    clientCfg,
 		logger:                 logger,
 		partitionRing:          partitionRing,
-		partitionBatchRing:     ring.NewActivePartitionBatchRing(partitionRing.PartitionRing()),
 		clientsPool:            newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
 		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
 	}
@@ -101,6 +99,10 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		rejected   []uint64
 	)
 
+	// Create the partition ring view as late as possible, because we want to get the most updated
+	// snapshot of the ring.
+	partitionBatchRing := ring.NewActivePartitionBatchRing(c.partitionRing.PartitionRing())
+
 	// Series hashes are 64bit but the hash ring tokens are 32bit, so we truncate
 	// hashes to 32bit to get keys to lookup in the ring.
 	keys := make([]uint32, len(series))
@@ -108,7 +110,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		keys[i] = uint32(hash)
 	}
 
-	err := ring.DoBatchWithOptions(ctx, trackSeriesOp, c.partitionBatchRing, keys,
+	err := ring.DoBatchWithOptions(ctx, trackSeriesOp, partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
