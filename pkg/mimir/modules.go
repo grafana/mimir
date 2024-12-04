@@ -1178,6 +1178,10 @@ func (t *Mimir) initUsageTrackerPartitionRing() (services.Service, error) {
 }
 
 func (t *Mimir) initUsageTracker() (services.Service, error) {
+	if !t.Cfg.UsageTracker.Enabled {
+		return nil, nil
+	}
+
 	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var err error
@@ -1311,7 +1315,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
-		UsageTracker:                     {API, Overrides, MemberlistKV},
+		UsageTracker:                     {API, Overrides, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		UsageTrackerInstanceRing:         {MemberlistKV},
 		UsageTrackerPartitionRing:        {MemberlistKV, UsageTrackerInstanceRing},
 

@@ -56,9 +56,8 @@ func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName
 
 func newUsageTrackerClientFactory(clientName string, clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   "cortex",
-		Name:        "usage_tracker_client_request_duration_seconds",
-		Help:        "Time spent executing requests to the usage-tracker.",
+		Name:        "cortex_usage_tracker_client_request_duration_seconds",
+		Help:        "Time spent executing  a single request to a usage-tracker instance.",
 		Buckets:     prometheus.ExponentialBuckets(0.008, 4, 7),
 		ConstLabels: prometheus.Labels{"client": clientName},
 	}, []string{"operation", "status_code"})
