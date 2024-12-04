@@ -156,8 +156,8 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	}
 }
 
-// createTopic tries to set num.partitions config option on brokers.
-// This is best-effort, if creating the topic fails, error is logged, but not returned.
+// createTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
+// If the topic already exists, then the function logs a message and returns nil.
 func createTopic(cfg KafkaConfig, logger log.Logger) error {
 	logger = log.With(logger, "task", "autocreate_topic")
 
