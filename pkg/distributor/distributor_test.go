@@ -7973,7 +7973,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")
