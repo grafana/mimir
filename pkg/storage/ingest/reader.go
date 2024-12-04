@@ -175,7 +175,9 @@ func (r *PartitionReader) EstimatedBytesPerRecord() int64 {
 
 func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	if r.kafkaCfg.AutoCreateTopicEnabled {
-		setDefaultNumberOfPartitionsForAutocreatedTopics(r.kafkaCfg, r.logger)
+		if err := createTopic(r.kafkaCfg, r.logger); err != nil {
+			return err
+		}
 	}
 
 	// Stop dependencies if the start() fails.
