@@ -1139,6 +1139,10 @@ func (t *Mimir) initUsageTrackerPartitionRing() (services.Service, error) {
 }
 
 func (t *Mimir) initUsageTracker() (services.Service, error) {
+	if !t.Cfg.UsageTracker.Enabled {
+		return nil, nil
+	}
+
 	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var err error
@@ -1244,8 +1248,8 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                       {RuntimeConfig},
 		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
-		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                         {Overrides, API},
