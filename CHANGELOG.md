@@ -421,6 +421,14 @@
 * [ENHANCEMENT] `mimir-rules-action`: Added new inputs to support ignoring namespaces and ignoring namespaces by regex. #9258 #9324
 * [BUGFIX] `copyblocks`, `undelete-blocks`, `copyprefix`: use a multipart upload to server-side copy objects greater than 5GiB in size on S3. #9357
 
+## 2.13.1
+
+### Grafana Mimir
+
+* [BUGFIX] Upgrade Go to 1.22.9 to address [CVE-2024-34156](https://nvd.nist.gov/vuln/detail/CVE-2024-34156). #10097
+* [BUGFIX] Update module google.golang.org/grpc to v1.64.1 to address [GHSA-xr7q-jx4m-x55m](https://github.com/advisories/GHSA-xr7q-jx4m-x55m). #8717
+* [BUGFIX] Upgrade github.com/rs/cors to v1.11.0 address [GHSA-mh55-gqvf-xfwm](https://github.com/advisories/GHSA-mh55-gqvf-xfwm). #8611
+
 ## 2.13.0
 
 ### Grafana Mimir
