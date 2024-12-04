@@ -58,8 +58,8 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	if err := snapshot.Err(); err != nil {
 		return fmt.Errorf("invalid snapshot format, time expected: %w", err)
 	}
-	if areInValidSpanToCompareMinutes(now, snapshotTime) {
-		return fmt.Errorf("snapshot is too old, snapshot time is %s", snapshotTime)
+	if !areInValidSpanToCompareMinutes(now, snapshotTime) {
+		return fmt.Errorf("snapshot is too old, snapshot time is %s, now is %s", snapshotTime, now)
 	}
 
 	tenantsLen := snapshot.Uvarint64()

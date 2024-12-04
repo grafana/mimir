@@ -346,7 +346,7 @@ func areInValidSpanToCompareMinutes(a, b time.Time) bool {
 	if a.After(b) {
 		a, b = b, a
 	}
-	return a.Sub(b) < time.Hour
+	return b.Sub(a) < time.Hour
 }
 
 func toMinutes(t time.Time) minutes {
