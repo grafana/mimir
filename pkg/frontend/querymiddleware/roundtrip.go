@@ -304,8 +304,9 @@ func newQueryTripperware(
 		// Validate the request before any processing.
 		queryrange = NewMetricsQueryRequestValidationRoundTripper(codec, queryrange)
 		instant = NewMetricsQueryRequestValidationRoundTripper(codec, instant)
-
 		labels = NewLabelsQueryRequestValidationRoundTripper(codec, labels)
+		series = NewLabelsQueryRequestValidationRoundTripper(codec, series)
+		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {

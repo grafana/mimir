@@ -796,7 +796,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		},
 		"cardinality label values": {
 			makeRequest: func() *http.Request {
-				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix, nil)
+				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix+"?label_names[]=foo", nil)
 			},
 		},
 		"cardinality active series": {
