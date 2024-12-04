@@ -41,7 +41,10 @@ func (s *subqueryMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, finished
 	switch e := expr.(type) {
 	case *parser.Call:
 		if strings.HasSuffix(e.Func.Name, "_over_time") && len(e.Args) == 1 {
-			sq := e.Args[0].(*parser.SubqueryExpr)
+			sq, ok := e.Args[0].(*parser.SubqueryExpr)
+			if !ok {
+				return expr, false, nil
+			}
 			selector := &parser.VectorSelector{
 				Name: AggregatedSubqueryMetricName,
 				LabelMatchers: []*labels.Matcher{

@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -374,7 +373,7 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 			&querymiddleware.PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
 		) // Downstream is the querier, which is HTTP req.
 
-		newRangeRequest := querymiddleware.NewPrometheusRangeQueryRequest(sendBackURL+"/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddleware.Options{}, &querymiddleware.Hints{})
+		newRangeRequest := querymiddleware.NewPrometheusRangeQueryRequest(sendBackURL+"/prometheus/api/v1/query_range", headers, rangeStart, rangeEnd, step, mq.cfg.EngineConfig.LookbackDelta, subquery.Expr, querymiddleware.Options{ShardingDisabled: true}, &querymiddleware.Hints{})
 		rangeQueries = append(rangeQueries, newRangeRequest)
 
 		if rangeEnd == end {
@@ -384,44 +383,42 @@ func (mq *multiQuerier) SelectAggregatedSubquery(ctx context.Context, hints *sto
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	streams := make([][]querymiddleware.SampleStream, len(rangeQueries))
-	err = concurrency.ForEachJob(ctx, len(rangeQueries), len(rangeQueries), func(ctx context.Context, idx int) error {
-		req := rangeQueries[idx]
+	for idx, req := range rangeQueries {
 		httpReq, err := mq.codec.EncodeMetricsQueryRequest(ctx, req)
 		if err != nil {
-			return fmt.Errorf("error encoding request: %w", err)
+			return storage.ErrSeriesSet(fmt.Errorf("error encoding request: %w", err)), true
 		}
 		httpReq.RequestURI = "" // Reset RequestURI to force URL reconstruction.
 		httpReq.URL.Host = baseURL.Host
 		httpReq.URL.Scheme = baseURL.Scheme
 
 		if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
-			return fmt.Errorf("error injecting org ID into request: %w", err)
+			return storage.ErrSeriesSet(fmt.Errorf("error injecting org ID into request: %w", err)), true
 		}
 
 		client := http.DefaultClient
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			return fmt.Errorf("error sending request: %w", err)
+			return storage.ErrSeriesSet(fmt.Errorf("error executing request: %w", err)), true
 		}
 		defer resp.Body.Close()
 		decoded, err := mq.codec.DecodeMetricsQueryResponse(ctx, resp, req, mq.logger)
 		if err != nil {
-			return fmt.Errorf("error decoding response: %w", err)
+			return storage.ErrSeriesSet(fmt.Errorf("error decoding response: %w", err)), true
 		}
 		promRes, ok := decoded.(*querymiddleware.PrometheusResponse)
 		if !ok {
-			return fmt.Errorf("expected PrometheusResponse, got %T", decoded)
+			return storage.ErrSeriesSet(fmt.Errorf("expected Prometheus response, got %T", decoded)), true
 		}
 
 		resStreams, err := ResponseToSamples(promRes)
 		if err != nil {
-			return err
+			return storage.ErrSeriesSet(fmt.Errorf("error converting response to samples: %w", err)), true
 		}
 
 		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
 
-		return nil
-	})
+	}
 
 	if err != nil {
 		return storage.ErrSeriesSet(err), true
