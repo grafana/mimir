@@ -6,7 +6,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -21,6 +20,7 @@ import (
 )
 
 type Config struct {
+	Enabled       bool                `yaml:"enabled"`
 	InstanceRing  InstanceRingConfig  `yaml:"ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
@@ -28,9 +28,11 @@ type Config struct {
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
+
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
-	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", c.IdleTimeout, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
+	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
 }
 
 type UsageTracker struct {
@@ -41,10 +43,9 @@ type UsageTracker struct {
 	overrides *validation.Overrides
 	logger    log.Logger
 
-	partitionID          int32
-	partitionLifecycler  *ring.PartitionInstanceLifecycler
-	partitionWatcher     *ring.PartitionRingWatcher
-	partitionPageHandler *ring.PartitionRingPageHandler
+	partitionID         int32
+	partitionLifecycler *ring.PartitionInstanceLifecycler
+	partitionRing       *ring.PartitionInstanceRing
 
 	instanceLifecycler *ring.BasicLifecycler
 
@@ -53,14 +54,15 @@ type UsageTracker struct {
 	subservicesWatcher *services.FailureWatcher
 }
 
-func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
 	if cfg.IdleTimeout <= 0 || cfg.IdleTimeout > time.Hour {
 		return nil, fmt.Errorf("invalid idle timeout %q, should be greater than 0 and less than 1 hour", cfg.IdleTimeout)
 	}
 
 	t := &UsageTracker{
-		overrides: overrides,
-		logger:    logger,
+		partitionRing: partitionRing,
+		overrides:     overrides,
+		logger:        logger,
 	}
 
 	// Get the partition ID.
@@ -70,14 +72,14 @@ func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Log
 		return nil, errors.Wrap(err, "calculating usage-tracker partition ID")
 	}
 
-	// Init instance ring.
+	// Init instance ring lifecycler.
 	t.instanceLifecycler, err = NewInstanceRingLifecycler(cfg.InstanceRing, logger, registerer)
 	if err != nil {
 		return nil, err
 	}
 
-	// Init the partition ring.
-	partitionKVClient, err := NewPartitionRingKVClient(cfg.PartitionRing, logger, registerer)
+	// Init the partition ring lifecycler.
+	partitionKVClient, err := NewPartitionRingKVClient(cfg.PartitionRing, "lifecycler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -87,11 +89,7 @@ func NewUsageTracker(cfg Config, overrides *validation.Overrides, logger log.Log
 		return nil, err
 	}
 
-	t.partitionWatcher = NewPartitionRingWatcher(partitionKVClient, logger, registerer)
-	t.partitionPageHandler = ring.NewPartitionRingPageHandler(t.partitionWatcher, ring.NewPartitionRingEditor(PartitionRingKey, partitionKVClient))
-
 	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, notImplementedEventsPublisher{logger: logger})
-
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 
 	return t, nil
@@ -102,7 +100,7 @@ func (t *UsageTracker) start(ctx context.Context) error {
 	var err error
 
 	// Start dependencies.
-	if t.subservices, err = services.NewManager(t.instanceLifecycler, t.partitionLifecycler, t.partitionWatcher); err != nil {
+	if t.subservices, err = services.NewManager(t.instanceLifecycler, t.partitionLifecycler); err != nil {
 		return errors.Wrap(err, "unable to start usage-tracker dependencies")
 	}
 
@@ -152,14 +150,6 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
-func (t *UsageTracker) InstanceRingHandler(w http.ResponseWriter, req *http.Request) {
-	t.instanceLifecycler.ServeHTTP(w, req)
-}
-
-func (t *UsageTracker) PartitionRingHandler(w http.ResponseWriter, req *http.Request) {
-	t.partitionPageHandler.ServeHTTP(w, req)
-}
-
 func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 	globalLimit := t.overrides.MaxGlobalSeriesPerUser(userID) // TODO: use a new active series limit.
 	if globalLimit <= 0 {
@@ -167,7 +157,7 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 	}
 
 	// Global limit is equally distributed among all active partitions.
-	return uint64(float64(globalLimit) / float64(t.partitionWatcher.PartitionRing().ActivePartitionsCount()))
+	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
 }
 
 type notImplementedEventsPublisher struct {

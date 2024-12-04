@@ -110,6 +110,8 @@ const (
 	TenantFederation                 string = "tenant-federation"
 	UsageStats                       string = "usage-stats"
 	UsageTracker                     string = "usage-tracker"
+	UsageTrackerInstanceRing         string = "usage-tracker-instance-ring"
+	UsageTrackerPartitionRing        string = "usage-tracker-partition-ring"
 	Vault                            string = "vault"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
@@ -234,6 +236,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	// Update Configs - GRPC Clients
 	// lint:sorted
 	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Distributor.UsageTrackerClient.TLS.Reader = t.Vault
 	t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
@@ -477,10 +480,11 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 	t.Cfg.IngesterClient.ClusterValidationLabel = t.Cfg.Server.ClusterValidation.Label
+	t.Cfg.Distributor.UsageTrackerEnabled = t.Cfg.UsageTracker.Enabled
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
-		canJoinDistributorsRing, t.Registerer, util_log.Logger)
+		canJoinDistributorsRing, t.UsageTrackerPartitionRing, t.UsageTrackerInstanceRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1130,11 +1134,54 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	return t.UsageStatsReporter, nil
 }
 
+func (t *Mimir) initUsageTrackerInstanceRing() (services.Service, error) {
+	if !t.Cfg.UsageTracker.Enabled {
+		return nil, nil
+	}
+
+	var err error
+
+	// Init instance ring.
+	t.UsageTrackerInstanceRing, err = usagetracker.NewInstanceRingClient(t.Cfg.UsageTracker.InstanceRing, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	// Expose a web page to view the instances ring state.
+	t.API.RegisterUsageTrackerInstanceRing(t.UsageTrackerInstanceRing)
+
+	return t.UsageTrackerInstanceRing, nil
+}
+
+func (t *Mimir) initUsageTrackerPartitionRing() (services.Service, error) {
+	if !t.Cfg.UsageTracker.Enabled {
+		return nil, nil
+	}
+
+	var err error
+
+	// Init the partition ring.
+	partitionKVClient, err := usagetracker.NewPartitionRingKVClient(t.Cfg.UsageTracker.PartitionRing, "watcher", util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	partitionRingWatcher := usagetracker.NewPartitionRingWatcher(partitionKVClient, util_log.Logger, t.Registerer)
+	t.UsageTrackerPartitionRing = ring.NewPartitionInstanceRing(partitionRingWatcher, t.UsageTrackerInstanceRing, t.Cfg.UsageTracker.InstanceRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partitions ring state.
+	t.API.RegisterUsageTrackerPartitionRing(
+		ring.NewPartitionRingPageHandler(partitionRingWatcher, ring.NewPartitionRingEditor(usagetracker.PartitionRingKey, partitionKVClient)),
+	)
+
+	return partitionRingWatcher, nil
+}
+
 func (t *Mimir) initUsageTracker() (services.Service, error) {
 	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var err error
-	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.Overrides, util_log.Logger, t.Registerer)
+	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.UsageTrackerPartitionRing, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -1221,6 +1268,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageTracker, t.initUsageTracker)
+	mm.RegisterModule(UsageTrackerInstanceRing, t.initUsageTrackerInstanceRing, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageTrackerPartitionRing, t.initUsageTrackerPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 
 	mm.RegisterModule(Write, nil)
@@ -1239,7 +1288,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                        {API, MemberlistKV, Overrides, Vault},
 		ContinuousTest:                   {API},
 		CostAttributionService:           {API, Overrides},
-		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
 		Flusher:                          {Overrides, API},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
@@ -1263,6 +1312,8 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
 		UsageTracker:                     {API, Overrides, MemberlistKV},
+		UsageTrackerInstanceRing:         {MemberlistKV},
+		UsageTrackerPartitionRing:        {MemberlistKV, UsageTrackerInstanceRing},
 
 		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		Read:    {QueryFrontend, Querier},

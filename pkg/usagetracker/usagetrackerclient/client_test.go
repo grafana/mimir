@@ -74,7 +74,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		serverCfg.PartitionRing.KVStore.Mock = partitionRingStore
 
 		// Create the instance ring.
-		instanceRing, err := usagetracker.NewInstanceRingClient(serverCfg.InstanceRing, "test", logger, registerer)
+		instanceRing, err := usagetracker.NewInstanceRingClient(serverCfg.InstanceRing, logger, registerer)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, instanceRing))
 		t.Cleanup(func() {

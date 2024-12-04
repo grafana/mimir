@@ -129,8 +129,8 @@ func NewInstanceRingLifecycler(cfg InstanceRingConfig, logger log.Logger, reg pr
 }
 
 // NewInstanceRingClient creates a client for the usage-trackers instance ring.
-func NewInstanceRingClient(cfg InstanceRingConfig, component string, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
-	client, err := ring.New(cfg.ToRingConfig(), component, InstanceRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+func NewInstanceRingClient(cfg InstanceRingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
+	client, err := ring.New(cfg.ToRingConfig(), InstanceRingName, InstanceRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize usage-trackers' ring client")
 	}
