@@ -387,7 +387,8 @@ func (g *GroupedVectorVectorBinaryOperation) additionalLabelsKeyFunc() func(oneS
 	buf := make([]byte, 0, 1024)
 
 	return func(oneSideLabels labels.Labels) []byte {
-		return oneSideLabels.BytesWithLabels(buf, g.VectorMatching.Include...)
+		buf = oneSideLabels.BytesWithLabels(buf, g.VectorMatching.Include...)
+		return buf
 	}
 }
 
@@ -398,13 +399,15 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 
 	if !g.shouldRemoveMetricNameFromManySide() && len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
-			return manySideLabels.Bytes(buf) // FIXME: it'd be nice if we could avoid copying the bytes here
+			buf = manySideLabels.Bytes(buf) // FIXME: it'd be nice if we could avoid Bytes() copying the slice here
+			return buf
 		}
 	}
 
 	if len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
-			return manySideLabels.BytesWithoutLabels(buf, labels.MetricName)
+			buf = manySideLabels.BytesWithoutLabels(buf, labels.MetricName)
+			return buf
 		}
 	}
 
@@ -416,7 +419,8 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 	}
 
 	return func(manySideLabels labels.Labels) []byte {
-		return manySideLabels.BytesWithoutLabels(buf, labelsToRemove...)
+		buf = manySideLabels.BytesWithoutLabels(buf, labelsToRemove...)
+		return buf
 	}
 }
 

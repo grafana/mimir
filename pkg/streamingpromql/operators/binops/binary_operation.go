@@ -29,14 +29,16 @@ func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(label
 		slices.Sort(vectorMatching.MatchingLabels)
 
 		return func(l labels.Labels) []byte {
-			return l.BytesWithLabels(buf, vectorMatching.MatchingLabels...)
+			buf = l.BytesWithLabels(buf, vectorMatching.MatchingLabels...)
+			return buf
 		}
 	}
 
 	if len(vectorMatching.MatchingLabels) == 0 {
 		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
 		return func(l labels.Labels) []byte {
-			return l.BytesWithoutLabels(buf, labels.MetricName)
+			buf = l.BytesWithoutLabels(buf, labels.MetricName)
+			return buf
 		}
 	}
 
@@ -46,7 +48,8 @@ func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(label
 	slices.Sort(lbls)
 
 	return func(l labels.Labels) []byte {
-		return l.BytesWithoutLabels(buf, lbls...)
+		buf = l.BytesWithoutLabels(buf, lbls...)
+		return buf
 	}
 }
 
