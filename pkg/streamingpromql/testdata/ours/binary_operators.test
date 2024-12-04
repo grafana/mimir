@@ -1358,6 +1358,39 @@ eval range from 0 to 18m step 6m one_side - on(group) group_right(pod, env) many
 
 clear
 
+# Binary operations on native histograms with group_left.
+# We don't bother testing all the combinations of label matching, group_right etc. given that's covered by floats above.
+load 5m
+  first_histogram{job="test"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  second_histogram{job="test"}   {{schema:0 sum:10 count:6 buckets:[1 2 1]}}
+  metric{job="test"}             2
+
+eval instant at 0 first_histogram + on(job) group_left second_histogram
+  {job="test"} {{schema:0 sum:15 count:10 buckets:[2 4 2]}}
+
+eval instant at 0 second_histogram - on(job) group_left first_histogram
+  {job="test"} {{schema:0 sum:5 count:2 buckets:[0 0 0]}}
+
+# Cannot multiply two histograms
+eval_info instant at 0 first_histogram * on(job) group_left second_histogram
+
+# Cannot divide a histogram by a histogram
+eval_info instant at 0 first_histogram / on(job) group_left second_histogram
+
+# Histogram multiplied by float
+eval instant at 0 first_histogram * on(job) group_left metric
+  {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
+
+# Works in either order
+eval instant at 0 metric * on(job) group_left first_histogram
+  {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
+
+# Histogram divide by float
+eval instant at 0 first_histogram / on(job) group_left metric
+  {job="test"} {{schema:0 count:2 sum:2.5 buckets:[0.5 1 0.5]}}
+
+clear
+
 # Test comparison operator edge cases.
 load 6m
   left_side_a{env="test", pod="a"} 1 2 3 4
