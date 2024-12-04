@@ -342,6 +342,13 @@ func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark mi
 	}
 }
 
+func areInValidSpanToCompareMinutes(a, b time.Time) bool {
+	if a.After(b) {
+		a, b = b, a
+	}
+	return a.Sub(b) < time.Hour
+}
+
 func toMinutes(t time.Time) minutes {
 	return minutes(t.Sub(t.Truncate(4 * time.Hour)).Minutes())
 }
