@@ -50,7 +50,7 @@ type limiter interface {
 
 // events provides an abstraction to publish usage-tracker events.
 type events interface {
-	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64) error
+	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
 func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev events) *trackerStore {
@@ -110,12 +110,48 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	}
 
 	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(created), "rejected_len", len(rejected), "now", timeNow.Unix(), "now_minutes", now)
-	if err := t.events.publishCreatedSeries(ctx, tenantID, created); err != nil {
+	if err := t.events.publishCreatedSeries(ctx, tenantID, created, timeNow); err != nil {
 		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(created), "now", timeNow.Unix(), "now_minutes", now)
 		return nil, err
 	}
 
 	return rejected, nil
+}
+
+func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint64, eventTimestamp, timeNow time.Time) {
+	if timeNow.Sub(eventTimestamp) >= t.idleTimeout {
+		// It doesn't make sense to process this event, we're not going to have lower timestamp for any series.
+		// This potentially creates a case where:
+		// - we're at the limit,
+		// - a different instance created series
+		// - it is accepting updates for it because it's already created
+		// - we're processing it too late, so we're not creating it
+		// - so we're rejecting samples for it.
+		// However, this scenario will be fixed by the next snapshot reload.
+		return
+	}
+
+	info := t.getOrCreateTenantInfo(tenantID)
+	// We need the limit to create the tenant shard of an appropriate size.
+	// We are not going to limit series creation based on the shard.
+	limit := t.limiter.localSeriesLimit(tenantID)
+	if limit == 0 {
+		limit = noLimit
+	}
+
+	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
+	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(a%shards) })
+
+	timestamp := toMinutes(eventTimestamp)
+	i0 := 0
+	for i := 1; i <= len(series); i++ {
+		// Track series if shard changes on the next element or if we're at the end of series.
+		if currentShard := uint8(series[i0] % shards); i == len(series) || currentShard != uint8(series[i]%shards) {
+			shard := t.getOrCreateTenantShard(tenantID, currentShard, limit)
+			shard.processCreatedSeriesEvent(series[i0:i], timestamp, &info.series)
+			i0 = i
+		}
+	}
 }
 
 func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint8, limit uint64) *tenantShard {
@@ -262,11 +298,11 @@ type tenantShard struct {
 //
 // The input slices created and rejected should be returned with the series that were created and rejected appended to them.
 func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantSeries *atomic.Uint64, limit uint64, created, rejected []uint64) (_created, _rejected []uint64) {
-	// pending contains the series that have to be created.
+	// missing contains the series that have to be created.
 	// As we advance through series, we reuse the same slice to avoid allocations.
-	pending := series[:0]
+	missing := series[:0]
 
-	// First try to update the series that already exist, the ones that don't exist are moved to pending.
+	// First try to update the series that already exist, the ones that don't exist are moved to missing.
 	shard.RLock()
 	for len(series) > 0 {
 		s := series[0]
@@ -274,7 +310,7 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 
 		ts, ok := shard.series[s]
 		if !ok {
-			pending = append(pending, s)
+			missing = append(missing, s)
 			continue
 		}
 
@@ -282,11 +318,16 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 	}
 	shard.RUnlock()
 
-	// Only take the Lock() if there are pending series to create, and we're below the limit.
-	if len(pending) > 0 && totalTenantSeries.Load() < limit {
+	// If no series missing, return.
+	if len(missing) == 0 {
+		return created, rejected
+	}
+
+	// Only take the Lock() if we're below the limit.
+	if totalTenantSeries.Load() < limit {
 		shard.Lock()
-		for len(pending) > 0 {
-			s := pending[0]
+		for len(missing) > 0 {
+			s := missing[0]
 			ts, ok := shard.series[s]
 			if ok {
 				ts.Store(int32(now))
@@ -300,14 +341,52 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 				created = append(created, s)
 				totalTenantSeries.Inc()
 			}
-			pending = pending[1:]
+			missing = missing[1:]
 		}
 		shard.Unlock()
 	}
 
-	// Whatever is pending is rejected (if any)
-	rejected = append(rejected, pending...)
+	// Whatever is still missing is rejected (if any)
+	rejected = append(rejected, missing...)
 	return created, rejected
+}
+
+// processCreatedSeriesEvent creates the series coming from an event from Kafka,
+// i.e. series that were created by a different instance.
+// This does not check the limits, as we prioritize staying consistent across replicas over enforcing limits.
+// Timestamp is not updated if series exists already.
+func (shard *tenantShard) processCreatedSeriesEvent(series []uint64, timestamp minutes, totalTenantSeries *atomic.Uint64) {
+	// missing contains the series that have to be created.
+	// As we advance through series, we reuse the same slice to avoid allocations.
+	missing := series[:0]
+
+	// First try to update the series that already exist, the ones that don't exist are moved to missing.
+	shard.RLock()
+	for len(series) > 0 {
+		s := series[0]
+		series = series[1:]
+
+		_, ok := shard.series[s]
+		if !ok {
+			missing = append(missing, s)
+		}
+	}
+	shard.RUnlock()
+
+	if len(missing) == 0 {
+		return
+	}
+
+	shard.Lock()
+	for _, s := range missing {
+		_, ok := shard.series[s]
+		if !ok {
+			// Still doesn't exist, so create with the timestamp from the event.
+			shard.series[s] = atomic.NewInt32(int32(timestamp))
+			totalTenantSeries.Inc()
+		}
+	}
+	shard.Unlock()
 }
 
 func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark minutes) {

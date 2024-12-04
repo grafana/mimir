@@ -164,7 +164,7 @@ type notImplementedEventsPublisher struct {
 	logger log.Logger
 }
 
-func (ev notImplementedEventsPublisher) publishCreatedSeries(_ context.Context, userID string, series []uint64) error {
+func (ev notImplementedEventsPublisher) publishCreatedSeries(_ context.Context, userID string, series []uint64, _ time.Time) error {
 	level.Info(ev.logger).Log("msg", "publishCreatedSeries not implemented", "userID", userID, "series", len(series))
 	return nil
 }
