@@ -119,6 +119,8 @@ type symbolCacheEntry struct {
 
 type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
+type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -1165,27 +1167,27 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
-func NewReader(b ByteSlice) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), nil)
+func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
+	return newReader(b, io.NopCloser(nil), decoder, nil)
 }
 
 // NewReaderWithCache is like NewReader but allows to pass a cache provider.
-func NewReaderWithCache(b ByteSlice, cacheProvider ReaderCacheProvider) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), cacheProvider)
+func NewReaderWithCache(b ByteSlice, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
+	return newReader(b, io.NopCloser(nil), decoder, cacheProvider)
 }
 
 // NewFileReader returns a new index reader against the given index file.
-func NewFileReader(path string) (*Reader, error) {
-	return NewFileReaderWithOptions(path, nil)
+func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
+	return NewFileReaderWithOptions(path, decoder, nil)
 }
 
-// NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider and sharding function.
-func NewFileReaderWithOptions(path string, cacheProvider ReaderCacheProvider) (*Reader, error) {
+// NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider.
+func NewFileReaderWithOptions(path string, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, cacheProvider)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, cacheProvider)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1196,7 +1198,7 @@ func NewFileReaderWithOptions(path string, cacheProvider ReaderCacheProvider) (*
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	r := &Reader{
 		b:             b,
 		c:             c,
@@ -1296,7 +1298,7 @@ func newReader(b ByteSlice, c io.Closer, cacheProvider ReaderCacheProvider) (*Re
 		r.nameSymbols[off] = k
 	}
 
-	r.dec = &Decoder{LookupSymbol: r.lookupSymbol}
+	r.dec = &Decoder{LookupSymbol: r.lookupSymbol, DecodePostings: postingsDecoder}
 
 	return r, nil
 }
@@ -1725,7 +1727,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 			}
 			// Read from the postings table.
 			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.Postings(d.Get())
+			_, p, err := r.dec.DecodePostings(d)
 			if err != nil {
 				return nil, fmt.Errorf("decode postings: %w", err)
 			}
@@ -1768,7 +1770,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 				if val == value {
 					// Read from the postings table.
 					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-					_, p, err := r.dec.Postings(d2.Get())
+					_, p, err := r.dec.DecodePostings(d2)
 					if err != nil {
 						return false, fmt.Errorf("decode postings: %w", err)
 					}
@@ -1824,7 +1826,7 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 		if match == nil || match(val) {
 			// We want this postings iterator since the value is a match.
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.PostingsFromDecbuf(postingsDec)
+			_, p, err := r.dec.DecodePostings(postingsDec)
 			if err != nil {
 				return false, fmt.Errorf("decode postings: %w", err)
 			}
@@ -1857,7 +1859,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 		// Read from the postings table.
 		d := encoding.NewDecbufAt(r.b, int(offset), castagnoliTable)
-		_, p, err := r.dec.PostingsFromDecbuf(d)
+		_, p, err := r.dec.DecodePostings(d)
 		if err != nil {
 			return ErrPostings(fmt.Errorf("decode postings: %w", err))
 		}
@@ -1976,17 +1978,12 @@ func (s stringListIter) Err() error { return nil }
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
 type Decoder struct {
-	LookupSymbol func(context.Context, uint32) (string, error)
+	LookupSymbol   func(context.Context, uint32) (string, error)
+	DecodePostings PostingsDecoder
 }
 
-// Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
-	d := encoding.Decbuf{B: b}
-	return dec.PostingsFromDecbuf(d)
-}
-
-// PostingsFromDecbuf returns a postings list for d and its number of elements.
-func (dec *Decoder) PostingsFromDecbuf(d encoding.Decbuf) (int, Postings, error) {
+// DecodePostingsRaw returns a postings list for d and its number of elements.
+func DecodePostingsRaw(d encoding.Decbuf) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	if d.Err() != nil {
