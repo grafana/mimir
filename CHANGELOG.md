@@ -6,6 +6,7 @@
 
 * [BUGFIX] Upgrade Go to 1.22.9 to address [CVE-2024-34156](https://nvd.nist.gov/vuln/detail/CVE-2024-34156). #10097
 * [BUGFIX] Update module google.golang.org/grpc to v1.64.1 to address [GHSA-xr7q-jx4m-x55m](https://github.com/advisories/GHSA-xr7q-jx4m-x55m). #8717
+* [BUGFIX] Upgrade github.com/rs/cors to v1.11.0 address [GHSA-mh55-gqvf-xfwm](https://github.com/advisories/GHSA-mh55-gqvf-xfwm). #8611
 
 ## 2.13.0
 
@@ -111,7 +112,6 @@
 * [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
 * [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
 * [BUGFIX] Upgrade golang to 1.22.5 to address [CVE-2024-24791](https://nvd.nist.gov/vuln/detail/CVE-2024-24791). #8600
-* [BUGFIX] Upgrade github.com/rs/cors to v1.11.0 address [GHSA-mh55-gqvf-xfwm](https://github.com/advisories/GHSA-mh55-gqvf-xfwm). #8611
 
 ### Mixin
 
