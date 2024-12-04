@@ -271,8 +271,7 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 			continue
 		}
 
-		// CAS it if it's higher.
-		casIfGreater(now, ts)
+		ts.Store(int32(now))
 	}
 	shard.RUnlock()
 
@@ -283,8 +282,7 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 			s := pending[0]
 			ts, ok := shard.series[s]
 			if ok {
-				// Was created in the meantime.
-				casIfGreater(now, ts)
+				ts.Store(int32(now))
 			} else if totalTenantSeries.Load() >= limit {
 				// We've reached the limit.
 				// Note that while we're holding the mutex on this shard,
