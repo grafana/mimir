@@ -685,7 +685,7 @@ func (g *GroupedVectorVectorBinaryOperation) formatConflictError(
 	side string,
 ) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[firstConflictingSeriesIndex].Labels
-	groupLabels := groupLabelsFunc(g.VectorMatching, g.ReturnBool)(firstConflictingSeriesLabels)
+	groupLabels := groupLabelsFunc(g.VectorMatching, g.Op, g.ReturnBool)(firstConflictingSeriesLabels)
 
 	if secondConflictingSeriesIndex == -1 {
 		return fmt.Errorf(

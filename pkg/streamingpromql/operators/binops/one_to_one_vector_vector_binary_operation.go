@@ -182,7 +182,7 @@ func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Con
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
 func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, []bool, error) {
-	labelsFunc := groupLabelsFunc(b.VectorMatching, b.ReturnBool)
+	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
 	outputSeriesMap := map[string]*oneToOneBinaryOperationOutputSeries{}
 
@@ -403,7 +403,7 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeSingleSide(data []types.Insta
 
 func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
-	groupLabels := groupLabelsFunc(b.VectorMatching, b.ReturnBool)(firstConflictingSeriesLabels)
+	groupLabels := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)(firstConflictingSeriesLabels)
 
 	if conflict.SecondConflictingSeriesIndex == -1 {
 		return fmt.Errorf(

@@ -51,7 +51,7 @@ func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(label
 }
 
 // vectorMatchingGroupLabelsFunc returns a function that computes the labels of the output group a series belongs to.
-func groupLabelsFunc(vectorMatching parser.VectorMatching, returnBool bool) func(labels.Labels) labels.Labels {
+func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, returnBool bool) func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if vectorMatching.On {
@@ -62,7 +62,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, returnBool bool) func
 		}
 	}
 
-	if returnBool {
+	if op.IsComparisonOperator() && !returnBool {
 		// If this is a comparison operator, we want to retain the metric name, as the comparison acts like a filter.
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
