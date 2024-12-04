@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/grafana/dskit/middleware"
 	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
