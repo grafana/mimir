@@ -17,6 +17,8 @@ import (
 	"go.uber.org/atomic"
 )
 
+const snapshotEncodingVersion = 1
+
 const shards = 128
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
@@ -82,7 +84,7 @@ type tenantInfo struct {
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejected []uint64, err error) {
-	info := t.getOrCreateUpdatedTenantInfo(tenantID)
+	info := t.getOrCreateTenantInfo(tenantID)
 	limit := t.limiter.localSeriesLimit(tenantID)
 	if limit == 0 {
 		limit = math.MaxUint64
@@ -101,7 +103,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
-		if currentShard := series[i0] % shards; i == len(series) || currentShard != series[i]%shards {
+		if currentShard := uint8(series[i0] % shards); i == len(series) || currentShard != uint8(series[i]%shards) {
 			shard := t.getOrCreateTenantShard(tenantID, currentShard, limit)
 			created, rejected = shard.trackSeries(series[i0:i], now, &info.series, limit, created, rejected)
 			i0 = i
@@ -117,7 +119,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	return rejected, nil
 }
 
-func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint64, limit uint64) *tenantShard {
+func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint8, limit uint64) *tenantShard {
 	t.lock[shard].RLock()
 	m := t.data[shard][userID]
 	if m != nil {
@@ -140,7 +142,7 @@ func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint64, limit
 	return m
 }
 
-func (t *trackerStore) getOrCreateUpdatedTenantInfo(tenantID string) *tenantInfo {
+func (t *trackerStore) getOrCreateTenantInfo(tenantID string) *tenantInfo {
 	t.tenantsMtx.RLock()
 	if info, ok := t.tenants[tenantID]; ok {
 		// It is important to mark it as not marked for deletion, before we release the read lock.
@@ -163,11 +165,13 @@ func (t *trackerStore) getOrCreateUpdatedTenantInfo(tenantID string) *tenantInfo
 
 // casIfGreater will CAS ts to now if now is greater than the value stored in ts.
 // It will retry until it's possible to CAS or the condition is not et.
-func casIfGreater(now minutes, ts *atomic.Int32) {
-	lastSeen := minutes(ts.Load())
+// It returns the last seen value that was stored in ts before CAS-ing.
+func casIfGreater(now minutes, ts *atomic.Int32) (lastSeen minutes) {
+	lastSeen = minutes(ts.Load())
 	for now.greaterThan(lastSeen) && !ts.CompareAndSwap(int32(lastSeen), int32(now)) {
 		lastSeen = minutes(ts.Load())
 	}
+	return lastSeen
 }
 
 func (t *trackerStore) cleanup(now time.Time) {
