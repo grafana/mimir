@@ -2455,8 +2455,8 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		}
 
 		for _, expr := range expressions {
-			addBinopTestCase(op, fmt.Sprintf("binary %v between a scalar on the left side and a histogram on the right with", expr), fmt.Sprintf(`2 %v metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
-			addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a scalar on the right with", expr), fmt.Sprintf(`metric{type="histogram"} %v 2`, expr), "histogram", "float", binop.histogramFloatSupported)
+			addBinopTestCase(op, fmt.Sprintf("binary %v between a scalar on the left side and a histogram on the right", expr), fmt.Sprintf(`2 %v metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
+			addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a scalar on the right", expr), fmt.Sprintf(`metric{type="histogram"} %v 2`, expr), "histogram", "float", binop.histogramFloatSupported)
 
 			for cardinalityName, cardinalityModifier := range cardinalities {
 				addBinopTestCase(op, fmt.Sprintf("binary %v between two floats with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "float", "float", true)
