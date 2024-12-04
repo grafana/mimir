@@ -25,7 +25,6 @@ import (
 func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs...),
-		kgo.AllowAutoTopicCreation(),
 		// We will choose the partition of each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)

@@ -482,7 +482,7 @@ lint: check-makefiles
 	# As a result the topic can be created with the wrong number of partitions.
 	faillint -paths \
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
-		./pkg/... ./cmd/... ./integration/...
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
