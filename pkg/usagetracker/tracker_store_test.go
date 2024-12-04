@@ -68,6 +68,80 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	}
 }
 
+func TestTrackerStore_snapshot(t *testing.T) {
+	const defaultIdleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+	const testUser2 = "user2"
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	for i := 0; i < 60; i++ {
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
+		require.Empty(t, rejected)
+		require.NoError(t, err)
+
+		rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{uint64(i * 1000), uint64(i * 10000)}, now)
+		require.Empty(t, rejected)
+		require.NoError(t, err)
+
+		now = now.Add(time.Minute)
+		tracker.cleanup(now)
+	}
+
+	// testUser1 has 1 series per each one of the last defaultIdleTimeout minutes.
+	require.Equal(t, int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser1].series.Load()))
+	// testUser2  has 2 series per each one of the last defaultIdleTimeout minutes.
+	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
+
+	tracker2 := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	var data []byte
+	for shard := uint8(0); shard < shards; shard++ {
+		data = tracker.snapshot(shard, now, data[:0])
+		err := tracker2.loadSnapshot(data, now)
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser1].series.Load()))
+	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
+
+	// Check that they hold the same data.
+	for i := uint8(0); i < shards; i++ {
+		for tenantID, originalShard := range tracker.data[i] {
+			loadedShard, ok := tracker2.data[i][tenantID]
+			require.True(t, ok, "shard %d, tenant %s", i, tenantID)
+			for series, ts := range originalShard.series {
+				loadedTs, ok := loadedShard.series[series]
+				require.True(t, ok, "shard %d, tenant %s, series %d", i, tenantID, series)
+				require.Equal(t, ts.Load(), loadedTs.Load(), "shard %d, tenant %s, series %d", i, tenantID, series)
+			}
+		}
+	}
+
+	// Loading same snapshot again should be a noop.
+	for shard := uint8(0); shard < shards; shard++ {
+		data = tracker.snapshot(shard, now, data[:0])
+		err := tracker2.loadSnapshot(data, now)
+		require.NoError(t, err)
+	}
+
+	// Check that the total series counts are the same.
+	require.Equal(t, int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser1].series.Load()))
+	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
+
+	// Check that they hold the same data.
+	for i := uint8(0); i < shards; i++ {
+		for tenantID, originalShard := range tracker.data[i] {
+			loadedShard, ok := tracker2.data[i][tenantID]
+			require.True(t, ok, "shard %d, tenant %s", i, tenantID)
+			for series, ts := range originalShard.series {
+				loadedTs, ok := loadedShard.series[series]
+				require.True(t, ok, "shard %d, tenant %s, series %d", i, tenantID, series)
+				require.Equal(t, ts.Load(), loadedTs.Load(), "shard %d, tenant %s, series %d", i, tenantID, series)
+			}
+		}
+	}
+}
+
 type limiterMock map[string]uint64
 
 func (l limiterMock) localSeriesLimit(userID string) uint64 { return l[userID] }
