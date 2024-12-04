@@ -53,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -737,6 +738,50 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	return true, nil
 }
 
+// deduplicateTimestamps discards all float and histogram samples with duplicated timestamps within a single timeseries.
+// In case any sample with duplicated timestamps is removed, an error is returned, and timeseries data are altered in-place.
+func (d *Distributor) deduplicateTimestamps(ts *mimirpb.PreallocTimeseries, userID, group string) error {
+	timestamps := make(map[int64]struct{})
+	maxLen := max(len(ts.Samples), len(ts.Histograms))
+	removeIndexes := make([]int, 0, maxLen)
+	for idx, s := range ts.Samples {
+		if _, ok := timestamps[s.TimestampMs]; ok {
+			removeIndexes = append(removeIndexes, idx)
+			continue
+		}
+		timestamps[s.TimestampMs] = struct{}{}
+	}
+
+	if len(removeIndexes) > 0 {
+		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(removeIndexes)))
+		ts.Samples = util.RemoveSliceIndexes(ts.Samples, removeIndexes)
+	}
+
+	removedSamples := len(removeIndexes)
+
+	timestamps = make(map[int64]struct{})
+	removeIndexes = removeIndexes[:0]
+	for idx, h := range ts.Histograms {
+		if _, ok := timestamps[h.Timestamp]; ok {
+			removeIndexes = append(removeIndexes, idx)
+			continue
+		}
+		timestamps[h.Timestamp] = struct{}{}
+	}
+
+	if len(removeIndexes) > 0 {
+		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(removeIndexes)))
+		ts.Histograms = util.RemoveSliceIndexes(ts.Histograms, removeIndexes)
+	}
+
+	removedSamples += len(removeIndexes)
+	if removedSamples > 0 {
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		return fmt.Errorf(duplicateTimestampMsgFormat, removedSamples, unsafeMetricName)
+	}
+	return nil
+}
+
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
@@ -802,6 +847,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	if !isInOrder {
 		ts.SortExemplars()
 	}
+
 	return nil
 }
 func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
@@ -1095,6 +1141,13 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
+			}
+
+			if err := d.deduplicateTimestamps(&req.Timeseries[tsIdx], userID, group); err != nil {
+				if firstPartialErr == nil {
+					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+					firstPartialErr = newValidationError(validationErr)
+				}
 			}
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
