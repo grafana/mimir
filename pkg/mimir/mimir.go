@@ -214,9 +214,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 	return CommonConfigInheritance{
 		Storage: map[string]*bucket.StorageBackendConfig{
-			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
-			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
-			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+			"blocks_storage":                  &c.BlocksStorage.Bucket.StorageBackendConfig,
+			"ruler_storage":                   &c.RulerStorage.StorageBackendConfig,
+			"alertmanager_storage":            &c.AlertmanagerStorage.StorageBackendConfig,
+			"usage_tracker_snapshots_storage": &c.UsageTracker.SnapshotsStorage.StorageBackendConfig,
 		},
 	}
 }
@@ -360,6 +361,11 @@ func (c *Config) validateBucketConfigs() error {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
+	// Validate usage tracker snapshots bucket config.
+	if c.isAnyModuleEnabled(All, UsageTracker) && c.UsageTracker.SnapshotsStorage.Backend != bucket.Filesystem {
+		errs.Add(errors.Wrap(validateBucketConfig(c.UsageTracker.SnapshotsStorage, c.BlocksStorage.Bucket), "usage-tracker snapshots storage"))
+	}
+
 	return errs.Err()
 }
 
@@ -497,6 +503,17 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 				name:       "alertmanager storage local directory",
 				cfgValue:   c.AlertmanagerStorage.Local.Path,
 				checkValue: c.AlertmanagerStorage.Local.Path,
+			})
+		}
+	}
+
+	// Usage-tracker.
+	if c.isAnyModuleEnabled(All, UsageTracker) {
+		if c.UsageTracker.SnapshotsStorage.Backend == bucket.Filesystem {
+			paths = append(paths, pathConfig{
+				name:       "usage tracker snapshot storage filesystem directory",
+				cfgValue:   c.UsageTracker.SnapshotsStorage.Filesystem.Directory,
+				checkValue: filepath.Join(c.UsageTracker.SnapshotsStorage.Filesystem.Directory, usagetracker.SnapshotsStoragePrefix),
 			})
 		}
 	}

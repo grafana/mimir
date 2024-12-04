@@ -468,6 +468,47 @@ usage_tracker:
         # CLI flag: -usage-tracker.partition-ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
+  snapshots_storage:
+    # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
+    # filesystem.
+    # CLI flag: -usage-tracker.snapshot-storage.backend
+    [backend: <string> | default = "filesystem"]
+
+    # The s3_backend block configures the connection to Amazon S3 object storage
+    # backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshot-storage
+    [s3: <s3_storage_backend>]
+
+    # The gcs_backend block configures the connection to Google Cloud Storage
+    # object storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshot-storage
+    [gcs: <gcs_storage_backend>]
+
+    # The azure_storage_backend block configures the connection to Azure object
+    # storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshot-storage
+    [azure: <azure_storage_backend>]
+
+    # The swift_storage_backend block configures the connection to OpenStack
+    # Object Storage (Swift) object storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshot-storage
+    [swift: <swift_storage_backend>]
+
+    # The filesystem_storage_backend block configures the usage of local file
+    # system as object storage backend.
+    # The CLI flags prefix for this block configuration is:
+    # usage-tracker.snapshot-storage
+    [filesystem: <filesystem_storage_backend>]
+
+    # Prefix for all objects stored in the backend storage. For simplicity, it
+    # may only contain digits and English alphabet letters.
+    # CLI flag: -usage-tracker.snapshot-storage.storage-prefix
+    [storage_prefix: <string> | default = ""]
+
   # The time after which series are considered idle and not active anymore. Must
   # be greater than 0 and less than 1 hour.
   # CLI flag: -usage-tracker.idle-timeout
@@ -5369,6 +5410,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshot-storage`
 
 &nbsp;
 
@@ -5543,6 +5585,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshot-storage`
 
 &nbsp;
 
@@ -5633,6 +5676,7 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshot-storage`
 
 &nbsp;
 
@@ -5739,6 +5783,7 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshot-storage`
 
 &nbsp;
 
@@ -5840,6 +5885,7 @@ The `filesystem_storage_backend` block configures the usage of local file system
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
+- `usage-tracker.snapshot-storage`
 
 &nbsp;
 

@@ -96,6 +96,9 @@ overrides_exporter:
 
 usage_tracker:
   enabled: true
+  snapshots_storage:
+    s3:
+      bucket_name: usage-tracker-snapshots
 
 limits:
   native_histograms_ingestion_enabled: true
