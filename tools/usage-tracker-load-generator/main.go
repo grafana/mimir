@@ -130,26 +130,28 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 		// Start a new simulated scrape interval cycle.
 		startTime := time.Now()
 		numRequests := 0
-		numSeries := 0
+		numSeriesTracked := 0
+		numSeriesRejected := 0
 
 		// Re-initialise the random generator, so that the series hashes generated each cycle are always the same.
 		// We don't care about collisions between workers. We expect them to be a very low %.
 		random := rand.New(rand.NewSource(int64(workerID)))
 
 		// Sequentially iterate over all the series that needs be tracked by this worker.
-		for numSeries < numSeriesPerWorker {
+		for numSeriesTracked < numSeriesPerWorker {
 			seriesHashes := make([]uint64, 0, numSeriesPerRequest)
 
 			// Generate the series to track in this request.
-			for len(seriesHashes) < numSeriesPerRequest && numSeries < numSeriesPerWorker {
+			for len(seriesHashes) < numSeriesPerRequest && numSeriesTracked < numSeriesPerWorker {
 				seriesHashes = append(seriesHashes, random.Uint64())
-				numSeries++
+				numSeriesTracked++
 			}
 
-			_, err := client.TrackSeries(ctx, userID, seriesHashes)
+			rejectedHashes, err := client.TrackSeries(ctx, userID, seriesHashes)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
 			}
+			numSeriesRejected += len(rejectedHashes)
 
 			// Throttle (with jitter) to distribute requests over the scrape interval.
 			numRequests++
@@ -160,7 +162,7 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 			}
 		}
 
-		fmt.Println("Worker", workerID, "has tracked", numSeries, "series in", time.Since(startTime), "(", numRequests, "requests,", targetTimePerRequest, "target time per request)")
+		fmt.Println("Worker", workerID, "has tracked", numSeriesTracked, "series (", numSeriesRejected, "rejected) in", time.Since(startTime), "(", numRequests, "requests,", targetTimePerRequest, "target time per request)")
 
 		// Final throttle before the next cycle.
 		elapsedTime := time.Since(startTime)
