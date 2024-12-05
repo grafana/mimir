@@ -245,37 +245,6 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	require.Equal(t, 1, int(tracker.tenants[testUser1].series.Load()))
 }
 
-//	func TestTrackerStore_Cleanup_Shards(t *testing.T) {
-//		const defaultIdleTimeout = 20 * time.Minute
-//		const testUser1 = "user1"
-//		const testUser2 = "user2"
-//		limits := limiterMock{testUser1: 3}
-//
-//		now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
-//
-//		tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, noopEvents{})
-//		// Push 2 series, both are accepted.
-//		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
-//		require.NoError(t, err)
-//		require.Empty(t, rejected)
-//
-//		now = now.Add(defaultIdleTimeout * 2)
-//		// First cleanup marks shards for deletion.
-//		tracker.cleanup(now)
-//
-//		now = now.Add(time.Minute)
-//		// Series 2 is pushed again, this makes shard 2 alive.
-//		rejected, err = tracker.trackSeries(context.Background(), testUser1, []uint64{2}, now)
-//		require.NoError(t, err)
-//		require.Empty(t, rejected)
-//
-//		now = now.Add(time.Minute)
-//		// Second cleanup deletes the shard 1 as it didn't get sample in the meantime.
-//		// Shard 2 is not marked for deletion anymore.
-//		tracker.cleanup(now)
-//		require.Empty(t, tracker.data[1])
-//		require.False(t, tracker.data[2][testUser1].markedForDeletion.Load())
-//	}
 func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	const defaultIdleTimeout = 20 * time.Minute
 	const testUser1 = "user1"
