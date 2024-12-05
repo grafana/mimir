@@ -382,11 +382,11 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 	require.Empty(t, rejected)
 
 	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
-		# HELP cortex_usagetracker_active_series Number of active series tracker for each user.
-		# TYPE cortex_usagetracker_active_series gauge
-		cortex_usagetracker_active_series{user="user1"} 2
-		cortex_usagetracker_active_series{user="user2"} 3
-	`), "cortex_usagetracker_active_series"))
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+		cortex_usage_tracker_active_series{user="user1"} 2
+		cortex_usage_tracker_active_series{user="user2"} 3
+	`), "cortex_usage_tracker_active_series"))
 
 	now = now.Add(defaultIdleTimeout / 2)
 
@@ -400,19 +400,19 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 
 	// Tenant 1 is deleted.
 	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
-		# HELP cortex_usagetracker_active_series Number of active series tracker for each user.
-		# TYPE cortex_usagetracker_active_series gauge
-		cortex_usagetracker_active_series{user="user2"} 2
-	`), "cortex_usagetracker_active_series"))
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+		cortex_usage_tracker_active_series{user="user2"} 2
+	`), "cortex_usage_tracker_active_series"))
 
 	now = now.Add(defaultIdleTimeout / 2)
 
 	tracker.cleanup(now)
 	// testUser2 is deleted.
 	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
-		# HELP cortex_usagetracker_active_series Number of active series tracker for each user.
-		# TYPE cortex_usagetracker_active_series gauge
-	`), "cortex_usagetracker_active_series"))
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+	`), "cortex_usage_tracker_active_series"))
 }
 
 type limiterMock map[string]uint64
