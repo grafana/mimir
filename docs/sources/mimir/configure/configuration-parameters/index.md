@@ -881,7 +881,7 @@ usage_tracker:
 
   # Maximum number of pending created series events waiting to be published.
   # CLI flag: -usage-tracker.created-series-events-max-pending
-  [max_pending_created_series_events: <int> | default = 1000]
+  [max_pending_created_series_events: <int> | default = 10000]
 
   # Maximum size of a batch of created series events to be published.
   # CLI flag: -usage-tracker.created-series-events-max-batch-size-bytes
