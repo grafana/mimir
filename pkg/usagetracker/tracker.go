@@ -167,7 +167,9 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 
 	eventsPublisher := chanEventsPublisher{events: t.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, eventsPublisher)
-
+	if err := registerer.Register(t.store); err != nil {
+		return nil, errors.Wrap(err, "unable to register usage-tracker store as Prometheus collector")
+	}
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 
 	return t, nil
