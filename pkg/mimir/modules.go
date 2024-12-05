@@ -719,7 +719,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 
 	var err error
 
-	kafkaMetrics := ingest.NewKafkaReaderClientMetrics("query-frontend", t.Registerer)
+	kafkaMetrics := ingest.NewKafkaReaderClientMetrics(ingest.KafkaReaderMetricsPrefix, "query-frontend", t.Registerer)
 	kafkaClient, err := ingest.NewKafkaReaderClient(t.Cfg.IngestStorage.KafkaConfig, kafkaMetrics, util_log.Logger)
 	if err != nil {
 		return nil, err

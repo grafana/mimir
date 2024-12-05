@@ -15,20 +15,28 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const SnapshotsStoragePrefix = "usage-tracker-snapshots"
+const (
+	SnapshotsStoragePrefix = "usage-tracker-snapshots"
+
+	eventsKafkaWriterMetricsPrefix = "cortex_usage_tracker_events_writer"
+	eventsKafkaReaderMetricsPrefix = "cortex_usage_tracker_events_reader"
+)
 
 type Config struct {
 	Enabled       bool                `yaml:"enabled"`
 	InstanceRing  InstanceRingConfig  `yaml:"ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
-	SnapshotsStorage bucket.Config `yaml:"snapshots_storage"`
+	EventsStorage    EventsStorageConfig `yaml:"events_storage"`
+	SnapshotsStorage bucket.Config       `yaml:"snapshots_storage"`
 
 	IdleTimeout time.Duration `yaml:"idle_timeout"`
 }
@@ -38,9 +46,29 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
+	c.EventsStorage.RegisterFlags(f)
 	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshot-storage.", "usagetrackersnapshots", f)
 
 	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
+}
+
+func (c *Config) Validate() error {
+	// Skip validation if not enabled.
+	if !c.Enabled {
+		return nil
+	}
+
+	if err := c.EventsStorage.Validate(); err != nil {
+		return err
+	}
+	if err := c.SnapshotsStorage.Validate(); err != nil {
+		return err
+	}
+	if c.IdleTimeout <= 0 || c.IdleTimeout > time.Hour {
+		return fmt.Errorf("invalid usage-tracker idle timeout %q, should be greater than 0 and less than 1 hour", c.IdleTimeout)
+	}
+
+	return nil
 }
 
 type UsageTracker struct {
@@ -48,15 +76,22 @@ type UsageTracker struct {
 
 	store *trackerStore
 
-	bucket    objstore.InstrumentedBucket
-	overrides *validation.Overrides
-	logger    log.Logger
+	cfg        Config
+	bucket     objstore.InstrumentedBucket
+	overrides  *validation.Overrides
+	logger     log.Logger
+	registerer prometheus.Registerer
 
-	partitionID         int32
+	partitionID int32
+
+	// Partition and instance ring.
 	partitionLifecycler *ring.PartitionInstanceLifecycler
 	partitionRing       *ring.PartitionInstanceRing
+	instanceLifecycler  *ring.BasicLifecycler
 
-	instanceLifecycler *ring.BasicLifecycler
+	// Events storage (Kafka).
+	eventsKafkaWriter *kgo.Client
+	eventsKafkaReader *kgo.Client
 
 	// Dependencies.
 	subservices        *services.Manager
@@ -64,14 +99,12 @@ type UsageTracker struct {
 }
 
 func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
-	if cfg.IdleTimeout <= 0 || cfg.IdleTimeout > time.Hour {
-		return nil, fmt.Errorf("invalid idle timeout %q, should be greater than 0 and less than 1 hour", cfg.IdleTimeout)
-	}
-
 	t := &UsageTracker{
+		cfg:           cfg,
 		partitionRing: partitionRing,
 		overrides:     overrides,
 		logger:        logger,
+		registerer:    registerer,
 	}
 
 	// Get the partition ID.
@@ -126,6 +159,18 @@ func (t *UsageTracker) start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start usage-tracker subservices")
 	}
 
+	// Create Kafka writer for events storage.
+	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorage.Writer, 20, t.logger, prometheus.WrapRegistererWithPrefix(eventsKafkaWriterMetricsPrefix, t.registerer))
+	if err != nil {
+		return errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")
+	}
+
+	// Create Kafka reader for events storage.
+	t.eventsKafkaReader, err = ingest.NewKafkaReaderClient(t.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", t.registerer), t.logger)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
+	}
+
 	return nil
 }
 
@@ -135,6 +180,10 @@ func (t *UsageTracker) stop(_ error) error {
 	if t.subservices != nil {
 		_ = services.StopManagerAndAwaitStopped(context.Background(), t.subservices)
 	}
+
+	// Close Kafka clients.
+	t.eventsKafkaWriter.Close()
+	t.eventsKafkaReader.Close()
 
 	return nil
 }

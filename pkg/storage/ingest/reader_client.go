@@ -10,6 +10,8 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 )
 
+const KafkaReaderMetricsPrefix = "cortex_ingest_storage_reader"
+
 // NewKafkaReaderClient returns the kgo.Client that should be used by the Reader.
 func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger, opts ...kgo.Opt) (*kgo.Client, error) {
 	const fetchMaxBytes = 100_000_000
@@ -36,8 +38,8 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 	return client, nil
 }
 
-func NewKafkaReaderClientMetrics(component string, reg prometheus.Registerer) *kprom.Metrics {
-	return kprom.NewMetrics("cortex_ingest_storage_reader",
+func NewKafkaReaderClientMetrics(prefix, component string, reg prometheus.Registerer) *kprom.Metrics {
+	return kprom.NewMetrics(prefix,
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)),
 		// Do not export the client ID, because we use it to specify options to the backend.
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))

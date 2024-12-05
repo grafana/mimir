@@ -99,6 +99,13 @@ usage_tracker:
   snapshots_storage:
     s3:
       bucket_name: usage-tracker-snapshots
+  events_storage:
+    writer:
+      address: kafka_1:9092
+      topic: usage-tracker-events
+    reader:
+      address: kafka_1:9092
+      topic: usage-tracker-events
 
 limits:
   native_histograms_ingestion_enabled: true

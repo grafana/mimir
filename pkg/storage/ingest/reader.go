@@ -1099,7 +1099,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		}),
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
 		lastConsumedOffset:               lastConsumedOffset,
-		kprom:                            NewKafkaReaderClientMetrics(component, reg),
+		kprom:                            NewKafkaReaderClientMetrics(KafkaReaderMetricsPrefix, component, reg),
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",
