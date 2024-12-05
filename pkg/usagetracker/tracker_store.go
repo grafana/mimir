@@ -76,14 +76,18 @@ type shardLock struct {
 
 // tenantInfo holds the global information about the tenant (specifically its total series amount).
 type tenantInfo struct {
-	series            atomic.Uint64
-	markedForDeletion atomic.Bool
+	series atomic.Uint64
+	refs   atomic.Uint64
 }
+
+func (t *tenantInfo) release() { t.refs.Dec() }
 
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejected []uint64, err error) {
 	info := t.getOrCreateTenantInfo(tenantID)
+	defer info.release()
+
 	limit := t.limiter.localSeriesLimit(tenantID)
 	if limit == 0 {
 		limit = math.MaxUint64
@@ -132,6 +136,8 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	}
 
 	info := t.getOrCreateTenantInfo(tenantID)
+	defer info.release()
+
 	// We need the limit to create the tenant shard of an appropriate size.
 	// We are not going to limit series creation based on the shard.
 	limit := t.limiter.localSeriesLimit(tenantID)
@@ -158,9 +164,6 @@ func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint8, limit 
 	t.lock[shard].RLock()
 	m := t.data[shard][userID]
 	if m != nil {
-		// Signal that we're still using this shard.
-		// It's probably cheaper to update this every time rather than checking the value.
-		m.markedForDeletion.Store(false)
 		t.lock[shard].RUnlock()
 		return m
 	}
@@ -183,11 +186,13 @@ func (t *trackerStore) getOrCreateTenantShard(userID string, shard uint8, limit 
 	return m
 }
 
+// getOrCreateTenantInfo returns the tenantInfo for the tenantID.
+// Caller should call tenantInfo.release() after using it.
 func (t *trackerStore) getOrCreateTenantInfo(tenantID string) *tenantInfo {
 	t.tenantsMtx.RLock()
 	if info, ok := t.tenants[tenantID]; ok {
-		// It is important to mark it as not marked for deletion, before we release the read lock.
-		info.markedForDeletion.Store(false)
+		// It is important to increase references count before we release the lock.
+		info.refs.Inc()
 		t.tenantsMtx.RUnlock()
 		return info
 	}
@@ -196,10 +201,12 @@ func (t *trackerStore) getOrCreateTenantInfo(tenantID string) *tenantInfo {
 	t.tenantsMtx.Lock()
 	defer t.tenantsMtx.Unlock()
 	if info, ok := t.tenants[tenantID]; ok {
+		info.refs.Inc()
 		return info
 	}
 
 	info := &tenantInfo{}
+	info.refs.Inc()
 	t.tenants[tenantID] = info
 	return info
 }
@@ -220,46 +227,32 @@ func (t *trackerStore) cleanup(now time.Time) {
 
 	// We will work on a copy of tenants.
 	t.tenantsMtx.RLock()
-	tenants := maps.Clone(t.tenants)
+	tenantsClone := maps.Clone(t.tenants)
 	t.tenantsMtx.RUnlock()
 
 	for i := range t.data {
 		t.lock[i].Lock()
-		// First, remove the tenants that are marked for deletion already.
-		// We need to do this while holding the mutex,
-		// this way we're sure that nobody updated the markedForDeletion value between the check and deletion.
-		for tenantID, m := range t.data[i] {
-			if m.markedForDeletion.Load() {
-				delete(t.data[i], tenantID)
-			}
-		}
-
-		// Now take a clone of data and work with that.
+		// Take a clone of data and work with that.
 		// This is orders of tens of thousands elements map, so it's not a big deal.
 		// It's better than holding the mutex while we're inspecting each tenant.
 		// We don't care about the tenants added *after* we took the snapshot, they're too new to cleanup.
-		shard := maps.Clone(t.data[i])
+		shardClone := maps.Clone(t.data[i])
 		t.lock[i].Unlock()
 
-		for tenantID, info := range tenants {
-			// Check if this tenant has data in this shard.
-			if m, ok := shard[tenantID]; ok {
-				m.cleanup(&info.series, watermark)
+		for tenantID, shard := range shardClone {
+			if empty := t.cleanupTenantShard(tenantID, shard, watermark, tenantsClone); empty {
+				t.maybeRemoveTenantShard(tenantID, uint8(i))
 			}
 		}
 	}
 
-	tenantsToDelete := make([]string, 0, len(tenants))
+	tenantsToDelete := make([]string, 0, len(tenantsClone))
 	// Check tenants to delete on our copy of t.tenants.
 	// The ones added after we took the copy are likely to have some series.
-	for tenantID, info := range tenants {
-		if info.markedForDeletion.Load() {
+	for tenantID, info := range tenantsClone {
+		if info.series.Load() == 0 {
 			tenantsToDelete = append(tenantsToDelete, tenantID)
 			continue
-		}
-		if info.series.Load() == 0 {
-			// No series, mark for deletion on the next cleanup.
-			info.markedForDeletion.Store(true)
 		}
 	}
 	if len(tenantsToDelete) == 0 {
@@ -276,21 +269,58 @@ func (t *trackerStore) cleanup(now time.Time) {
 		}
 		if info.series.Load() > 0 {
 			// Someone added series in the meantime.
-			info.markedForDeletion.Store(false)
 			continue
 		}
-		if info.markedForDeletion.Load() {
-			// Was previously marked for deletion.
-			// Nobody retrieved it since the last cleanup, so we can safely delete it as we know nobody is adding series for it.
+		if info.refs.Load() == 0 {
+			// No series and nobody is adding them, so we can delete it.
 			delete(t.tenants, tenantID)
 		}
 	}
 }
 
+func (t *trackerStore) cleanupTenantShard(tenantID string, shard *tenantShard, watermark minutes, tenantsClone map[string]*tenantInfo) (empty bool) {
+	info, ok := tenantsClone[tenantID]
+	if !ok {
+		// This shard might have been added after we made our clone.
+		info = t.getOrCreateTenantInfo(tenantID)
+		// We need to release this one correctly.
+		defer info.release()
+	}
+	return shard.cleanup(&info.series, watermark)
+}
+
+func (t *trackerStore) maybeRemoveTenantShard(tenantID string, s uint8) {
+	info := t.getOrCreateTenantInfo(tenantID)
+	defer info.release()
+
+	t.lock[s].Lock()
+	defer t.lock[s].Unlock()
+	if info.refs.Load() > 1 { // 1 for us.
+		// Someone else is interacting with this tenant.
+		return
+	}
+
+	shard, ok := t.data[s][tenantID]
+	if !ok {
+		return // how did this happen?
+	}
+	if !shard.empty() {
+		return // someone added series while we were thinking.
+	}
+
+	// Okay, nobody is interacting with the tenant, and shard is empty, now it's safe to delete it.
+	delete(t.data[s], tenantID)
+}
+
 type tenantShard struct {
 	shardLock
-	series            map[uint64]*atomic.Int32
-	markedForDeletion atomic.Bool
+	series map[uint64]*atomic.Int32
+}
+
+func (shard *tenantShard) empty() bool {
+	shard.RLock()
+	defer shard.RUnlock()
+	return len(shard.series) == 0
 }
 
 // trackSeries will track the provided series trying to keep totalTenantSeries below the limit.
@@ -389,7 +419,7 @@ func (shard *tenantShard) processCreatedSeriesEvent(series []uint64, timestamp m
 	shard.Unlock()
 }
 
-func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark minutes) {
+func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark minutes) (empty bool) {
 	// Work on the stack.
 	// If we have 1e9 series, 33% of that churning every 2 hours, that's ~21K per shard (1e9/3/120/128).
 	// This is ~168K on the stack, which is fine, but it saves lots of allocations.
@@ -398,32 +428,27 @@ func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark mi
 	candidates := stackSeries[:0]
 
 	shard.RLock()
-	if len(shard.series) == 0 {
-		// If it has no series, mark for deletion on the next cleanup, and return.
-		shard.markedForDeletion.Store(true)
-		shard.RUnlock()
-		return
-	}
-
+	empty = len(shard.series) == 0
 	for s, ts := range shard.series {
-		if lastSeen := minutes(ts.Load()); watermark.greaterThan(lastSeen) {
+		if lastSeen := minutes(ts.Load()); watermark.greaterOrEqualThan(lastSeen) {
 			candidates = append(candidates, s)
 		}
 	}
 	shard.RUnlock()
 
 	if len(candidates) == 0 {
-		return
+		return empty
 	}
 
 	shard.Lock()
 	defer shard.Unlock()
 	for s, ts := range shard.series {
-		if lastSeen := minutes(ts.Load()); watermark.greaterThan(lastSeen) {
+		if lastSeen := minutes(ts.Load()); watermark.greaterOrEqualThan(lastSeen) {
 			delete(shard.series, s)
 			totalTenantSeries.Dec()
 		}
 	}
+	return len(shard.series) == 0
 }
 
 func areInValidSpanToCompareMinutes(a, b time.Time) bool {
@@ -455,12 +480,17 @@ func (m minutes) sub(other minutes) int {
 	return sign * int(m-other-4*60)
 }
 
-// minutesGreater returns true if this value is greater than otheron a four-hour clock face assuming that none of the values is ever older than 1h.
+// minutesGreater returns true if this value is greater than other on a four-hour clock face assuming that none of the values is ever older than 1h.
 func (m minutes) greaterThan(other minutes) bool {
 	if m > other {
 		return m-other < 60
 	}
 	return m+(4*60)-other < 60
+}
+
+// greaterOrEqualThan returns true if this value is greater or equal than other on a four-hour clock face assuming that none of the values is ever older than 1h.
+func (m minutes) greaterOrEqualThan(other minutes) bool {
+	return m == other || m.greaterThan(other)
 }
 
 func (m minutes) String() string { return fmt.Sprintf("%dm", m) }
