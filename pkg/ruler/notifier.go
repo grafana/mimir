@@ -33,7 +33,6 @@ import (
 var (
 	errRulerNotifierStopped               = cancellation.NewErrorf("rulerNotifier stopped")
 	errRulerSimultaneousBasicAuthAndOAuth = errors.New("cannot use both Basic Auth and OAuth2 simultaneously")
-	errEmptyEndpointParamValue            = errors.New("endpoint params value cannot be empty")
 )
 
 type NotifierConfig struct {
