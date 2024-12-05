@@ -102,7 +102,7 @@ std.manifestYamlDoc({
     'usage-tracker-zone-b-1': mimirService({
       name: 'usage-tracker-zone-b-1',
       target: 'usage-tracker',
-      publishedHttpPort: 8008,
+      publishedHttpPort: 8009,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
       ],

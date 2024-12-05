@@ -430,8 +430,8 @@
     "hostname": "usage-tracker-zone-b-1"
     "image": "mimir"
     "ports":
-      - "8008:8080"
-      - "11008:11008"
+      - "8009:8080"
+      - "11009:11009"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
