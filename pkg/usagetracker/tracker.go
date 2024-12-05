@@ -189,8 +189,9 @@ func (t *UsageTracker) start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start usage-tracker subservices")
 	}
 
+	startConsumingEventsAtMillis := time.Now().Add(-t.cfg.IdleTimeout).UnixMilli()
 	t.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		eventsTopic: {t.partitionID: kgo.NewOffset().AtStart()},
+		eventsTopic: {t.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
 	})
 
 	return nil
@@ -235,8 +236,8 @@ func (t *UsageTracker) run(ctx context.Context) error {
 func (t *UsageTracker) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
-	for ctx.Err() != nil {
-		fetches := t.eventsKafkaReader.PollRecords(ctx, 1)
+	for ctx.Err() == nil {
+		fetches := t.eventsKafkaReader.PollRecords(ctx, 0)
 		fetches.EachError(func(_ string, p int32, err error) {
 			if !errors.Is(err, context.Canceled) { // Ignore when we're shutting down.
 				// TODO: observability? Handle this?
