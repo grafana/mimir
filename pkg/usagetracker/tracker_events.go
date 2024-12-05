@@ -16,8 +16,8 @@ type EventsStorageConfig struct {
 }
 
 func (c *EventsStorageConfig) RegisterFlags(f *flag.FlagSet) {
-	c.Writer.RegisterFlagsWithPrefix("usage-tracker.events-storage.writer.", f)
-	c.Reader.RegisterFlagsWithPrefix("usage-tracker.events-storage.reader.", f)
+	c.Writer.RegisterFlagsWithPrefix("usage-tracker.events-storage.writer", f)
+	c.Reader.RegisterFlagsWithPrefix("usage-tracker.events-storage.reader", f)
 }
 
 func (c *EventsStorageConfig) Validate() error {
