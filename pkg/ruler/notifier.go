@@ -52,13 +52,6 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
 }
 
-func validateOAuth2EndpointParam(_ string, v string) error {
-	if v == "" {
-		return errEmptyEndpointParamValue
-	}
-	return nil
-}
-
 type OAuth2Config struct {
 	ClientID       string                       `yaml:"client_id"`
 	ClientSecret   flagext.Secret               `yaml:"client_secret"`
@@ -73,7 +66,7 @@ func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token.")
 	f.Var(&cfg.Scopes, prefix+"scopes", "Optional scopes to include with the token request.")
 	if !cfg.EndpointParams.IsInitialized() {
-		cfg.EndpointParams = validation.NewLimitsMap(validateOAuth2EndpointParam)
+		cfg.EndpointParams = validation.NewLimitsMap[string](nil)
 	}
 	f.Var(&cfg.EndpointParams, prefix+"endpoint-params", "Optional additional URL parameters to send to the token URL.")
 }
