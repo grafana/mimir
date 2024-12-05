@@ -41,9 +41,8 @@ type BlockBuilder struct {
 	limits      *validation.Overrides
 	kafkaClient *kgo.Client
 	bucket      objstore.Bucket
-
-	scheduler schedulerpb.SchedulerClient
-	committer stateCommitter
+	scheduler   schedulerpb.SchedulerClient
+	committer   stateCommitter
 
 	assignedPartitionIDs []int32
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
@@ -59,6 +58,18 @@ func New(
 	reg prometheus.Registerer,
 	limits *validation.Overrides,
 ) (*BlockBuilder, error) {
+	return newWithSchedulerClient(cfg, logger, reg, limits, nil)
+}
+
+// newWithSchedulerClient creates a new BlockBuilder with a scheduler client.
+// This is exposed for testing purposes. You should probably be using New().
+func newWithSchedulerClient(
+	cfg Config,
+	logger log.Logger,
+	reg prometheus.Registerer,
+	limits *validation.Overrides,
+	schedulerClient schedulerpb.SchedulerClient,
+) (*BlockBuilder, error) {
 	b := &BlockBuilder{
 		cfg:                 cfg,
 		logger:              logger,
@@ -67,8 +78,6 @@ func New(
 		blockBuilderMetrics: newBlockBuilderMetrics(reg),
 		tsdbBuilderMetrics:  newTSDBBBuilderMetrics(reg),
 	}
-
-	b.assignedPartitionIDs = b.cfg.PartitionAssignment[b.cfg.InstanceID]
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
 	if err != nil {
@@ -81,16 +90,20 @@ func New(
 	if cfg.SchedulerConfig.Address != "" {
 		// Pull mode: we learn about jobs from a block-builder-scheduler.
 
-		sched, err := b.makeSchedulerClient()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduler client: %w", err)
+		if schedulerClient != nil {
+			b.scheduler = schedulerClient
+		} else {
+			var err error
+			if b.scheduler, err = b.makeSchedulerClient(); err != nil {
+				return nil, fmt.Errorf("failed to create scheduler client: %w", err)
+			}
 		}
-		b.scheduler = sched
+
 		runningFunc = b.runningPullMode
 		b.committer = &noOpCommitter{}
 	} else {
 		// Standalone mode: we consume from statically assigned partitions.
-
+		b.assignedPartitionIDs = b.cfg.PartitionAssignment[b.cfg.InstanceID]
 		if len(b.assignedPartitionIDs) == 0 {
 			// This is just an assertion check. The config validation prevents this from happening.
 			return nil, fmt.Errorf("no partitions assigned to instance %s", b.cfg.InstanceID)
@@ -157,18 +170,25 @@ func (b *BlockBuilder) stopping(_ error) error {
 }
 
 // runningPullMode is a service `running` function for pull mode, where we learn
-// about jobs from a block-builder-scheduler.
+// about jobs from a block-builder-scheduler. We consume one job at a time.
 func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 	// Kick off the scheduler's run loop.
 	go b.scheduler.Run(ctx)
 
 	for {
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return err
+		}
+
 		key, spec, err := b.scheduler.GetJob(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}
-			level.Warn(b.logger).Log("msg", "failed to get job", "err", err)
+			level.Error(b.logger).Log("msg", "failed to get job", "err", err)
 			continue
 		}
 
@@ -185,6 +205,7 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 	}
 }
 
+// consumeJob performs block consumption from Kafka into object storage based on the given job spec.
 func (b *BlockBuilder) consumeJob(ctx context.Context, _ schedulerpb.JobKey, jobSpec schedulerpb.JobSpec) (PartitionState, error) {
 	state := PartitionState{
 		Commit: kadm.Offset{
