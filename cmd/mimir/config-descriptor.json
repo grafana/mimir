@@ -18266,7 +18266,7 @@
         },
         {
           "kind": "block",
-          "name": "ring",
+          "name": "instance_ring",
           "required": false,
           "desc": "",
           "blockEntries": [
@@ -18283,7 +18283,7 @@
                   "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
                   "fieldValue": null,
                   "fieldDefaultValue": "memberlist",
-                  "fieldFlag": "usage-tracker.ring.store",
+                  "fieldFlag": "usage-tracker.instance-ring.store",
                   "fieldType": "string"
                 },
                 {
@@ -18293,7 +18293,7 @@
                   "desc": "The prefix for the keys in the store. Should end with a /.",
                   "fieldValue": null,
                   "fieldDefaultValue": "collectors/",
-                  "fieldFlag": "usage-tracker.ring.prefix",
+                  "fieldFlag": "usage-tracker.instance-ring.prefix",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
@@ -18310,7 +18310,7 @@
                       "desc": "Hostname and port of Consul.",
                       "fieldValue": null,
                       "fieldDefaultValue": "localhost:8500",
-                      "fieldFlag": "usage-tracker.ring.consul.hostname",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.hostname",
                       "fieldType": "string"
                     },
                     {
@@ -18320,7 +18320,7 @@
                       "desc": "ACL Token used to interact with Consul.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.consul.acl-token",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.acl-token",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18331,7 +18331,7 @@
                       "desc": "HTTP timeout when talking to Consul",
                       "fieldValue": null,
                       "fieldDefaultValue": 20000000000,
-                      "fieldFlag": "usage-tracker.ring.consul.client-timeout",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.client-timeout",
                       "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
@@ -18342,7 +18342,7 @@
                       "desc": "Enable consistent reads to Consul.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
-                      "fieldFlag": "usage-tracker.ring.consul.consistent-reads",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.consistent-reads",
                       "fieldType": "boolean",
                       "fieldCategory": "advanced"
                     },
@@ -18353,7 +18353,7 @@
                       "desc": "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.",
                       "fieldValue": null,
                       "fieldDefaultValue": 1,
-                      "fieldFlag": "usage-tracker.ring.consul.watch-rate-limit",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.watch-rate-limit",
                       "fieldType": "float",
                       "fieldCategory": "advanced"
                     },
@@ -18364,7 +18364,7 @@
                       "desc": "Burst size used in rate limit. Values less than 1 are treated as 1.",
                       "fieldValue": null,
                       "fieldDefaultValue": 1,
-                      "fieldFlag": "usage-tracker.ring.consul.watch-burst-size",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.watch-burst-size",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
                     },
@@ -18375,7 +18375,7 @@
                       "desc": "Maximum duration to wait before retrying a Compare And Swap (CAS) operation.",
                       "fieldValue": null,
                       "fieldDefaultValue": 1000000000,
-                      "fieldFlag": "usage-tracker.ring.consul.cas-retry-delay",
+                      "fieldFlag": "usage-tracker.instance-ring.consul.cas-retry-delay",
                       "fieldType": "duration",
                       "fieldCategory": "advanced"
                     }
@@ -18396,7 +18396,7 @@
                       "desc": "The etcd endpoints to connect to.",
                       "fieldValue": null,
                       "fieldDefaultValue": [],
-                      "fieldFlag": "usage-tracker.ring.etcd.endpoints",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.endpoints",
                       "fieldType": "list of strings"
                     },
                     {
@@ -18406,7 +18406,7 @@
                       "desc": "The dial timeout for the etcd connection.",
                       "fieldValue": null,
                       "fieldDefaultValue": 10000000000,
-                      "fieldFlag": "usage-tracker.ring.etcd.dial-timeout",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.dial-timeout",
                       "fieldType": "duration",
                       "fieldCategory": "advanced"
                     },
@@ -18417,7 +18417,7 @@
                       "desc": "The maximum number of retries to do for failed ops.",
                       "fieldValue": null,
                       "fieldDefaultValue": 10,
-                      "fieldFlag": "usage-tracker.ring.etcd.max-retries",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.max-retries",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
                     },
@@ -18428,7 +18428,7 @@
                       "desc": "Enable TLS.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-enabled",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "advanced"
                     },
@@ -18439,7 +18439,7 @@
                       "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-cert-path",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-cert-path",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18450,7 +18450,7 @@
                       "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-key-path",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-key-path",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18461,7 +18461,7 @@
                       "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-ca-path",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-ca-path",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18472,7 +18472,7 @@
                       "desc": "Override the expected name on the server certificate.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-server-name",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-server-name",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18483,7 +18483,7 @@
                       "desc": "Skip validating server certificate.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-insecure-skip-verify",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-insecure-skip-verify",
                       "fieldType": "boolean",
                       "fieldCategory": "advanced"
                     },
@@ -18494,7 +18494,7 @@
                       "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-cipher-suites",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-cipher-suites",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18505,7 +18505,7 @@
                       "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.tls-min-version",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18516,7 +18516,7 @@
                       "desc": "Etcd username.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.username",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.username",
                       "fieldType": "string"
                     },
                     {
@@ -18526,7 +18526,7 @@
                       "desc": "Etcd password.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.etcd.password",
+                      "fieldFlag": "usage-tracker.instance-ring.etcd.password",
                       "fieldType": "string"
                     }
                   ],
@@ -18546,7 +18546,7 @@
                       "desc": "Primary backend storage used by multi-client.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.multi.primary",
+                      "fieldFlag": "usage-tracker.instance-ring.multi.primary",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18557,7 +18557,7 @@
                       "desc": "Secondary backend storage used by multi-client.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "usage-tracker.ring.multi.secondary",
+                      "fieldFlag": "usage-tracker.instance-ring.multi.secondary",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
                     },
@@ -18568,7 +18568,7 @@
                       "desc": "Mirror writes to secondary store.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
-                      "fieldFlag": "usage-tracker.ring.multi.mirror-enabled",
+                      "fieldFlag": "usage-tracker.instance-ring.multi.mirror-enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "advanced"
                     },
@@ -18579,7 +18579,7 @@
                       "desc": "Timeout for storing value to secondary store.",
                       "fieldValue": null,
                       "fieldDefaultValue": 2000000000,
-                      "fieldFlag": "usage-tracker.ring.multi.mirror-timeout",
+                      "fieldFlag": "usage-tracker.instance-ring.multi.mirror-timeout",
                       "fieldType": "duration",
                       "fieldCategory": "advanced"
                     }
@@ -18598,7 +18598,7 @@
               "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
               "fieldValue": null,
               "fieldDefaultValue": 15000000000,
-              "fieldFlag": "usage-tracker.ring.heartbeat-period",
+              "fieldFlag": "usage-tracker.instance-ring.heartbeat-period",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -18609,7 +18609,7 @@
               "desc": "The heartbeat timeout after which usage-trackers are considered unhealthy within the ring.",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
-              "fieldFlag": "usage-tracker.ring.heartbeat-timeout",
+              "fieldFlag": "usage-tracker.instance-ring.heartbeat-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
@@ -18620,7 +18620,7 @@
               "desc": "Instance ID to register in the ring.",
               "fieldValue": null,
               "fieldDefaultValue": "\u003chostname\u003e",
-              "fieldFlag": "usage-tracker.ring.instance-id",
+              "fieldFlag": "usage-tracker.instance-ring.instance-id",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -18631,7 +18631,7 @@
               "desc": "List of network interface names to look up when finding the instance IP address.",
               "fieldValue": null,
               "fieldDefaultValue": [],
-              "fieldFlag": "usage-tracker.ring.instance-interface-names",
+              "fieldFlag": "usage-tracker.instance-ring.instance-interface-names",
               "fieldType": "list of strings"
             },
             {
@@ -18641,7 +18641,7 @@
               "desc": "Port to advertise in the ring (defaults to -server.grpc-listen-port).",
               "fieldValue": null,
               "fieldDefaultValue": 0,
-              "fieldFlag": "usage-tracker.ring.instance-port",
+              "fieldFlag": "usage-tracker.instance-ring.instance-port",
               "fieldType": "int",
               "fieldCategory": "advanced"
             },
@@ -18652,9 +18652,19 @@
               "desc": "IP address to advertise in the ring. Default is auto-detected.",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "usage-tracker.ring.instance-addr",
+              "fieldFlag": "usage-tracker.instance-ring.instance-addr",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "The availability zone where this instance is running.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "usage-tracker.instance-ring.instance-availability-zone",
+              "fieldType": "string"
             },
             {
               "kind": "field",
@@ -18663,7 +18673,7 @@
               "desc": "Enable using a IPv6 instance address. (default false)",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "usage-tracker.ring.instance-enable-ipv6",
+              "fieldFlag": "usage-tracker.instance-ring.instance-enable-ipv6",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             }
