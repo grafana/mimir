@@ -100,6 +100,11 @@ func (c *UsageTrackerClient) stop(_ error) error {
 }
 
 func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) (_ []uint64, returnErr error) {
+	// Nothing to do if there are no series to track.
+	if len(series) == 0 {
+		return nil, nil
+	}
+
 	var (
 		batchOptions = ring.DoBatchOptions{
 			Cleanup:       nil,
