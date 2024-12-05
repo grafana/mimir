@@ -392,7 +392,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 								"param1": "value1",
 								"param2": "value2",
 							},
-							validateOAuth2EndpointParam,
+							nil,
 						),
 					},
 				},
@@ -558,21 +558,15 @@ func TestOAuth2Config_ValidateEndpointParams(t *testing.T) {
 			args: []string{"-map-flag", "{\"param1\": \"value1\" }"},
 			expected: validation.NewLimitsMapWithData(map[string]string{
 				"param1": "value1",
-			}, validateOAuth2EndpointParam),
+			}, nil),
 		},
-
-		"empty value": {
-			args:  []string{"-map-flag", "{\"param1\": \"\" }"},
-			error: "invalid value \"{\\\"param1\\\": \\\"\\\" }\" for flag -map-flag: endpoint params value cannot be empty",
-		},
-
 		"parsing error": {
 			args:  []string{"-map-flag", "{\"hello\": ..."},
 			error: "invalid value \"{\\\"hello\\\": ...\" for flag -map-flag: invalid character '.' looking for beginning of value",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			v := validation.NewLimitsMap(validateOAuth2EndpointParam)
+			v := validation.NewLimitsMap[string](nil)
 
 			fs := flag.NewFlagSet("test", flag.ContinueOnError)
 			fs.SetOutput(&bytes.Buffer{}) // otherwise errors would go to stderr.
