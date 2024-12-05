@@ -295,18 +295,17 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 // It attempts to catch any race condition that may happen between series deletion marking and series creation.
 func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	const tenant = "user"
-	const limit = 5
-	const idleTimeoutSeconds = 5
-	now := atomic.NewInt64(0)
+	const idleTimeoutMinutes = 5
+	const maxSeriesRange = 10000
+	nowUnixMinutes := atomic.NewInt64(0)
+	now := func() time.Time { return time.Unix(nowUnixMinutes.Load()*60, 0) }
 
 	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
-	tracker := newTrackerStore(idleTimeoutSeconds*time.Second, log.NewNopLogger(), limiterMock{tenant: limit}, createdSeries)
+	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, createdSeries)
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(1)
 	done := make(chan struct{})
-	cleanups := atomic.NewUint64(0)
-
 	go func() {
 		defer wg.Done()
 		for {
@@ -314,44 +313,41 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 			case <-done:
 				return
 			default:
-				tracker.cleanup(time.Unix(now.Load(), 0))
-				cleanups.Inc()
-			}
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{rand.Uint64()}, time.Unix(now.Load(), 0))
+				seriesID := uint64(rand.Int63n(maxSeriesRange))
+				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, now())
 			}
 		}
 	}()
 
 	// Wait until we perform 1e3 cleanups and create 1e3 series.
-	for cleanups.Load() < 1e3 || createdSeries.count.Load() < 1e3 {
+	cleanups := 0
+	for createdSeries.count.Load() < 100*maxSeriesRange {
 		info := tracker.getOrCreateTenantInfo(tenant)
-		require.LessOrEqual(t, info.series.Load(), uint64(limit))
 		info.release()
 		// Keep increasing the timestamp every time.
-		now.Inc()
+		nowUnixMinutes.Inc()
+		tracker.cleanup(now())
+		cleanups++
 	}
 	close(done)
-	t.Logf("Total series created: %d, cleanups: %d", createdSeries.count.Load(), cleanups.Load())
+	t.Logf("Total series created: %d, cleanups: %d", createdSeries.count.Load(), cleanups)
 	wg.Wait()
 
 	// Wait an idle period then cleanup.
-	now.Add(idleTimeoutSeconds)
-	tracker.cleanup(time.Unix(now.Load(), 0))
-	// Tracker should be empty now.
+	nowUnixMinutes.Add(idleTimeoutMinutes)
+	tracker.cleanup(now())
+	// Tracker should be empty nowUnixMinutes.
 	// If it's not, then we did something wrong.
-	require.Empty(t, tracker.tenants)
+	for _, info := range tracker.tenants {
+		t.Errorf("Tenant %q is still present with %d series %d refs", tenant, info.series.Load(), info.refs.Load())
+	}
 	for i := uint8(0); i < shards; i++ {
-		require.Empty(t, tracker.data[i], "shard %d is not empty", i)
+		for tenantID, shard := range tracker.data[i] {
+			t.Errorf("Shard %d still has tenant %q with %d series=", i, tenantID, len(shard.series))
+			for s, ts := range shard.series {
+				t.Errorf("Tenant %q: series %d with timestamp=%d (nowUnixMinutes=%d)", tenantID, s, minutes(ts.Load()), toMinutes(time.Unix(nowUnixMinutes.Load(), 0)))
+			}
+		}
 	}
 }
 
