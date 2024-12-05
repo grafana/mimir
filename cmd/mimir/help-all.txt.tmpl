@@ -3463,6 +3463,74 @@ Usage of ./cmd/mimir/mimir:
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -usage-tracker.idle-timeout duration
     	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour. (default 20m0s)
+  -usage-tracker.instance-ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -usage-tracker.instance-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -usage-tracker.instance-ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -usage-tracker.instance-ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -usage-tracker.instance-ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -usage-tracker.instance-ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -usage-tracker.instance-ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -usage-tracker.instance-ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -usage-tracker.instance-ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -usage-tracker.instance-ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -usage-tracker.instance-ring.etcd.password string
+    	Etcd password.
+  -usage-tracker.instance-ring.etcd.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -usage-tracker.instance-ring.etcd.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -usage-tracker.instance-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -usage-tracker.instance-ring.etcd.tls-enabled
+    	Enable TLS.
+  -usage-tracker.instance-ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -usage-tracker.instance-ring.etcd.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -usage-tracker.instance-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -usage-tracker.instance-ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -usage-tracker.instance-ring.etcd.username string
+    	Etcd username.
+  -usage-tracker.instance-ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+  -usage-tracker.instance-ring.heartbeat-timeout duration
+    	The heartbeat timeout after which usage-trackers are considered unhealthy within the ring. (default 1m0s)
+  -usage-tracker.instance-ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -usage-tracker.instance-ring.instance-availability-zone string
+    	The availability zone where this instance is running.
+  -usage-tracker.instance-ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
+  -usage-tracker.instance-ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -usage-tracker.instance-ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -usage-tracker.instance-ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -usage-tracker.instance-ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -usage-tracker.instance-ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -usage-tracker.instance-ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -usage-tracker.instance-ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -usage-tracker.instance-ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -usage-tracker.instance-ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -usage-tracker.partition-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -usage-tracker.partition-ring.consul.cas-retry-delay duration
@@ -3514,72 +3582,6 @@ Usage of ./cmd/mimir/mimir:
   -usage-tracker.partition-ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -usage-tracker.partition-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -usage-tracker.ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -usage-tracker.ring.consul.cas-retry-delay duration
-    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
-  -usage-tracker.ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -usage-tracker.ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
-  -usage-tracker.ring.consul.hostname string
-    	Hostname and port of Consul. (default "localhost:8500")
-  -usage-tracker.ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -usage-tracker.ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -usage-tracker.ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
-  -usage-tracker.ring.etcd.endpoints string
-    	The etcd endpoints to connect to.
-  -usage-tracker.ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
-  -usage-tracker.ring.etcd.password string
-    	Etcd password.
-  -usage-tracker.ring.etcd.tls-ca-path string
-    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
-  -usage-tracker.ring.etcd.tls-cert-path string
-    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -usage-tracker.ring.etcd.tls-cipher-suites string
-    	Override the default cipher suite list (separated by commas).
-  -usage-tracker.ring.etcd.tls-enabled
-    	Enable TLS.
-  -usage-tracker.ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -usage-tracker.ring.etcd.tls-key-path string
-    	Path to the key for the client certificate. Also requires the client certificate to be configured.
-  -usage-tracker.ring.etcd.tls-min-version string
-    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  -usage-tracker.ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
-  -usage-tracker.ring.etcd.username string
-    	Etcd username.
-  -usage-tracker.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
-  -usage-tracker.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which usage-trackers are considered unhealthy within the ring. (default 1m0s)
-  -usage-tracker.ring.instance-addr string
-    	IP address to advertise in the ring. Default is auto-detected.
-  -usage-tracker.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
-  -usage-tracker.ring.instance-id string
-    	Instance ID to register in the ring. (default "<hostname>")
-  -usage-tracker.ring.instance-interface-names string
-    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
-  -usage-tracker.ring.instance-port int
-    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
-  -usage-tracker.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -usage-tracker.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -usage-tracker.ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -usage-tracker.ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -usage-tracker.ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
-  -usage-tracker.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -usage-tracker.snapshot-storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.

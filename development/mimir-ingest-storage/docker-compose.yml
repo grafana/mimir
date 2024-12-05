@@ -375,14 +375,14 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "usage-tracker-1":
+  "usage-tracker-zone-a-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-1 -usage-tracker.instance-ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -397,11 +397,41 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=usage-tracker"
-    "hostname": "usage-tracker-1"
+    "hostname": "usage-tracker-zone-a-1"
     "image": "mimir"
     "ports":
       - "8008:8080"
       - "11008:11008"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "usage-tracker-zone-b-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-1 -usage-tracker.instance-ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=usage-tracker"
+    "hostname": "usage-tracker-zone-b-1"
+    "image": "mimir"
+    "ports":
+      - "8009:8080"
+      - "11009:11009"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
