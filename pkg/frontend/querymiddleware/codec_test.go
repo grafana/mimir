@@ -475,13 +475,13 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
+func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 	for _, testCase := range []struct {
 		name                      string
 		propagateHeaders          []string
 		url                       string
 		headers                   http.Header
-		expectedStruct            LabelsQueryRequest
+		expectedStruct            LabelsSeriesQueryRequest
 		expectedGetLabelName      string
 		expectedGetStartOrDefault int64
 		expectedGetEndOrDefault   int64
@@ -709,7 +709,7 @@ func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 					}
 
 					codec := newTestPrometheusCodecWithHeaders(testCase.propagateHeaders)
-					reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
+					reqDecoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, r)
 					if err != nil || testCase.expectedErr != "" {
 						require.EqualError(t, err, testCase.expectedErr)
 						return
@@ -720,7 +720,7 @@ func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 					require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
 					require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
 
-					reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
+					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(context.Background(), reqDecoded)
 					require.NoError(t, err)
 					require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
 				})
@@ -1729,7 +1729,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		queryURL string
-		request  LabelsQueryRequest
+		request  LabelsSeriesQueryRequest
 	}{
 		{
 			name:     "label names - minimal",
@@ -1819,25 +1819,25 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			require.NoError(t, err)
 			expected.Body = http.NoBody
 			expected.Header = make(http.Header)
-			// This header is set by EncodeLabelsQueryRequest according to the codec's config, so we
+			// This header is set by EncodeLabelsSeriesQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
 			ctx := context.Background()
 
-			decoded, err := codec.DecodeLabelsQueryRequest(ctx, expected)
+			decoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, expected)
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
-			encoded, err := codec.EncodeLabelsQueryRequest(ctx, decoded)
+			encoded, err := codec.EncodeLabelsSeriesQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
 
-			decoded, err = codec.DecodeLabelsQueryRequest(ctx, encoded)
+			decoded, err = codec.DecodeLabelsSeriesQueryRequest(ctx, encoded)
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
-			encoded, err = codec.EncodeLabelsQueryRequest(ctx, decoded)
+			encoded, err = codec.EncodeLabelsSeriesQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
