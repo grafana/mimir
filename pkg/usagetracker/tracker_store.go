@@ -360,7 +360,7 @@ func (shard *tenantShard) processCreatedSeriesEvent(series []uint64, timestamp m
 	// As we advance through series, we reuse the same slice to avoid allocations.
 	missing := series[:0]
 
-	// First try to update the series that already exist, the ones that don't exist are moved to missing.
+	// Find the missing ones.
 	shard.RLock()
 	for len(series) > 0 {
 		s := series[0]
