@@ -865,125 +865,125 @@ Usage of ./cmd/mimir/mimir:
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -usage-tracker.enabled
     	True to enable the usage-tracker.
-  -usage-tracker.events-storage.reader..address string
+  -usage-tracker.events-storage.reader.address string
     	The Kafka backend address.
-  -usage-tracker.events-storage.reader..auto-create-topic-default-partitions int
+  -usage-tracker.events-storage.reader.auto-create-topic-default-partitions int
     	When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.
-  -usage-tracker.events-storage.reader..auto-create-topic-enabled
+  -usage-tracker.events-storage.reader.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic if it doesn't exist. (default true)
-  -usage-tracker.events-storage.reader..client-id string
+  -usage-tracker.events-storage.reader.client-id string
     	The Kafka client ID.
-  -usage-tracker.events-storage.reader..consume-from-position-at-startup string
+  -usage-tracker.events-storage.reader.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
-  -usage-tracker.events-storage.reader..consume-from-timestamp-at-startup int
+  -usage-tracker.events-storage.reader.consume-from-timestamp-at-startup int
     	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
-  -usage-tracker.events-storage.reader..consumer-group string
+  -usage-tracker.events-storage.reader.consumer-group string
     	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
-  -usage-tracker.events-storage.reader..consumer-group-offset-commit-interval duration
+  -usage-tracker.events-storage.reader.consumer-group-offset-commit-interval duration
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -usage-tracker.events-storage.reader..dial-timeout duration
+  -usage-tracker.events-storage.reader.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -usage-tracker.events-storage.reader..ingestion-concurrency-batch-size int
+  -usage-tracker.events-storage.reader.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
-  -usage-tracker.events-storage.reader..ingestion-concurrency-estimated-bytes-per-sample int
+  -usage-tracker.events-storage.reader.ingestion-concurrency-estimated-bytes-per-sample int
     	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
-  -usage-tracker.events-storage.reader..ingestion-concurrency-max int
+  -usage-tracker.events-storage.reader.ingestion-concurrency-max int
     	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
-  -usage-tracker.events-storage.reader..ingestion-concurrency-queue-capacity int
+  -usage-tracker.events-storage.reader.ingestion-concurrency-queue-capacity int
     	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -usage-tracker.events-storage.reader..ingestion-concurrency-target-flushes-per-shard int
+  -usage-tracker.events-storage.reader.ingestion-concurrency-target-flushes-per-shard int
     	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
-  -usage-tracker.events-storage.reader..last-produced-offset-poll-interval duration
+  -usage-tracker.events-storage.reader.last-produced-offset-poll-interval duration
     	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
-  -usage-tracker.events-storage.reader..last-produced-offset-retry-timeout duration
+  -usage-tracker.events-storage.reader.last-produced-offset-retry-timeout duration
     	How long to retry a failed request to get the last produced offset. (default 10s)
-  -usage-tracker.events-storage.reader..max-buffered-bytes int
+  -usage-tracker.events-storage.reader.max-buffered-bytes int
     	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
-  -usage-tracker.events-storage.reader..max-consumer-lag-at-startup duration
-    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.reader..target-consumer-lag-at-startup and -usage-tracker.events-storage.reader..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -usage-tracker.events-storage.reader..ongoing-fetch-concurrency int
-    	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.reader..startup-fetch-concurrency is greater than 0. 0 to disable.
-  -usage-tracker.events-storage.reader..producer-max-buffered-bytes int
+  -usage-tracker.events-storage.reader.max-consumer-lag-at-startup duration
+    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -usage-tracker.events-storage.reader.ongoing-fetch-concurrency int
+    	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.reader.startup-fetch-concurrency is greater than 0. 0 to disable.
+  -usage-tracker.events-storage.reader.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
-  -usage-tracker.events-storage.reader..producer-max-record-size-bytes int
+  -usage-tracker.events-storage.reader.producer-max-record-size-bytes int
     	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
-  -usage-tracker.events-storage.reader..sasl-password string
+  -usage-tracker.events-storage.reader.sasl-password string
     	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.reader..sasl-username string
+  -usage-tracker.events-storage.reader.sasl-username string
     	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.reader..startup-fetch-concurrency int
+  -usage-tracker.events-storage.reader.startup-fetch-concurrency int
     	The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.
-  -usage-tracker.events-storage.reader..target-consumer-lag-at-startup duration
-    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.reader..target-consumer-lag-at-startup and -usage-tracker.events-storage.reader..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -usage-tracker.events-storage.reader..topic string
+  -usage-tracker.events-storage.reader.target-consumer-lag-at-startup duration
+    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
+  -usage-tracker.events-storage.reader.topic string
     	The Kafka topic name.
-  -usage-tracker.events-storage.reader..use-compressed-bytes-as-fetch-max-bytes
+  -usage-tracker.events-storage.reader.use-compressed-bytes-as-fetch-max-bytes
     	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
-  -usage-tracker.events-storage.reader..wait-strong-read-consistency-timeout duration
+  -usage-tracker.events-storage.reader.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
-  -usage-tracker.events-storage.reader..write-clients int
+  -usage-tracker.events-storage.reader.write-clients int
     	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
-  -usage-tracker.events-storage.reader..write-timeout duration
+  -usage-tracker.events-storage.reader.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
-  -usage-tracker.events-storage.writer..address string
+  -usage-tracker.events-storage.writer.address string
     	The Kafka backend address.
-  -usage-tracker.events-storage.writer..auto-create-topic-default-partitions int
+  -usage-tracker.events-storage.writer.auto-create-topic-default-partitions int
     	When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.
-  -usage-tracker.events-storage.writer..auto-create-topic-enabled
+  -usage-tracker.events-storage.writer.auto-create-topic-enabled
     	Enable auto-creation of Kafka topic if it doesn't exist. (default true)
-  -usage-tracker.events-storage.writer..client-id string
+  -usage-tracker.events-storage.writer.client-id string
     	The Kafka client ID.
-  -usage-tracker.events-storage.writer..consume-from-position-at-startup string
+  -usage-tracker.events-storage.writer.consume-from-position-at-startup string
     	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
-  -usage-tracker.events-storage.writer..consume-from-timestamp-at-startup int
+  -usage-tracker.events-storage.writer.consume-from-timestamp-at-startup int
     	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
-  -usage-tracker.events-storage.writer..consumer-group string
+  -usage-tracker.events-storage.writer.consumer-group string
     	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
-  -usage-tracker.events-storage.writer..consumer-group-offset-commit-interval duration
+  -usage-tracker.events-storage.writer.consumer-group-offset-commit-interval duration
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -usage-tracker.events-storage.writer..dial-timeout duration
+  -usage-tracker.events-storage.writer.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -usage-tracker.events-storage.writer..ingestion-concurrency-batch-size int
+  -usage-tracker.events-storage.writer.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
-  -usage-tracker.events-storage.writer..ingestion-concurrency-estimated-bytes-per-sample int
+  -usage-tracker.events-storage.writer.ingestion-concurrency-estimated-bytes-per-sample int
     	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
-  -usage-tracker.events-storage.writer..ingestion-concurrency-max int
+  -usage-tracker.events-storage.writer.ingestion-concurrency-max int
     	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
-  -usage-tracker.events-storage.writer..ingestion-concurrency-queue-capacity int
+  -usage-tracker.events-storage.writer.ingestion-concurrency-queue-capacity int
     	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -usage-tracker.events-storage.writer..ingestion-concurrency-target-flushes-per-shard int
+  -usage-tracker.events-storage.writer.ingestion-concurrency-target-flushes-per-shard int
     	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
-  -usage-tracker.events-storage.writer..last-produced-offset-poll-interval duration
+  -usage-tracker.events-storage.writer.last-produced-offset-poll-interval duration
     	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
-  -usage-tracker.events-storage.writer..last-produced-offset-retry-timeout duration
+  -usage-tracker.events-storage.writer.last-produced-offset-retry-timeout duration
     	How long to retry a failed request to get the last produced offset. (default 10s)
-  -usage-tracker.events-storage.writer..max-buffered-bytes int
+  -usage-tracker.events-storage.writer.max-buffered-bytes int
     	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
-  -usage-tracker.events-storage.writer..max-consumer-lag-at-startup duration
-    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.writer..target-consumer-lag-at-startup and -usage-tracker.events-storage.writer..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -usage-tracker.events-storage.writer..ongoing-fetch-concurrency int
-    	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.writer..startup-fetch-concurrency is greater than 0. 0 to disable.
-  -usage-tracker.events-storage.writer..producer-max-buffered-bytes int
+  -usage-tracker.events-storage.writer.max-consumer-lag-at-startup duration
+    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -usage-tracker.events-storage.writer.ongoing-fetch-concurrency int
+    	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.writer.startup-fetch-concurrency is greater than 0. 0 to disable.
+  -usage-tracker.events-storage.writer.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
-  -usage-tracker.events-storage.writer..producer-max-record-size-bytes int
+  -usage-tracker.events-storage.writer.producer-max-record-size-bytes int
     	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
-  -usage-tracker.events-storage.writer..sasl-password string
+  -usage-tracker.events-storage.writer.sasl-password string
     	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.writer..sasl-username string
+  -usage-tracker.events-storage.writer.sasl-username string
     	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.writer..startup-fetch-concurrency int
+  -usage-tracker.events-storage.writer.startup-fetch-concurrency int
     	The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.
-  -usage-tracker.events-storage.writer..target-consumer-lag-at-startup duration
-    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.writer..target-consumer-lag-at-startup and -usage-tracker.events-storage.writer..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -usage-tracker.events-storage.writer..topic string
+  -usage-tracker.events-storage.writer.target-consumer-lag-at-startup duration
+    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
+  -usage-tracker.events-storage.writer.topic string
     	The Kafka topic name.
-  -usage-tracker.events-storage.writer..use-compressed-bytes-as-fetch-max-bytes
+  -usage-tracker.events-storage.writer.use-compressed-bytes-as-fetch-max-bytes
     	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
-  -usage-tracker.events-storage.writer..wait-strong-read-consistency-timeout duration
+  -usage-tracker.events-storage.writer.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
-  -usage-tracker.events-storage.writer..write-clients int
+  -usage-tracker.events-storage.writer.write-clients int
     	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
-  -usage-tracker.events-storage.writer..write-timeout duration
+  -usage-tracker.events-storage.writer.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -usage-tracker.idle-timeout duration
     	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour. (default 20m0s)

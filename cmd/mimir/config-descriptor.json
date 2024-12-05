@@ -19031,7 +19031,7 @@
                   "desc": "The Kafka backend address.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.writer..address",
+                  "fieldFlag": "usage-tracker.events-storage.writer.address",
                   "fieldType": "string"
                 },
                 {
@@ -19041,7 +19041,7 @@
                   "desc": "The Kafka topic name.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.writer..topic",
+                  "fieldFlag": "usage-tracker.events-storage.writer.topic",
                   "fieldType": "string"
                 },
                 {
@@ -19051,7 +19051,7 @@
                   "desc": "The Kafka client ID.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.writer..client-id",
+                  "fieldFlag": "usage-tracker.events-storage.writer.client-id",
                   "fieldType": "string"
                 },
                 {
@@ -19061,7 +19061,7 @@
                   "desc": "The maximum time allowed to open a connection to a Kafka broker.",
                   "fieldValue": null,
                   "fieldDefaultValue": 2000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..dial-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.writer.dial-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19071,7 +19071,7 @@
                   "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
                   "fieldValue": null,
                   "fieldDefaultValue": 10000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..write-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.writer.write-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19081,7 +19081,7 @@
                   "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
-                  "fieldFlag": "usage-tracker.events-storage.writer..write-clients",
+                  "fieldFlag": "usage-tracker.events-storage.writer.write-clients",
                   "fieldType": "int"
                 },
                 {
@@ -19091,7 +19091,7 @@
                   "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.writer..sasl-username",
+                  "fieldFlag": "usage-tracker.events-storage.writer.sasl-username",
                   "fieldType": "string"
                 },
                 {
@@ -19101,7 +19101,7 @@
                   "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.writer..sasl-password",
+                  "fieldFlag": "usage-tracker.events-storage.writer.sasl-password",
                   "fieldType": "string"
                 },
                 {
@@ -19111,7 +19111,7 @@
                   "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.writer..consumer-group",
+                  "fieldFlag": "usage-tracker.events-storage.writer.consumer-group",
                   "fieldType": "string"
                 },
                 {
@@ -19121,7 +19121,7 @@
                   "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..consumer-group-offset-commit-interval",
+                  "fieldFlag": "usage-tracker.events-storage.writer.consumer-group-offset-commit-interval",
                   "fieldType": "duration"
                 },
                 {
@@ -19131,7 +19131,7 @@
                   "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..last-produced-offset-poll-interval",
+                  "fieldFlag": "usage-tracker.events-storage.writer.last-produced-offset-poll-interval",
                   "fieldType": "duration"
                 },
                 {
@@ -19141,7 +19141,7 @@
                   "desc": "How long to retry a failed request to get the last produced offset.",
                   "fieldValue": null,
                   "fieldDefaultValue": 10000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..last-produced-offset-retry-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.writer.last-produced-offset-retry-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19151,7 +19151,7 @@
                   "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
                   "fieldValue": null,
                   "fieldDefaultValue": "last-offset",
-                  "fieldFlag": "usage-tracker.events-storage.writer..consume-from-position-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.writer.consume-from-position-at-startup",
                   "fieldType": "string"
                 },
                 {
@@ -19161,27 +19161,27 @@
                   "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.writer..consume-from-timestamp-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.writer.consume-from-timestamp-at-startup",
                   "fieldType": "int"
                 },
                 {
                   "kind": "field",
                   "name": "target_consumer_lag_at_startup",
                   "required": false,
-                  "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.writer..target-consumer-lag-at-startup and -usage-tracker.events-storage.writer..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+                  "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
                   "fieldValue": null,
                   "fieldDefaultValue": 2000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..target-consumer-lag-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.writer.target-consumer-lag-at-startup",
                   "fieldType": "duration"
                 },
                 {
                   "kind": "field",
                   "name": "max_consumer_lag_at_startup",
                   "required": false,
-                  "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.writer..target-consumer-lag-at-startup and -usage-tracker.events-storage.writer..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+                  "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
                   "fieldValue": null,
                   "fieldDefaultValue": 15000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..max-consumer-lag-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.writer.max-consumer-lag-at-startup",
                   "fieldType": "duration"
                 },
                 {
@@ -19191,7 +19191,7 @@
                   "desc": "Enable auto-creation of Kafka topic if it doesn't exist.",
                   "fieldValue": null,
                   "fieldDefaultValue": true,
-                  "fieldFlag": "usage-tracker.events-storage.writer..auto-create-topic-enabled",
+                  "fieldFlag": "usage-tracker.events-storage.writer.auto-create-topic-enabled",
                   "fieldType": "boolean"
                 },
                 {
@@ -19201,7 +19201,7 @@
                   "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.writer..auto-create-topic-default-partitions",
+                  "fieldFlag": "usage-tracker.events-storage.writer.auto-create-topic-default-partitions",
                   "fieldType": "int"
                 },
                 {
@@ -19211,7 +19211,7 @@
                   "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
                   "fieldValue": null,
                   "fieldDefaultValue": 15983616,
-                  "fieldFlag": "usage-tracker.events-storage.writer..producer-max-record-size-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.writer.producer-max-record-size-bytes",
                   "fieldType": "int"
                 },
                 {
@@ -19221,7 +19221,7 @@
                   "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1073741824,
-                  "fieldFlag": "usage-tracker.events-storage.writer..producer-max-buffered-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.writer.producer-max-buffered-bytes",
                   "fieldType": "int"
                 },
                 {
@@ -19231,7 +19231,7 @@
                   "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
                   "fieldValue": null,
                   "fieldDefaultValue": 20000000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..wait-strong-read-consistency-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.writer.wait-strong-read-consistency-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19241,17 +19241,17 @@
                   "desc": "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.writer..startup-fetch-concurrency",
+                  "fieldFlag": "usage-tracker.events-storage.writer.startup-fetch-concurrency",
                   "fieldType": "int"
                 },
                 {
                   "kind": "field",
                   "name": "ongoing_fetch_concurrency",
                   "required": false,
-                  "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.writer..startup-fetch-concurrency is greater than 0. 0 to disable.",
+                  "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.writer.startup-fetch-concurrency is greater than 0. 0 to disable.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.writer..ongoing-fetch-concurrency",
+                  "fieldFlag": "usage-tracker.events-storage.writer.ongoing-fetch-concurrency",
                   "fieldType": "int"
                 },
                 {
@@ -19261,7 +19261,7 @@
                   "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
                   "fieldValue": null,
                   "fieldDefaultValue": true,
-                  "fieldFlag": "usage-tracker.events-storage.writer..use-compressed-bytes-as-fetch-max-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.writer.use-compressed-bytes-as-fetch-max-bytes",
                   "fieldType": "boolean"
                 },
                 {
@@ -19271,7 +19271,7 @@
                   "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
                   "fieldValue": null,
                   "fieldDefaultValue": 100000000,
-                  "fieldFlag": "usage-tracker.events-storage.writer..max-buffered-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.writer.max-buffered-bytes",
                   "fieldType": "int"
                 },
                 {
@@ -19281,7 +19281,7 @@
                   "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.writer..ingestion-concurrency-max",
+                  "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-max",
                   "fieldType": "int"
                 },
                 {
@@ -19291,7 +19291,7 @@
                   "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 150,
-                  "fieldFlag": "usage-tracker.events-storage.writer..ingestion-concurrency-batch-size",
+                  "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-batch-size",
                   "fieldType": "int"
                 },
                 {
@@ -19301,7 +19301,7 @@
                   "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 5,
-                  "fieldFlag": "usage-tracker.events-storage.writer..ingestion-concurrency-queue-capacity",
+                  "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-queue-capacity",
                   "fieldType": "int"
                 },
                 {
@@ -19311,7 +19311,7 @@
                   "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 80,
-                  "fieldFlag": "usage-tracker.events-storage.writer..ingestion-concurrency-target-flushes-per-shard",
+                  "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-target-flushes-per-shard",
                   "fieldType": "int"
                 },
                 {
@@ -19321,7 +19321,7 @@
                   "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 500,
-                  "fieldFlag": "usage-tracker.events-storage.writer..ingestion-concurrency-estimated-bytes-per-sample",
+                  "fieldFlag": "usage-tracker.events-storage.writer.ingestion-concurrency-estimated-bytes-per-sample",
                   "fieldType": "int"
                 }
               ],
@@ -19341,7 +19341,7 @@
                   "desc": "The Kafka backend address.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.reader..address",
+                  "fieldFlag": "usage-tracker.events-storage.reader.address",
                   "fieldType": "string"
                 },
                 {
@@ -19351,7 +19351,7 @@
                   "desc": "The Kafka topic name.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.reader..topic",
+                  "fieldFlag": "usage-tracker.events-storage.reader.topic",
                   "fieldType": "string"
                 },
                 {
@@ -19361,7 +19361,7 @@
                   "desc": "The Kafka client ID.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.reader..client-id",
+                  "fieldFlag": "usage-tracker.events-storage.reader.client-id",
                   "fieldType": "string"
                 },
                 {
@@ -19371,7 +19371,7 @@
                   "desc": "The maximum time allowed to open a connection to a Kafka broker.",
                   "fieldValue": null,
                   "fieldDefaultValue": 2000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..dial-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.reader.dial-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19381,7 +19381,7 @@
                   "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
                   "fieldValue": null,
                   "fieldDefaultValue": 10000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..write-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.reader.write-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19391,7 +19391,7 @@
                   "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
-                  "fieldFlag": "usage-tracker.events-storage.reader..write-clients",
+                  "fieldFlag": "usage-tracker.events-storage.reader.write-clients",
                   "fieldType": "int"
                 },
                 {
@@ -19401,7 +19401,7 @@
                   "desc": "The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.reader..sasl-username",
+                  "fieldFlag": "usage-tracker.events-storage.reader.sasl-username",
                   "fieldType": "string"
                 },
                 {
@@ -19411,7 +19411,7 @@
                   "desc": "The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.reader..sasl-password",
+                  "fieldFlag": "usage-tracker.events-storage.reader.sasl-password",
                   "fieldType": "string"
                 },
                 {
@@ -19421,7 +19421,7 @@
                   "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "usage-tracker.events-storage.reader..consumer-group",
+                  "fieldFlag": "usage-tracker.events-storage.reader.consumer-group",
                   "fieldType": "string"
                 },
                 {
@@ -19431,7 +19431,7 @@
                   "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..consumer-group-offset-commit-interval",
+                  "fieldFlag": "usage-tracker.events-storage.reader.consumer-group-offset-commit-interval",
                   "fieldType": "duration"
                 },
                 {
@@ -19441,7 +19441,7 @@
                   "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..last-produced-offset-poll-interval",
+                  "fieldFlag": "usage-tracker.events-storage.reader.last-produced-offset-poll-interval",
                   "fieldType": "duration"
                 },
                 {
@@ -19451,7 +19451,7 @@
                   "desc": "How long to retry a failed request to get the last produced offset.",
                   "fieldValue": null,
                   "fieldDefaultValue": 10000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..last-produced-offset-retry-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.reader.last-produced-offset-retry-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19461,7 +19461,7 @@
                   "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
                   "fieldValue": null,
                   "fieldDefaultValue": "last-offset",
-                  "fieldFlag": "usage-tracker.events-storage.reader..consume-from-position-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.reader.consume-from-position-at-startup",
                   "fieldType": "string"
                 },
                 {
@@ -19471,27 +19471,27 @@
                   "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.reader..consume-from-timestamp-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.reader.consume-from-timestamp-at-startup",
                   "fieldType": "int"
                 },
                 {
                   "kind": "field",
                   "name": "target_consumer_lag_at_startup",
                   "required": false,
-                  "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.reader..target-consumer-lag-at-startup and -usage-tracker.events-storage.reader..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+                  "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
                   "fieldValue": null,
                   "fieldDefaultValue": 2000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..target-consumer-lag-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.reader.target-consumer-lag-at-startup",
                   "fieldType": "duration"
                 },
                 {
                   "kind": "field",
                   "name": "max_consumer_lag_at_startup",
                   "required": false,
-                  "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.reader..target-consumer-lag-at-startup and -usage-tracker.events-storage.reader..max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+                  "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
                   "fieldValue": null,
                   "fieldDefaultValue": 15000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..max-consumer-lag-at-startup",
+                  "fieldFlag": "usage-tracker.events-storage.reader.max-consumer-lag-at-startup",
                   "fieldType": "duration"
                 },
                 {
@@ -19501,7 +19501,7 @@
                   "desc": "Enable auto-creation of Kafka topic if it doesn't exist.",
                   "fieldValue": null,
                   "fieldDefaultValue": true,
-                  "fieldFlag": "usage-tracker.events-storage.reader..auto-create-topic-enabled",
+                  "fieldFlag": "usage-tracker.events-storage.reader.auto-create-topic-enabled",
                   "fieldType": "boolean"
                 },
                 {
@@ -19511,7 +19511,7 @@
                   "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.reader..auto-create-topic-default-partitions",
+                  "fieldFlag": "usage-tracker.events-storage.reader.auto-create-topic-default-partitions",
                   "fieldType": "int"
                 },
                 {
@@ -19521,7 +19521,7 @@
                   "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
                   "fieldValue": null,
                   "fieldDefaultValue": 15983616,
-                  "fieldFlag": "usage-tracker.events-storage.reader..producer-max-record-size-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.reader.producer-max-record-size-bytes",
                   "fieldType": "int"
                 },
                 {
@@ -19531,7 +19531,7 @@
                   "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1073741824,
-                  "fieldFlag": "usage-tracker.events-storage.reader..producer-max-buffered-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.reader.producer-max-buffered-bytes",
                   "fieldType": "int"
                 },
                 {
@@ -19541,7 +19541,7 @@
                   "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
                   "fieldValue": null,
                   "fieldDefaultValue": 20000000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..wait-strong-read-consistency-timeout",
+                  "fieldFlag": "usage-tracker.events-storage.reader.wait-strong-read-consistency-timeout",
                   "fieldType": "duration"
                 },
                 {
@@ -19551,17 +19551,17 @@
                   "desc": "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.reader..startup-fetch-concurrency",
+                  "fieldFlag": "usage-tracker.events-storage.reader.startup-fetch-concurrency",
                   "fieldType": "int"
                 },
                 {
                   "kind": "field",
                   "name": "ongoing_fetch_concurrency",
                   "required": false,
-                  "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.reader..startup-fetch-concurrency is greater than 0. 0 to disable.",
+                  "desc": "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless usage-tracker.events-storage.reader.startup-fetch-concurrency is greater than 0. 0 to disable.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.reader..ongoing-fetch-concurrency",
+                  "fieldFlag": "usage-tracker.events-storage.reader.ongoing-fetch-concurrency",
                   "fieldType": "int"
                 },
                 {
@@ -19571,7 +19571,7 @@
                   "desc": "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.",
                   "fieldValue": null,
                   "fieldDefaultValue": true,
-                  "fieldFlag": "usage-tracker.events-storage.reader..use-compressed-bytes-as-fetch-max-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.reader.use-compressed-bytes-as-fetch-max-bytes",
                   "fieldType": "boolean"
                 },
                 {
@@ -19581,7 +19581,7 @@
                   "desc": "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.",
                   "fieldValue": null,
                   "fieldDefaultValue": 100000000,
-                  "fieldFlag": "usage-tracker.events-storage.reader..max-buffered-bytes",
+                  "fieldFlag": "usage-tracker.events-storage.reader.max-buffered-bytes",
                   "fieldType": "int"
                 },
                 {
@@ -19591,7 +19591,7 @@
                   "desc": "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.",
                   "fieldValue": null,
                   "fieldDefaultValue": 0,
-                  "fieldFlag": "usage-tracker.events-storage.reader..ingestion-concurrency-max",
+                  "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-max",
                   "fieldType": "int"
                 },
                 {
@@ -19601,7 +19601,7 @@
                   "desc": "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 150,
-                  "fieldFlag": "usage-tracker.events-storage.reader..ingestion-concurrency-batch-size",
+                  "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-batch-size",
                   "fieldType": "int"
                 },
                 {
@@ -19611,7 +19611,7 @@
                   "desc": "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 5,
-                  "fieldFlag": "usage-tracker.events-storage.reader..ingestion-concurrency-queue-capacity",
+                  "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-queue-capacity",
                   "fieldType": "int"
                 },
                 {
@@ -19621,7 +19621,7 @@
                   "desc": "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 80,
-                  "fieldFlag": "usage-tracker.events-storage.reader..ingestion-concurrency-target-flushes-per-shard",
+                  "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-target-flushes-per-shard",
                   "fieldType": "int"
                 },
                 {
@@ -19631,7 +19631,7 @@
                   "desc": "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.",
                   "fieldValue": null,
                   "fieldDefaultValue": 500,
-                  "fieldFlag": "usage-tracker.events-storage.reader..ingestion-concurrency-estimated-bytes-per-sample",
+                  "fieldFlag": "usage-tracker.events-storage.reader.ingestion-concurrency-estimated-bytes-per-sample",
                   "fieldType": "int"
                 }
               ],
