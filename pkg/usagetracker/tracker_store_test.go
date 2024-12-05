@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )
@@ -358,6 +361,58 @@ type createdSeriesCounter struct {
 func (c createdSeriesCounter) publishCreatedSeries(_ context.Context, _ string, series []uint64, _ time.Time) error {
 	c.count.Add(uint64(len(series)))
 	return nil
+}
+
+func TestTrackerStore_PrometheusCollector(t *testing.T) {
+	const defaultIdleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+	const testUser2 = "user2"
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	reg := prometheus.NewRegistry()
+	require.NoError(t, reg.Register(tracker))
+
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+		cortex_usage_tracker_active_series{user="user1"} 2
+		cortex_usage_tracker_active_series{user="user2"} 3
+	`), "cortex_usage_tracker_active_series"))
+
+	now = now.Add(defaultIdleTimeout / 2)
+
+	// Update series 1, 2 for testUser2. Series 3 will expire.
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	now = now.Add(defaultIdleTimeout / 2)
+	tracker.cleanup(now)
+
+	// Tenant 1 is deleted.
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+		cortex_usage_tracker_active_series{user="user2"} 2
+	`), "cortex_usage_tracker_active_series"))
+
+	now = now.Add(defaultIdleTimeout / 2)
+
+	tracker.cleanup(now)
+	// testUser2 is deleted.
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.
+		# TYPE cortex_usage_tracker_active_series gauge
+	`), "cortex_usage_tracker_active_series"))
 }
 
 type limiterMock map[string]uint64
