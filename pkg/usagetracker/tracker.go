@@ -14,15 +14,21 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+const SnapshotsStoragePrefix = "usage-tracker-snapshots"
 
 type Config struct {
 	Enabled       bool                `yaml:"enabled"`
 	InstanceRing  InstanceRingConfig  `yaml:"ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
+
+	SnapshotsStorage bucket.Config `yaml:"snapshots_storage"`
 
 	IdleTimeout time.Duration `yaml:"idle_timeout"`
 }
@@ -32,6 +38,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
+	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshot-storage.", "usagetrackersnapshots", f)
+
 	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
 }
 
@@ -40,6 +48,7 @@ type UsageTracker struct {
 
 	store *trackerStore
 
+	bucket    objstore.InstrumentedBucket
 	overrides *validation.Overrides
 	logger    log.Logger
 
@@ -88,6 +97,12 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 	if err != nil {
 		return nil, err
 	}
+
+	bkt, err := bucket.NewClient(context.Background(), cfg.SnapshotsStorage, "usage-tracker-snapshots", logger, registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to create usage-tracker snapshots storage client")
+	}
+	t.bucket = bkt
 
 	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, notImplementedEventsPublisher{logger: logger})
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
