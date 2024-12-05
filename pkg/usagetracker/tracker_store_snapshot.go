@@ -92,12 +92,19 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			// We know nothing about this tenant, maybe we need to create it
 			localTenant = t.getOrCreateTenantShard(tenantID, shard, t.limiter.localSeriesLimit(tenantID))
 		}
-		info := t.getOrCreateTenantInfo(tenantID)
-		if err := localTenant.loadSnapshot(&snapshot, &info.series, mutexWatermark, expirationWatermark); err != nil {
+
+		if err := t.loadTenantSnapshot(tenantID, localTenant, &snapshot, mutexWatermark, expirationWatermark); err != nil {
 			return fmt.Errorf("failed loading snapshot for tenant %s (%d): %w", tenantID, i, err)
 		}
 	}
 	return nil
+}
+
+func (t *trackerStore) loadTenantSnapshot(tenantID string, shard *tenantShard, snapshot *encoding.Decbuf, mutexWatermark minutes, expirationWatermark minutes) error {
+	info := t.getOrCreateTenantInfo(tenantID)
+	defer info.release()
+
+	return shard.loadSnapshot(snapshot, &info.series, mutexWatermark, expirationWatermark)
 }
 
 func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSeries *atomic.Uint64, mutexWatermark, expirationWatermark minutes) error {

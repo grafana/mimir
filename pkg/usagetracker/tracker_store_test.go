@@ -5,22 +5,25 @@ package usagetracker
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func TestTrackerStore_HappyCase(t *testing.T) {
-	const defaultIdleTimeout = 20 * time.Minute
+	const idleTimeout = 20 * time.Minute
 	const testUser1 = "user1"
 	limits := limiterMock{testUser1: 3}
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, noopEvents{})
+	tracker := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, noopEvents{})
 	{
 		// Push 2 series, both are accepted.
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
@@ -29,7 +32,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 		require.Len(t, tracker.tenants, 1)
 		require.Equal(t, uint64(2), tracker.tenants[testUser1].series.Load())
 	}
-	now = now.Add(10 * time.Minute)
+	now = now.Add(idleTimeout / 2)
 	{
 		// Push 2 more series, one is accepted, one is rejected.
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
@@ -52,7 +55,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 		require.Len(t, tracker.tenants, 1)
 		require.Equal(t, uint64(3), tracker.tenants[testUser1].series.Load())
 	}
-	now = now.Add(11 * time.Minute)
+	now = now.Add(idleTimeout / 2)
 	{
 		// Cleanup again will remove series 1.
 		tracker.cleanup(now)
@@ -70,16 +73,16 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 }
 
 func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
-	const defaultIdleTimeout = 20 * time.Minute
+	const idleTimeout = 20 * time.Minute
 	const testUser1 = "user1"
 	limits := limiterMock{testUser1: 3}
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker1Events := eventsPipe{}
-	tracker1 := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, &tracker1Events)
+	tracker1 := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, &tracker1Events)
 	tracker2Events := eventsPipe{}
-	tracker2 := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, &tracker2Events)
+	tracker2 := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, &tracker2Events)
 	tracker1Events.listeners = []*trackerStore{tracker2}
 	tracker2Events.listeners = []*trackerStore{tracker1}
 
@@ -95,7 +98,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
 		requireSameSeries(t, tracker1, tracker2)
 	}
-	now = now.Add(10 * time.Minute)
+	now = now.Add(idleTimeout / 4)
 	{
 		// Push 2 more series to the tracker 1.
 		// Don't transmit them yet.
@@ -106,7 +109,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		require.Equal(t, uint64(3), tracker1.tenants[testUser1].series.Load())
 		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
 	}
-	now = now.Add(5 * time.Minute)
+	now = now.Add(idleTimeout / 4)
 	{
 		// Push 2 different series to the tracker 2.
 		// Don't transmit them yet.
@@ -116,7 +119,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		require.Equal(t, uint64(3), tracker1.tenants[testUser1].series.Load())
 		require.Equal(t, uint64(3), tracker2.tenants[testUser1].series.Load())
 	}
-	now = now.Add(5 * time.Minute)
+	now = now.Add(idleTimeout / 4)
 	{
 		// transmit tracker1 events, this will make tracker2 go over the limit.
 		tracker1Events.transmit()
@@ -131,7 +134,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		// Series should be the same in both now.
 		requireSameSeries(t, tracker1, tracker2)
 	}
-	now = now.Add(10 * time.Minute)
+	now = now.Add(idleTimeout / 4)
 	{
 		tracker1.cleanup(now)
 		tracker2.cleanup(now)
@@ -139,7 +142,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		require.Equal(t, uint64(2), tracker1.tenants[testUser1].series.Load())
 		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
 	}
-	now = now.Add(5 * time.Minute)
+	now = now.Add(idleTimeout / 4)
 	{
 		tracker1.cleanup(now)
 		tracker2.cleanup(now)
@@ -151,12 +154,12 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 }
 
 func TestTrackerStore_Snapshot(t *testing.T) {
-	const defaultIdleTimeout = 20 * time.Minute
+	const idleTimeoutMinutes = 20
 	const testUser1 = "user1"
 	const testUser2 = "user2"
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
 	for i := 0; i < 60; i++ {
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
 		require.Empty(t, rejected)
@@ -166,16 +169,16 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 		require.Empty(t, rejected)
 		require.NoError(t, err)
 
-		now = now.Add(time.Minute)
 		tracker.cleanup(now)
+		now = now.Add(time.Minute)
 	}
 
-	// testUser1 has 1 series per each one of the last defaultIdleTimeout minutes.
-	require.Equal(t, int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser1].series.Load()))
-	// testUser2  has 2 series per each one of the last defaultIdleTimeout minutes.
-	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
+	// testUser1 has 1 series per each one of the last idleTimeout minutes.
+	require.Equal(t, idleTimeoutMinutes, int(tracker.tenants[testUser1].series.Load()))
+	// testUser2  has 2 series per each one of the last idleTimeout minutes.
+	require.Equal(t, 2*idleTimeoutMinutes, int(tracker.tenants[testUser2].series.Load()))
 
-	tracker2 := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
 		data = tracker.snapshot(shard, now, data[:0])
@@ -183,8 +186,8 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	require.Equal(t, int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser1].series.Load()))
-	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
+	require.Equal(t, idleTimeoutMinutes, int(tracker.tenants[testUser1].series.Load()))
+	require.Equal(t, 2*idleTimeoutMinutes, int(tracker.tenants[testUser2].series.Load()))
 
 	// Check that they hold the same data.
 	requireSameSeries(t, tracker, tracker2)
@@ -197,8 +200,8 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 	}
 
 	// Check that the total series counts are the same.
-	require.Equal(t, int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser1].series.Load()))
-	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
+	require.Equal(t, idleTimeoutMinutes, int(tracker.tenants[testUser1].series.Load()))
+	require.Equal(t, 2*idleTimeoutMinutes, int(tracker.tenants[testUser2].series.Load()))
 
 	// Check that they hold the same data.
 	requireSameSeries(t, tracker, tracker2)
@@ -218,6 +221,180 @@ func requireSameSeries(t *testing.T, tracker *trackerStore, tracker2 *trackerSto
 			}
 		}
 	}
+}
+
+func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
+	const testUser1 = "user1"
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+	tracker := newTrackerStore(time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
+	require.Empty(t, rejected)
+	require.NoError(t, err)
+
+	now = now.Add(time.Minute)
+
+	rejected, err = tracker.trackSeries(context.Background(), testUser1, []uint64{2}, now)
+	require.Empty(t, rejected)
+	require.NoError(t, err)
+
+	tracker.cleanup(now)
+
+	// There should be exactly 1 series, the other one expired.
+	require.Equal(t, 1, int(tracker.tenants[testUser1].series.Load()))
+}
+
+//	func TestTrackerStore_Cleanup_Shards(t *testing.T) {
+//		const defaultIdleTimeout = 20 * time.Minute
+//		const testUser1 = "user1"
+//		const testUser2 = "user2"
+//		limits := limiterMock{testUser1: 3}
+//
+//		now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+//
+//		tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, noopEvents{})
+//		// Push 2 series, both are accepted.
+//		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+//		require.NoError(t, err)
+//		require.Empty(t, rejected)
+//
+//		now = now.Add(defaultIdleTimeout * 2)
+//		// First cleanup marks shards for deletion.
+//		tracker.cleanup(now)
+//
+//		now = now.Add(time.Minute)
+//		// Series 2 is pushed again, this makes shard 2 alive.
+//		rejected, err = tracker.trackSeries(context.Background(), testUser1, []uint64{2}, now)
+//		require.NoError(t, err)
+//		require.Empty(t, rejected)
+//
+//		now = now.Add(time.Minute)
+//		// Second cleanup deletes the shard 1 as it didn't get sample in the meantime.
+//		// Shard 2 is not marked for deletion anymore.
+//		tracker.cleanup(now)
+//		require.Empty(t, tracker.data[1])
+//		require.False(t, tracker.data[2][testUser1].markedForDeletion.Load())
+//	}
+func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
+	const defaultIdleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+	const testUser2 = "user2"
+	limits := limiterMock{testUser1: 3}
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, noopEvents{})
+	// Push 2 series to testUser1, both are accepted.
+	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+	// Push 2 series to testUser2, both are accepted.
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2, 3}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	now = now.Add(defaultIdleTimeout / 2)
+
+	// Update series 1, 2 for testUser2. Series 3 will expire.
+	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
+	require.NoError(t, err)
+	require.Empty(t, rejected)
+
+	now = now.Add(defaultIdleTimeout / 2)
+	tracker.cleanup(now)
+	// Tenant 1 is deleted.
+	require.Nil(t, tracker.data[1][testUser1])
+	require.Nil(t, tracker.data[2][testUser1])
+	require.Nil(t, tracker.tenants[testUser1])
+	// testUser2 has only shard 3 deleted.
+	require.NotNil(t, tracker.data[1][testUser2])
+	require.NotNil(t, tracker.data[2][testUser2])
+	require.Nil(t, tracker.data[3][testUser2])
+	require.NotNil(t, tracker.tenants[testUser2])
+
+	now = now.Add(defaultIdleTimeout / 2)
+
+	tracker.cleanup(now)
+	// testUser2 is deleted.
+	require.Nil(t, tracker.data[1][testUser2])
+	require.Nil(t, tracker.data[2][testUser2])
+	require.Nil(t, tracker.tenants[testUser2])
+}
+
+// TestTrackerStore_Cleanup_Concurrency runs cleanup() and trackSeries() concurrently.
+// It attempts to catch any race condition that may happen between series deletion marking and series creation.
+func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
+	const tenant = "user"
+	const limit = 5
+	const idleTimeoutSeconds = 5
+	now := atomic.NewInt64(0)
+
+	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
+	tracker := newTrackerStore(idleTimeoutSeconds*time.Second, log.NewNopLogger(), limiterMock{tenant: limit}, createdSeries)
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	done := make(chan struct{})
+	cleanups := atomic.NewUint64(0)
+
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				tracker.cleanup(time.Unix(now.Load(), 0))
+				cleanups.Inc()
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{rand.Uint64()}, time.Unix(now.Load(), 0))
+			}
+		}
+	}()
+
+	// Wait until we perform 1e3 cleanups and create 1e3 series.
+	for cleanups.Load() < 1e4 || createdSeries.count.Load() < 1e4 {
+		info := tracker.getOrCreateTenantInfo(tenant)
+		require.LessOrEqual(t, info.series.Load(), uint64(limit))
+		info.release()
+		// Keep increasing the timestamp every time.
+		now.Inc()
+	}
+	close(done)
+	t.Logf("Total series created: %d, cleanups: %d", createdSeries.count.Load(), cleanups.Load())
+	wg.Wait()
+
+	// Wait two more idle periods, then cleanup.
+	now.Add(idleTimeoutSeconds)
+	// First cleanup will mark things to be deleted.
+	tracker.cleanup(time.Unix(now.Load(), 0))
+	// Second cleanup should actually delete them.
+	tracker.cleanup(time.Unix(now.Load(), 0))
+	// Tracker should be empty now.
+	require.Empty(t, tracker.tenants)
+	for i := uint8(0); i < shards; i++ {
+		require.Empty(t, tracker.data[i], "shard %d is not empty", i)
+	}
+}
+
+type createdSeriesCounter struct {
+	count *atomic.Uint64
+}
+
+func (c createdSeriesCounter) publishCreatedSeries(_ context.Context, _ string, series []uint64, _ time.Time) error {
+	c.count.Add(uint64(len(series)))
+	return nil
 }
 
 type limiterMock map[string]uint64
