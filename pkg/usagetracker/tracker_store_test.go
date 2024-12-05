@@ -5,6 +5,7 @@ package usagetracker
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -68,7 +69,88 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	}
 }
 
-func TestTrackerStore_snapshot(t *testing.T) {
+func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
+	const defaultIdleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+	limits := limiterMock{testUser1: 3}
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	tracker1Events := eventsPipe{}
+	tracker1 := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, &tracker1Events)
+	tracker2Events := eventsPipe{}
+	tracker2 := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, &tracker2Events)
+	tracker1Events.listeners = []*trackerStore{tracker2}
+	tracker2Events.listeners = []*trackerStore{tracker1}
+
+	{
+		// Push 2 series to tracker 1, both accepted.
+		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
+		require.NoError(t, err)
+		require.Empty(t, rejected)
+		require.Len(t, tracker1.tenants, 1)
+		require.Equal(t, uint64(2), tracker1.tenants[testUser1].series.Load())
+		tracker1Events.transmit()
+		// Tracker 2 is updated too.
+		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
+		requireSameSeries(t, tracker1, tracker2)
+	}
+	now = now.Add(10 * time.Minute)
+	{
+		// Push 2 more series to the tracker 1.
+		// Don't transmit them yet.
+		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{4}, rejected)
+		require.Len(t, tracker1.tenants, 1)
+		require.Equal(t, uint64(3), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
+	}
+	now = now.Add(5 * time.Minute)
+	{
+		// Push 2 different series to the tracker 2.
+		// Don't transmit them yet.
+		rejected, err := tracker2.trackSeries(context.Background(), testUser1, []uint64{5, 6}, now)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{6}, rejected)
+		require.Equal(t, uint64(3), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(3), tracker2.tenants[testUser1].series.Load())
+	}
+	now = now.Add(5 * time.Minute)
+	{
+		// transmit tracker1 events, this will make tracker2 go over the limit.
+		tracker1Events.transmit()
+		require.Equal(t, uint64(4), tracker2.tenants[testUser1].series.Load())
+	}
+
+	{
+		// transmit tracker2 events, this will make tracker1 go over the limit.
+		tracker2Events.transmit()
+		require.Equal(t, uint64(4), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(4), tracker2.tenants[testUser1].series.Load())
+		// Series should be the same in both now.
+		requireSameSeries(t, tracker1, tracker2)
+	}
+	now = now.Add(10 * time.Minute)
+	{
+		tracker1.cleanup(now)
+		tracker2.cleanup(now)
+		// Only last 2 series remaining
+		require.Equal(t, uint64(2), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
+	}
+	now = now.Add(5 * time.Minute)
+	{
+		tracker1.cleanup(now)
+		tracker2.cleanup(now)
+		// Only last 1 series remaining (the one that we pushed to tracker2)
+		// This tests that creation event uses the correct creation timestamp.
+		require.Equal(t, uint64(1), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, uint64(1), tracker2.tenants[testUser1].series.Load())
+	}
+}
+
+func TestTrackerStore_Snapshot(t *testing.T) {
 	const defaultIdleTimeout = 20 * time.Minute
 	const testUser1 = "user1"
 	const testUser2 = "user2"
@@ -105,17 +187,7 @@ func TestTrackerStore_snapshot(t *testing.T) {
 	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
 
 	// Check that they hold the same data.
-	for i := uint8(0); i < shards; i++ {
-		for tenantID, originalShard := range tracker.data[i] {
-			loadedShard, ok := tracker2.data[i][tenantID]
-			require.True(t, ok, "shard %d, tenant %s", i, tenantID)
-			for series, ts := range originalShard.series {
-				loadedTs, ok := loadedShard.series[series]
-				require.True(t, ok, "shard %d, tenant %s, series %d", i, tenantID, series)
-				require.Equal(t, ts.Load(), loadedTs.Load(), "shard %d, tenant %s, series %d", i, tenantID, series)
-			}
-		}
-	}
+	requireSameSeries(t, tracker, tracker2)
 
 	// Loading same snapshot again should be a noop.
 	for shard := uint8(0); shard < shards; shard++ {
@@ -129,10 +201,16 @@ func TestTrackerStore_snapshot(t *testing.T) {
 	require.Equal(t, 2*int(defaultIdleTimeout.Minutes()), int(tracker.tenants[testUser2].series.Load()))
 
 	// Check that they hold the same data.
+	requireSameSeries(t, tracker, tracker2)
+}
+
+func requireSameSeries(t *testing.T, tracker *trackerStore, tracker2 *trackerStore) {
+	t.Helper()
+
 	for i := uint8(0); i < shards; i++ {
 		for tenantID, originalShard := range tracker.data[i] {
 			loadedShard, ok := tracker2.data[i][tenantID]
-			require.True(t, ok, "shard %d, tenant %s", i, tenantID)
+			require.True(t, ok || len(originalShard.series) == 0, "shard %d, tenant %s", i, tenantID)
 			for series, ts := range originalShard.series {
 				loadedTs, ok := loadedShard.series[series]
 				require.True(t, ok, "shard %d, tenant %s, series %d", i, tenantID, series)
@@ -148,8 +226,33 @@ func (l limiterMock) localSeriesLimit(userID string) uint64 { return l[userID] }
 
 type noopEvents struct{}
 
-func (n noopEvents) publishCreatedSeries(_ context.Context, _ string, _ []uint64) error {
+func (n noopEvents) publishCreatedSeries(_ context.Context, _ string, _ []uint64, _ time.Time) error {
 	return nil
+}
+
+type eventsPipe struct {
+	listeners []*trackerStore
+	events    []createdSeriesEvent
+}
+
+type createdSeriesEvent struct {
+	tenantID  string
+	series    []uint64
+	timestamp time.Time
+}
+
+func (ep *eventsPipe) publishCreatedSeries(_ context.Context, tenantID string, series []uint64, timestamp time.Time) error {
+	ep.events = append(ep.events, createdSeriesEvent{tenantID, series, timestamp})
+	return nil
+}
+
+func (ep *eventsPipe) transmit() {
+	for _, t := range ep.listeners {
+		for _, ev := range ep.events {
+			t.processCreatedSeriesEvent(ev.tenantID, slices.Clone(ev.series), ev.timestamp, ev.timestamp)
+		}
+	}
+	ep.events = nil
 }
 
 func TestMinutes(t *testing.T) {
