@@ -20709,7 +20709,7 @@
           "required": false,
           "desc": "Maximum number of pending created series events waiting to be published.",
           "fieldValue": null,
-          "fieldDefaultValue": 1000,
+          "fieldDefaultValue": 10000,
           "fieldFlag": "usage-tracker.created-series-events-max-pending",
           "fieldType": "int"
         },
