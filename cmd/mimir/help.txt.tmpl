@@ -863,6 +863,14 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -usage-tracker.created-series-events-batch-ttl duration
+    	Time after which a batch of created series events is published even if it's not full. (default 250ms)
+  -usage-tracker.created-series-events-max-batch-size-bytes int
+    	Maximum size of a batch of created series events to be published. (default 1048576)
+  -usage-tracker.created-series-events-max-pending int
+    	Maximum number of pending created series events waiting to be published. (default 1000)
+  -usage-tracker.created-series-events-publish-concurrency int
+    	Number of concurrent workers publishing created series events. (default 10)
   -usage-tracker.enabled
     	True to enable the usage-tracker.
   -usage-tracker.events-storage.reader.address string

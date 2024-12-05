@@ -20702,6 +20702,46 @@
           "fieldDefaultValue": 1200000000000,
           "fieldFlag": "usage-tracker.idle-timeout",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "max_pending_created_series_events",
+          "required": false,
+          "desc": "Maximum number of pending created series events waiting to be published.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1000,
+          "fieldFlag": "usage-tracker.created-series-events-max-pending",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "created_series_events_max_batch_size_bytes",
+          "required": false,
+          "desc": "Maximum size of a batch of created series events to be published.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1048576,
+          "fieldFlag": "usage-tracker.created-series-events-max-batch-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "created_series_events_batch_ttl",
+          "required": false,
+          "desc": "Time after which a batch of created series events is published even if it's not full.",
+          "fieldValue": null,
+          "fieldDefaultValue": 250000000,
+          "fieldFlag": "usage-tracker.created-series-events-batch-ttl",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "created_series_events_publish_concurrency",
+          "required": false,
+          "desc": "Number of concurrent workers publishing created series events.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10,
+          "fieldFlag": "usage-tracker.created-series-events-publish-concurrency",
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
