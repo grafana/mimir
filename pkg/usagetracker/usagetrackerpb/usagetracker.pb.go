@@ -129,7 +129,7 @@ func (m *TrackSeriesResponse) GetRejectedSeriesHashes() []uint64 {
 type SeriesCreatedEvent struct {
 	// The tenant owning the series.
 	UserID string `protobuf:"bytes,1,opt,name=userID,proto3" json:"userID,omitempty"`
-	// Timestamp when this event was emitted.
+	// Unix timestamp when this event was emitted.
 	Timestamp int64 `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	// The hashes of the series to track.
 	SeriesHashes []uint64 `protobuf:"varint,3,rep,packed,name=seriesHashes,proto3" json:"seriesHashes,omitempty"`

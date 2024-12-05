@@ -879,6 +879,23 @@ usage_tracker:
   # CLI flag: -usage-tracker.idle-timeout
   [idle_timeout: <duration> | default = 20m]
 
+  # Maximum number of pending created series events waiting to be published.
+  # CLI flag: -usage-tracker.created-series-events-max-pending
+  [max_pending_created_series_events: <int> | default = 1000]
+
+  # Maximum size of a batch of created series events to be published.
+  # CLI flag: -usage-tracker.created-series-events-max-batch-size-bytes
+  [created_series_events_max_batch_size_bytes: <int> | default = 1048576]
+
+  # Time after which a batch of created series events is published even if it's
+  # not full.
+  # CLI flag: -usage-tracker.created-series-events-batch-ttl
+  [created_series_events_batch_ttl: <duration> | default = 250ms]
+
+  # Number of concurrent workers publishing created series events.
+  # CLI flag: -usage-tracker.created-series-events-publish-concurrency
+  [created_series_events_publish_concurrency: <int> | default = 10]
+
 overrides_exporter:
   ring:
     # Enable the ring used by override-exporters to deduplicate exported limit

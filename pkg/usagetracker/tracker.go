@@ -42,7 +42,11 @@ type Config struct {
 	EventsStorage    EventsStorageConfig `yaml:"events_storage"`
 	SnapshotsStorage bucket.Config       `yaml:"snapshots_storage"`
 
-	IdleTimeout time.Duration `yaml:"idle_timeout"`
+	IdleTimeout                           time.Duration `yaml:"idle_timeout"`
+	CreatedSeriesEventsMaxPending         int           `yaml:"max_pending_created_series_events"`
+	CreatedSeriesEventsMaxBatchSizeBytes  int           `yaml:"created_series_events_max_batch_size_bytes"`
+	CreatedSeriesEventsBatchTTL           time.Duration `yaml:"created_series_events_batch_ttl"`
+	CreatedSeriesEventsPublishConcurrency int           `yaml:"created_series_events_publish_concurrency"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -54,6 +58,10 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshot-storage.", "usagetrackersnapshots", f)
 
 	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
+	f.IntVar(&c.CreatedSeriesEventsMaxPending, "usage-tracker.created-series-events-max-pending", 1000, "Maximum number of pending created series events waiting to be published.")
+	f.IntVar(&c.CreatedSeriesEventsMaxBatchSizeBytes, "usage-tracker.created-series-events-max-batch-size-bytes", 1<<20, "Maximum size of a batch of created series events to be published.")
+	f.DurationVar(&c.CreatedSeriesEventsBatchTTL, "usage-tracker.created-series-events-batch-ttl", 250*time.Millisecond, "Time after which a batch of created series events is published even if it's not full.")
+	f.IntVar(&c.CreatedSeriesEventsPublishConcurrency, "usage-tracker.created-series-events-publish-concurrency", 10, "Number of concurrent workers publishing created series events.")
 }
 
 func (c *Config) Validate() error {
@@ -97,6 +105,8 @@ type UsageTracker struct {
 	eventsKafkaWriter *kgo.Client
 	eventsKafkaReader *kgo.Client
 
+	pendingCreatedSeriesMarshaledEvents chan []byte
+
 	// Dependencies.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
@@ -109,6 +119,8 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 		overrides:     overrides,
 		logger:        logger,
 		registerer:    registerer,
+
+		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 	}
 
 	// Get the partition ID.
@@ -153,7 +165,7 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
 	}
 
-	eventsPublisher := kafkaEventsPublisher{kafka: t.eventsKafkaWriter, partition: t.partitionID, logger: logger}
+	eventsPublisher := chanEventsPublisher{events: t.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, eventsPublisher)
 
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
@@ -177,9 +189,8 @@ func (t *UsageTracker) start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start usage-tracker subservices")
 	}
 
-	startConsumingAtMilli := time.Now().Add(-t.cfg.IdleTimeout).UnixMilli()
 	t.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		eventsTopic: {t.partitionID: kgo.NewOffset().AfterMilli(startConsumingAtMilli)},
+		eventsTopic: {t.partitionID: kgo.NewOffset().AtStart()},
 	})
 
 	return nil
@@ -206,6 +217,7 @@ func (t *UsageTracker) run(ctx context.Context) error {
 
 	wg := &sync.WaitGroup{}
 	go t.consumeSeriesCreatedEvents(ctx, wg)
+	go t.publishSeriesCreatedEvents(ctx, wg)
 	defer wg.Wait()
 
 	for {
@@ -222,6 +234,7 @@ func (t *UsageTracker) run(ctx context.Context) error {
 
 func (t *UsageTracker) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
+	defer wg.Done()
 	for ctx.Err() != nil {
 		fetches := t.eventsKafkaReader.PollRecords(ctx, 1)
 		fetches.EachError(func(_ string, p int32, err error) {
@@ -240,6 +253,81 @@ func (t *UsageTracker) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.
 			t.store.processCreatedSeriesEvent(ev.UserID, ev.SeriesHashes, time.Unix(ev.Timestamp, 0), time.Now())
 			level.Debug(t.logger).Log("msg", "processed series created event", "partition", r.Partition, "offset", r.Offset, "series", len(ev.SeriesHashes))
 		})
+	}
+}
+
+func (t *UsageTracker) publishSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	publish := make(chan []*kgo.Record)
+	defer close(publish)
+
+	for w := 0; w < t.cfg.CreatedSeriesEventsPublishConcurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range publish {
+				level.Debug(t.logger).Log("msg", "producing batch of series created events", "size", len(batch), "partition", t.partitionID)
+				// TODO: maybe use a slightly longer-deadline context here, to avoid dropping the pending events from the queue?
+				res := t.eventsKafkaWriter.ProduceSync(ctx, batch...)
+				for _, r := range res {
+					if r.Err != nil {
+						// TODO: what should we do here?
+						level.Error(t.logger).Log("msg", "failed to publish series created event", "err", r.Err, "partition", t.partitionID)
+						continue
+					}
+					level.Debug(t.logger).Log("msg", "produced series created event", "partition", r.Record.Partition, "offset", r.Record.Offset)
+				}
+			}
+		}()
+	}
+
+	// empty timer with nil C chan
+	timer := new(time.Timer)
+	defer func() {
+		if timer.C != nil {
+			timer.Stop()
+		}
+	}()
+
+	var batch []*kgo.Record
+	var batchSize int
+	publishBatch := func() {
+		select {
+		case publish <- batch:
+		case <-ctx.Done():
+			return
+		}
+
+		batch = nil
+		batchSize = 0
+		timer.Stop()
+		timer.C = nil // Just in case timer already fired.
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case data := <-t.pendingCreatedSeriesMarshaledEvents:
+			if len(batch) == 0 {
+				timer = time.NewTimer(t.cfg.CreatedSeriesEventsBatchTTL)
+			}
+			level.Debug(t.logger).Log("msg", "batching series created event", "size", len(data), "partition", t.partitionID)
+			batch = append(batch, &kgo.Record{Topic: eventsTopic, Value: data, Partition: t.partitionID})
+			batchSize += len(data)
+
+			if batchSize >= t.cfg.CreatedSeriesEventsMaxBatchSizeBytes {
+				level.Debug(t.logger).Log("msg", "publishing batch due to size", "size", batchSize, "partition", t.partitionID)
+				publishBatch()
+			}
+
+		case <-timer.C:
+			level.Debug(t.logger).Log("msg", "publishing batch due to TTL", "partition", t.partitionID)
+			publishBatch()
+		}
 	}
 }
 
@@ -262,13 +350,12 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
 }
 
-type kafkaEventsPublisher struct {
-	logger    log.Logger
-	kafka     *kgo.Client
-	partition int32
+type chanEventsPublisher struct {
+	logger log.Logger
+	events chan []byte
 }
 
-func (p kafkaEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, timestamp time.Time) error {
+func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, timestamp time.Time) error {
 	ev := usagetrackerpb.SeriesCreatedEvent{
 		UserID:       userID,
 		Timestamp:    timestamp.Unix(),
@@ -278,16 +365,10 @@ func (p kafkaEventsPublisher) publishCreatedSeries(ctx context.Context, userID s
 	if err != nil {
 		return errors.Wrap(err, "marshaling series created event")
 	}
-	// TODO: usage Produce() here to avoid ProduceSync's allocations
-	res := p.kafka.ProduceSync(ctx, &kgo.Record{
-		Topic:     eventsTopic,
-		Value:     data,
-		Partition: p.partition,
-	})
-	r, err := res.First()
-	if err != nil {
-		return errors.Wrap(err, "producing series created event")
+	select {
+	case p.events <- data:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	level.Debug(p.logger).Log("msg", "published series created event", "partition", r.Partition, "offset", r.Offset, "series", len(ev.SeriesHashes))
-	return nil
 }
