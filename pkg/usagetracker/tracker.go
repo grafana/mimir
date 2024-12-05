@@ -6,10 +6,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -24,6 +26,8 @@ import (
 )
 
 const (
+	eventsTopic = "usage-tracker-events"
+
 	SnapshotsStoragePrefix = "usage-tracker-snapshots"
 
 	eventsKafkaWriterMetricsPrefix = "cortex_usage_tracker_events_writer"
@@ -137,7 +141,21 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 	}
 	t.bucket = bkt
 
-	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, notImplementedEventsPublisher{logger: logger})
+	// Create Kafka writer for events storage.
+	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorage.Writer, 20, t.logger, prometheus.WrapRegistererWithPrefix(eventsKafkaWriterMetricsPrefix, t.registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")
+	}
+
+	// Create Kafka reader for events storage.
+	t.eventsKafkaReader, err = ingest.NewKafkaReaderClient(t.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", t.registerer), t.logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
+	}
+
+	eventsPublisher := kafkaEventsPublisher{kafka: t.eventsKafkaWriter, partition: t.partitionID, logger: logger}
+	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, eventsPublisher)
+
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 
 	return t, nil
@@ -159,17 +177,10 @@ func (t *UsageTracker) start(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start usage-tracker subservices")
 	}
 
-	// Create Kafka writer for events storage.
-	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorage.Writer, 20, t.logger, prometheus.WrapRegistererWithPrefix(eventsKafkaWriterMetricsPrefix, t.registerer))
-	if err != nil {
-		return errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")
-	}
-
-	// Create Kafka reader for events storage.
-	t.eventsKafkaReader, err = ingest.NewKafkaReaderClient(t.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", t.registerer), t.logger)
-	if err != nil {
-		return errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
-	}
+	startConsumingAtMilli := time.Now().Add(-t.cfg.IdleTimeout).UnixMilli()
+	t.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		eventsTopic: {t.partitionID: kgo.NewOffset().AfterMilli(startConsumingAtMilli)},
+	})
 
 	return nil
 }
@@ -193,6 +204,10 @@ func (t *UsageTracker) run(ctx context.Context) error {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
+	wg := &sync.WaitGroup{}
+	go t.consumeSeriesCreatedEvents(ctx, wg)
+	defer wg.Wait()
+
 	for {
 		select {
 		case now := <-ticker.C:
@@ -202,6 +217,29 @@ func (t *UsageTracker) run(ctx context.Context) error {
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
 		}
+	}
+}
+
+func (t *UsageTracker) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Add(1)
+	for ctx.Err() != nil {
+		fetches := t.eventsKafkaReader.PollRecords(ctx, 1)
+		fetches.EachError(func(_ string, p int32, err error) {
+			if !errors.Is(err, context.Canceled) { // Ignore when we're shutting down.
+				// TODO: observability? Handle this?
+				level.Error(t.logger).Log("msg", "failed to fetch records", "partition", p, "err", err)
+			}
+		})
+		fetches.EachRecord(func(r *kgo.Record) {
+			var ev usagetrackerpb.SeriesCreatedEvent
+			if err := ev.Unmarshal(r.Value); err != nil {
+				level.Error(t.logger).Log("msg", "failed to unmarshal series created event", "err", err, "partition", r.Partition, "offset", r.Offset, "value_len", len(r.Value))
+				return
+			}
+			// TODO: maybe ignore our own events?
+			t.store.processCreatedSeriesEvent(ev.UserID, ev.SeriesHashes, time.Unix(ev.Timestamp, 0), time.Now())
+			level.Debug(t.logger).Log("msg", "processed series created event", "partition", r.Partition, "offset", r.Offset, "series", len(ev.SeriesHashes))
+		})
 	}
 }
 
@@ -224,11 +262,32 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
 }
 
-type notImplementedEventsPublisher struct {
-	logger log.Logger
+type kafkaEventsPublisher struct {
+	logger    log.Logger
+	kafka     *kgo.Client
+	partition int32
 }
 
-func (ev notImplementedEventsPublisher) publishCreatedSeries(_ context.Context, userID string, series []uint64, _ time.Time) error {
-	level.Info(ev.logger).Log("msg", "publishCreatedSeries not implemented", "userID", userID, "series", len(series))
+func (p kafkaEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, timestamp time.Time) error {
+	ev := usagetrackerpb.SeriesCreatedEvent{
+		UserID:       userID,
+		Timestamp:    timestamp.Unix(),
+		SeriesHashes: series,
+	}
+	data, err := proto.Marshal(&ev)
+	if err != nil {
+		return errors.Wrap(err, "marshaling series created event")
+	}
+	// TODO: usage Produce() here to avoid ProduceSync's allocations
+	res := p.kafka.ProduceSync(ctx, &kgo.Record{
+		Topic:     eventsTopic,
+		Value:     data,
+		Partition: p.partition,
+	})
+	r, err := res.First()
+	if err != nil {
+		return errors.Wrap(err, "producing series created event")
+	}
+	level.Debug(p.logger).Log("msg", "published series created event", "partition", r.Partition, "offset", r.Offset, "series", len(ev.SeriesHashes))
 	return nil
 }
