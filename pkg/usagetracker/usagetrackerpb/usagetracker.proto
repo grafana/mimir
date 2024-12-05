@@ -27,3 +27,14 @@ message TrackSeriesResponse {
   // The hashes of the series that have been rejected because the tenant is over the limit.
   repeated uint64 rejectedSeriesHashes = 1;
 }
+
+message SeriesCreatedEvent {
+  // The tenant owning the series.
+  string userID = 1;
+
+  // Unix timestamp when this event was emitted.
+  int64 timestamp = 2;
+
+  // The hashes of the series to track.
+  repeated uint64 seriesHashes = 3;
+}
