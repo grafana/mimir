@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -127,19 +128,21 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 
 	for {
 		// Start a new simulated scrape interval cycle.
-		nextSeriesID := workerID
 		startTime := time.Now()
 		numRequests := 0
 		numSeries := 0
 
+		// Re-initialise the random generator, so that the series hashes generated each cycle are always the same.
+		// We don't care about collisions between workers. We expect them to be a very low %.
+		random := rand.New(rand.NewSource(int64(workerID)))
+
 		// Sequentially iterate over all the series that needs be tracked by this worker.
-		for nextSeriesID < cfg.SimulatedTotalSeries {
+		for numSeries < numSeriesPerWorker {
 			seriesHashes := make([]uint64, 0, numSeriesPerRequest)
 
 			// Generate the series to track in this request.
-			for len(seriesHashes) < numSeriesPerRequest && nextSeriesID < cfg.SimulatedTotalSeries {
-				seriesHashes = append(seriesHashes, uint64(nextSeriesID))
-				nextSeriesID += numWorkers
+			for len(seriesHashes) < numSeriesPerRequest && numSeries < numSeriesPerWorker {
+				seriesHashes = append(seriesHashes, random.Uint64())
 				numSeries++
 			}
 
