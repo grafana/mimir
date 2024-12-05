@@ -55,7 +55,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.43.0
+	cloud.google.com/go/storage v1.48.0
 	github.com/alecthomas/chroma/v2 v2.14.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.55.5
