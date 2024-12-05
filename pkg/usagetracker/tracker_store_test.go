@@ -344,13 +344,11 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	t.Logf("Total series created: %d, cleanups: %d", createdSeries.count.Load(), cleanups.Load())
 	wg.Wait()
 
-	// Wait two more idle periods, then cleanup.
+	// Wait an idle period then cleanup.
 	now.Add(idleTimeoutSeconds)
-	// First cleanup will mark things to be deleted.
-	tracker.cleanup(time.Unix(now.Load(), 0))
-	// Second cleanup should actually delete them.
 	tracker.cleanup(time.Unix(now.Load(), 0))
 	// Tracker should be empty now.
+	// If it's not, then we did something wrong.
 	require.Empty(t, tracker.tenants)
 	for i := uint8(0); i < shards; i++ {
 		require.Empty(t, tracker.data[i], "shard %d is not empty", i)
