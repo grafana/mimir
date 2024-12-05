@@ -64,6 +64,9 @@ func (c *Config) Validate() error {
 	if err := c.SnapshotsStorage.Validate(); err != nil {
 		return err
 	}
+	if c.IdleTimeout <= 0 || c.IdleTimeout > time.Hour {
+		return fmt.Errorf("invalid usage-tracker idle timeout %q, should be greater than 0 and less than 1 hour", c.IdleTimeout)
+	}
 
 	return nil
 }
@@ -96,10 +99,6 @@ type UsageTracker struct {
 }
 
 func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
-	if cfg.IdleTimeout <= 0 || cfg.IdleTimeout > time.Hour {
-		return nil, fmt.Errorf("invalid idle timeout %q, should be greater than 0 and less than 1 hour", cfg.IdleTimeout)
-	}
-
 	t := &UsageTracker{
 		cfg:           cfg,
 		partitionRing: partitionRing,
