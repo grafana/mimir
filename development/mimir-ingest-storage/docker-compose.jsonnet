@@ -99,19 +99,30 @@ std.manifestYamlDoc({
     }),
   },
 
-  usage_tracker:: {
-    'usage-tracker-1': mimirService({
-      name: 'usage-tracker-1',
-      target: 'usage-tracker',
-      publishedHttpPort: 8009,
-    }),
-  },
-
   blockbuilderscheduler:: {
     'mimir-block-builder-scheduler-1': mimirService({
       name: 'mimir-block-builder-scheduler-1',
       target: 'block-builder-scheduler',
       publishedHttpPort: 8019,
+    }),
+  },
+
+  usage_tracker:: {
+    'usage-tracker-zone-a-1': mimirService({
+      name: 'usage-tracker-zone-a-1',
+      target: 'usage-tracker',
+      publishedHttpPort: 8010,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+      ],
+    }),
+    'usage-tracker-zone-b-1': mimirService({
+      name: 'usage-tracker-zone-b-1',
+      target: 'usage-tracker',
+      publishedHttpPort: 8011,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
+      ],
     }),
   },
 

@@ -32,7 +32,7 @@ const (
 
 type Config struct {
 	Enabled       bool                `yaml:"enabled"`
-	InstanceRing  InstanceRingConfig  `yaml:"ring"`
+	InstanceRing  InstanceRingConfig  `yaml:"instance_ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
 	EventsStorage    EventsStorageConfig `yaml:"events_storage"`

@@ -40,6 +40,7 @@ type InstanceRingConfig struct {
 	InstanceInterfaceNames []string `yaml:"instance_interface_names" doc:"default=[<private network interfaces>]"`
 	InstancePort           int      `yaml:"instance_port" category:"advanced"`
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
+	InstanceZone           string   `yaml:"instance_availability_zone"`
 	EnableIPv6             bool     `yaml:"instance_enable_ipv6" category:"advanced"`
 
 	// Injected internally
@@ -56,17 +57,18 @@ func (cfg *InstanceRingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger)
 
 	// Ring flags
 	cfg.KVStore.Store = "memberlist" // Override default value.
-	cfg.KVStore.RegisterFlagsWithPrefix("usage-tracker.ring.", "collectors/", f)
-	f.DurationVar(&cfg.HeartbeatPeriod, "usage-tracker.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, "usage-tracker.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which usage-trackers are considered unhealthy within the ring.")
+	cfg.KVStore.RegisterFlagsWithPrefix("usage-tracker.instance-ring.", "collectors/", f)
+	f.DurationVar(&cfg.HeartbeatPeriod, "usage-tracker.instance-ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
+	f.DurationVar(&cfg.HeartbeatTimeout, "usage-tracker.instance-ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which usage-trackers are considered unhealthy within the ring.")
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
-	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), "usage-tracker.ring.instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
-	f.StringVar(&cfg.InstanceAddr, "usage-tracker.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
-	f.IntVar(&cfg.InstancePort, "usage-tracker.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
-	f.StringVar(&cfg.InstanceID, "usage-tracker.ring.instance-id", hostname, "Instance ID to register in the ring.")
-	f.BoolVar(&cfg.EnableIPv6, "usage-tracker.ring.instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
+	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), "usage-tracker.instance-ring.instance-interface-names", "List of network interface names to look up when finding the instance IP address.")
+	f.StringVar(&cfg.InstanceAddr, "usage-tracker.instance-ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
+	f.IntVar(&cfg.InstancePort, "usage-tracker.instance-ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
+	f.StringVar(&cfg.InstanceID, "usage-tracker.instance-ring.instance-id", hostname, "Instance ID to register in the ring.")
+	f.StringVar(&cfg.InstanceZone, "usage-tracker.instance-ring.instance-availability-zone", "", "The availability zone where this instance is running.")
+	f.BoolVar(&cfg.EnableIPv6, "usage-tracker.instance-ring.instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
 }
 
 // ToBasicLifecyclerConfig returns a ring.BasicLifecyclerConfig based on the usage-tracker ring config.
@@ -81,6 +83,7 @@ func (cfg *InstanceRingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.
 	return ring.BasicLifecyclerConfig{
 		ID:                              cfg.InstanceID,
 		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
+		Zone:                            cfg.InstanceZone,
 		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.HeartbeatTimeout,
 		TokensObservePeriod:             0,
