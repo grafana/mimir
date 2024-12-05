@@ -333,7 +333,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	}()
 
 	// Wait until we perform 1e3 cleanups and create 1e3 series.
-	for cleanups.Load() < 1e4 || createdSeries.count.Load() < 1e4 {
+	for cleanups.Load() < 1e3 || createdSeries.count.Load() < 1e3 {
 		info := tracker.getOrCreateTenantInfo(tenant)
 		require.LessOrEqual(t, info.series.Load(), uint64(limit))
 		info.release()
