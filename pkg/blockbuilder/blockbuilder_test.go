@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -731,9 +733,149 @@ func TestPartitionStateFromLag(t *testing.T) {
 	}
 }
 
+func TestPullMode(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	kafkaClient.AddConsumeTopics(testTopic)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg.SchedulerConfig = SchedulerConfig{
+		Address:        "localhost:099", // Trigger pull mode initialization.
+		UpdateInterval: 20 * time.Millisecond,
+		MaxUpdateAge:   1 * time.Second,
+	}
+
+	startTime := time.Now().Add(-10 * time.Minute)
+
+	expSamples := produceSamples(ctx, t, kafkaClient, time.Now(), "1",
+		startTime.Add(1*time.Second),
+		startTime.Add(2*time.Second),
+		startTime.Add(3*time.Second),
+		startTime.Add(4*time.Second),
+		startTime.Add(5*time.Second),
+	)
+
+	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
+	kafkaCommits := atomic.NewInt32(0)
+	kafkaCluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCommits.Add(1)
+		return nil, nil, false
+	})
+
+	// Wait for the commit.
+	require.Eventually(t, func() bool { return kafkaCommits.Load() > 0 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+
+	scheduler := &mockSchedulerClient{}
+	scheduler.addJob(
+		schedulerpb.JobKey{
+			Id:    "test-job-4898",
+			Epoch: 84823,
+		},
+		schedulerpb.JobSpec{
+			Topic:          testTopic,
+			Partition:      0,
+			StartOffset:    0,
+			EndOffset:      4,
+			CommitRecTs:    startTime,
+			LastSeenOffset: 5,
+			LastBlockEndTs: startTime.Add(5 * time.Second),
+		},
+	)
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	l, lerr := bb.getLagForPartition(ctx, 0)
+	require.NoError(t, lerr)
+	println("aaaa", l.Start.Offset, l.End.Offset, l.Commit.At)
+
+	require.Eventually(t, func() bool {
+		runCalls, getJobCalls, completeJobCalls := scheduler.counts()
+		println(runCalls, getJobCalls, completeJobCalls)
+		return runCalls >= 1 && getJobCalls >= 1 && completeJobCalls >= 1
+	}, 5*time.Second, 100*time.Millisecond, "expected scheduler interaction")
+
+	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	compareQuery(t,
+		db,
+		expSamples,
+		nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
 func mustTimeParse(t *testing.T, layout, v string) time.Time {
 	ts, err := time.Parse(layout, v)
 	require.NoError(t, err)
 	require.False(t, ts.IsZero())
 	return ts
+}
+
+type mockSchedulerClient struct {
+	mu   sync.Mutex
+	jobs []struct {
+		key  schedulerpb.JobKey
+		spec schedulerpb.JobSpec
+	}
+	runCalls         int
+	getJobCalls      int
+	completeJobCalls int
+}
+
+func (m *mockSchedulerClient) Run(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runCalls++
+}
+
+func (m *mockSchedulerClient) GetJob(ctx context.Context) (schedulerpb.JobKey, schedulerpb.JobSpec, error) {
+	m.mu.Lock()
+	m.getJobCalls++
+
+	if len(m.jobs) > 0 {
+		job := m.jobs[0]
+		m.jobs = m.jobs[1:]
+		m.mu.Unlock()
+		return job.key, job.spec, nil
+	}
+
+	m.mu.Unlock()
+
+	<-ctx.Done()
+	return schedulerpb.JobKey{}, schedulerpb.JobSpec{}, ctx.Err()
+}
+
+func (m *mockSchedulerClient) CompleteJob(schedulerpb.JobKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.completeJobCalls++
+
+	// Do nothing
+	return nil
+}
+
+func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.JobSpec) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.jobs = append(m.jobs, struct {
+		key  schedulerpb.JobKey
+		spec schedulerpb.JobSpec
+	}{key: key, spec: spec})
+}
+
+func (m *mockSchedulerClient) counts() (int, int, int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.runCalls, m.getJobCalls, m.completeJobCalls
 }
