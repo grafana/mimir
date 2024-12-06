@@ -130,6 +130,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
+	github.com/prometheus/sigv4 v0.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
@@ -284,7 +285,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241204081021-cb322705289f
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241205085346-9acc41d486c3
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
