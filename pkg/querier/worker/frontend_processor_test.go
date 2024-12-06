@@ -451,7 +451,7 @@ func TestFrontendProcessor(t *testing.T) {
 				require.NoError(t, conn.Close())
 			})
 
-			mockHandler := mockHandlerFunc(func(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+			mockHandler := mockHandlerFunc(func(_ context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 				if tc.handlerError != nil {
 					return nil, tc.handlerError
 				}
