@@ -1575,6 +1575,137 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 	}
 }
 
+func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
+	const (
+		metricName              = "series"
+		testSize                = 80_000
+		numberOfDifferentValues = 40_000
+	)
+	labels := []string{labels.MetricName, metricName, "job", "job", "service", "service"}
+
+	now := mtime.Now()
+	timestamp := now.UnixMilli()
+
+	testCases := map[string]struct {
+		setup           func() []mimirpb.PreallocTimeseries
+		expectedSamples []mimirpb.PreallocTimeseries
+		expectedErrors  []error
+	}{
+		"one timeseries with 80_000 samples with duplicated timestamps": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				samples := make([]mimirpb.Sample, testSize)
+				value := 0.0
+				for i := 0; i < testSize; i++ {
+					if i < numberOfDifferentValues {
+						value += 1.0
+					}
+					samples[i].TimestampMs = timestamp
+					samples[i].Value = value
+				}
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, samples, nil, nil),
+				}
+				return timeseries
+			},
+
+			expectedSamples: []mimirpb.PreallocTimeseries{
+				makeTimeseries(labels, makeSamples(timestamp, 1.0), nil, nil),
+			},
+			expectedErrors: []error{
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 79_999, metricName),
+			},
+		},
+		"one timeseries with 80_000 histograms with duplicated timestamps": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				histograms := make([]mimirpb.Histogram, testSize)
+				value := 0
+				for i := 0; i < testSize; i++ {
+					if i < numberOfDifferentValues {
+						value += 1
+					}
+					histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
+				}
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, nil, histograms, nil),
+				}
+				return timeseries
+			},
+
+			expectedSamples: []mimirpb.PreallocTimeseries{
+				makeTimeseries(labels, nil, makeHistograms(timestamp, generateTestHistogram(1)), nil),
+			},
+			expectedErrors: []error{
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 79_999, metricName),
+			},
+		},
+		"one timeseries with 80_000 samples and 80_000 histograms with duplicated timestamps": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				samples := make([]mimirpb.Sample, testSize)
+				histograms := make([]mimirpb.Histogram, testSize)
+				value := 0
+				for i := 0; i < testSize; i++ {
+					if i < numberOfDifferentValues {
+						value++
+					}
+					samples[i].TimestampMs = timestamp
+					samples[i].Value = float64(value)
+					histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
+				}
+
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, samples, histograms, nil),
+				}
+				return timeseries
+			},
+
+			expectedSamples: []mimirpb.PreallocTimeseries{
+				makeTimeseries(labels, makeSamples(timestamp, 1.0), makeHistograms(timestamp, generateTestHistogram(1)), nil),
+			},
+			expectedErrors: []error{
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 159_998, metricName),
+			},
+		},
+	}
+
+	limits := prepareDefaultLimits()
+	ds, _, regs, _ := prepare(b, prepConfig{
+		limits:          limits,
+		numDistributors: 1,
+	})
+
+	// Pre-condition check.
+	require.Len(b, ds, 1)
+	require.Len(b, regs, 1)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	fmt.Println(b.N)
+
+	for name, tc := range testCases {
+		b.Run(name, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				timeseries := tc.setup()
+				for i, ts := range timeseries {
+					shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					require.False(b, shouldRemove)
+					if len(tc.expectedErrors) == 0 {
+						require.NoError(b, err)
+					} else {
+						if tc.expectedErrors[i] == nil {
+							require.NoError(b, err)
+						} else {
+							require.Error(b, err)
+							require.Equal(b, tc.expectedErrors[i], err)
+						}
+					}
+				}
+				assert.Equal(b, tc.expectedSamples, timeseries)
+			}
+		})
+	}
+}
+
 func TestDistributor_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
 		prepareConfig     func(limits *validation.Limits)
