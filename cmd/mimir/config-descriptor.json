@@ -12425,6 +12425,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": {},
+                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
