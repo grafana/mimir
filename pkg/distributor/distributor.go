@@ -182,7 +182,14 @@ type Distributor struct {
 
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
+
+	// For testing.
+	sleep func(time.Duration)
+	now   func() time.Time
 }
+
+func defaultSleep(d time.Duration) { time.Sleep(d) }
+func defaultNow() time.Time        { return time.Now() }
 
 // OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
 type OTelResourceAttributePromotionConfig interface {
@@ -437,6 +444,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}),
 
 		PushMetrics: newPushMetrics(reg),
+		now:         defaultNow,
+		sleep:       defaultSleep,
 	}
 
 	// Initialize expected rejected request labels
@@ -825,7 +834,9 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 		next = middlewares[ix](next)
 	}
 
-	return next
+	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others..
+	return d.wrapPushWithMiddlewares(next)
+
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
@@ -1192,6 +1203,26 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	}
 }
 
+// outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
+func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		start := d.now()
+		// Execute the whole middleware chain.
+		err := next(ctx, pushReq)
+
+		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
+		if userErr == nil {
+			// Target delay - time spent processing the middleware chain including the push.
+			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+			d.sleep(d.limits.DistributorArtificialIngestionDelay(userID) - d.now().Sub(start))
+			return err
+		}
+
+		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", userErr)
+		return err
+	}
+}
+
 type ctxKey int
 
 const requestStateKey ctxKey = 1
@@ -1401,7 +1432,6 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	start := time.Now()
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
@@ -1409,27 +1439,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 	pushErr := d.PushWithMiddlewares(ctx, pushReq)
 
-	// TODO(gotjosh): Is this better as a middleware?
-	d.MaybeDelayIngestion(ctx, start)
-
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
 	handledErr := d.handlePushError(ctx, pushErr)
 	return nil, handledErr
-}
-
-func (d *Distributor) MaybeDelayIngestion(ctx context.Context, start time.Time) {
-	// Produce an artificial delay before we respond back to the client if configured.
-	userID, err := tenant.TenantID(ctx) // Log tenant ID if available.
-	if err != nil {
-		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", err)
-		return
-	}
-
-	// Target delay - time spent processing the request.
-	// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a non-zero value.
-	time.Sleep(d.limits.DistributorArtificialIngestionDelay(userID) - time.Since(start))
 }
 
 func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {

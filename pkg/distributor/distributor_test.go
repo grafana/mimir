@@ -8005,34 +8005,41 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	require.ErrorContains(t, err, "rpc error: code = Internal desc = distributor is unavailable (current state: New)")
 }
 
-func TestMaybeDelayIngestion(t *testing.T) {
+func Test_outerMaybeDelayMiddleware(t *testing.T) {
 	tests := []struct {
 		name          string
 		userID        string
 		delay         time.Duration
-		startTime     time.Time
+		pushDuration  time.Duration
 		expectedSleep time.Duration
 	}{
 		{
 			name:          "No delay configured",
 			userID:        "user1",
 			delay:         0,
-			startTime:     time.Now(),
+			pushDuration:  500 * time.Millisecond,
 			expectedSleep: 0,
 		},
 		{
 			name:          "Delay configured but request took longer than delay",
 			userID:        "user2",
-			delay:         1 * time.Second,
-			startTime:     time.Now().Add(-2 * time.Second),
+			delay:         500 * time.Millisecond,
+			pushDuration:  1 * time.Second,
 			expectedSleep: 0,
 		},
 		{
 			name:          "Delay configured and request took less than delay",
 			userID:        "user3",
-			delay:         2 * time.Second,
-			startTime:     time.Now().Add(-500 * time.Millisecond),
-			expectedSleep: 1500 * time.Millisecond,
+			delay:         500 * time.Millisecond,
+			pushDuration:  50 * time.Millisecond,
+			expectedSleep: 450 * time.Millisecond,
+		},
+		{
+			name:          "Failed to extract a tenantID",
+			userID:        "",
+			delay:         500 * time.Millisecond,
+			pushDuration:  50 * time.Millisecond,
+			expectedSleep: 0,
 		},
 	}
 
@@ -8045,18 +8052,51 @@ func TestMaybeDelayIngestion(t *testing.T) {
 			})
 			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
 			require.NoError(t, err)
+
+			// Mock to capture sleep and advance time.
+			timeSource := &MockTimeSource{CurrentTime: time.Now()}
+
 			distributor := &Distributor{
+				log:    log.NewNopLogger(),
 				limits: overrides,
+				sleep:  timeSource.Sleep,
+				now:    timeSource.Now,
 			}
 
-			// Measure the time taken by MaybeDelayIngestion
-			start := time.Now()
-			ctx := user.InjectOrgID(context.Background(), tc.userID)
-			distributor.MaybeDelayIngestion(ctx, tc.startTime)
-			elapsed := time.Since(start)
+			// fake push just adds time to the mocked time to make it seem like time has moved forward.
+			p := func(ctx context.Context, req *Request) error {
+				timeSource.Add(tc.pushDuration)
+				return nil
+			}
 
-			// Assert the sleep time is as expected (allowing a small margin for runtime delays).
-			require.InDelta(t, tc.expectedSleep, elapsed, float64(100*time.Millisecond))
+			ctx := context.Background()
+			if tc.userID != "" {
+				ctx = user.InjectOrgID(ctx, tc.userID)
+			}
+			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
+			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedSleep, timeSource.Slept)
 		})
 	}
+}
+
+type MockTimeSource struct {
+	CurrentTime time.Time
+	Slept       time.Duration
+}
+
+func (m *MockTimeSource) Now() time.Time {
+	return m.CurrentTime
+}
+
+func (m *MockTimeSource) Sleep(d time.Duration) {
+	if d > 0 {
+		m.Slept += d
+	}
+}
+
+func (m *MockTimeSource) Add(d time.Duration) {
+	m.CurrentTime = m.CurrentTime.Add(d)
 }
