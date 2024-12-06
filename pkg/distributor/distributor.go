@@ -738,72 +738,43 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	return true, nil
 }
 
-// deduplicateTimestamps discards all float and histogram samples with duplicated timestamps within a single timeseries.
-// In case any sample with duplicated timestamps is removed, an error is returned, and timeseries data are altered in-place.
-func (d *Distributor) deduplicateTimestamps(ts *mimirpb.PreallocTimeseries, userID, group string) error {
-	timestamps := make(map[int64]struct{})
-	maxLen := max(len(ts.Samples), len(ts.Histograms))
-	removeIndexes := make([]int, 0, maxLen)
-	for idx, s := range ts.Samples {
-		if _, ok := timestamps[s.TimestampMs]; ok {
-			removeIndexes = append(removeIndexes, idx)
-			continue
-		}
-		timestamps[s.TimestampMs] = struct{}{}
-	}
-
-	if len(removeIndexes) > 0 {
-		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(removeIndexes)))
-		ts.Samples = util.RemoveSliceIndexes(ts.Samples, removeIndexes)
-	}
-
-	removedSamples := len(removeIndexes)
-
-	timestamps = make(map[int64]struct{})
-	removeIndexes = removeIndexes[:0]
-	for idx, h := range ts.Histograms {
-		if _, ok := timestamps[h.Timestamp]; ok {
-			removeIndexes = append(removeIndexes, idx)
-			continue
-		}
-		timestamps[h.Timestamp] = struct{}{}
-	}
-
-	if len(removeIndexes) > 0 {
-		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(removeIndexes)))
-		ts.Histograms = util.RemoveSliceIndexes(ts.Histograms, removeIndexes)
-	}
-
-	removedSamples += len(removeIndexes)
-	if removedSamples > 0 {
-		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		return fmt.Errorf(duplicateTimestampMsgFormat, removedSamples, unsafeMetricName)
-	}
-	return nil
-}
-
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
+// Returns an error explaining the firs validation finding, and a boolean stating if the timeseries should be removed from the request.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (error, bool) {
 	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
-		return err
+		return err, true
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 
-	for _, s := range ts.Samples {
+	timestamps := make(map[int64]struct{})
+	duplicateSamplesTimestampsIdxs := make([]int, 0, len(ts.Samples))
+	for idx, s := range ts.Samples {
+		if _, ok := timestamps[s.TimestampMs]; ok {
+			duplicateSamplesTimestampsIdxs = append(duplicateSamplesTimestampsIdxs, idx)
+			continue
+		}
+		timestamps[s.TimestampMs] = struct{}{}
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
-			return err
+			return err, true
 		}
 	}
 
+	timestamps = make(map[int64]struct{})
+	duplicateHistogramTimestampsIdsx := make([]int, 0, len(ts.Samples))
 	histogramsUpdated := false
-	for i := range ts.Histograms {
+	for i, h := range ts.Histograms {
+		if _, ok := timestamps[h.Timestamp]; ok {
+			duplicateHistogramTimestampsIdsx = append(duplicateHistogramTimestampsIdsx, i)
+			continue
+		}
+		timestamps[h.Timestamp] = struct{}{}
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
 		if err != nil {
-			return err
+			return err, true
 		}
 		histogramsUpdated = histogramsUpdated || updated
 	}
@@ -813,42 +784,59 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
 		ts.ClearExemplars()
-		return nil
+	} else {
+		allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
+		if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
+			d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
+			ts.ResizeExemplars(allowedExemplars)
+		}
+
+		var previousExemplarTS int64 = math.MinInt64
+		isInOrder := true
+		for i := 0; i < len(ts.Exemplars); {
+			e := ts.Exemplars[i]
+			if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
+				// OTel sends empty exemplars by default which aren't useful and are discarded by TSDB, so let's just skip invalid ones and ingest the data we can instead of returning an error.
+				ts.DeleteExemplarByMovingLast(i)
+				// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
+				continue
+			}
+			if !validateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
+				ts.DeleteExemplarByMovingLast(i)
+				// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
+				continue
+			}
+			// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
+			if isInOrder && previousExemplarTS > e.TimestampMs {
+				isInOrder = false
+			}
+			previousExemplarTS = e.TimestampMs
+			i++
+		}
+		if !isInOrder {
+			ts.SortExemplars()
+		}
 	}
 
-	allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
-	if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
-		d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
-		ts.ResizeExemplars(allowedExemplars)
+	duplicatedTimestamps := len(duplicateSamplesTimestampsIdxs) + len(duplicateHistogramTimestampsIdsx)
+	if duplicatedTimestamps > 0 {
+		if len(duplicateSamplesTimestampsIdxs) > 0 {
+			d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(duplicateSamplesTimestampsIdxs)))
+			ts.Samples = util.RemoveSliceIndexes(ts.Samples, duplicateSamplesTimestampsIdxs)
+			ts.SamplesUpdated()
+		}
+
+		if len(duplicateHistogramTimestampsIdsx) > 0 {
+			d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(duplicateHistogramTimestampsIdsx)))
+			ts.Histograms = util.RemoveSliceIndexes(ts.Histograms, duplicateHistogramTimestampsIdsx)
+			ts.HistogramsUpdated()
+		}
+
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		return fmt.Errorf(duplicateTimestampMsgFormat, duplicatedTimestamps, unsafeMetricName), false
 	}
 
-	var previousExemplarTS int64 = math.MinInt64
-	isInOrder := true
-	for i := 0; i < len(ts.Exemplars); {
-		e := ts.Exemplars[i]
-		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
-			// OTel sends empty exemplars by default which aren't useful and are discarded by TSDB, so let's just skip invalid ones and ingest the data we can instead of returning an error.
-			ts.DeleteExemplarByMovingLast(i)
-			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
-			continue
-		}
-		if !validateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
-			ts.DeleteExemplarByMovingLast(i)
-			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
-			continue
-		}
-		// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
-		if isInOrder && previousExemplarTS > e.TimestampMs {
-			isInOrder = false
-		}
-		previousExemplarTS = e.TimestampMs
-		i++
-	}
-	if !isInOrder {
-		ts.SortExemplars()
-	}
-
-	return nil
+	return nil, false
 }
 func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
 	count := 0
@@ -1130,7 +1118,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr, shouldRemove := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1139,15 +1127,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
 				}
-				removeIndexes = append(removeIndexes, tsIdx)
-				continue
-			}
-
-			if err := d.deduplicateTimestamps(&req.Timeseries[tsIdx], userID, group); err != nil {
-				if firstPartialErr == nil {
-					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
+				if shouldRemove {
+					removeIndexes = append(removeIndexes, tsIdx)
 				}
+				continue
 			}
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
