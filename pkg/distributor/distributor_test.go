@@ -1621,7 +1621,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				value := 0
 				for i := 0; i < testSize; i++ {
 					if i < numberOfDifferentValues {
-						value += 1
+						value++
 					}
 					histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
 				}
