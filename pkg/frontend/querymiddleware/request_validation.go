@@ -62,7 +62,7 @@ func (rt LabelsQueryRequestValidationRoundTripper) RoundTrip(r *http.Request) (*
 	defer cancel(errLabelsQueryRequestValidationFailed)
 	r = r.WithContext(ctx)
 
-	_, err := rt.codec.DecodeLabelsQueryRequest(ctx, r)
+	_, err := rt.codec.DecodeLabelsSeriesQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}
