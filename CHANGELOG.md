@@ -142,6 +142,7 @@
 ### Query-tee
 
 * [FEATURE] Added `-proxy.compare-skip-samples-before` to skip samples before the given time when comparing responses. The time can be in RFC3339 format (or) RFC3339 without the timezone and seconds (or) date only. #9515
+* [FEATURE] Add `-backend.config-file` for a YAML configuration file for per-backend options. Currently, it only supports additional HTTP request headers. #10081
 * [ENHANCEMENT] Added human-readable timestamps to comparison failure messages. #9665
 
 ### Documentation

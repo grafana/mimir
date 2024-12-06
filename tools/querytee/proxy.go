@@ -6,11 +6,13 @@
 package querytee
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,8 +23,10 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/spanlogger"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/yaml.v3"
 )
 
 type ProxyConfig struct {
@@ -34,6 +38,8 @@ type ProxyConfig struct {
 	BackendEndpoints                    string
 	PreferredBackend                    string
 	BackendReadTimeout                  time.Duration
+	BackendConfigFile                   string
+	parsedBackendConfig                 map[string]*BackendConfig
 	CompareResponses                    bool
 	LogSlowQueryResponseThreshold       time.Duration
 	ValueComparisonTolerance            float64
@@ -45,6 +51,23 @@ type ProxyConfig struct {
 	BackendSkipTLSVerify                bool
 	AddMissingTimeParamToInstantQueries bool
 	SecondaryBackendsRequestProportion  float64
+}
+
+type BackendConfig struct {
+	RequestHeaders http.Header `json:"request_headers" yaml:"request_headers"`
+}
+
+func exampleJSONBackendConfig() string {
+	cfg := BackendConfig{
+		RequestHeaders: http.Header{
+			"Cache-Control": {"no-store"},
+		},
+	}
+	jsonBytes, err := json.Marshal(cfg)
+	if err != nil {
+		panic("invalid example backend config" + err.Error())
+	}
+	return string(jsonBytes)
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
@@ -62,6 +85,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.BackendSkipTLSVerify, "backend.skip-tls-verify", false, "Skip TLS verification on backend targets.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 150*time.Second, "The timeout when reading the response from a backend.")
+	f.StringVar(&cfg.BackendConfigFile, "backend.config-file", "", "Path to a file with YAML or JSON configuration for each backend. Each key in the YAML/JSON document is a backend hostname. This is an example configuration value for a backend in JSON: "+exampleJSONBackendConfig())
 	f.BoolVar(&cfg.CompareResponses, "proxy.compare-responses", false, "Compare responses between preferred and secondary endpoints for supported routes.")
 	f.DurationVar(&cfg.LogSlowQueryResponseThreshold, "proxy.log-slow-query-response-threshold", 10*time.Second, "The minimum difference in response time between slowest and fastest back-end over which to log the query. 0 to disable.")
 	f.Float64Var(&cfg.ValueComparisonTolerance, "proxy.value-comparison-tolerance", 0.000001, "The tolerance to apply when comparing floating point values in the responses. 0 to disable tolerance and require exact match (not recommended).")
@@ -119,6 +143,17 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errors.New("preferred backend must be set when secondary backends request proportion is not 1")
 	}
 
+	if len(cfg.BackendConfigFile) > 0 {
+		configBytes, err := os.ReadFile(cfg.BackendConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read backend config file (%s): %w", cfg.BackendConfigFile, err)
+		}
+		err = yaml.Unmarshal(configBytes, &cfg.parsedBackendConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse backend YAML config: %w", err)
+		}
+	}
+
 	p := &Proxy{
 		cfg:        cfg,
 		logger:     logger,
@@ -153,12 +188,28 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 			preferred = preferredIdx == idx
 		}
 
-		p.backends = append(p.backends, NewProxyBackend(name, u, cfg.BackendReadTimeout, preferred, cfg.BackendSkipTLSVerify))
+		backendCfg := cfg.parsedBackendConfig[name]
+		if backendCfg == nil {
+			// In tests, we have the same hostname for all backends, so we also
+			// support a numeric preferred backend which is the index in the list
+			// of backends.
+			backendCfg = cfg.parsedBackendConfig[strconv.Itoa(idx)]
+			if backendCfg == nil {
+				backendCfg = &BackendConfig{}
+			}
+		}
+
+		p.backends = append(p.backends, NewProxyBackend(name, u, cfg.BackendReadTimeout, preferred, cfg.BackendSkipTLSVerify, *backendCfg))
 	}
 
 	// At least 1 backend is required
 	if len(p.backends) < 1 {
 		return nil, errors.New("at least 1 backend is required")
+	}
+
+	err := validateBackendConfig(p.backends, cfg.parsedBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("validating external backend configs: %w", err)
 	}
 
 	// If the preferred backend is configured, then it must exist among the actual backends.
@@ -186,6 +237,25 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	}
 
 	return p, nil
+}
+
+func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*BackendConfig) error {
+	// Tests need to pass the same hostname for all backends, so we also
+	// support a numeric preferred backend which is the index in the list of backend.
+	numericBackendNameRegex := regexp.MustCompile("^[0-9]+$")
+	for configuredBackend := range config {
+		backendExists := false
+		for _, actualBacked := range backends {
+			if actualBacked.Name() == configuredBackend {
+				backendExists = true
+				break
+			}
+		}
+		if !backendExists && !numericBackendNameRegex.MatchString(configuredBackend) {
+			return fmt.Errorf("configured backend %s does not exist in the list of actual backends", configuredBackend)
+		}
+	}
+	return nil
 }
 
 func (p *Proxy) Start() error {
