@@ -398,9 +398,9 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.address string
     	The Kafka backend address.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.
+    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic if it doesn't exist. (default true)
+    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.consume-from-position-at-startup string

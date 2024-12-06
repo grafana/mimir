@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
@@ -94,10 +96,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		}),
 	}
 
-	if cfg.AutoCreateTopicEnabled {
-		opts = append(opts, kgo.AllowAutoTopicCreation())
-	}
-
 	// SASL plain auth.
 	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
 		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
@@ -154,45 +152,44 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	}
 }
 
-// setDefaultNumberOfPartitionsForAutocreatedTopics tries to set num.partitions config option on brokers.
-// This is best-effort, if setting the option fails, error is logged, but not returned.
-func setDefaultNumberOfPartitionsForAutocreatedTopics(cfg KafkaConfig, logger log.Logger) {
-	if cfg.AutoCreateTopicDefaultPartitions <= 0 {
-		return
-	}
+// CreateTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
+// If the topic already exists, then the function logs a message and returns nil.
+func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
+	logger = log.With(logger, "task", "autocreate_topic")
 
 	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to create kafka client", "err", err)
-		return
+		return fmt.Errorf("failed to create kafka client: %w", err)
 	}
 
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
+	ctx := context.Background()
 
-	defaultNumberOfPartitions := fmt.Sprintf("%d", cfg.AutoCreateTopicDefaultPartitions)
-	responses, err := adm.AlterBrokerConfigsState(context.Background(), []kadm.AlterConfig{
-		{
-			Op:    kadm.SetConfig,
-			Name:  "num.partitions",
-			Value: &defaultNumberOfPartitions,
-		},
-	})
-
-	// Check if any error has been returned as part of the response.
+	// As of kafka 2.4 we can pass -1 and the broker will use its default configuration.
+	const defaultReplication = -1
+	resp, err := adm.CreateTopic(ctx, int32(cfg.AutoCreateTopicDefaultPartitions), defaultReplication, nil, cfg.Topic)
 	if err == nil {
-		for _, res := range responses {
-			if res.Err != nil {
-				err = res.Err
-				break
-			}
-		}
+		err = resp.Err
 	}
-
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to alter default number of partitions", "err", err)
-		return
+		if errors.Is(err, kerr.TopicAlreadyExists) {
+			level.Info(logger).Log(
+				"msg", "topic already exists",
+				"topic", resp.Topic,
+				"num_partitions", resp.NumPartitions,
+				"replication_factor", resp.ReplicationFactor,
+			)
+			return nil
+		}
+		return fmt.Errorf("failed to create topic %s: %w", cfg.Topic, err)
 	}
 
-	level.Info(logger).Log("msg", "configured Kafka-wide default number of partitions for auto-created topics (num.partitions)", "value", cfg.AutoCreateTopicDefaultPartitions)
+	level.Info(logger).Log(
+		"msg", "successfully created topic",
+		"topic", resp.Topic,
+		"num_partitions", resp.NumPartitions,
+		"replication_factor", resp.ReplicationFactor,
+	)
+	return nil
 }
