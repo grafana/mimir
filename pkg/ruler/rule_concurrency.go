@@ -5,6 +5,7 @@ package ruler
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -187,12 +188,31 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	return false
 }
 
-// isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
+// isGroupAtRisk checks if the rule group's last or in-progress evaluation time is within the risk threshold.
 func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
-	interval := group.Interval().Seconds()
-	lastEvaluation := group.GetEvaluationTime().Seconds()
+	maxEvalTimeSeconds := group.Interval().Seconds() * c.thresholdRuleConcurrency / 100
 
-	return lastEvaluation >= interval*c.thresholdRuleConcurrency/100
+	lastEvaluation := group.GetEvaluationTime().Seconds()
+	if lastEvaluation >= maxEvalTimeSeconds {
+		return true
+	}
+
+	if len(group.Rules()) == 0 {
+		return false
+	}
+
+	// Find a rule that has been evaluated within this interval to determine the current runtime.
+	// If none are found, we assume we're running the first rule(s) in the group.
+	lastEvaluationEnd := group.GetLastEvaluation().Add(group.GetEvaluationTime())
+	currentRuntime := time.Duration(0)
+	for _, rule := range group.Rules() {
+		if rule.GetEvaluationTimestamp().After(lastEvaluationEnd) {
+			currentRuntime = time.Since(rule.GetEvaluationTimestamp())
+			break
+		}
+	}
+
+	return currentRuntime.Seconds() >= maxEvalTimeSeconds
 }
 
 // isRuleIndependent checks if the rule is independent of other rules.
