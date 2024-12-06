@@ -7,11 +7,15 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/test"
@@ -340,63 +344,131 @@ func (m mockHandlerFunc) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) 
 }
 
 func TestFrontendProcessor(t *testing.T) {
-	lis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
+	//logger := log.NewNopLogger()
+	logger := log.NewLogfmtLogger(os.Stdout)
 
-	srv := grpc.NewServer()
-
-	receivedResponse := make(chan *httpgrpc.HTTPResponse, 1)
-
-	// Setup mock frontend server
-	mockFrontend := &mockFrontendServer{
-		receiveFunc: func(resp *frontendv1pb.ClientToFrontend) error {
-			receivedResponse <- resp.HttpResponse
-			return nil
+	tests := []struct {
+		name             string
+		customizeConfig  func(*Config)
+		handlerResponse  *httpgrpc.HTTPResponse
+		handlerError     error
+		expectedResponse *httpgrpc.HTTPResponse
+	}{
+		{
+			name: "success case",
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte("success"),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte("success"),
+			},
+		},
+		{
+			name: "response too large",
+			customizeConfig: func(cfg *Config) {
+				cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize = 100
+			},
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(strings.Repeat("some very large response", 100)),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 413,
+				Body: []byte("response larger than the max (2417 vs 100)"),
+			},
+		},
+		{
+			name: "small body but large headers",
+			customizeConfig: func(cfg *Config) {
+				cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize = 1000
+			},
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Headers: []*httpgrpc.Header{
+					{Key: "Header1", Values: []string{strings.Repeat("x", 500)}},
+				},
+				Body: []byte(strings.Repeat("x", 500)),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 413,
+				Headers: []*httpgrpc.Header{
+					{Key: "Header1", Values: []string{strings.Repeat("x", 500)}},
+				},
+				Body: []byte("response larger than the max (1032 vs 1000)"),
+			},
+		},
+		{
+			name:         "handler error",
+			handlerError: fmt.Errorf("handler error"),
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 500,
+				Body: []byte("handler error"),
+			},
 		},
 	}
-	frontendv1pb.RegisterFrontendServer(srv, mockFrontend)
 
-	// Start server
-	go func() {
-		_ = srv.Serve(lis)
-	}()
-	t.Cleanup(srv.Stop)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lis, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
 
-	// Create client connection
-	ctx := context.Background()
-	conn, err := grpc.NewClient(
-		lis.Addr().String(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, conn.Close())
-	})
+			srv := grpc.NewServer()
 
-	// Create frontend processor
-	mockHandler := mockHandlerFunc(func(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
-		return &httpgrpc.HTTPResponse{
-			Code: 200,
-			Body: []byte("success"),
-		}, nil
-	})
+			receivedResponse := make(chan *httpgrpc.HTTPResponse, 1)
 
-	cfg := Config{
-		QuerierID:                     "test-querier",
-		QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1024 * 1024},
-	}
+			// Setup mock frontend server
+			mockFrontend := &mockFrontendServer{
+				receiveFunc: func(resp *frontendv1pb.ClientToFrontend) error {
+					receivedResponse <- resp.HttpResponse
+					return nil
+				},
+			}
+			frontendv1pb.RegisterFrontendServer(srv, mockFrontend)
 
-	processor := newFrontendProcessor(cfg, mockHandler, log.NewNopLogger())
+			// Start server
+			go func() {
+				_ = srv.Serve(lis)
+			}()
+			t.Cleanup(srv.Stop)
 
-	// Process queries
-	go processor.processQueriesOnSingleStream(ctx, conn, lis.Addr().String())
+			// Create client connection
+			ctx := context.Background()
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			if tc.customizeConfig != nil {
+				tc.customizeConfig(&cfg)
+			}
 
-	// Wait for response and verify
-	select {
-	case resp := <-receivedResponse:
-		require.Equal(t, 200, int(resp.Code))
-		require.Equal(t, []byte("success"), resp.Body)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for response")
+			dialOpts, err := cfg.QueryFrontendGRPCClientConfig.DialOption(nil, nil)
+			require.NoError(t, err)
+			dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+			conn, err := grpc.NewClient(lis.Addr().String(), dialOpts...)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, conn.Close())
+			})
+
+			mockHandler := mockHandlerFunc(func(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+				if tc.handlerError != nil {
+					return nil, tc.handlerError
+				}
+				return tc.handlerResponse, nil
+			})
+
+			// Create frontend processor
+			processor := newFrontendProcessor(cfg, mockHandler, logger)
+			go processor.processQueriesOnSingleStream(ctx, conn, lis.Addr().String())
+
+			// Wait for response and verify
+			select {
+			case resp := <-receivedResponse:
+				require.Equal(t, *tc.expectedResponse, *resp)
+			case <-time.After(2 * time.Second):
+				t.Fatal("timeout waiting for response")
+			}
+		})
 	}
 }
