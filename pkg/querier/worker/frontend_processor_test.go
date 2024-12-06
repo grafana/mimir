@@ -7,10 +7,12 @@ package worker
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
@@ -225,7 +227,7 @@ func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock,
 
 	requestHandler := &requestHandlerMock{}
 
-	fp := newFrontendProcessor(Config{QuerierID: "test-querier-id"}, requestHandler, log.NewNopLogger())
+	fp := newFrontendProcessor(Config{QuerierID: "test-querier-id", QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1}}, requestHandler, log.NewNopLogger())
 	fp.frontendClientFactory = func(_ *grpc.ClientConn) frontendv1pb.FrontendClient {
 		return frontendClient
 	}
@@ -301,4 +303,100 @@ func (m *frontendProcessClientMock) SendMsg(msg interface{}) error {
 func (m *frontendProcessClientMock) RecvMsg(msg interface{}) error {
 	args := m.Called(msg)
 	return args.Error(0)
+}
+
+type mockFrontendServer struct {
+	frontendv1pb.UnimplementedFrontendServer
+	receiveFunc func(*frontendv1pb.ClientToFrontend) error
+}
+
+func (m *mockFrontendServer) Process(srv frontendv1pb.Frontend_ProcessServer) error {
+	// Send test HTTP request
+	err := srv.Send(&frontendv1pb.FrontendToClient{
+		Type: frontendv1pb.HTTP_REQUEST,
+		HttpRequest: &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/test",
+		},
+		StatsEnabled: true,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Receive response
+	resp, err := srv.Recv()
+	if err != nil {
+		return err
+	}
+
+	return m.receiveFunc(resp)
+}
+
+type mockHandlerFunc func(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
+
+func (m mockHandlerFunc) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	return m(ctx, req)
+}
+
+func TestFrontendProcessor(t *testing.T) {
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	srv := grpc.NewServer()
+
+	receivedResponse := make(chan *httpgrpc.HTTPResponse, 1)
+
+	// Setup mock frontend server
+	mockFrontend := &mockFrontendServer{
+		receiveFunc: func(resp *frontendv1pb.ClientToFrontend) error {
+			receivedResponse <- resp.HttpResponse
+			return nil
+		},
+	}
+	frontendv1pb.RegisterFrontendServer(srv, mockFrontend)
+
+	// Start server
+	go func() {
+		_ = srv.Serve(lis)
+	}()
+	t.Cleanup(srv.Stop)
+
+	// Create client connection
+	ctx := context.Background()
+	conn, err := grpc.NewClient(
+		lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, conn.Close())
+	})
+
+	// Create frontend processor
+	mockHandler := mockHandlerFunc(func(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+		return &httpgrpc.HTTPResponse{
+			Code: 200,
+			Body: []byte("success"),
+		}, nil
+	})
+
+	cfg := Config{
+		QuerierID:                     "test-querier",
+		QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1024 * 1024},
+	}
+
+	processor := newFrontendProcessor(cfg, mockHandler, log.NewNopLogger())
+
+	// Process queries
+	go processor.processQueriesOnSingleStream(ctx, conn, lis.Addr().String())
+
+	// Wait for response and verify
+	select {
+	case resp := <-receivedResponse:
+		require.Equal(t, 200, int(resp.Code))
+		require.Equal(t, []byte("success"), resp.Body)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for response")
+	}
 }
