@@ -1555,7 +1555,7 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 
 			now := mtime.Now()
 			for i, ts := range tc.req.Timeseries {
-				err, shouldRemove := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 				require.False(t, shouldRemove)
 				if len(tc.expectedErrors) == 0 {
 					require.NoError(t, err)
@@ -1808,7 +1808,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err, shouldRemove := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
+				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
 				assert.NoError(t, err)
 				assert.False(t, shouldRemove)
 			}
@@ -1916,7 +1916,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err, shouldRemove := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
+				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
 					require.True(t, shouldRemove)
