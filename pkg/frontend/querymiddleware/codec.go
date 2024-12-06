@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -580,6 +582,39 @@ func DecodeLabelsSeriesQueryTimeParams(reqValues *url.Values) (start, end int64,
 	}
 
 	return start, end, err
+}
+
+// DecodeCardinalityQueryParams strictly handles validation for cardinality API endpoint parameters.
+// The current decoding of the cardinality requests is handled in the cardinality package
+// which is not yet compatible with the codec's approach of using interfaces
+// and multiple concrete proto implementations to represent different query types.
+func DecodeCardinalityQueryParams(r *http.Request) (any, error) {
+	var err error
+
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	var parsedReq any
+	switch {
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelNamesPathSuffix):
+		parsedReq, err = cardinality.DecodeLabelNamesRequestFromValues(reqValues)
+
+	case strings.HasSuffix(r.URL.Path, cardinalityLabelValuesPathSuffix):
+		parsedReq, err = cardinality.DecodeLabelValuesRequestFromValues(reqValues)
+
+	case strings.HasSuffix(r.URL.Path, cardinalityActiveSeriesPathSuffix):
+		parsedReq, err = cardinality.DecodeActiveSeriesRequestFromValues(reqValues)
+
+	default:
+		return nil, errors.New("unknown cardinality API endpoint")
+	}
+
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+	return parsedReq, nil
 }
 
 func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookbackDelta time.Duration) (minTime, maxTime int64) {
