@@ -834,7 +834,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 		next = middlewares[ix](next)
 	}
 
-	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others..
+	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others.
 	return d.outerMaybeDelayMiddleware(next)
 
 }
@@ -1438,7 +1438,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	})
 
 	pushErr := d.PushWithMiddlewares(ctx, pushReq)
-
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
