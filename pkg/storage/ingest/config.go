@@ -110,8 +110,7 @@ type KafkaConfig struct {
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
 
-	StartupFetchConcurrency           int  `yaml:"startup_fetch_concurrency"`
-	OngoingFetchConcurrency           int  `yaml:"ongoing_fetch_concurrency"`
+	FetchConcurrencyMax               int  `yaml:"fetch_concurrency_max"`
 	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 	MaxBufferedBytes                  int  `yaml:"max_buffered_bytes"`
 
@@ -177,8 +176,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+".wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
-	f.IntVar(&cfg.StartupFetchConcurrency, prefix+".startup-fetch-concurrency", 0, "The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.")
-	f.IntVar(&cfg.OngoingFetchConcurrency, prefix+".ongoing-fetch-concurrency", 0, "The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless "+prefix+".startup-fetch-concurrency is greater than 0. 0 to disable.")
+	f.IntVar(&cfg.FetchConcurrencyMax, prefix+".fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 	f.IntVar(&cfg.MaxBufferedBytes, prefix+".max-buffered-bytes", 100_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
 
@@ -222,12 +220,8 @@ func (cfg *KafkaConfig) Validate() error {
 		return ErrInvalidMaxConsumerLagAtStartup
 	}
 
-	if cfg.StartupFetchConcurrency < 0 {
-		return fmt.Errorf("ingest-storage.kafka.startup-fetch-concurrency must be greater or equal to 0")
-	}
-
-	if cfg.OngoingFetchConcurrency > 0 && cfg.StartupFetchConcurrency <= 0 {
-		return fmt.Errorf("ingest-storage.kafka.startup-fetch-concurrency must be greater than 0 when ingest-storage.kafka.ongoing-fetch-concurrency is greater than 0")
+	if cfg.FetchConcurrencyMax < 0 {
+		return fmt.Errorf("ingest-storage.kafka.fetch-concurrency-max must be greater than or equal to 0")
 	}
 
 	if cfg.MaxBufferedBytes >= math.MaxInt32 {
