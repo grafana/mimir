@@ -787,7 +787,7 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 					// The query result payload is 202 bytes, so it will be too large for the configured limit.
-					"-querier.frontend-client.grpc-max-send-msg-size": "150",
+					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
