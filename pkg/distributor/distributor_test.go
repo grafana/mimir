@@ -8064,7 +8064,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 			}
 
 			// fake push just adds time to the mocked time to make it seem like time has moved forward.
-			p := func(ctx context.Context, req *Request) error {
+			p := func(_ context.Context, _ *Request) error {
 				timeSource.Add(tc.pushDuration)
 				return nil
 			}

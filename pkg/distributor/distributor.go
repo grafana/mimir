@@ -835,7 +835,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	}
 
 	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others..
-	return d.wrapPushWithMiddlewares(next)
+	return d.outerMaybeDelayMiddleware(next)
 
 }
 
