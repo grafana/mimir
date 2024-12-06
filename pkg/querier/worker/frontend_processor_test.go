@@ -393,9 +393,6 @@ func TestFrontendProcessor(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{
 				Code: 413,
-				Headers: []*httpgrpc.Header{
-					{Key: "Header1", Values: []string{strings.Repeat("x", 500)}},
-				},
 				Body: []byte("response larger than the max (1032 vs 1000)"),
 			},
 		},

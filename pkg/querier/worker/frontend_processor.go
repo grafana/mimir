@@ -130,8 +130,10 @@ func (fp *frontendProcessor) process(execCtx context.Context, c frontendv1pb.Fro
 
 				if msgSize := msgToFrontend.Size(); msgSize >= fp.maxMessageSize {
 					errMsg := fmt.Sprintf("response larger than the max (%d vs %d)", msgSize, fp.maxMessageSize)
-					msgToFrontend.HttpResponse.Code = http.StatusRequestEntityTooLarge
-					msgToFrontend.HttpResponse.Body = []byte(errMsg)
+					msgToFrontend.HttpResponse = &httpgrpc.HTTPResponse{
+						Code: http.StatusRequestEntityTooLarge,
+						Body: []byte(errMsg),
+					}
 					level.Error(fp.log).Log("msg", "query response larger than limit", "err", errMsg)
 				}
 
