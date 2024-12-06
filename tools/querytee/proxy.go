@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/spanlogger"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v3"
@@ -239,6 +240,9 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 }
 
 func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*BackendConfig) error {
+	// Tests need to pass the same hostname for all backends, so we also
+	// support a numeric preferred backend which is the index in the list of backend.
+	numericBackendNameRegex := regexp.MustCompile("^[0-9]+$")
 	for configuredBackend := range config {
 		backendExists := false
 		for _, actualBacked := range backends {
@@ -247,7 +251,7 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 				break
 			}
 		}
-		if !backendExists {
+		if !backendExists && !numericBackendNameRegex.MatchString(configuredBackend) {
 			return fmt.Errorf("configured backend %s does not exist in the list of actual backends", configuredBackend)
 		}
 	}
