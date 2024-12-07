@@ -82,6 +82,17 @@ type tenantInfo struct {
 
 func (t *tenantInfo) release() { t.refs.Dec() }
 
+func (t *trackerStore) seriesCounts() map[string]uint64 {
+	t.tenantsMtx.RLock()
+	defer t.tenantsMtx.RUnlock()
+
+	counts := make(map[string]uint64, len(t.tenants))
+	for tenantID, info := range t.tenants {
+		counts[tenantID] = info.series.Load()
+	}
+	return counts
+}
+
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejected []uint64, err error) {

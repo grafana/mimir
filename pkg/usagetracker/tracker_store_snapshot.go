@@ -128,7 +128,14 @@ func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSer
 
 	for i := 0; i < seriesLen; i++ {
 		s := snapshot.Be64()
+		if err := snapshot.Err(); err != nil {
+			return fmt.Errorf("failed to read series ref %d: %w", i, err)
+		}
+
 		snapshotTs := minutes(snapshot.Byte())
+		if err := snapshot.Err(); err != nil {
+			return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
+		}
 		if expirationWatermark.greaterThan(snapshotTs) {
 			// We're not interested in this series, it was about to be evicted.
 			continue
