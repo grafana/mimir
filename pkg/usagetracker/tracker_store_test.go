@@ -4,7 +4,6 @@ package usagetracker
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"slices"
 	"strings"
@@ -18,6 +17,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
 func TestTrackerStore_HappyCase(t *testing.T) {
@@ -173,8 +174,8 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 		now = now.Add(time.Minute)
 	}
 
-	// testUser1 has 1 series per each one of the last idleTimeout minutes.
-	// testUser2  has 2 series per each one of the last idleTimeout minutes.
+	// testUser1 has 1 series per each one of the last idleTimeout clock.Minutes.
+	// testUser2  has 2 series per each one of the last idleTimeout clock.Minutes.
 	require.Equal(t, map[string]uint64{
 		testUser1: idleTimeoutMinutes,
 		testUser2: 2 * idleTimeoutMinutes,
@@ -266,11 +267,11 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	// Tenant 1 is deleted.
 	// testUser2 still has series 1 and 2, with no data in shard3
 	require.Equal(t, map[string]uint64{testUser2: 2}, tracker.seriesCounts())
-	require.Equal(t, map[string]map[uint64]minutes{
-		testUser2: {1: toMinutes(lastUpdate)},
+	require.Equal(t, map[string]map[uint64]clock.Minutes{
+		testUser2: {1: clock.ToMinutes(lastUpdate)},
 	}, decodeSnapshot(t, tracker.snapshot(1, now, nil)))
-	require.Equal(t, map[string]map[uint64]minutes{
-		testUser2: {2: toMinutes(lastUpdate)},
+	require.Equal(t, map[string]map[uint64]clock.Minutes{
+		testUser2: {2: clock.ToMinutes(lastUpdate)},
 	}, decodeSnapshot(t, tracker.snapshot(2, now, nil)))
 	require.Empty(t, decodeSnapshot(t, tracker.snapshot(3, now, nil)))
 
@@ -434,63 +435,6 @@ func (ep *eventsPipe) transmit() {
 	ep.events = nil
 }
 
-func TestMinutes(t *testing.T) {
-	// t0 is at 4-hour boundary
-	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	t1 := t0.Add(30 * time.Minute)
-	t2 := t0.Add(-30 * time.Minute)
-
-	t.Run("sub", func(t *testing.T) {
-		for _, tc := range []struct {
-			a, b     minutes
-			expected int
-		}{
-			{a: toMinutes(t0), b: toMinutes(t0.Add(-5 * time.Minute)), expected: 5},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(-5 * time.Minute)), expected: 5},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(-5 * time.Minute)), expected: 5},
-			{a: toMinutes(t0), b: toMinutes(t0.Add(5 * time.Minute)), expected: -5},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(5 * time.Minute)), expected: -5},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(5 * time.Minute)), expected: -5},
-
-			{a: toMinutes(t0), b: toMinutes(t0.Add(-59 * time.Minute)), expected: 59},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(-59 * time.Minute)), expected: 59},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(-59 * time.Minute)), expected: 59},
-			{a: toMinutes(t0), b: toMinutes(t0.Add(59 * time.Minute)), expected: -59},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(59 * time.Minute)), expected: -59},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(59 * time.Minute)), expected: -59},
-		} {
-			t.Run(fmt.Sprintf("%s sub %s = %d", tc.a, tc.b, tc.expected), func(t *testing.T) {
-				require.Equal(t, tc.expected, tc.a.sub(tc.b))
-			})
-		}
-	})
-
-	t.Run("greaterThan", func(t *testing.T) {
-		for _, tc := range []struct {
-			a, b     minutes
-			expected bool
-		}{
-			{a: toMinutes(t0), b: toMinutes(t0.Add(-5 * time.Minute)), expected: true},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(-5 * time.Minute)), expected: true},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(-5 * time.Minute)), expected: true},
-			{a: toMinutes(t0), b: toMinutes(t0.Add(5 * time.Minute)), expected: false},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(5 * time.Minute)), expected: false},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(5 * time.Minute)), expected: false},
-
-			{a: toMinutes(t0), b: toMinutes(t0.Add(-59 * time.Minute)), expected: true},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(-59 * time.Minute)), expected: true},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(-59 * time.Minute)), expected: true},
-			{a: toMinutes(t0), b: toMinutes(t0.Add(59 * time.Minute)), expected: false},
-			{a: toMinutes(t1), b: toMinutes(t1.Add(59 * time.Minute)), expected: false},
-			{a: toMinutes(t2), b: toMinutes(t2.Add(59 * time.Minute)), expected: false},
-		} {
-			t.Run(fmt.Sprintf("%s > %s = %t", tc.a, tc.b, tc.expected), func(t *testing.T) {
-				require.Equal(t, tc.expected, tc.a.greaterThan(tc.b))
-			})
-		}
-	})
-}
-
 func requireTrackersSameData(t *testing.T, tracker1, tracker2 *trackerStore) {
 	t.Helper()
 	snapshotTime := time.Unix(0, 0)
@@ -501,7 +445,7 @@ func requireTrackersSameData(t *testing.T, tracker1, tracker2 *trackerStore) {
 	}
 }
 
-func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]minutes {
+func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minutes {
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()
 	require.NoError(t, snapshot.Err())
@@ -516,7 +460,7 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]minutes {
 	tenantsLen := snapshot.Uvarint64()
 	require.NoError(t, snapshot.Err())
 
-	res := make(map[string]map[uint64]minutes, tenantsLen)
+	res := make(map[string]map[uint64]clock.Minutes, tenantsLen)
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
 		tenantID := snapshot.UvarintStr()
@@ -524,12 +468,12 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]minutes {
 
 		seriesLen := int(snapshot.Uvarint64())
 		require.NoError(t, snapshot.Err())
-		shard := make(map[uint64]minutes, seriesLen)
+		shard := make(map[uint64]clock.Minutes, seriesLen)
 
 		for i := 0; i < seriesLen; i++ {
 			series := snapshot.Be64()
 			require.NoError(t, snapshot.Err())
-			ts := minutes(snapshot.Byte())
+			ts := clock.Minutes(snapshot.Byte())
 			require.NoError(t, snapshot.Err())
 			shard[series] = ts
 		}
