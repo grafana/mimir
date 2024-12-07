@@ -36,6 +36,7 @@ func TestMap(t *testing.T) {
 			Value:    clock.Minutes(i),
 			Limit:    limit,
 			Series:   series,
+			Created: createdResp,
 			Rejected: rejectedResp,
 		}
 		created := <-createdResp
@@ -59,6 +60,7 @@ func TestMap(t *testing.T) {
 			Value:    clock.Minutes(0),
 			Limit:    limit,
 			Series:   series,
+			Created: createdResp,
 			Rejected: rejectedResp,
 		}
 		created := <-createdResp
@@ -93,7 +95,7 @@ func TestMap(t *testing.T) {
 		resp := make(chan struct{})
 		m.Events() <- Event{
 			Type:      Cleanup,
-			Watermark: clock.Minutes(2),
+			Watermark: clock.Minutes(1),
 			Series:    series,
 			Done:      resp,
 		}
