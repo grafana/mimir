@@ -36,7 +36,7 @@ func TestMap(t *testing.T) {
 			Value:    clock.Minutes(i),
 			Limit:    limit,
 			Series:   series,
-			Created: createdResp,
+			Created:  createdResp,
 			Rejected: rejectedResp,
 		}
 		created := <-createdResp
@@ -60,7 +60,7 @@ func TestMap(t *testing.T) {
 			Value:    clock.Minutes(0),
 			Limit:    limit,
 			Series:   series,
-			Created: createdResp,
+			Created:  createdResp,
 			Rejected: rejectedResp,
 		}
 		created := <-createdResp
