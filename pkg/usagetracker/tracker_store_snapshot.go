@@ -9,6 +9,8 @@ import (
 
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
 const snapshotEncodingVersion = 1
@@ -58,7 +60,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	if err := snapshot.Err(); err != nil {
 		return fmt.Errorf("invalid snapshot format, time expected: %w", err)
 	}
-	if !areInValidSpanToCompareMinutes(now, snapshotTime) {
+	if !clock.AreInValidSpanToCompareMinutes(now, snapshotTime) {
 		return fmt.Errorf("snapshot is too old, snapshot time is %s, now is %s", snapshotTime, now)
 	}
 
@@ -75,11 +77,11 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	// If we find a too old lastSeen, we might try to update it on our copy of the pointer to atomic.Uint64,
 	// but since we're not holding the mutex, it might be evicted at the same time.
 	// We fix that by requiring a mutex (at least read mutex) for updating lastSeen on values that are beyond 3/4 expiration.
-	mutexWatermark := toMinutes(now.Add(time.Duration(-3. / 4. * float64(t.idleTimeout))))
+	mutexWatermark := clock.ToMinutes(now.Add(time.Duration(-3. / 4. * float64(t.idleTimeout))))
 
 	// Some series might have been right on the boundary of being evicted when we took the snapshot.
 	// Don't load them.
-	expirationWatermark := toMinutes(now.Add(-t.idleTimeout))
+	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
@@ -100,17 +102,17 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	return nil
 }
 
-func (t *trackerStore) loadTenantSnapshot(tenantID string, shard *tenantShard, snapshot *encoding.Decbuf, mutexWatermark minutes, expirationWatermark minutes) error {
+func (t *trackerStore) loadTenantSnapshot(tenantID string, shard *tenantShard, snapshot *encoding.Decbuf, mutexWatermark clock.Minutes, expirationWatermark clock.Minutes) error {
 	info := t.getOrCreateTenantInfo(tenantID)
 	defer info.release()
 
 	return shard.loadSnapshot(snapshot, &info.series, mutexWatermark, expirationWatermark)
 }
 
-func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSeries *atomic.Uint64, mutexWatermark, expirationWatermark minutes) error {
+func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSeries *atomic.Uint64, mutexWatermark, expirationWatermark clock.Minutes) error {
 	type entry struct {
 		series uint64
-		ts     minutes
+		ts     clock.Minutes
 	}
 
 	seriesLen := int(snapshot.Uvarint64())
@@ -132,11 +134,11 @@ func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSer
 			return fmt.Errorf("failed to read series ref %d: %w", i, err)
 		}
 
-		snapshotTs := minutes(snapshot.Byte())
+		snapshotTs := clock.Minutes(snapshot.Byte())
 		if err := snapshot.Err(); err != nil {
 			return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
 		}
-		if expirationWatermark.greaterThan(snapshotTs) {
+		if expirationWatermark.GreaterThan(snapshotTs) {
 			// We're not interested in this series, it was about to be evicted.
 			continue
 		}
@@ -144,7 +146,7 @@ func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSer
 		ts, ok := seriesClone[s]
 		if ok {
 			lastSeen := casIfGreater(snapshotTs, ts)
-			if mutexWatermark.greaterThan(lastSeen) {
+			if mutexWatermark.GreaterThan(lastSeen) {
 				// We've CASed the last seen timestamp, but we're getting close to this value being evicted.
 				// Since we're operating on a seriesClone, we might be updating an atomic value that isn't referenced by shard.series anymore.
 				// So, try this series again later with mutex.

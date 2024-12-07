@@ -4,7 +4,6 @@ package usagetracker
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"math"
 	"slices"
@@ -15,6 +14,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/usagetracker/clock"
 )
 
 const shards = 128
@@ -111,7 +112,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 		return int((a%shards+tenantStartingShard)%shards) - int((b%shards+tenantStartingShard)%shards)
 	})
 
-	now := toMinutes(timeNow)
+	now := clock.ToMinutes(timeNow)
 	created := make([]uint64, 0, len(series)) // TODO: This should probably be pooled.
 	rejected = series[:0]                     // Rejected will never have more series than created, so we can reuse the same slice.
 	i0 := 0
@@ -159,7 +160,7 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
 	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
 
-	timestamp := toMinutes(eventTimestamp)
+	timestamp := clock.ToMinutes(eventTimestamp)
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
@@ -225,16 +226,16 @@ func (t *trackerStore) getOrCreateTenantInfo(tenantID string) *tenantInfo {
 // casIfGreater will CAS ts to now if now is greater than the value stored in ts.
 // It will retry until it's possible to CAS or the condition is not et.
 // It returns the last seen value that was stored in ts before CAS-ing.
-func casIfGreater(now minutes, ts *atomic.Int32) (lastSeen minutes) {
-	lastSeen = minutes(ts.Load())
-	for now.greaterThan(lastSeen) && !ts.CompareAndSwap(int32(lastSeen), int32(now)) {
-		lastSeen = minutes(ts.Load())
+func casIfGreater(now clock.Minutes, ts *atomic.Int32) (lastSeen clock.Minutes) {
+	lastSeen = clock.Minutes(ts.Load())
+	for now.GreaterThan(lastSeen) && !ts.CompareAndSwap(int32(lastSeen), int32(now)) {
+		lastSeen = clock.Minutes(ts.Load())
 	}
 	return lastSeen
 }
 
 func (t *trackerStore) cleanup(now time.Time) {
-	watermark := toMinutes(now.Add(-t.idleTimeout))
+	watermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
 	// We will work on a copy of tenants.
 	t.tenantsMtx.RLock()
@@ -289,7 +290,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 	}
 }
 
-func (t *trackerStore) cleanupTenantShard(tenantID string, shard *tenantShard, watermark minutes, tenantsClone map[string]*tenantInfo) (empty bool) {
+func (t *trackerStore) cleanupTenantShard(tenantID string, shard *tenantShard, watermark clock.Minutes, tenantsClone map[string]*tenantInfo) (empty bool) {
 	info, ok := tenantsClone[tenantID]
 	if !ok {
 		// This shard might have been added after we made our clone.
@@ -338,7 +339,7 @@ func (shard *tenantShard) empty() bool {
 // Each time a series is created, it will be appended to the created slice and totalTenantSeries will be increased.
 //
 // The input slices created and rejected should be returned with the series that were created and rejected appended to them.
-func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantSeries *atomic.Uint64, limit uint64, created, rejected []uint64) (_created, _rejected []uint64) {
+func (shard *tenantShard) trackSeries(series []uint64, now clock.Minutes, totalTenantSeries *atomic.Uint64, limit uint64, created, rejected []uint64) (_created, _rejected []uint64) {
 	// missing contains the series that have to be created.
 	// As we advance through series, we reuse the same slice to avoid allocations.
 	missing := series[:0]
@@ -396,7 +397,7 @@ func (shard *tenantShard) trackSeries(series []uint64, now minutes, totalTenantS
 // i.e. series that were created by a different instance.
 // This does not check the limits, as we prioritize staying consistent across replicas over enforcing limits.
 // Timestamp is not updated if series exists already.
-func (shard *tenantShard) processCreatedSeriesEvent(series []uint64, timestamp minutes, totalTenantSeries *atomic.Uint64) {
+func (shard *tenantShard) processCreatedSeriesEvent(series []uint64, timestamp clock.Minutes, totalTenantSeries *atomic.Uint64) {
 	// missing contains the series that have to be created.
 	// As we advance through series, we reuse the same slice to avoid allocations.
 	missing := series[:0]
@@ -430,7 +431,7 @@ func (shard *tenantShard) processCreatedSeriesEvent(series []uint64, timestamp m
 	shard.Unlock()
 }
 
-func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark minutes) (empty bool) {
+func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark clock.Minutes) (empty bool) {
 	// Work on the stack.
 	// If we have 1e9 series, 33% of that churning every 2 hours, that's ~21K per shard (1e9/3/120/128).
 	// This is ~168K on the stack, which is fine, but it saves lots of allocations.
@@ -441,7 +442,7 @@ func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark mi
 	shard.RLock()
 	empty = len(shard.series) == 0
 	for s, ts := range shard.series {
-		if lastSeen := minutes(ts.Load()); watermark.greaterOrEqualThan(lastSeen) {
+		if lastSeen := clock.Minutes(ts.Load()); watermark.GreaterOrEqualThan(lastSeen) {
 			candidates = append(candidates, s)
 		}
 	}
@@ -454,54 +455,10 @@ func (shard *tenantShard) cleanup(totalTenantSeries *atomic.Uint64, watermark mi
 	shard.Lock()
 	defer shard.Unlock()
 	for s, ts := range shard.series {
-		if lastSeen := minutes(ts.Load()); watermark.greaterOrEqualThan(lastSeen) {
+		if lastSeen := clock.Minutes(ts.Load()); watermark.GreaterOrEqualThan(lastSeen) {
 			delete(shard.series, s)
 			totalTenantSeries.Dec()
 		}
 	}
 	return len(shard.series) == 0
 }
-
-func areInValidSpanToCompareMinutes(a, b time.Time) bool {
-	if a.After(b) {
-		a, b = b, a
-	}
-	return b.Sub(a) < time.Hour
-}
-
-func toMinutes(t time.Time) minutes {
-	return minutes(t.Sub(t.Truncate(2 * time.Hour)).Minutes())
-}
-
-// minutes represents the minutes passed since the last 2-hour boundary (00:00, 02:00, 04:00, etc.).
-// This value only makes sense within the last hour.
-type minutes int32
-
-// sub subtracts other from m, taking into account the 2-hour clock face, assuming both values aren't more than 1h apart.
-// It does *not* return *minutes* because it returns a duration, while minutes is a timestamp.
-func (m minutes) sub(other minutes) int {
-	sign := 1
-	if m < other {
-		m, other, sign = other, m, -1
-	}
-
-	if m-other < 60 {
-		return sign * int(m-other)
-	}
-	return sign * int(m-other-2*60)
-}
-
-// minutesGreater returns true if this value is greater than other on a four-hour clock face assuming that none of the values is ever older than 1h.
-func (m minutes) greaterThan(other minutes) bool {
-	if m > other {
-		return m-other < 60
-	}
-	return m+(2*60)-other < 60
-}
-
-// greaterOrEqualThan returns true if this value is greater or equal than other on a four-hour clock face assuming that none of the values is ever older than 1h.
-func (m minutes) greaterOrEqualThan(other minutes) bool {
-	return m == other || m.greaterThan(other)
-}
-
-func (m minutes) String() string { return fmt.Sprintf("%dm", m) }
