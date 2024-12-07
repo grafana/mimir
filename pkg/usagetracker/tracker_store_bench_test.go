@@ -50,6 +50,13 @@ func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesP
 	nowSeconds := atomic.NewInt64(0)
 	now := func() time.Time { return time.Unix(nowSeconds.Load(), 0) }
 	t := newTrackerStore(20*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	b.Cleanup(func() {
+		t.mtx.RLock()
+		defer t.mtx.RUnlock()
+		for _, tenant := range t.tenants {
+			tenant.shutdown()
+		}
+	})
 
 	seriesPerTenant := len(seriesRefs) / tenantsCount
 	// Warmup each tenant.
