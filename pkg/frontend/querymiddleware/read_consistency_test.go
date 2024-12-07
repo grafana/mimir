@@ -103,7 +103,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			rt := NewReadConsistencyRoundTripper(downstream, querierapi.ReadConsistencyOffsetsHeader, reader, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(reg))
+			rt := NewReadConsistencyRoundTripper(downstream, querierapi.ReadConsistencyOffsetsHeader, reader, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(topic, reg))
 			_, err = rt.RoundTrip(req)
 			require.NoError(t, err)
 
@@ -130,12 +130,12 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 				# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-				cortex_ingest_storage_strong_consistency_requests_total{component="query-frontend", with_offset="false"} %d
-				cortex_ingest_storage_strong_consistency_requests_total{component="query-frontend", with_offset="true"} 0
+				cortex_ingest_storage_strong_consistency_requests_total{component="query-frontend", topic="test", with_offset="false"} %d
+				cortex_ingest_storage_strong_consistency_requests_total{component="query-frontend", topic="test", with_offset="true"} 0
 
 				# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 				# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-				cortex_ingest_storage_strong_consistency_failures_total{component="query-frontend"} 0
+				cortex_ingest_storage_strong_consistency_failures_total{component="query-frontend",topic="test"} 0
 			`, expectedRequests)),
 				"cortex_ingest_storage_strong_consistency_requests_total",
 				"cortex_ingest_storage_strong_consistency_failures_total"))

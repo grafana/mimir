@@ -84,7 +84,7 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
+func newReadConsistencyMetrics(topic string, reg prometheus.Registerer) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
 	const component = "query-frontend"
-	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg)
+	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, topic, reg)
 }
