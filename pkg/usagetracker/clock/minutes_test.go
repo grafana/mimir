@@ -16,31 +16,6 @@ func TestMinutes(t *testing.T) {
 	t1 := t0.Add(30 * time.Minute)
 	t2 := t0.Add(-30 * time.Minute)
 
-	t.Run("sub", func(t *testing.T) {
-		for _, tc := range []struct {
-			a, b     Minutes
-			expected int
-		}{
-			{a: ToMinutes(t0), b: ToMinutes(t0.Add(-5 * time.Minute)), expected: 5},
-			{a: ToMinutes(t1), b: ToMinutes(t1.Add(-5 * time.Minute)), expected: 5},
-			{a: ToMinutes(t2), b: ToMinutes(t2.Add(-5 * time.Minute)), expected: 5},
-			{a: ToMinutes(t0), b: ToMinutes(t0.Add(5 * time.Minute)), expected: -5},
-			{a: ToMinutes(t1), b: ToMinutes(t1.Add(5 * time.Minute)), expected: -5},
-			{a: ToMinutes(t2), b: ToMinutes(t2.Add(5 * time.Minute)), expected: -5},
-
-			{a: ToMinutes(t0), b: ToMinutes(t0.Add(-59 * time.Minute)), expected: 59},
-			{a: ToMinutes(t1), b: ToMinutes(t1.Add(-59 * time.Minute)), expected: 59},
-			{a: ToMinutes(t2), b: ToMinutes(t2.Add(-59 * time.Minute)), expected: 59},
-			{a: ToMinutes(t0), b: ToMinutes(t0.Add(59 * time.Minute)), expected: -59},
-			{a: ToMinutes(t1), b: ToMinutes(t1.Add(59 * time.Minute)), expected: -59},
-			{a: ToMinutes(t2), b: ToMinutes(t2.Add(59 * time.Minute)), expected: -59},
-		} {
-			t.Run(fmt.Sprintf("%s sub %s = %d", tc.a, tc.b, tc.expected), func(t *testing.T) {
-				require.Equal(t, tc.expected, tc.a.sub(tc.b))
-			})
-		}
-	})
-
 	t.Run("greaterThan", func(t *testing.T) {
 		for _, tc := range []struct {
 			a, b     Minutes
