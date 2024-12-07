@@ -470,14 +470,14 @@ func areInValidSpanToCompareMinutes(a, b time.Time) bool {
 }
 
 func toMinutes(t time.Time) minutes {
-	return minutes(t.Sub(t.Truncate(4 * time.Hour)).Minutes())
+	return minutes(t.Sub(t.Truncate(2 * time.Hour)).Minutes())
 }
 
-// minutes represents the minutes passed since the last 4-hour boundary (00:00, 04:00, 08:00, 12:00, 16:00, 20:00).
-// This value only makes sense within the last hour (it could make sense in the last 2 hours, but we don't want to get close to the ambiguous values).
+// minutes represents the minutes passed since the last 2-hour boundary (00:00, 02:00, 04:00, etc.).
+// This value only makes sense within the last hour.
 type minutes int32
 
-// sub subtracts other from m, taking into account the 4-hour clock face, assuming both values aren't more than 1h apart.
+// sub subtracts other from m, taking into account the 2-hour clock face, assuming both values aren't more than 1h apart.
 // It does *not* return *minutes* because it returns a duration, while minutes is a timestamp.
 func (m minutes) sub(other minutes) int {
 	sign := 1
@@ -488,7 +488,7 @@ func (m minutes) sub(other minutes) int {
 	if m-other < 60 {
 		return sign * int(m-other)
 	}
-	return sign * int(m-other-4*60)
+	return sign * int(m-other-2*60)
 }
 
 // minutesGreater returns true if this value is greater than other on a four-hour clock face assuming that none of the values is ever older than 1h.
@@ -496,7 +496,7 @@ func (m minutes) greaterThan(other minutes) bool {
 	if m > other {
 		return m-other < 60
 	}
-	return m+(4*60)-other < 60
+	return m+(2*60)-other < 60
 }
 
 // greaterOrEqualThan returns true if this value is greater or equal than other on a four-hour clock face assuming that none of the values is ever older than 1h.
