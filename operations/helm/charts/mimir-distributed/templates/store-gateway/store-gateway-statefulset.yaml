@@ -201,7 +201,7 @@ spec:
             {{- end }}
             {{- if $mem_request }}
             - name: "GOMEMLIMIT"
-              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
+              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | mulf 0.9 | floor | int64 }}
             {{- end }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
