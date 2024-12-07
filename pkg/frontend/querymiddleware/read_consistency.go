@@ -19,15 +19,17 @@ import (
 type readConsistencyRoundTripper struct {
 	next http.RoundTripper
 
+	headerKey     string
 	offsetsReader *ingest.TopicOffsetsReader
 	limits        Limits
 	logger        log.Logger
 	metrics       *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]) http.RoundTripper {
+func NewReadConsistencyRoundTripper(next http.RoundTripper, headerKey string, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]) http.RoundTripper {
 	return &readConsistencyRoundTripper{
 		next:          next,
+		headerKey:     headerKey,
 		limits:        limits,
 		logger:        logger,
 		offsetsReader: offsetsReader,
@@ -65,7 +67,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return nil, errors.Wrap(err, "wait for last produced offsets")
 	}
 
-	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, string(querierapi.EncodeOffsets(offsets)))
+	req.Header.Add(r.headerKey, string(querierapi.EncodeOffsets(offsets)))
 
 	return r.next.RoundTrip(req)
 }

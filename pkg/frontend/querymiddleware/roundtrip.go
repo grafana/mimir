@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
 
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -284,15 +285,15 @@ func newQueryTripperware(
 		if ingestStorageTopicOffsetsReader != nil {
 			metrics := newReadConsistencyMetrics(registerer)
 
-			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			queryrange = NewReadConsistencyRoundTripper(queryrange, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			instant = NewReadConsistencyRoundTripper(instant, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			cardinality = NewReadConsistencyRoundTripper(cardinality, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			activeSeries = NewReadConsistencyRoundTripper(activeSeries, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			activeNativeHistogramMetrics = NewReadConsistencyRoundTripper(activeNativeHistogramMetrics, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			labels = NewReadConsistencyRoundTripper(labels, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			series = NewReadConsistencyRoundTripper(series, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			remoteRead = NewReadConsistencyRoundTripper(remoteRead, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			next = NewReadConsistencyRoundTripper(next, querierapi.ReadConsistencyOffsetsHeader, ingestStorageTopicOffsetsReader, limits, log, metrics)
 		}
 
 		// Look up cache as first thing after validation.

@@ -103,7 +103,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			rt := newReadConsistencyRoundTripper(downstream, reader, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(reg))
+			rt := NewReadConsistencyRoundTripper(downstream, querierapi.ReadConsistencyOffsetsHeader, reader, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(reg))
 			_, err = rt.RoundTrip(req)
 			require.NoError(t, err)
 
