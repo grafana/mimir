@@ -251,8 +251,7 @@ blocks_storage:
 			"-ingester.partition-ring.min-partition-owners-duration": "0s",
 
 			// Enable ingestion and fetch concurrency
-			"-ingest-storage.kafka.ongoing-fetch-concurrency":            "12",
-			"-ingest-storage.kafka.startup-fetch-concurrency":            "12",
+			"-ingest-storage.kafka.fetch-concurrency-max":                "12",
 			"-ingest-storage.kafka.ingestion-concurrency-max":            "8",
 			"-ingest-storage.kafka.auto-create-topic-default-partitions": "10",
 		}
