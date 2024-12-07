@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )
@@ -32,8 +33,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
-		require.Len(t, tracker.tenants, 1)
-		require.Equal(t, uint64(2), tracker.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker.seriesCounts())
 	}
 	now = now.Add(idleTimeout / 2)
 	{
@@ -41,37 +41,32 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
 		require.NoError(t, err)
 		require.Equal(t, []uint64{4}, rejected)
-		require.Len(t, tracker.tenants, 1)
-		require.Equal(t, uint64(3), tracker.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCounts())
 	}
 	{
 		// Cleanup now is a noop, nothing expired yet.
 		tracker.cleanup(now)
-		require.Len(t, tracker.tenants, 1)
-		require.Equal(t, uint64(3), tracker.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCounts())
 	}
 	{
 		// Push only series 2, series 1 will expire.
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{2}, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
-		require.Len(t, tracker.tenants, 1)
-		require.Equal(t, uint64(3), tracker.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCounts())
 	}
 	now = now.Add(idleTimeout / 2)
 	{
 		// Cleanup again will remove series 1.
 		tracker.cleanup(now)
-		require.Len(t, tracker.tenants, 1)
-		require.Equal(t, uint64(2), tracker.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker.seriesCounts())
 	}
 	{
 		// Pushing 3, 4 works now.
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
-		require.Len(t, tracker.tenants, 1)
-		require.Equal(t, uint64(3), tracker.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCounts())
 	}
 }
 
@@ -94,12 +89,11 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
-		require.Len(t, tracker1.tenants, 1)
-		require.Equal(t, uint64(2), tracker1.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker1.seriesCounts())
 		tracker1Events.transmit()
 		// Tracker 2 is updated too.
-		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
-		requireSameSeries(t, tracker1, tracker2)
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCounts())
+		requireTrackersSameData(t, tracker1, tracker2)
 	}
 	now = now.Add(idleTimeout / 4)
 	{
@@ -108,9 +102,10 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
 		require.NoError(t, err)
 		require.Equal(t, []uint64{4}, rejected)
-		require.Len(t, tracker1.tenants, 1)
-		require.Equal(t, uint64(3), tracker1.tenants[testUser1].series.Load())
-		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
+		// Implementation detail: when series 4 is rejected, empty tenant shard is still created, we need to cleanup in order to compare later.
+		tracker1.cleanup(now)
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCounts())
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCounts())
 	}
 	now = now.Add(idleTimeout / 4)
 	{
@@ -119,31 +114,33 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		rejected, err := tracker2.trackSeries(context.Background(), testUser1, []uint64{5, 6}, now)
 		require.NoError(t, err)
 		require.Equal(t, []uint64{6}, rejected)
-		require.Equal(t, uint64(3), tracker1.tenants[testUser1].series.Load())
-		require.Equal(t, uint64(3), tracker2.tenants[testUser1].series.Load())
+		// Implementation detail: when series 6 is rejected, empty tenant shard is still created, we need to cleanup in order to compare later.
+		tracker2.cleanup(now)
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCounts())
+		require.Equal(t, map[string]uint64{testUser1: 3}, tracker2.seriesCounts())
 	}
 	now = now.Add(idleTimeout / 4)
 	{
 		// transmit tracker1 events, this will make tracker2 go over the limit.
 		tracker1Events.transmit()
-		require.Equal(t, uint64(4), tracker2.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 4}, tracker2.seriesCounts())
 	}
 
 	{
 		// transmit tracker2 events, this will make tracker1 go over the limit.
 		tracker2Events.transmit()
-		require.Equal(t, uint64(4), tracker1.tenants[testUser1].series.Load())
-		require.Equal(t, uint64(4), tracker2.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 4}, tracker1.seriesCounts())
+		require.Equal(t, map[string]uint64{testUser1: 4}, tracker2.seriesCounts())
 		// Series should be the same in both now.
-		requireSameSeries(t, tracker1, tracker2)
+		requireTrackersSameData(t, tracker1, tracker2)
 	}
 	now = now.Add(idleTimeout / 4)
 	{
 		tracker1.cleanup(now)
 		tracker2.cleanup(now)
 		// Only last 2 series remaining
-		require.Equal(t, uint64(2), tracker1.tenants[testUser1].series.Load())
-		require.Equal(t, uint64(2), tracker2.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker1.seriesCounts())
+		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCounts())
 	}
 	now = now.Add(idleTimeout / 4)
 	{
@@ -151,8 +148,8 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		tracker2.cleanup(now)
 		// Only last 1 series remaining (the one that we pushed to tracker2)
 		// This tests that creation event uses the correct creation timestamp.
-		require.Equal(t, uint64(1), tracker1.tenants[testUser1].series.Load())
-		require.Equal(t, uint64(1), tracker2.tenants[testUser1].series.Load())
+		require.Equal(t, map[string]uint64{testUser1: 1}, tracker1.seriesCounts())
+		require.Equal(t, map[string]uint64{testUser1: 1}, tracker2.seriesCounts())
 	}
 }
 
@@ -162,68 +159,58 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 	const testUser2 = "user2"
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
-	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
 	for i := 0; i < 60; i++ {
-		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
+		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
 		require.Empty(t, rejected)
 		require.NoError(t, err)
 
-		rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{uint64(i * 1000), uint64(i * 10000)}, now)
+		rejected, err = tracker1.trackSeries(context.Background(), testUser2, []uint64{uint64(i * 1000), uint64(i * 10000)}, now)
 		require.Empty(t, rejected)
 		require.NoError(t, err)
 
-		tracker.cleanup(now)
+		tracker1.cleanup(now)
 		now = now.Add(time.Minute)
 	}
 
 	// testUser1 has 1 series per each one of the last idleTimeout minutes.
-	require.Equal(t, idleTimeoutMinutes, int(tracker.tenants[testUser1].series.Load()))
 	// testUser2  has 2 series per each one of the last idleTimeout minutes.
-	require.Equal(t, 2*idleTimeoutMinutes, int(tracker.tenants[testUser2].series.Load()))
+	require.Equal(t, map[string]uint64{
+		testUser1: idleTimeoutMinutes,
+		testUser2: 2 * idleTimeoutMinutes,
+	}, tracker1.seriesCounts())
 
 	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
-		data = tracker.snapshot(shard, now, data[:0])
+		data = tracker1.snapshot(shard, now, data[:0])
 		err := tracker2.loadSnapshot(data, now)
 		require.NoError(t, err)
 	}
 
-	require.Equal(t, idleTimeoutMinutes, int(tracker.tenants[testUser1].series.Load()))
-	require.Equal(t, 2*idleTimeoutMinutes, int(tracker.tenants[testUser2].series.Load()))
+	require.Equal(t, map[string]uint64{
+		testUser1: idleTimeoutMinutes,
+		testUser2: 2 * idleTimeoutMinutes,
+	}, tracker1.seriesCounts())
 
 	// Check that they hold the same data.
-	requireSameSeries(t, tracker, tracker2)
+	requireTrackersSameData(t, tracker1, tracker2)
 
 	// Loading same snapshot again should be a noop.
 	for shard := uint8(0); shard < shards; shard++ {
-		data = tracker.snapshot(shard, now, data[:0])
+		data = tracker1.snapshot(shard, now, data[:0])
 		err := tracker2.loadSnapshot(data, now)
 		require.NoError(t, err)
 	}
 
 	// Check that the total series counts are the same.
-	require.Equal(t, idleTimeoutMinutes, int(tracker.tenants[testUser1].series.Load()))
-	require.Equal(t, 2*idleTimeoutMinutes, int(tracker.tenants[testUser2].series.Load()))
+	require.Equal(t, map[string]uint64{
+		testUser1: idleTimeoutMinutes,
+		testUser2: 2 * idleTimeoutMinutes,
+	}, tracker1.seriesCounts())
 
 	// Check that they hold the same data.
-	requireSameSeries(t, tracker, tracker2)
-}
-
-func requireSameSeries(t *testing.T, tracker *trackerStore, tracker2 *trackerStore) {
-	t.Helper()
-
-	for i := uint8(0); i < shards; i++ {
-		for tenantID, originalShard := range tracker.data[i] {
-			loadedShard, ok := tracker2.data[i][tenantID]
-			require.True(t, ok || len(originalShard.series) == 0, "shard %d, tenant %s", i, tenantID)
-			for series, ts := range originalShard.series {
-				loadedTs, ok := loadedShard.series[series]
-				require.True(t, ok, "shard %d, tenant %s, series %d", i, tenantID, series)
-				require.Equal(t, ts.Load(), loadedTs.Load(), "shard %d, tenant %s, series %d", i, tenantID, series)
-			}
-		}
-	}
+	requireTrackersSameData(t, tracker1, tracker2)
 }
 
 func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
@@ -245,7 +232,7 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	tracker.cleanup(now)
 
 	// There should be exactly 1 series, the other one expired.
-	require.Equal(t, 1, int(tracker.tenants[testUser1].series.Load()))
+	require.Equal(t, map[string]uint64{testUser1: 1}, tracker.seriesCounts())
 }
 
 func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
@@ -267,6 +254,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	require.Empty(t, rejected)
 
 	now = now.Add(defaultIdleTimeout / 2)
+	lastUpdate := now
 
 	// Update series 1, 2 for testUser2. Series 3 will expire.
 	rejected, err = tracker.trackSeries(context.Background(), testUser2, []uint64{1, 2}, now)
@@ -276,22 +264,24 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	now = now.Add(defaultIdleTimeout / 2)
 	tracker.cleanup(now)
 	// Tenant 1 is deleted.
-	require.Nil(t, tracker.data[1][testUser1])
-	require.Nil(t, tracker.data[2][testUser1])
-	require.Nil(t, tracker.tenants[testUser1])
-	// testUser2 has only shard 3 deleted.
-	require.NotNil(t, tracker.data[1][testUser2])
-	require.NotNil(t, tracker.data[2][testUser2])
-	require.Nil(t, tracker.data[3][testUser2])
-	require.NotNil(t, tracker.tenants[testUser2])
+	// testUser2 still has series 1 and 2, with no data in shard3
+	require.Equal(t, map[string]uint64{testUser2: 2}, tracker.seriesCounts())
+	require.Equal(t, map[string]map[uint64]minutes{
+		testUser2: {1: toMinutes(lastUpdate)},
+	}, decodeSnapshot(t, tracker.snapshot(1, now, nil)))
+	require.Equal(t, map[string]map[uint64]minutes{
+		testUser2: {2: toMinutes(lastUpdate)},
+	}, decodeSnapshot(t, tracker.snapshot(2, now, nil)))
+	require.Empty(t, decodeSnapshot(t, tracker.snapshot(3, now, nil)))
 
 	now = now.Add(defaultIdleTimeout / 2)
 
 	tracker.cleanup(now)
 	// testUser2 is deleted.
-	require.Nil(t, tracker.data[1][testUser2])
-	require.Nil(t, tracker.data[2][testUser2])
-	require.Nil(t, tracker.tenants[testUser2])
+	require.Empty(t, tracker.seriesCounts())
+	for i := 0; i < shards; i++ {
+		require.Emptyf(t, decodeSnapshot(t, tracker.snapshot(uint8(i), now, nil)), "shard %d should have an empty snapshot", i)
+	}
 }
 
 // TestTrackerStore_Cleanup_Concurrency runs cleanup() and trackSeries() concurrently.
@@ -341,16 +331,10 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	tracker.cleanup(now())
 	// Tracker should be empty nowUnixMinutes.
 	// If it's not, then we did something wrong.
-	for _, info := range tracker.tenants {
-		t.Errorf("Tenant %q is still present with %d series %d refs", tenant, info.series.Load(), info.refs.Load())
-	}
+
+	require.Empty(t, tracker.seriesCounts(), "there should be no tenants with series counts")
 	for i := uint8(0); i < shards; i++ {
-		for tenantID, shard := range tracker.data[i] {
-			t.Errorf("Shard %d still has tenant %q with %d series=", i, tenantID, len(shard.series))
-			for s, ts := range shard.series {
-				t.Errorf("Tenant %q: series %d with timestamp=%d (nowUnixMinutes=%d)", tenantID, s, minutes(ts.Load()), toMinutes(time.Unix(nowUnixMinutes.Load(), 0)))
-			}
-		}
+		require.Emptyf(t, decodeSnapshot(t, tracker.snapshot(i, now(), nil)), "shard %d should have an empty snapshot", i)
 	}
 }
 
@@ -505,4 +489,51 @@ func TestMinutes(t *testing.T) {
 			})
 		}
 	})
+}
+
+func requireTrackersSameData(t *testing.T, tracker1, tracker2 *trackerStore) {
+	t.Helper()
+	snapshotTime := time.Unix(0, 0)
+	for i := uint8(0); i < shards; i++ {
+		tracker1Snapshot := decodeSnapshot(t, tracker1.snapshot(i, snapshotTime, nil))
+		tracker2Snapshot := decodeSnapshot(t, tracker2.snapshot(i, snapshotTime, nil))
+		require.Equalf(t, tracker1Snapshot, tracker2Snapshot, "shard %d", i)
+	}
+}
+
+func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]minutes {
+	snapshot := encoding.Decbuf{B: data}
+	version := snapshot.Byte()
+	require.NoError(t, snapshot.Err())
+	require.Equal(t, uint8(snapshotEncodingVersion), version)
+	shard := snapshot.Byte()
+	require.NoError(t, snapshot.Err())
+	require.True(t, shard < shards)
+
+	_ = time.Unix(int64(snapshot.Be64()), 0)
+	require.NoError(t, snapshot.Err())
+
+	tenantsLen := snapshot.Uvarint64()
+	require.NoError(t, snapshot.Err())
+
+	res := make(map[string]map[uint64]minutes, tenantsLen)
+	for i := 0; i < int(tenantsLen); i++ {
+		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
+		tenantID := snapshot.UvarintStr()
+		require.NoErrorf(t, snapshot.Err(), "can't read tenantID %d", i)
+
+		seriesLen := int(snapshot.Uvarint64())
+		require.NoError(t, snapshot.Err())
+		shard := make(map[uint64]minutes, seriesLen)
+
+		for i := 0; i < seriesLen; i++ {
+			series := snapshot.Be64()
+			require.NoError(t, snapshot.Err())
+			ts := minutes(snapshot.Byte())
+			require.NoError(t, snapshot.Err())
+			shard[series] = ts
+		}
+		res[tenantID] = shard
+	}
+	return res
 }
