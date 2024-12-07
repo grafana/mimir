@@ -8,33 +8,46 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
 const snapshotEncodingVersion = 1
 
 func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
-	t.lock[shard].RLock()
-	shardTenants := maps.Clone(t.data[shard])
-	t.lock[shard].RUnlock()
+	t.mtx.RLock()
+	// We'll use clonedTenants to know which tenants are present and avoid holding t.mtx
+	clonedTenants := maps.Clone(t.tenants)
+	t.mtx.RUnlock()
 
 	snapshot := encoding.Encbuf{B: buf[:0]}
 	snapshot.PutByte(snapshotEncodingVersion)
 	snapshot.PutByte(shard)
 	snapshot.PutBE64(uint64(now.Unix()))
-	snapshot.PutUvarint64(uint64(len(shardTenants)))
-	for tenantID, shard := range shardTenants {
-		shard.RLock()
-		shardClone := maps.Clone(shard.series)
-		shard.RUnlock()
+	snapshot.PutUvarint64(uint64(len(clonedTenants)))
+	for tenantID := range clonedTenants {
 		snapshot.PutUvarintStr(tenantID)
-		snapshot.PutUvarint64(uint64(len(shardClone)))
-		for s, ts := range shardClone {
-			snapshot.PutBE64(s)
-			snapshot.PutByte(byte(ts.Load()))
+
+		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
+		resp := make(chan func(tenantshard.LengthCallback, tenantshard.IteratorCallback))
+		tenant.shards[shard].Events() <- tenantshard.Event{
+			Type:   tenantshard.Clone,
+			Cloner: resp,
 		}
+		clone := <-resp
+		// Once we have the clone we don't need to hold the mutex anymore as it works on a clone.
+		tenant.RUnlock()
+
+		clone(
+			func(length int) {
+				snapshot.PutUvarint64(uint64(length))
+			},
+			func(s uint64, ts clock.Minutes) {
+				snapshot.PutBE64(s)
+				snapshot.PutByte(byte(ts))
+			},
+		)
 	}
 	return snapshot.Get()
 }
@@ -69,123 +82,55 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		return fmt.Errorf("invalid snapshot format, expected tenants len: %w", err)
 	}
 
-	t.lock[shard].RLock()
-	localShardTenantsClone := maps.Clone(t.data[shard])
-	t.lock[shard].RUnlock()
-
-	// We won't be holding the mutex on tenants series of each shard while checking timestamps.
-	// If we find a too old lastSeen, we might try to update it on our copy of the pointer to atomic.Uint64,
-	// but since we're not holding the mutex, it might be evicted at the same time.
-	// We fix that by requiring a mutex (at least read mutex) for updating lastSeen on values that are beyond 3/4 expiration.
-	mutexWatermark := clock.ToMinutes(now.Add(time.Duration(-3. / 4. * float64(t.idleTimeout))))
-
 	// Some series might have been right on the boundary of being evicted when we took the snapshot.
 	// Don't load them.
 	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
+	done := make(chan struct{}, tenantsLen)
+	sent := 0
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
 		tenantID := snapshot.UvarintStr()
 		if err := snapshot.Err(); err != nil {
 			return fmt.Errorf("failed to read tenant ID %d: %w", i, err)
 		}
-		localTenant := localShardTenantsClone[tenantID]
-		if localTenant == nil {
-			// We know nothing about this tenant, maybe we need to create it
-			localTenant = t.getOrCreateTenantShard(tenantID, shard, t.limiter.localSeriesLimit(tenantID))
-		}
 
-		if err := t.loadTenantSnapshot(tenantID, localTenant, &snapshot, mutexWatermark, expirationWatermark); err != nil {
-			return fmt.Errorf("failed loading snapshot for tenant %s (%d): %w", tenantID, i, err)
-		}
-	}
-	return nil
-}
-
-func (t *trackerStore) loadTenantSnapshot(tenantID string, shard *tenantShard, snapshot *encoding.Decbuf, mutexWatermark clock.Minutes, expirationWatermark clock.Minutes) error {
-	info := t.getOrCreateTenantInfo(tenantID)
-	defer info.release()
-
-	return shard.loadSnapshot(snapshot, &info.series, mutexWatermark, expirationWatermark)
-}
-
-func (shard *tenantShard) loadSnapshot(snapshot *encoding.Decbuf, totalTenantSeries *atomic.Uint64, mutexWatermark, expirationWatermark clock.Minutes) error {
-	type entry struct {
-		series uint64
-		ts     clock.Minutes
-	}
-
-	seriesLen := int(snapshot.Uvarint64())
-	if err := snapshot.Err(); err != nil {
-		return fmt.Errorf("failed to read series len: %w", err)
-	}
-	shard.RLock()
-	seriesClone := maps.Clone(shard.series)
-	shard.RUnlock()
-
-	// TODO: reuse buffers here.
-	// We could use ugly logic to use the same slice here for both cases, but it's probably not worth it.
-	var newSeries []entry
-	var belowMutexWatermark []entry
-
-	for i := 0; i < seriesLen; i++ {
-		s := snapshot.Be64()
+		seriesLen := int(snapshot.Uvarint64())
 		if err := snapshot.Err(); err != nil {
-			return fmt.Errorf("failed to read series ref %d: %w", i, err)
+			return fmt.Errorf("failed to read series len: %w", err)
 		}
 
-		snapshotTs := clock.Minutes(snapshot.Byte())
-		if err := snapshot.Err(); err != nil {
-			return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
-		}
-		if expirationWatermark.GreaterThan(snapshotTs) {
-			// We're not interested in this series, it was about to be evicted.
-			continue
-		}
-
-		ts, ok := seriesClone[s]
-		if ok {
-			lastSeen := casIfGreater(snapshotTs, ts)
-			if mutexWatermark.GreaterThan(lastSeen) {
-				// We've CASed the last seen timestamp, but we're getting close to this value being evicted.
-				// Since we're operating on a seriesClone, we might be updating an atomic value that isn't referenced by shard.series anymore.
-				// So, try this series again later with mutex.
-				belowMutexWatermark = append(belowMutexWatermark, entry{s, lastSeen})
+		// TODO: it's probably less-blocking to work on a cloned iterator here.
+		loadRefs := make(map[uint64]clock.Minutes, seriesLen)
+		for i := 0; i < seriesLen; i++ {
+			s := snapshot.Be64()
+			if err := snapshot.Err(); err != nil {
+				return fmt.Errorf("failed to read series ref %d: %w", i, err)
 			}
-			continue
-		}
-		newSeries = append(newSeries, entry{s, snapshotTs})
-	}
 
-	// Check the series that were very close to expiration, if any.
-	if len(belowMutexWatermark) > 0 {
-		shard.RLock()
-		for _, e := range belowMutexWatermark {
-			ts, ok := shard.series[e.series]
-			if ok {
-				casIfGreater(e.ts, ts)
+			snapshotTs := clock.Minutes(snapshot.Byte())
+			if err := snapshot.Err(); err != nil {
+				return fmt.Errorf("failed to read series timestamp %d: %w", i, err)
+			}
+			if expirationWatermark.GreaterThan(snapshotTs) {
+				// We're not interested in this series, it was about to be evicted.
 				continue
 			}
-			// See? It didn't exist anymore.
-			newSeries = append(newSeries, e)
+			loadRefs[s] = snapshotTs
 		}
-		shard.RUnlock()
-	}
 
-	// Create series that didn't exist.
-	if len(newSeries) > 0 {
-		shard.Lock()
-		for _, e := range newSeries {
-			ts, ok := shard.series[e.series]
-			if ok {
-				casIfGreater(e.ts, ts)
-				continue
-			}
-			shard.series[e.series] = atomic.NewInt32(int32(e.ts))
-			// Replaying snapshot ignores limits. Series that were created elsewhere must be created here too.
-			totalTenantSeries.Inc()
+		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
+		tenant.shards[shard].Events() <- tenantshard.Event{
+			Type:     tenantshard.Load,
+			Series:   tenant.series,
+			LoadRefs: loadRefs,
+			Done:     done,
 		}
-		shard.Unlock()
+		sent++
+		tenant.RUnlock()
+	}
+	for i := 0; i < sent; i++ {
+		<-done
 	}
 	return nil
 }

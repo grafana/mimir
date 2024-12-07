@@ -41,7 +41,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 		// Push 2 more series, one is accepted, one is rejected.
 		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
 		require.NoError(t, err)
-		require.Equal(t, []uint64{4}, rejected)
+		require.Len(t, rejected, 1)
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCounts())
 	}
 	{
@@ -102,9 +102,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		// Don't transmit them yet.
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{3, 4}, now)
 		require.NoError(t, err)
-		require.Equal(t, []uint64{4}, rejected)
-		// Implementation detail: when series 4 is rejected, empty tenant shard is still created, we need to cleanup in order to compare later.
-		tracker1.cleanup(now)
+		require.Len(t, rejected, 1) // We can't know which one is rejected, it's racy.
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCounts())
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCounts())
 	}
@@ -114,9 +112,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		// Don't transmit them yet.
 		rejected, err := tracker2.trackSeries(context.Background(), testUser1, []uint64{5, 6}, now)
 		require.NoError(t, err)
-		require.Equal(t, []uint64{6}, rejected)
-		// Implementation detail: when series 6 is rejected, empty tenant shard is still created, we need to cleanup in order to compare later.
-		tracker2.cleanup(now)
+		require.Len(t, rejected, 1) // We can't know which one is rejected, it's racy.
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCounts())
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker2.seriesCounts())
 	}
@@ -188,11 +184,10 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 		err := tracker2.loadSnapshot(data, now)
 		require.NoError(t, err)
 	}
-
 	require.Equal(t, map[string]uint64{
 		testUser1: idleTimeoutMinutes,
 		testUser2: 2 * idleTimeoutMinutes,
-	}, tracker1.seriesCounts())
+	}, tracker2.seriesCounts())
 
 	// Check that they hold the same data.
 	requireTrackersSameData(t, tracker1, tracker2)
@@ -208,7 +203,7 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 	require.Equal(t, map[string]uint64{
 		testUser1: idleTimeoutMinutes,
 		testUser2: 2 * idleTimeoutMinutes,
-	}, tracker1.seriesCounts())
+	}, tracker2.seriesCounts())
 
 	// Check that they hold the same data.
 	requireTrackersSameData(t, tracker1, tracker2)
@@ -273,7 +268,9 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	require.Equal(t, map[string]map[uint64]clock.Minutes{
 		testUser2: {2: clock.ToMinutes(lastUpdate)},
 	}, decodeSnapshot(t, tracker.snapshot(2, now, nil)))
-	require.Empty(t, decodeSnapshot(t, tracker.snapshot(3, now, nil)))
+
+	// Even though testUser2 doesn't have data in shard 3, it's still included in the snapshot.
+	require.Equal(t, map[string]map[uint64]clock.Minutes{testUser2: {}}, decodeSnapshot(t, tracker.snapshot(3, now, nil)))
 
 	now = now.Add(defaultIdleTimeout / 2)
 
@@ -316,8 +313,6 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	// Wait until we perform 1e3 cleanups and create 1e3 series.
 	cleanups := 0
 	for createdSeries.count.Load() < 100*maxSeriesRange {
-		info := tracker.getOrCreateTenantInfo(tenant)
-		info.release()
 		// Keep increasing the timestamp every time.
 		nowUnixMinutes.Inc()
 		tracker.cleanup(now())
