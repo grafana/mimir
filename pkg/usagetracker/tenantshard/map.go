@@ -47,7 +47,6 @@ type Map struct {
 	data  []data
 
 	events chan Event
-	empty  chan struct{}
 
 	resident uint32
 	dead     uint32
@@ -93,10 +92,6 @@ func New(sz uint32, shard uint8) (m *Map) {
 	return
 }
 
-func (m *Map) wrongShard(key uint64) bool {
-	return uint8(key&valueMask) != m.shard
-}
-
 // put inserts |key| and |value| into the map.
 // Series is incremented if it's not nil and it's below limit, unless track is false.
 // If track is false, then the value is only updated if it's greater than the current value.
@@ -138,7 +133,7 @@ func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 			m.resident++
 			return true, false
 		}
-		i += 1 // linear probing
+		i++ // linear probing
 		if i >= uint32(len(m.index)) {
 			i = 0
 		}
@@ -193,11 +188,6 @@ func (m *Map) rehash(n uint32) {
 			m.put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
 		}
 	}
-}
-
-func (m *Map) loadFactor() float32 {
-	slots := float32(len(m.index) * groupSize)
-	return float32(m.resident-m.dead) / slots
 }
 
 // numGroups returns the minimum number of groups needed to store |n| elems.
