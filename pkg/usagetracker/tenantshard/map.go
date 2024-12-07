@@ -6,6 +6,7 @@
 package tenantshard
 
 import (
+	"math"
 	"slices"
 
 	"go.uber.org/atomic"
@@ -14,13 +15,11 @@ import (
 )
 
 const (
-	valueBits = 7
-	valueMask = Shards - 1
+	valueBits        = 7
+	valueMask        = Shards - 1
+	keyMask   uint64 = uint64(math.MaxUint64) &^ valueMask
 
 	Shards = 1 << valueBits
-
-	// TODO: ? keyMask          = math.MaxUint64 & ^ valueMask
-	keyMask uint64 = 0xffff_ffff_ffff_ff80
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
