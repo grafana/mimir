@@ -185,7 +185,7 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 
 	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
 	t.Cleanup(tracker2.shutdownAllTenants)
-	
+
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
 		data = tracker1.snapshot(shard, now, data[:0])

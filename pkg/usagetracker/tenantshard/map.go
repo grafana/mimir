@@ -24,6 +24,22 @@ const (
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
+// This holds uint64 keys and clock.Minutes values that should always be smaller than 127 (1<<valueBits - 1).
+// This map is expected to hold series refs for a single `shard`, i.e., series refs that have same value modulo 128 (1<<valueBits).
+// See https://www.dolthub.com/blog/2023-03-28-swiss-map/ to understand the design of github.com/dolthub/swiss, which is the base for this implementation.
+//
+// The map is not thread-safe so the interaction should should happen through the channel returned by Events().
+//
+// The data is stored in the data field, which are groups of up to groupSize data entries.
+// The main modification of this implementation is that each data[i] entry stores both key and value.
+// Each data value is a combination of:
+// - The upper 64-valueBits are the key
+// - The lower valueBits are the negated value.
+//
+// The value is negated to be able to distinguish the value 0 from an absent value:
+// When a data value is not inialized, or it's deleted, the value is 0, which is the same as the value 127, which is not a valid value to store.
+//
+// One of the advantages of this approach is that we're able to perform the cleanup by iterating only data.
 type Map struct {
 	shard uint8
 
@@ -81,7 +97,7 @@ func (m *Map) wrongShard(key uint64) bool {
 	return uint8(key&valueMask) != m.shard
 }
 
-// Put inserts |key| and |value| into the map.
+// put inserts |key| and |value| into the map.
 // Series is incremented if it's not nil and it's below limit, unless track is false.
 // If track is false, then the value is only updated if it's greater than the current value.
 func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool) {
@@ -112,7 +128,7 @@ func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 			// We don't check limit for Load events.
 			if series != nil {
 				if track && series.Load() >= limit {
-					return false, true // reject
+					return false, true // rejected
 				}
 				series.Inc()
 			}
@@ -129,8 +145,7 @@ func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 	}
 }
 
-// Count returns the number of elements in the Map.
-// LockKeys or Lock must be held when performing this operation.
+// count returns the number of alive elements in the Map.
 func (m *Map) count() int {
 	return int(m.resident - m.dead)
 }
