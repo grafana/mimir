@@ -19019,6 +19019,16 @@
           "desc": "",
           "blockEntries": [
             {
+              "kind": "field",
+              "name": "topic_name",
+              "required": false,
+              "desc": "Kafka topic name for usage tracker events",
+              "fieldValue": null,
+              "fieldDefaultValue": "usage-tracker-events-storage",
+              "fieldFlag": "usage-tracker.events-storage.topic-name",
+              "fieldType": "string"
+            },
+            {
               "kind": "block",
               "name": "writer",
               "required": false,
