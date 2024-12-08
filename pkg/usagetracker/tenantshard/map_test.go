@@ -28,15 +28,14 @@ func TestMap(t *testing.T) {
 			storedValues[refs[j]] = clock.Minutes(i)
 		}
 
-		resp := make(chan TrackSeriesResponse)
-		m.Events() <- Event{
-			Type:                TrackSeries,
-			Refs:                refs,
-			Value:               clock.Minutes(i),
-			Limit:               limit,
-			Series:              series,
-			TrackSeriesResponse: resp,
-		}
+		resp := make(chan TrackResponse)
+		m.Events() <- Track(
+			refs,
+			clock.Minutes(i),
+			series,
+			limit,
+			resp,
+		)
 		response := <-resp
 
 		require.Len(t, response.Created, seriesPerEvent, "iteration %d", i)
@@ -48,16 +47,15 @@ func TestMap(t *testing.T) {
 
 	{
 		// No more series will fit.
-		resp := make(chan TrackSeriesResponse)
+		resp := make(chan TrackResponse)
 		ref := uint64(65535) << valueBits
-		m.Events() <- Event{
-			Type:                TrackSeries,
-			Refs:                []uint64{ref},
-			Value:               clock.Minutes(0),
-			Limit:               limit,
-			Series:              series,
-			TrackSeriesResponse: resp,
-		}
+		m.Events() <- Track(
+			[]uint64{ref},
+			clock.Minutes(0),
+			series,
+			limit,
+			resp,
+		)
 		response := <-resp
 		require.Empty(t, response.Created)
 		require.Equal(t, []uint64{ref}, response.Rejected)
@@ -65,12 +63,9 @@ func TestMap(t *testing.T) {
 
 	{
 		gotValues := map[uint64]clock.Minutes{}
-		resp := make(chan func(LengthCallback, IteratorCallback))
-		m.Events() <- Event{
-			Type:   Clone,
-			Cloner: resp,
-		}
-		iterator := <-resp
+		cloner := make(chan func(LengthCallback, IteratorCallback))
+		m.Events() <- Clone(cloner)
+		iterator := <-cloner
 		count := 0
 		iterator(
 			func(c int) {
@@ -87,12 +82,11 @@ func TestMap(t *testing.T) {
 	{
 		// Cleanup first wave of series
 		resp := make(chan struct{})
-		m.Events() <- Event{
-			Type:      Cleanup,
-			Watermark: clock.Minutes(1),
-			Series:    series,
-			Done:      resp,
-		}
+		m.Events() <- Cleanup(
+			clock.Minutes(1),
+			series,
+			resp,
+		)
 		<-resp
 
 		expectedSeries := (events - 1) * seriesPerEvent

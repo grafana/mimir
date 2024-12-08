@@ -30,12 +30,9 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 		snapshot.PutUvarintStr(tenantID)
 
 		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
-		resp := make(chan func(tenantshard.LengthCallback, tenantshard.IteratorCallback))
-		tenant.shards[shard].Events() <- tenantshard.Event{
-			Type:   tenantshard.Clone,
-			Cloner: resp,
-		}
-		clone := <-resp
+		clonser := make(chan func(tenantshard.LengthCallback, tenantshard.IteratorCallback))
+		tenant.shards[shard].Events() <- tenantshard.Clone(clonser)
+		clone := <-clonser
 		// Once we have the clone we don't need to hold the mutex anymore as it works on a clone.
 		tenant.RUnlock()
 
@@ -101,7 +98,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		}
 
 		// TODO: it's probably less-blocking to work on a cloned iterator here.
-		loadRefs := make(map[uint64]clock.Minutes, seriesLen)
+		refs := make([]tenantshard.RefTimestamp, 0, seriesLen)
 		for i := 0; i < seriesLen; i++ {
 			s := snapshot.Be64()
 			if err := snapshot.Err(); err != nil {
@@ -116,16 +113,15 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 				// We're not interested in this series, it was about to be evicted.
 				continue
 			}
-			loadRefs[s] = snapshotTs
+			refs = append(refs, tenantshard.RefTimestamp{Ref: s, Timestamp: snapshotTs})
 		}
 
 		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
-		tenant.shards[shard].Events() <- tenantshard.Event{
-			Type:     tenantshard.Load,
-			Series:   tenant.series,
-			LoadRefs: loadRefs,
-			Done:     done,
-		}
+		tenant.shards[shard].Events() <- tenantshard.Load(
+			refs,
+			tenant.series,
+			done,
+		)
 		sent++
 		tenant.RUnlock()
 	}

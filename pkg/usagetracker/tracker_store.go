@@ -88,19 +88,18 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 
 	now := clock.ToMinutes(timeNow)
 	i0 := 0
-	resp := make(chan tenantshard.TrackSeriesResponse, shards)
+	resp := make(chan tenantshard.TrackResponse, shards)
 	sent := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
 		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
-			tenant.shards[shard].Events() <- tenantshard.Event{
-				Type:                tenantshard.TrackSeries,
-				Refs:                series[i0:i],
-				Value:               now,
-				Limit:               limit,
-				Series:              tenant.series,
-				TrackSeriesResponse: resp,
-			}
+			tenant.shards[shard].Events() <- tenantshard.Track(
+				series[i0:i],
+				now,
+				tenant.series,
+				limit,
+				resp,
+			)
 			i0 = i
 			sent++
 		}
@@ -149,16 +148,7 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
 		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
-			loadRefs := make(map[uint64]clock.Minutes, i-i0)
-			for _, seriesID := range series[i0:i] {
-				loadRefs[seriesID] = timestamp
-			}
-			tenant.shards[shard].Events() <- tenantshard.Event{
-				Type:     tenantshard.Load,
-				LoadRefs: loadRefs,
-				Series:   tenant.series,
-				Done:     done,
-			}
+			tenant.shards[shard].Events() <- tenantshard.Create(series[i0:i], timestamp, tenant.series, done)
 			sent++
 			i0 = i
 		}
@@ -221,13 +211,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 	done := make(chan struct{}, shards)
 	for tenantID, tenant := range tenantsClone {
 		for _, shard := range tenant.shards {
-			shard.Events() <- tenantshard.Event{
-				Type:      tenantshard.Cleanup,
-				Value:     watermark,
-				Series:    tenant.series,
-				Watermark: watermark,
-				Done:      done,
-			}
+			shard.Events() <- tenantshard.Cleanup(
+				watermark,
+				tenant.series,
+				done,
+			)
 		}
 
 		// TODO: do we need this done? so far it's only added for testing purposes.
@@ -275,7 +263,7 @@ type trackedTenant struct {
 
 func (tenant *trackedTenant) shutdown() {
 	for i := range tenant.shards {
-		tenant.shards[i].Events() <- tenantshard.Event{Type: tenantshard.Shutdown}
+		tenant.shards[i].Events() <- tenantshard.Shutdown()
 	}
 }
 
