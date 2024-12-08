@@ -28,22 +28,19 @@ func TestMap(t *testing.T) {
 			storedValues[refs[j]] = clock.Minutes(i)
 		}
 
-		createdResp := make(chan []uint64)
-		rejectedResp := make(chan []uint64)
+		resp := make(chan TrackSeriesResponse)
 		m.Events() <- Event{
-			Type:     TrackSeries,
-			Refs:     refs,
-			Value:    clock.Minutes(i),
-			Limit:    limit,
-			Series:   series,
-			Created:  createdResp,
-			Rejected: rejectedResp,
+			Type:                TrackSeries,
+			Refs:                refs,
+			Value:               clock.Minutes(i),
+			Limit:               limit,
+			Series:              series,
+			TrackSeriesResponse: resp,
 		}
-		created := <-createdResp
-		rejected := <-rejectedResp
+		response := <-resp
 
-		require.Len(t, created, seriesPerEvent, "iteration %d", i)
-		require.Empty(t, rejected, "iteration %d", i)
+		require.Len(t, response.Created, seriesPerEvent, "iteration %d", i)
+		require.Empty(t, response.Rejected, "iteration %d", i)
 	}
 
 	require.Equal(t, events*seriesPerEvent, m.count())
@@ -51,22 +48,19 @@ func TestMap(t *testing.T) {
 
 	{
 		// No more series will fit.
-		createdResp := make(chan []uint64)
-		rejectedResp := make(chan []uint64)
+		resp := make(chan TrackSeriesResponse)
 		ref := uint64(65535) << valueBits
 		m.Events() <- Event{
-			Type:     TrackSeries,
-			Refs:     []uint64{ref},
-			Value:    clock.Minutes(0),
-			Limit:    limit,
-			Series:   series,
-			Created:  createdResp,
-			Rejected: rejectedResp,
+			Type:                TrackSeries,
+			Refs:                []uint64{ref},
+			Value:               clock.Minutes(0),
+			Limit:               limit,
+			Series:              series,
+			TrackSeriesResponse: resp,
 		}
-		created := <-createdResp
-		require.Empty(t, created)
-		rejected := <-rejectedResp
-		require.Equal(t, []uint64{ref}, rejected)
+		response := <-resp
+		require.Empty(t, response.Created)
+		require.Equal(t, []uint64{ref}, response.Rejected)
 	}
 
 	{

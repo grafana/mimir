@@ -40,10 +40,8 @@ type Event struct {
 	// Watermark is sent in Cleanup event.
 	Watermark clock.Minutes
 
-	// Created is sent in TrackSeries event.
-	Created chan []uint64
-	// Rejected is sent in TrackSeries event.
-	Rejected chan []uint64
+	// TrackSeriesResponse is sent in TrackSeries event.
+	TrackSeriesResponse chan TrackSeriesResponse
 
 	// Cloner is sent in Clone event.
 	// The received function will call LengthCallback first, and then IteratorCallback for each one of the series.
@@ -53,6 +51,11 @@ type Event struct {
 	Done chan struct{}
 }
 
+type TrackSeriesResponse struct {
+	Created  []uint64
+	Rejected []uint64
+}
+
 // Events returns the event channel for the map where the events can be sent.
 func (m *Map) Events() chan<- Event { return m.events }
 
@@ -60,17 +63,15 @@ func (m *Map) worker() {
 	for ev := range m.events {
 		switch ev.Type {
 		case TrackSeries:
-			var createdRefs []uint64
-			var rejectedRefs []uint64
+			var resp TrackSeriesResponse
 			for _, ref := range ev.Refs {
 				if created, rejected := m.put(ref, ev.Value, ev.Series, ev.Limit, true); created {
-					createdRefs = append(createdRefs, ref)
+					resp.Created = append(resp.Created, ref)
 				} else if rejected {
-					rejectedRefs = append(rejectedRefs, ref)
+					resp.Rejected = append(resp.Rejected, ref)
 				}
 			}
-			ev.Created <- createdRefs
-			ev.Rejected <- rejectedRefs
+			ev.TrackSeriesResponse <- resp
 			// TODO: we could use this idle time to resize even larger.
 
 		case Load:

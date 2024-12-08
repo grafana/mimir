@@ -88,31 +88,29 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 
 	now := clock.ToMinutes(timeNow)
 	i0 := 0
-	createdResp := make(chan []uint64, shards)
-	rejectedResp := make(chan []uint64, shards)
+	resp := make(chan tenantshard.TrackSeriesResponse, shards)
 	sent := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
 		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
 			tenant.shards[shard].Events() <- tenantshard.Event{
-				Type:     tenantshard.TrackSeries,
-				Refs:     series[i0:i],
-				Value:    now,
-				Limit:    limit,
-				Series:   tenant.series,
-				Created:  createdResp,
-				Rejected: rejectedResp,
+				Type:                tenantshard.TrackSeries,
+				Refs:                series[i0:i],
+				Value:               now,
+				Limit:               limit,
+				Series:              tenant.series,
+				TrackSeriesResponse: resp,
 			}
 			i0 = i
 			sent++
 		}
 	}
-	// TODO: optimize this.
 	created := make([]uint64, 0, len(series)/4) // TODO: This should probably be pooled.
-	rejected = series[:0]                       // Rejected will never have more series than created, so we can reuse the same slice.
+	rejected = make([]uint64, 0, len(series)/4) // TODO: This should probably be pooled.
 	for i := 0; i < sent; i++ {
-		created = append(created, <-createdResp...)
-		rejected = append(rejected, <-rejectedResp...)
+		response := <-resp
+		created = append(created, response.Created...)
+		rejected = append(rejected, response.Rejected...)
 	}
 
 	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(created), "rejected_len", len(rejected), "now", timeNow.Unix(), "now_minutes", now)
