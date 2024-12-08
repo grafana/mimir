@@ -1594,13 +1594,13 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with 80_000 samples with duplicated timestamps": {
 			setup: func() []mimirpb.PreallocTimeseries {
 				samples := make([]mimirpb.Sample, testSize)
-				value := 0.0
+				value := 0
 				for i := 0; i < testSize; i++ {
 					if i < numberOfDifferentValues {
-						value += 1.0
+						value++
 					}
 					samples[i].TimestampMs = timestamp
-					samples[i].Value = value
+					samples[i].Value = float64(value)
 				}
 				timeseries := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, samples, nil, nil),
@@ -1679,8 +1679,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-
-	fmt.Println(b.N)
 
 	for name, tc := range testCases {
 		b.Run(name, func(b *testing.B) {

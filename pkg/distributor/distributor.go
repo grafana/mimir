@@ -751,34 +751,54 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 
 	timestamps := make(map[int64]struct{})
-	duplicateSamplesTimestampsIdxs := make([]int, 0, len(ts.Samples))
+	currPos := 0
+	deduplicatedSamples := 0
 	for idx, s := range ts.Samples {
 		if _, ok := timestamps[s.TimestampMs]; ok {
-			duplicateSamplesTimestampsIdxs = append(duplicateSamplesTimestampsIdxs, idx)
+			deduplicatedSamples++
 			continue
 		}
 		timestamps[s.TimestampMs] = struct{}{}
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return true, err
 		}
+		if currPos != idx {
+			ts.Samples[currPos] = s
+		}
+		currPos++
+	}
+
+	if currPos != len(ts.Samples) {
+		ts.Samples = ts.Samples[:currPos]
+		ts.SamplesUpdated()
 	}
 
 	timestamps = make(map[int64]struct{})
-	duplicateHistogramTimestampsIdsx := make([]int, 0, len(ts.Samples))
 	histogramsUpdated := false
-	for i, h := range ts.Histograms {
+	currPos = 0
+	for idx, h := range ts.Histograms {
 		if _, ok := timestamps[h.Timestamp]; ok {
-			duplicateHistogramTimestampsIdsx = append(duplicateHistogramTimestampsIdsx, i)
+			deduplicatedSamples++
 			continue
 		}
 		timestamps[h.Timestamp] = struct{}{}
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
 		if err != nil {
 			return true, err
 		}
 		histogramsUpdated = histogramsUpdated || updated
+		if currPos != idx {
+			ts.Histograms[currPos] = h
+		}
+		currPos++
 	}
+
 	if histogramsUpdated {
+		ts.HistogramsUpdated()
+	}
+
+	if currPos != len(ts.Histograms) {
+		ts.Histograms = ts.Histograms[:currPos]
 		ts.HistogramsUpdated()
 	}
 
@@ -818,22 +838,10 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		}
 	}
 
-	duplicatedTimestamps := len(duplicateSamplesTimestampsIdxs) + len(duplicateHistogramTimestampsIdsx)
-	if duplicatedTimestamps > 0 {
-		if len(duplicateSamplesTimestampsIdxs) > 0 {
-			d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(duplicateSamplesTimestampsIdxs)))
-			ts.Samples = util.RemoveSliceIndexes(ts.Samples, duplicateSamplesTimestampsIdxs)
-			ts.SamplesUpdated()
-		}
-
-		if len(duplicateHistogramTimestampsIdsx) > 0 {
-			d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(len(duplicateHistogramTimestampsIdsx)))
-			ts.Histograms = util.RemoveSliceIndexes(ts.Histograms, duplicateHistogramTimestampsIdsx)
-			ts.HistogramsUpdated()
-		}
-
+	if deduplicatedSamples > 0 {
+		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamples))
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		return false, fmt.Errorf(duplicateTimestampMsgFormat, duplicatedTimestamps, unsafeMetricName)
+		return false, fmt.Errorf(duplicateTimestampMsgFormat, deduplicatedSamples, unsafeMetricName)
 	}
 
 	return false, nil
