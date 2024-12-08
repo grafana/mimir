@@ -8047,7 +8047,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := validation.NewMockTenantLimits(map[string]*validation.Limits{
 				tc.userID: {
-					DistributorArtificialIngestionDelay: model.Duration(tc.delay),
+					IngestionArtificialDelay: model.Duration(tc.delay),
 				},
 			})
 			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)

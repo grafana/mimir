@@ -183,7 +183,7 @@ type Distributor struct {
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
 
-	// For testing.
+	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
 }
@@ -1214,7 +1214,9 @@ func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
 		if userErr == nil {
 			// Target delay - time spent processing the middleware chain including the push.
 			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
-			d.sleep(d.limits.DistributorArtificialIngestionDelay(userID) - d.now().Sub(start))
+			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
+				d.sleep(util.DurationWithJitter(delay, 0.10))
+			}
 			return err
 		}
 
