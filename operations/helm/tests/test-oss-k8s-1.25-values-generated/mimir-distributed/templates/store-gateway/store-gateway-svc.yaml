@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-a"
-    rollout-group: store-gateway
+    rollout-group: test-oss-k8s-1.25-values-mimir-store-gateway
     zone: zone-a
   annotations:
     {}
@@ -32,7 +32,7 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-k8s-1.25-values
     app.kubernetes.io/component: store-gateway
-    rollout-group: store-gateway
+    rollout-group: test-oss-k8s-1.25-values-mimir-store-gateway
     zone: zone-a
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-svc.yaml
@@ -47,7 +47,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-b"
-    rollout-group: store-gateway
+    rollout-group: test-oss-k8s-1.25-values-mimir-store-gateway
     zone: zone-b
   annotations:
     {}
@@ -68,7 +68,7 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-k8s-1.25-values
     app.kubernetes.io/component: store-gateway
-    rollout-group: store-gateway
+    rollout-group: test-oss-k8s-1.25-values-mimir-store-gateway
     zone: zone-b
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-svc.yaml
@@ -83,7 +83,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-c"
-    rollout-group: store-gateway
+    rollout-group: test-oss-k8s-1.25-values-mimir-store-gateway
     zone: zone-c
   annotations:
     {}
@@ -104,5 +104,5 @@ spec:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-k8s-1.25-values
     app.kubernetes.io/component: store-gateway
-    rollout-group: store-gateway
+    rollout-group: test-oss-k8s-1.25-values-mimir-store-gateway
     zone: zone-c
