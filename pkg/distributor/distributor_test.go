@@ -1677,13 +1677,14 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	require.Len(b, ds, 1)
 	require.Len(b, regs, 1)
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
 	for name, tc := range testCases {
 		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
+				b.StopTimer()
 				timeseries := tc.setup()
+				b.StartTimer()
 				for i, ts := range timeseries {
 					shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 					require.False(b, shouldRemove)
