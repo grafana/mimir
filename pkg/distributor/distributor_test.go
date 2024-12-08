@@ -8077,7 +8077,9 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
 			require.NoError(t, err)
 
-			require.Equal(t, tc.expectedSleep, timeSource.Slept)
+			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.
+			difference := timeSource.Slept - tc.expectedSleep
+			require.LessOrEqual(t, difference.Abs(), tc.expectedSleep/10)
 		})
 	}
 }
