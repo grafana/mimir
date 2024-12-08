@@ -121,7 +121,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		reg:                                   reg,
 	}
 
-	r.metrics = newReaderMetrics(partitionID, reg, r)
+	r.metrics = newReaderMetrics(kafkaCfg.Topic, partitionID, reg, r)
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -1034,7 +1034,7 @@ type readerMetricsSource interface {
 	EstimatedBytesPerRecord() int64
 }
 
-func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource) readerMetrics {
+func newReaderMetrics(topic string, partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource) readerMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -1099,7 +1099,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 			Help:                        "How long a consumer spent processing a batch of records from Kafka. This includes retries on server errors.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
+		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, topic, reg),
 		lastConsumedOffset:               lastConsumedOffset,
 		kprom:                            NewKafkaReaderClientMetrics(component, reg),
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -1121,17 +1121,17 @@ type StrongReadConsistencyInstrumentation[T any] struct {
 	latency  prometheus.Histogram
 }
 
-func NewStrongReadConsistencyInstrumentation[T any](component string, reg prometheus.Registerer) *StrongReadConsistencyInstrumentation[T] {
+func NewStrongReadConsistencyInstrumentation[T any](component, topic string, reg prometheus.Registerer) *StrongReadConsistencyInstrumentation[T] {
 	i := &StrongReadConsistencyInstrumentation[T]{
 		requests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_strong_consistency_requests_total",
 			Help:        "Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.",
-			ConstLabels: map[string]string{"component": component},
+			ConstLabels: map[string]string{"component": component, "topic": topic},
 		}, []string{"with_offset"}),
 		failures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_strong_consistency_failures_total",
 			Help:        "Total number of failures while waiting for strong consistency to be enforced.",
-			ConstLabels: map[string]string{"component": component},
+			ConstLabels: map[string]string{"component": component, "topic": topic},
 		}),
 		latency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_strong_consistency_wait_duration_seconds",
@@ -1140,7 +1140,7 @@ func NewStrongReadConsistencyInstrumentation[T any](component string, reg promet
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
-			ConstLabels:                     map[string]string{"component": component},
+			ConstLabels:                     map[string]string{"component": component, "topic": topic},
 		}),
 	}
 
