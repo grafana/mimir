@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Update rollout-operator version to 0.20.0. #9995
 * [CHANGE] Remove the `track_sizes` feature for Memcached pods since it is unused. #10032
 * [FEATURE] Add support for GEM's federation-frontend. See the `federation_frontend` section in the values file. #9673
+* [FEATURE] Support monolithic deployment with the helm chart. #4832
 * [ENHANCEMENT] Add support for setting type and internal traffic policy for Kubernetes service. Set `internalTrafficPolicy=Cluster` by default in all services with type `ClusterIP`. #9619
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `alertmanager` component by setting `alertmanager.serviceAcount.create` to true in the values. #9781
 * [ENHANCEMENT] helm: add `enabled` field for admin-api, compactor, distributor, gateway, ingester, querier, query-frontend and store-gateway components. This helps when deploying the GEM federation-frontend on its own. #9734
