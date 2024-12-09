@@ -17,9 +17,9 @@ func (t *trackerStore) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
-	t.tenantsMtx.RLock()
-	defer t.tenantsMtx.RUnlock()
-	for tenantID, info := range t.tenants {
-		metrics <- prometheus.MustNewConstMetric(trackerStoreMetricDesc, prometheus.GaugeValue, float64(info.series.Load()), tenantID)
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+	for tenantID, tenant := range t.tenants {
+		metrics <- prometheus.MustNewConstMetric(trackerStoreMetricDesc, prometheus.GaugeValue, float64(tenant.series.Load()), tenantID)
 	}
 }

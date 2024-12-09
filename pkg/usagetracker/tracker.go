@@ -26,8 +26,6 @@ import (
 )
 
 const (
-	eventsTopic = "usage-tracker-events"
-
 	SnapshotsStoragePrefix = "usage-tracker-snapshots"
 
 	eventsKafkaWriterMetricsPrefix = "cortex_usage_tracker_events_writer"
@@ -193,7 +191,7 @@ func (t *UsageTracker) start(ctx context.Context) error {
 
 	startConsumingEventsAtMillis := time.Now().Add(-t.cfg.IdleTimeout).UnixMilli()
 	t.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		eventsTopic: {t.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
+		t.cfg.EventsStorage.TopicName: {t.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
 	})
 
 	return nil
@@ -319,7 +317,7 @@ func (t *UsageTracker) publishSeriesCreatedEvents(ctx context.Context, wg *sync.
 				timer = time.NewTimer(t.cfg.CreatedSeriesEventsBatchTTL)
 			}
 			level.Debug(t.logger).Log("msg", "batching series created event", "size", len(data), "partition", t.partitionID)
-			batch = append(batch, &kgo.Record{Topic: eventsTopic, Value: data, Partition: t.partitionID})
+			batch = append(batch, &kgo.Record{Topic: t.cfg.EventsStorage.TopicName, Value: data, Partition: t.partitionID})
 			batchSize += len(data)
 
 			if batchSize >= t.cfg.CreatedSeriesEventsMaxBatchSizeBytes {
