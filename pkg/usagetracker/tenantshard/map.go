@@ -84,7 +84,6 @@ func New(sz uint32, shard uint8, totalShards uint8) (m *Map) {
 
 		limit: groups * maxAvgGroupLoad,
 	}
-	return
 }
 
 // Put inserts |key| and |value| into the map.
@@ -176,6 +175,7 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
+	// TODO if we're just removing dead elements, we can reuse same m.index.
 	datas, indices := m.data, m.index
 	m.data = make([]data, n)
 	m.index = make([]index, n)
