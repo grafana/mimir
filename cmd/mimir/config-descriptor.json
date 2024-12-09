@@ -4381,6 +4381,50 @@
         },
         {
           "kind": "field",
+          "name": "cost_attribution_labels",
+          "required": false,
+          "desc": "List of labels used to define cost attribution. These labels will be included in the specified distributor and ingester metrics for each write request, allowing them to be distinguished by the label. The label applies to the following metrics: cortex_distributor_attributed_received_samples_total, cortex_ingester_attributed_active_series, and cortex_attributed_discarded_samples_total. Set to an empty string to disable cost attribution.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.cost-attribution-labels",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_labels_per_user",
+          "required": false,
+          "desc": "Maximum number of cost attribution labels allowed per user. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_cardinality_per_user",
+          "required": false,
+          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000,
+          "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_cooldown",
+          "required": false,
+          "desc": "Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system will stay in overflow mode and extend the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset will occur once the cardinality falls below the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.cost-attribution-cooldown",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ruler_evaluation_delay_duration",
           "required": false,
           "desc": "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.",
@@ -19637,6 +19681,28 @@
       "fieldDefaultValue": true,
       "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
       "fieldType": "boolean",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_eviction_interval",
+      "required": false,
+      "desc": "Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1200000000000,
+      "fieldFlag": "cost-attribution.eviction-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_registry_path",
+      "required": false,
+      "desc": "Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.",
+      "fieldValue": null,
+      "fieldDefaultValue": "",
+      "fieldFlag": "cost-attribution.registry-path",
+      "fieldType": "string",
       "fieldCategory": "experimental"
     }
   ],
