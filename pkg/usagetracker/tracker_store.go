@@ -182,7 +182,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *tracked
 		capacity = math.MaxUint32
 	}
 	for i := range preparedTenant.shards {
-		preparedTenant.shards[i] = tenantshard.New(uint32(capacity), uint8(i))
+		preparedTenant.shards[i] = tenantshard.New(uint32(capacity), uint8(i), shards)
 	}
 
 	t.mtx.Lock()
