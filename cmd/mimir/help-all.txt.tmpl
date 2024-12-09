@@ -3409,6 +3409,8 @@ Usage of ./cmd/mimir/mimir:
     	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
   -usage-tracker.events-storage.reader.write-timeout duration
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
+  -usage-tracker.events-storage.topic-name string
+    	Kafka topic name for usage tracker events (default "usage-tracker-events-storage")
   -usage-tracker.events-storage.writer.address string
     	The Kafka backend address.
   -usage-tracker.events-storage.writer.auto-create-topic-default-partitions int
