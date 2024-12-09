@@ -532,6 +532,7 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
 		Timeseries: converter.TimeSeries(),
+		Metadata:   converter.Metadata(),
 	})
 
 	switch {
