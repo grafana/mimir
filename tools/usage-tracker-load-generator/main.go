@@ -25,8 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const userID = "usage-tracker-load-generator"
-
 type Config struct {
 	Client        usagetrackerclient.Config
 	InstanceRing  usagetracker.InstanceRingConfig
@@ -34,12 +32,16 @@ type Config struct {
 	MemberlistKV  memberlist.KVConfig
 
 	// Load generator.
+	TenantID                       string
+	ReplicaID                      int
 	SimulatedTotalSeries           int
 	SimulatedScrapeInterval        time.Duration
 	SimulatedSeriesPerWriteRequest int
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	f.StringVar(&c.TenantID, "tenant-id", "usage-tracker-load-generator", "The tenant ID.")
+	f.IntVar(&c.ReplicaID, "replica-id", 1, "The load-generator replica ID. Different replicas generate different series hashes.")
 	f.IntVar(&c.SimulatedTotalSeries, "test.simulated-total-series", 1000, "Total number of series simulated.")
 	f.DurationVar(&c.SimulatedScrapeInterval, "test.simulated-scrape-interval", 20*time.Second, "Simulated scrape interval.")
 	f.IntVar(&c.SimulatedSeriesPerWriteRequest, "test.simulated-series-per-write-request", 1000, "Simulated number of series per write request.")
@@ -124,7 +126,7 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 	targetTimePerRequest := cfg.SimulatedScrapeInterval / time.Duration(numRequestsPerWorker)
 
 	// Inject the user ID in the context, required by the usage-tracker server.
-	ctx = user.InjectOrgID(ctx, userID)
+	ctx = user.InjectOrgID(ctx, cfg.TenantID)
 
 	for {
 		// Start a new simulated scrape interval cycle.
@@ -135,7 +137,8 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 
 		// Re-initialise the random generator, so that the series hashes generated each cycle are always the same.
 		// We don't care about collisions between workers. We expect them to be a very low %.
-		random := rand.New(rand.NewSource(int64(workerID)))
+		seed := (int64(cfg.ReplicaID) << 32) | int64(uint32(workerID))
+		random := rand.New(rand.NewSource(seed))
 
 		// Sequentially iterate over all the series that needs be tracked by this worker.
 		for numSeriesTracked < numSeriesPerWorker {
@@ -147,7 +150,7 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 				numSeriesTracked++
 			}
 
-			rejectedHashes, err := client.TrackSeries(ctx, userID, seriesHashes)
+			rejectedHashes, err := client.TrackSeries(ctx, cfg.TenantID, seriesHashes)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
 			}
