@@ -28,6 +28,7 @@
 ### Mimirtool
 
 * [BUGFIX] Fix issue where `MIMIR_HTTP_PREFIX` environment variable was ignored and the value from `MIMIR_MIMIR_HTTP_PREFIX` was used instead. #10207
+* [ENHANCEMENT] Unify mimirtool authentication options and add extra-headers support for commands that depend on MimirClient. #10178
 
 ### Mimir Continuous Test
 
