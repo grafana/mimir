@@ -11,11 +11,13 @@ import (
 )
 
 type EventsStorageConfig struct {
-	Writer ingest.KafkaConfig `yaml:"writer"`
-	Reader ingest.KafkaConfig `yaml:"reader"`
+	TopicName string             `yaml:"topic_name"`
+	Writer    ingest.KafkaConfig `yaml:"writer"`
+	Reader    ingest.KafkaConfig `yaml:"reader"`
 }
 
 func (c *EventsStorageConfig) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&c.TopicName, "usage-tracker.events-storage.topic-name", "usage-tracker-events-storage", "Kafka topic name for usage tracker events")
 	c.Writer.RegisterFlagsWithPrefix("usage-tracker.events-storage.writer", f)
 	c.Reader.RegisterFlagsWithPrefix("usage-tracker.events-storage.reader", f)
 }

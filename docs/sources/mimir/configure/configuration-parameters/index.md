@@ -475,6 +475,10 @@ usage_tracker:
         [mirror_timeout: <duration> | default = 2s]
 
   events_storage:
+    # Kafka topic name for usage tracker events
+    # CLI flag: -usage-tracker.events-storage.topic-name
+    [topic_name: <string> | default = "usage-tracker-events-storage"]
+
     writer:
       # The Kafka backend address.
       # CLI flag: -usage-tracker.events-storage.writer.address
