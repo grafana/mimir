@@ -334,98 +334,82 @@ load 5m
   threshold{instance="abc",job="node",target="a@b.com"} 0
 
 # Copy machine role to node variable.
-# Unsupported by streaming engine.
-# eval instant at 1m node_role * on (instance) group_right (role) node_var
-#   {instance="abc",job="node",role="prometheus"} 2
+eval instant at 1m node_role * on (instance) group_right (role) node_var
+  {instance="abc",job="node",role="prometheus"} 2
 
-# Unsupported by streaming engine.
-# eval instant at 1m node_var * on (instance) group_left (role) node_role
-#   {instance="abc",job="node",role="prometheus"} 2
+eval instant at 1m node_var * on (instance) group_left (role) node_role
+  {instance="abc",job="node",role="prometheus"} 2
 
-# Unsupported by streaming engine.
-# eval instant at 1m node_var * ignoring (role) group_left (role) node_role
-#   {instance="abc",job="node",role="prometheus"} 2
+eval instant at 1m node_var * ignoring (role) group_left (role) node_role
+  {instance="abc",job="node",role="prometheus"} 2
 
-# Unsupported by streaming engine.
-# eval instant at 1m node_role * ignoring (role) group_right (role) node_var
-#   {instance="abc",job="node",role="prometheus"} 2
+eval instant at 1m node_role * ignoring (role) group_right (role) node_var
+  {instance="abc",job="node",role="prometheus"} 2
 
 # Copy machine role to node variable with instrumentation labels.
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu * ignoring (role, mode) group_left (role) node_role
-#   {instance="abc",job="node",mode="idle",role="prometheus"} 3
-#   {instance="abc",job="node",mode="user",role="prometheus"} 1
+eval instant at 1m node_cpu * ignoring (role, mode) group_left (role) node_role
+  {instance="abc",job="node",mode="idle",role="prometheus"} 3
+  {instance="abc",job="node",mode="user",role="prometheus"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu * on (instance) group_left (role) node_role
-#   {instance="abc",job="node",mode="idle",role="prometheus"} 3
-#   {instance="abc",job="node",mode="user",role="prometheus"} 1
+eval instant at 1m node_cpu * on (instance) group_left (role) node_role
+  {instance="abc",job="node",mode="idle",role="prometheus"} 3
+  {instance="abc",job="node",mode="user",role="prometheus"} 1
 
 
 # Ratio of total.
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu / on (instance) group_left sum by (instance,job)(node_cpu)
-#   {instance="abc",job="node",mode="idle"} .75
-#   {instance="abc",job="node",mode="user"} .25
-#   {instance="def",job="node",mode="idle"} .80
-#   {instance="def",job="node",mode="user"} .20
+eval instant at 1m node_cpu / on (instance) group_left sum by (instance,job)(node_cpu)
+  {instance="abc",job="node",mode="idle"} .75
+  {instance="abc",job="node",mode="user"} .25
+  {instance="def",job="node",mode="idle"} .80
+  {instance="def",job="node",mode="user"} .20
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum by (mode, job)(node_cpu) / on (job) group_left sum by (job)(node_cpu)
-#   {job="node",mode="idle"} 0.7857142857142857
-#   {job="node",mode="user"} 0.21428571428571427
+eval instant at 1m sum by (mode, job)(node_cpu) / on (job) group_left sum by (job)(node_cpu)
+  {job="node",mode="idle"} 0.7857142857142857
+  {job="node",mode="user"} 0.21428571428571427
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum(sum by (mode, job)(node_cpu) / on (job) group_left sum by (job)(node_cpu))
-#   {} 1.0
+eval instant at 1m sum(sum by (mode, job)(node_cpu) / on (job) group_left sum by (job)(node_cpu))
+  {} 1.0
 
 
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu / ignoring (mode) group_left sum without (mode)(node_cpu)
-#   {instance="abc",job="node",mode="idle"} .75
-#   {instance="abc",job="node",mode="user"} .25
-#   {instance="def",job="node",mode="idle"} .80
-#   {instance="def",job="node",mode="user"} .20
+eval instant at 1m node_cpu / ignoring (mode) group_left sum without (mode)(node_cpu)
+  {instance="abc",job="node",mode="idle"} .75
+  {instance="abc",job="node",mode="user"} .25
+  {instance="def",job="node",mode="idle"} .80
+  {instance="def",job="node",mode="user"} .20
 
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu / ignoring (mode) group_left(dummy) sum without (mode)(node_cpu)
-#   {instance="abc",job="node",mode="idle"} .75
-#   {instance="abc",job="node",mode="user"} .25
-#   {instance="def",job="node",mode="idle"} .80
-#   {instance="def",job="node",mode="user"} .20
+eval instant at 1m node_cpu / ignoring (mode) group_left(dummy) sum without (mode)(node_cpu)
+  {instance="abc",job="node",mode="idle"} .75
+  {instance="abc",job="node",mode="user"} .25
+  {instance="def",job="node",mode="idle"} .80
+  {instance="def",job="node",mode="user"} .20
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu)
-#   {job="node",mode="idle"} 0.7857142857142857
-#   {job="node",mode="user"} 0.21428571428571427
+eval instant at 1m sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu)
+  {job="node",mode="idle"} 0.7857142857142857
+  {job="node",mode="user"} 0.21428571428571427
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum(sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu))
-#   {} 1.0
+eval instant at 1m sum(sum without (instance)(node_cpu) / ignoring (mode) group_left sum without (instance, mode)(node_cpu))
+  {} 1.0
 
 
 # Copy over label from metric with no matching labels, without having to list cross-job target labels ('job' here).
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu + on(dummy) group_left(foo) random*0
-#   {instance="abc",job="node",mode="idle",foo="bar"} 3
-#   {instance="abc",job="node",mode="user",foo="bar"} 1
-#   {instance="def",job="node",mode="idle",foo="bar"} 8
-#   {instance="def",job="node",mode="user",foo="bar"} 2
+eval instant at 1m node_cpu + on(dummy) group_left(foo) random*0
+  {instance="abc",job="node",mode="idle",foo="bar"} 3
+  {instance="abc",job="node",mode="user",foo="bar"} 1
+  {instance="def",job="node",mode="idle",foo="bar"} 8
+  {instance="def",job="node",mode="user",foo="bar"} 2
 
 
 # Use threshold from metric, and copy over target.
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu > on(job, instance) group_left(target) threshold
-#   node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
-#   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+eval instant at 1m node_cpu > on(job, instance) group_left(target) threshold
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
 
 # Use threshold from metric, and a default (1) if it's not present.
-# Unsupported by streaming engine.
-# eval instant at 1m node_cpu > on(job, instance) group_left(target) (threshold or on (job, instance) (sum by (job, instance)(node_cpu) * 0 + 1))
-#   node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
-#   node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
-#   node_cpu{instance="def",job="node",mode="idle"} 8
-#   node_cpu{instance="def",job="node",mode="user"} 2
+eval instant at 1m node_cpu > on(job, instance) group_left(target) (threshold or on (job, instance) (sum by (job, instance)(node_cpu) * 0 + 1))
+  node_cpu{instance="abc",job="node",mode="idle",target="a@b.com"} 3
+  node_cpu{instance="abc",job="node",mode="user",target="a@b.com"} 1
+  node_cpu{instance="def",job="node",mode="idle"} 8
+  node_cpu{instance="def",job="node",mode="user"} 2
 
 
 # Check that binops drop the metric name.

@@ -249,7 +249,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
 		}
 
-		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne {
+		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne && !q.engine.featureToggles.EnableOneToManyAndManyToOneBinaryOperations {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
 		}
 
@@ -269,7 +269,14 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		case parser.LOR:
 			return binops.NewOrBinaryOperation(lhs, rhs, *e.VectorMatching, q.memoryConsumptionTracker, timeRange, e.PositionRange()), nil
 		default:
-			return binops.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			switch e.VectorMatching.Card {
+			case parser.CardOneToMany, parser.CardManyToOne:
+				return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange(), timeRange)
+			case parser.CardOneToOne:
+				return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, e.ReturnBool, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			default:
+				return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", e.VectorMatching.Card, e.Op))
+			}
 		}
 
 	case *parser.UnaryExpr:
