@@ -4,6 +4,24 @@
 
 ### Grafana Mimir
 
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
+## 2.15.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Alertmanager: the following metrics are not exported for a given `user` when the metric value is zero: #9359
   * `cortex_alertmanager_alerts_received_total`
   * `cortex_alertmanager_alerts_invalid_total`
