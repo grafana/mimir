@@ -40,8 +40,6 @@ const (
 //
 // One of the advantages of this approach is that we're able to perform the cleanup by iterating only data.
 type Map struct {
-	shard uint8
-
 	index []index
 	data  []data
 
@@ -71,15 +69,9 @@ type prefix uint8
 type suffix uint64
 
 // New constructs a Map.
-func New(sz uint32, shard uint8) (m *Map) {
-	if shard >= Shards {
-		panic("shard out of bounds")
-	}
-
+func New(sz uint32) (m *Map) {
 	groups := numGroups(sz)
 	m = &Map{
-		shard: shard,
-
 		index: make([]index, groups),
 		data:  make([]data, groups),
 
@@ -97,6 +89,9 @@ func New(sz uint32, shard uint8) (m *Map) {
 func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool) {
 	if m.resident >= m.limit {
 		m.rehash(m.nextSize())
+	}
+	if value >= valueMask {
+		panic("tenantshard.Map can't store values higher than valueMask")
 	}
 
 	masked := key & keyMask
@@ -128,7 +123,7 @@ func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 			}
 			s := nextMatch(&matches)
 			m.index[i][s] = pfx
-			m.data[i][s] = masked | uint64(value&valueMask^valueMask)
+			m.data[i][s] = uint64(sfx) | uint64(value&valueMask^valueMask)
 			m.resident++
 			return true, false
 		}
@@ -172,19 +167,20 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
-	datas, indices := m.data, m.index
+	idx, datas := m.index, m.data
 	m.data = make([]data, n)
 	m.index = make([]index, n)
 	m.limit = n * maxAvgGroupLoad
 	m.resident, m.dead = 0, 0
-	for g := range indices {
-		for s := range indices[g] {
-			c := indices[g][s]
+	for i := range idx {
+		for j := range idx[i] {
+			c := idx[i][j]
 			if c == empty || c == tombstone {
 				continue
 			}
-			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
+			d := datas[i][j]
+			key := (uint64(idx[i][j]-prefixOffset))<<(64-valueBits) | d>>valueBits
+			m.put(key, clock.Minutes(d&valueMask^valueMask), nil, 0, false)
 		}
 	}
 }
@@ -199,14 +195,14 @@ func numGroups(n uint32) (groups uint32) {
 }
 
 // splitHash extracts the prefix and suffix components from a 64 bit hash.
-// prefix is the upper 7 bits plus two, suffix is the lower 57 bits.
+// prefix is the upper 7 bits plus two, suffix is the lower 57 bits shifted left by 7.
 // By adding 2 to the prefix, it ensures that prefix is never uint8(0) or uint8(1).
 func splitHash(h uint64) (prefix, suffix) {
-	return prefix(h>>(64-valueBits)) + prefixOffset, suffix(h << valueBits >> valueBits)
+	return prefix(h>>(64-valueBits)) + prefixOffset, suffix(h << valueBits)
 }
 
 func probeStart(s suffix, groups int) uint32 {
-	// ignore the first |valueBits| bits for probing.
+	// ignore the lower |valueBits| bits for probing.
 	// We're going to convert it to uint32 anyway, so we don't really care.
 	return fastModN(uint32(s>>valueBits), uint32(groups))
 }
@@ -221,22 +217,20 @@ type LengthCallback func(int)
 type IteratorCallback func(k uint64, v clock.Minutes)
 
 func (m *Map) cloner() func(LengthCallback, IteratorCallback) {
-	shard := m.shard
-	clone := slices.Clone(m.data)
+	idx, datas := slices.Clone(m.index), slices.Clone(m.data)
 	count := m.count()
 
 	return func(length LengthCallback, iterSeries IteratorCallback) {
 		length(count)
 
-		for _, g := range clone {
-			for _, v := range g {
-				raw := v & valueMask
+		for i := range datas {
+			for j, d := range datas[i] {
+				raw := d & valueMask
 				if raw == 0 {
-					// TODO: document somewhwere that we can't store 127 as a value.
 					// There's nothing here.
 					continue
 				}
-				key := (v &^ valueMask) | uint64(shard)
+				key := (uint64(idx[i][j]-prefixOffset))<<(64-valueBits) | d>>valueBits
 				val := clock.Minutes(raw ^ valueMask)
 				iterSeries(key, val)
 			}
