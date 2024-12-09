@@ -1847,7 +1847,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		Metric: make([]*mimirpb.Metric, 0),
 	}
 
-	mergedSet := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	mergedSet := storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	for mergedSet.Next() {
 		// Interrupt if the context has been canceled.
 		if ctx.Err() != nil {

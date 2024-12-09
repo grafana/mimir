@@ -164,16 +164,16 @@ clear
 
 # Test mixed metrics and range query
 load 1m
-	incr_histogram	1 2 {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x3
+	incr_histogram_sum	1 2 {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x3
 
 # - The first value isn't enough to calculate a rate/increase
 # - The second value is a rate/increase from two floats
 # - The third value is a rate/increase across a float and histogram (so no value returned)
 # - The remaining values contain the rate/increase across two histograms in the vector
-eval_warn range from 0 to 4m step 1m rate(incr_histogram[1m1s])
+eval_warn range from 0 to 4m step 1m rate(incr_histogram_sum[1m1s])
 	{} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
 
-eval_warn range from 0 to 4m step 1m increase(incr_histogram[1m1s])
+eval_warn range from 0 to 4m step 1m increase(incr_histogram_sum[1m1s])
 	{} _ 1.0166666666666666 _ {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}} {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}}
 
 clear
