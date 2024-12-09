@@ -25,8 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const userID = "usage-tracker-load-generator"
-
 type Config struct {
 	Client        usagetrackerclient.Config
 	InstanceRing  usagetracker.InstanceRingConfig
@@ -35,12 +33,14 @@ type Config struct {
 
 	// Load generator.
 	SimulatedTotalSeries           int
+	SimulatedTotalTenants          int
 	SimulatedScrapeInterval        time.Duration
 	SimulatedSeriesPerWriteRequest int
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.IntVar(&c.SimulatedTotalSeries, "test.simulated-total-series", 1000, "Total number of series simulated.")
+	f.IntVar(&c.SimulatedTotalSeries, "test.simulated-total-series", 1000, "Total number of series simulated (evenly distributed across test.simulated-total-tenants).")
+	f.IntVar(&c.SimulatedTotalTenants, "test.simulated-total-tenants", 1, "Total number of tenants simulated.")
 	f.DurationVar(&c.SimulatedScrapeInterval, "test.simulated-scrape-interval", 20*time.Second, "Simulated scrape interval.")
 	f.IntVar(&c.SimulatedSeriesPerWriteRequest, "test.simulated-series-per-write-request", 1000, "Simulated number of series per write request.")
 
@@ -105,19 +105,22 @@ func main() {
 	numWorkers := (numRequestsPerSecond / 10) + 1
 
 	wg := sync.WaitGroup{}
-	wg.Add(numWorkers)
+	wg.Add(cfg.SimulatedTotalTenants * numWorkers)
 
-	for w := 0; w < numWorkers; w++ {
-		go func() {
-			defer wg.Done()
-			runWorker(ctx, w, numWorkers, cfg, client)
-		}()
+	for tenantID := 0; tenantID < cfg.SimulatedTotalTenants; tenantID++ {
+		userID := fmt.Sprintf("usage-tracker-load-generator-%d", tenantID)
+		for w := 0; w < numWorkers; w++ {
+			go func() {
+				defer wg.Done()
+				runWorker(ctx, userID, w, numWorkers, cfg, client)
+			}()
+		}
 	}
 
 	wg.Wait()
 }
 
-func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client *usagetrackerclient.UsageTrackerClient) {
+func runWorker(ctx context.Context, userID string, workerID, numWorkers int, cfg Config, client *usagetrackerclient.UsageTrackerClient) {
 	numSeriesPerRequest := cfg.SimulatedSeriesPerWriteRequest
 	numSeriesPerWorker := cfg.SimulatedTotalSeries / numWorkers
 	numRequestsPerWorker := (numSeriesPerWorker / numSeriesPerRequest) + 1
@@ -162,7 +165,7 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 			}
 		}
 
-		fmt.Println("Worker", workerID, "has tracked", numSeriesTracked, "series (", numSeriesRejected, "rejected) in", time.Since(startTime), "(", numRequests, "requests,", targetTimePerRequest, "target time per request)")
+		fmt.Println("Worker", workerID, "for userID", userID, "has tracked", numSeriesTracked, "series (", numSeriesRejected, "rejected) in", time.Since(startTime), "(", numRequests, "requests,", targetTimePerRequest, "target time per request)")
 
 		// Final throttle before the next cycle.
 		elapsedTime := time.Since(startTime)
