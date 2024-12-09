@@ -122,7 +122,7 @@ func main() {
 
 func runWorker(ctx context.Context, userID string, workerID, numWorkers int, cfg Config, client *usagetrackerclient.UsageTrackerClient) {
 	numSeriesPerRequest := cfg.SimulatedSeriesPerWriteRequest
-	numSeriesPerWorker := cfg.SimulatedTotalSeries / numWorkers
+	numSeriesPerWorker := cfg.SimulatedTotalSeries / numWorkers / cfg.SimulatedTotalTenants
 	numRequestsPerWorker := (numSeriesPerWorker / numSeriesPerRequest) + 1
 	targetTimePerRequest := cfg.SimulatedScrapeInterval / time.Duration(numRequestsPerWorker)
 
