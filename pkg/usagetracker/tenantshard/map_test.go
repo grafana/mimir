@@ -3,6 +3,7 @@
 package tenantshard
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -94,5 +95,26 @@ func TestMap(t *testing.T) {
 		// It's unsafe to check m.count() after Cleanup event.
 		require.Equal(t, expectedSeries, int(series.Load()))
 	}
+}
 
+func TestMapValues(t *testing.T) {
+	const count = 10e3
+	stored := map[uint64]clock.Minutes{}
+	m := New(100, 0)
+	total := atomic.NewUint64(0)
+	for i := 0; i < count; i++ {
+		key := rand.Uint64() &^ valueMask // we can only store values of this shard.
+		val := clock.Minutes(i) % valueMask
+		stored[key] = val
+		m.put(key, val, total, 0, false)
+	}
+	require.Equal(t, len(stored), m.count())
+	require.Equal(t, len(stored), int(total.Load()))
+
+	got := map[uint64]clock.Minutes{}
+	m.cloner()(
+		func(c int) { require.Equal(t, len(stored), c) },
+		func(key uint64, value clock.Minutes) { got[key] = value },
+	)
+	require.Equal(t, stored, got)
 }
