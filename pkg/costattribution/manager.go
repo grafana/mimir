@@ -59,7 +59,6 @@ func (m *Manager) running(ctx context.Context) error {
 	if m == nil {
 		return nil
 	}
-	currentTime := time.Now()
 	t := time.NewTicker(m.cleanupInterval)
 	defer t.Stop()
 
@@ -69,7 +68,7 @@ func (m *Manager) running(ctx context.Context) error {
 	for {
 		select {
 		case <-t.C:
-			err := m.purgeInactiveAttributionsUntil(currentTime.Add(-m.inactiveTimeout).Unix())
+			err := m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout).Unix())
 			if err != nil {
 				return err
 			}

@@ -3,6 +3,7 @@
 package costattribution
 
 import (
+	"bytes"
 	"sort"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ const (
 type Tracker struct {
 	userID                         string
 	caLabels                       []string
+	caLabelMap                     map[string]int
 	maxCardinality                 int
 	activeSeriesPerUserAttribution *prometheus.GaugeVec
 	receivedSamplesAttribution     *prometheus.CounterVec
@@ -53,9 +55,14 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	sort.Slice(trackedLabels, func(i, j int) bool {
 		return trackedLabels[i] < trackedLabels[j]
 	})
+	caLabelMap := make(map[string]int, len(trackedLabels))
+	for i, label := range trackedLabels {
+		caLabelMap[label] = i
+	}
 	m := &Tracker{
 		userID:         userID,
 		caLabels:       trackedLabels,
+		caLabelMap:     caLabelMap,
 		maxCardinality: limit,
 		obseveredMtx:   sync.RWMutex{},
 		observed:       map[string]*Observation{},
@@ -111,6 +118,12 @@ func (t *Tracker) CooldownDuration() int64 {
 		return 0
 	}
 	return t.cooldownDuration
+}
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
 }
 
 // sep is used to separate the labels in the key, it is not a valid label caracter
@@ -199,24 +212,35 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 	if t == nil {
 		return
 	}
+
 	labelValues := make([]string, len(t.caLabels)+1)
-	for i, label := range t.caLabels {
-		labelValues[i] = lbls.Get(label)
+	lbls.Range(func(l labels.Label) {
+		if idx, ok := t.caLabelMap[l.Name]; ok {
+			labelValues[idx] = l.Value
+		}
+	})
+	labelValues[len(labelValues)-1] = t.userID
+	for i := 0; i < len(labelValues)-1; i++ {
 		if labelValues[i] == "" {
 			labelValues[i] = missingValue
 		}
 	}
-	labelValues[len(labelValues)-1] = t.userID
 
-	var sb strings.Builder
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
 	for i, value := range labelValues[:len(labelValues)-1] {
 		if i > 0 {
-			sb.WriteRune(sep)
+			buf.WriteRune(sep)
 		}
-		sb.WriteString(value)
+		buf.WriteString(value)
 	}
 
-	t.updateOverflow(sb.String(), ts, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement, reason)
+	t.obseveredMtx.Lock()
+	defer t.obseveredMtx.Unlock()
+
+	t.updateOverflow(buf.String(), ts, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement, reason)
 }
 
 func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement int64, reason *string) {
@@ -224,8 +248,6 @@ func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement,
 		return
 	}
 
-	t.obseveredMtx.Lock()
-	// we store up to 2 * maxCardinality observations, if we have seen the stream before, we update the last update time
 	if o, known := t.observed[stream]; known && o.lastUpdate != nil {
 		if o.lastUpdate.Load() < ts {
 			o.lastUpdate.Store(ts)
@@ -255,7 +277,6 @@ func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement,
 			t.observed[stream].discardSamplemu.Unlock()
 		}
 	}
-	t.obseveredMtx.Unlock()
 
 	// If the maximum cardinality is hit all streams become `__overflow__`, the function would return true.
 	// the origin labels ovserved time is not updated, but the overflow hash is updated.
