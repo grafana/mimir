@@ -259,6 +259,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 
 const PrometheusPushEndpoint = "/api/v1/push"
 const OTLPPushEndpoint = "/otlp/v1/metrics"
+const InfluxPushEndpoint = "/api/v1/influx/push"
 
 // RegisterDistributor registers the endpoints associated with the distributor.
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
@@ -267,6 +268,10 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
 		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
+	), true, false, "POST")
+	a.RegisterRoute(InfluxPushEndpoint, distributor.InfluxHandler(
+		// TODO(alexg): HERE
+		pushConfig.MaxInfluxMsgSize, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
 		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,

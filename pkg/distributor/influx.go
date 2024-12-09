@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package push
+package distributor
 
 import (
 	"net/http"
@@ -15,7 +15,11 @@ import (
 func InfluxHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
-	push Func,
+        retryCfg RetryConfig,
+        push PushFunc,
+        pushMetrics *PushMetrics,
+        reg prometheus.Registerer,
+        logger log.Logger,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, logger := requestContextAndLogger(r, sourceIPs)

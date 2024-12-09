@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package push
+package influxpush
 
 import (
 	"compress/gzip"
@@ -20,10 +20,10 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const internalLabel = "__proxy_source__"
+const internalLabel = "__mimir_source__"
 
 // parseInfluxLineReader parses a Influx Line Protocol request from an io.Reader.
-func parseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([]mimirpb.TimeSeries, error) {
+func parseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([]mimirpb.TimeSeries, error, int) {
 	qp := r.URL.Query()
 	precision := qp.Get("precision")
 	if precision == "" {
@@ -31,30 +31,32 @@ func parseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([
 	}
 
 	if !models.ValidPrecision(precision) {
-		return nil, fmt.Errorf("precision supplied is not valid: %s", precision)
+		return nil, fmt.Errorf("precision supplied is not valid: %s", precision), 0
 	}
 
 	encoding := r.Header.Get("Content-Encoding")
 	reader, err := batchReadCloser(r.Body, encoding, int64(maxSize))
 	if err != nil {
 
-		return nil, fmt.Errorf("gzip compression error: %w", err)
+		return nil, fmt.Errorf("gzip compression error: %w", err), 0
 	}
 	data, err := ioutil.ReadAll(reader)
+	dataLen := len(data) // In case if something is read despite an error.
 	if err != nil {
-		return nil, fmt.Errorf("can't read body: %s", err)
+		return nil, fmt.Errorf("can't read body: %s", err), dataLen
 	}
 
 	err = reader.Close()
 	if err != nil {
-		return nil, fmt.Errorf("problem reading body: %s", err)
+		return nil, fmt.Errorf("problem reading body: %s", err), dataLen
 	}
 
 	points, err := models.ParsePointsWithPrecision(data, time.Now().UTC(), precision)
 	if err != nil {
 		return nil, fmt.Errorf("can't parse points: %s", err)
 	}
-	return writeRequestFromInfluxPoints(points)
+	a, b := writeRequestFromInfluxPoints(points)
+	return a, b, dataLen
 }
 
 func writeRequestFromInfluxPoints(points []models.Point) ([]mimirpb.TimeSeries, error) {

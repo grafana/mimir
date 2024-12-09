@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package push
+package distributor
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ func TestHandleSeriesPush(t *testing.T) {
 				TimeSeries: &mimirpb.TimeSeries{
 					Labels: []mimirpb.LabelAdapter{
 						{Name: "__name__", Value: "measurement_f1"},
-						{Name: "__proxy_source__", Value: "influx"},
+						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{
@@ -37,7 +37,7 @@ func TestHandleSeriesPush(t *testing.T) {
 		url                 string
 		data                string
 		expectedCode        int
-		push                func(t *testing.T) Func
+		push                func(t *testing.T) PushFunc
 		maxRequestSizeBytes int
 	}{
 		{
@@ -45,7 +45,7 @@ func TestHandleSeriesPush(t *testing.T) {
 			url:          "/write",
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
-			push: func(t *testing.T) Func {
+			push: func(t *testing.T) PushFunc {
 				return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 					assert.Equal(t, defaultExpectedWriteRequest, req)
 					return &mimirpb.WriteResponse{}, nil
@@ -58,7 +58,7 @@ func TestHandleSeriesPush(t *testing.T) {
 			url:          "/write?precision=ns",
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
-			push: func(t *testing.T) Func {
+			push: func(t *testing.T) PushFunc {
 				return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 					assert.Equal(t, defaultExpectedWriteRequest, req)
 					return &mimirpb.WriteResponse{}, nil
@@ -71,7 +71,7 @@ func TestHandleSeriesPush(t *testing.T) {
 			url:          "/write",
 			data:         "measurement,t1=v1 f1= 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
-			push: func(t *testing.T) Func {
+			push: func(t *testing.T) PushFunc {
 				return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 					t.Error("Push should not be called on bad request")
 					return &mimirpb.WriteResponse{}, nil
@@ -84,7 +84,7 @@ func TestHandleSeriesPush(t *testing.T) {
 			url:          "/write?precision=?",
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
-			push: func(t *testing.T) Func {
+			push: func(t *testing.T) PushFunc {
 				return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 					t.Error("Push should not be called on bad request")
 					return &mimirpb.WriteResponse{}, nil
@@ -97,7 +97,7 @@ func TestHandleSeriesPush(t *testing.T) {
 			url:          "/write",
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusInternalServerError,
-			push: func(t *testing.T) Func {
+			push: func(t *testing.T) PushFunc {
 				return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 					return nil, context.DeadlineExceeded
 				}
@@ -109,7 +109,7 @@ func TestHandleSeriesPush(t *testing.T) {
 			url:          "/write",
 			data:         "measurement,t1=v1 f1=2 0123456789",
 			expectedCode: http.StatusBadRequest,
-			push: func(t *testing.T) Func {
+			push: func(t *testing.T) PushFunc {
 				return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 					t.Error("Push should not be called on bad request")
 					return &mimirpb.WriteResponse{}, nil

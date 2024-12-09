@@ -86,7 +86,8 @@ const (
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 
-	maxOTLPRequestSizeFlag = "distributor.max-otlp-request-size"
+	maxOTLPRequestSizeFlag   = "distributor.max-otlp-request-size"
+	maxInfluxRequestSizeFlag = "distributor.max-influx-request-size"
 
 	instanceIngestionRateTickInterval = time.Second
 
@@ -200,6 +201,7 @@ type Config struct {
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
+	MaxInfluxRequestSize     int           `yaml:"max_influx_request_size" category:"experimental"`
 	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
 	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
@@ -255,6 +257,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
+	f.IntVar(&cfg.MaxInfluxRequestSize, maxInfluxRequestSizeFlag, 100<<20, "Maximum Influx request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
 	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
@@ -282,6 +285,7 @@ const (
 )
 
 type PushMetrics struct {
+	// TODO(alexg): influx metrics here?
 	otlpRequestCounter   *prometheus.CounterVec
 	uncompressedBodySize *prometheus.HistogramVec
 }
