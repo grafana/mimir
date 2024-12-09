@@ -199,3 +199,7 @@ func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[i
 
 	return p.client.FetchPartitionsLastProducedOffsets(ctx, partitionIDs)
 }
+
+func (p *TopicOffsetsReader) Topic() string {
+	return p.topic
+}
