@@ -170,33 +170,30 @@ func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *tracked
 	}
 	t.mtx.RUnlock()
 
-	// Let's prepare a tenant with all shards instead of doing it while locked.
-	preparedTenant := &trackedTenant{
-		series: atomic.NewUint64(0),
+	t.mtx.Lock()
+	if tenant, ok := t.tenants[tenantID]; ok {
+		tenant.RLock()
+		t.mtx.Unlock()
+		return tenant
 	}
 
+	// Let's prepare a tenant with all shards instead of doing it while locked.
+	tenant := &trackedTenant{
+		series: atomic.NewUint64(0),
+	}
 	capacity := int(limit / shards)
 	if limit == noLimit || limit == 0 {
 		capacity = 512 // let's be modest.
 	} else if capacity > math.MaxUint32 {
 		capacity = math.MaxUint32
 	}
-	for i := range preparedTenant.shards {
-		preparedTenant.shards[i] = tenantshard.New(uint32(capacity), uint8(i), shards)
+	for i := range tenant.shards {
+		tenant.shards[i] = tenantshard.New(uint32(capacity), uint8(i), shards)
 	}
-
-	t.mtx.Lock()
-	if gotTenant, ok := t.tenants[tenantID]; ok {
-		gotTenant.RLock()
-		t.mtx.Unlock()
-		preparedTenant.shutdown()
-		return gotTenant
-	}
-
-	t.tenants[tenantID] = preparedTenant
-	preparedTenant.RLock()
+	t.tenants[tenantID] = tenant
+	tenant.RLock()
 	t.mtx.Unlock()
-	return preparedTenant
+	return tenant
 }
 
 func (t *trackerStore) cleanup(now time.Time) {
