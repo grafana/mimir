@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 
 	"go.uber.org/atomic"
 
@@ -28,8 +29,6 @@ const (
 // This map is expected to hold series refs for a single `shard`, i.e., series refs that have same value modulo 128 (1<<valueBits).
 // See https://www.dolthub.com/blog/2023-03-28-swiss-map/ to understand the design of github.com/dolthub/swiss, which is the base for this implementation.
 //
-// The map is not thread-safe so the interaction should happen through the channel returned by Events().
-//
 // The data is stored in the data field, which are groups of up to groupSize data entries.
 // The main modification of this implementation is that each data[i] entry stores both key and value.
 // Each data value is a combination of:
@@ -41,12 +40,12 @@ const (
 //
 // One of the advantages of this approach is that we're able to perform the cleanup by iterating only data.
 type Map struct {
+	sync.Mutex
+
 	shard uint8
 
 	index []index
 	data  []data
-
-	events chan Event
 
 	resident uint32
 	dead     uint32
@@ -77,24 +76,20 @@ func New(sz uint32, shard uint8, totalShards uint8) (m *Map) {
 		panic(fmt.Errorf("this implementation doesn't support less than %d total shards: not enough meaningful bits, it's also not prepared for more than %d shards, as that would result in skewed group selection (see probeStart)", Shards, Shards))
 	}
 	groups := numGroups(sz)
-	m = &Map{
+	return &Map{
 		shard: shard,
 
 		index: make([]index, groups),
 		data:  make([]data, groups),
 
-		events: make(chan Event),
-
 		limit: groups * maxAvgGroupLoad,
 	}
-	go m.worker()
-	return
 }
 
-// put inserts |key| and |value| into the map.
+// Put inserts |key| and |value| into the map.
 // Series is incremented if it's not nil and it's below limit, unless track is false.
 // If track is false, then the value is only updated if it's greater than the current value.
-func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool) {
+func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool) {
 	if m.resident >= m.limit {
 		m.rehash(m.nextSize())
 	}
@@ -149,7 +144,7 @@ func (m *Map) count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) cleanup(watermark clock.Minutes, series *atomic.Uint64) {
+func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 	for i := range m.data {
 		for j, v := range m.data[i] {
 			raw := v & valueMask
@@ -166,6 +161,9 @@ func (m *Map) cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 			}
 		}
 	}
+	if m.dead > m.limit/2 {
+		m.rehash(m.nextSize())
+	}
 }
 
 func (m *Map) nextSize() (n uint32) {
@@ -177,6 +175,7 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
+	// TODO if we're just removing dead elements, we can reuse same m.index.
 	datas, indices := m.data, m.index
 	m.data = make([]data, n)
 	m.index = make([]index, n)
@@ -189,7 +188,7 @@ func (m *Map) rehash(n uint32) {
 				continue
 			}
 			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
+			m.Put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
 		}
 	}
 }
@@ -225,7 +224,7 @@ type LengthCallback func(int)
 
 type IteratorCallback func(k uint64, v clock.Minutes)
 
-func (m *Map) cloner() func(LengthCallback, IteratorCallback) {
+func (m *Map) Iterator() func(LengthCallback, IteratorCallback) {
 	shard := m.shard
 	clone := slices.Clone(m.data)
 	count := m.count()
