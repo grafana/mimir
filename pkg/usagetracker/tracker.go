@@ -224,7 +224,7 @@ func (t *UsageTracker) run(ctx context.Context) error {
 	for {
 		select {
 		case now := <-ticker.C:
-			t.store.cleanup(now)
+			t.store.cleanup(now, time.Minute/shards/2)
 		case <-ctx.Done():
 			return nil
 		case err := <-t.subservicesWatcher.Chan():

@@ -70,7 +70,7 @@ func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesP
 		go func() {
 			defer wg.Done()
 			for cleanupTime := range cleanup {
-				t.cleanup(cleanupTime)
+				t.cleanup(cleanupTime, 10*time.Microsecond)
 			}
 		}()
 	}

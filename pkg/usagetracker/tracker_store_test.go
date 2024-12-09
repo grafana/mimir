@@ -48,7 +48,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	}
 	{
 		// Cleanup now is a noop, nothing expired yet.
-		tracker.cleanup(now)
+		tracker.cleanup(now, 0)
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker.seriesCounts())
 	}
 	{
@@ -61,7 +61,7 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	now = now.Add(idleTimeout / 2)
 	{
 		// Cleanup again will remove series 1.
-		tracker.cleanup(now)
+		tracker.cleanup(now, 0)
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker.seriesCounts())
 	}
 	{
@@ -137,16 +137,16 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	}
 	now = now.Add(idleTimeout / 4)
 	{
-		tracker1.cleanup(now)
-		tracker2.cleanup(now)
+		tracker1.cleanup(now, 0)
+		tracker2.cleanup(now, 0)
 		// Only last 2 series remaining
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker1.seriesCounts())
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCounts())
 	}
 	now = now.Add(idleTimeout / 4)
 	{
-		tracker1.cleanup(now)
-		tracker2.cleanup(now)
+		tracker1.cleanup(now, 0)
+		tracker2.cleanup(now, 0)
 		// Only last 1 series remaining (the one that we pushed to tracker2)
 		// This tests that creation event uses the correct creation timestamp.
 		require.Equal(t, map[string]uint64{testUser1: 1}, tracker1.seriesCounts())
@@ -172,7 +172,7 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 		require.Empty(t, rejected)
 		require.NoError(t, err)
 
-		tracker1.cleanup(now)
+		tracker1.cleanup(now, 0)
 		now = now.Add(time.Minute)
 	}
 
@@ -234,7 +234,7 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 	require.Empty(t, rejected)
 	require.NoError(t, err)
 
-	tracker.cleanup(now)
+	tracker.cleanup(now, 0)
 
 	// There should be exactly 1 series, the other one expired.
 	require.Equal(t, map[string]uint64{testUser1: 1}, tracker.seriesCounts())
@@ -269,7 +269,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	require.Empty(t, rejected)
 
 	now = now.Add(defaultIdleTimeout / 2)
-	tracker.cleanup(now)
+	tracker.cleanup(now, 0)
 	// Tenant 1 is deleted.
 	// testUser2 still has series 1 and 2, with no data in shard3
 	require.Equal(t, map[string]uint64{testUser2: 2}, tracker.seriesCounts())
@@ -285,7 +285,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 
 	now = now.Add(defaultIdleTimeout / 2)
 
-	tracker.cleanup(now)
+	tracker.cleanup(now, 0)
 	// testUser2 is deleted.
 	require.Empty(t, tracker.seriesCounts())
 	for i := 0; i < shards; i++ {
@@ -327,7 +327,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	for createdSeries.count.Load() < 100*maxSeriesRange {
 		// Keep increasing the timestamp every time.
 		nowUnixMinutes.Inc()
-		tracker.cleanup(now())
+		tracker.cleanup(now(), 0)
 		cleanups++
 	}
 	close(done)
@@ -336,7 +336,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 
 	// Wait an idle period then cleanup.
 	nowUnixMinutes.Add(idleTimeoutMinutes)
-	tracker.cleanup(now())
+	tracker.cleanup(now(), 0)
 	// Tracker should be empty nowUnixMinutes.
 	// If it's not, then we did something wrong.
 
@@ -390,7 +390,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 	require.Empty(t, rejected)
 
 	now = now.Add(defaultIdleTimeout / 2)
-	tracker.cleanup(now)
+	tracker.cleanup(now, 0)
 
 	// Tenant 1 is deleted.
 	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
@@ -401,7 +401,7 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 
 	now = now.Add(defaultIdleTimeout / 2)
 
-	tracker.cleanup(now)
+	tracker.cleanup(now, 0)
 	// testUser2 is deleted.
 	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
 		# HELP cortex_usage_tracker_active_series Number of active series tracker for each user.

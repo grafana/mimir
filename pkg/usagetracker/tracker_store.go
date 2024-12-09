@@ -196,7 +196,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *tracked
 	return tenant
 }
 
-func (t *trackerStore) cleanup(now time.Time) {
+func (t *trackerStore) cleanup(now time.Time, minIntervalBetweenShards time.Duration) {
 	watermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
 	// We will work on a copy of tenants.
@@ -205,23 +205,26 @@ func (t *trackerStore) cleanup(now time.Time) {
 	t.mtx.RUnlock()
 
 	var deletionCandidates []string
-	done := make(chan struct{}, shards)
-	for tenantID, tenant := range tenantsClone {
-		for _, shard := range tenant.shards {
+	done := make(chan struct{})
+	for s := 0; s < shards; s++ {
+		t0 := time.Now() // We're using this for timing purposes, not for any logic.
+		for tenantID, tenant := range tenantsClone {
+			shard := tenant.shards[s]
 			shard.Events() <- tenantshard.Cleanup(
 				watermark,
 				tenant.series,
 				done,
 			)
-		}
-
-		// TODO: do we need this done? so far it's only added for testing purposes.
-		for i := 0; i < shards; i++ {
 			<-done
-		}
 
-		if tenant.series.Load() == 0 {
-			deletionCandidates = append(deletionCandidates, tenantID)
+			// On last shard, check tenant series.
+			if s == shards-1 && tenant.series.Load() == 0 {
+				deletionCandidates = append(deletionCandidates, tenantID)
+			}
+		}
+		elapsed := time.Since(t0)
+		if s < shards-1 && elapsed < minIntervalBetweenShards {
+			time.Sleep(minIntervalBetweenShards - elapsed)
 		}
 	}
 
