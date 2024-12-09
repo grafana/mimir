@@ -1274,6 +1274,11 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			skipLabelNameValidationReq: true,
 			errExpected:                false,
 		},
+		"UTF-8 characters are not accepted": {
+			inputLabels: labelAdapters(model.MetricNameLabel, "foo", "😊", "smile!"),
+			errExpected: true,
+			errMessage:  `received a series with an invalid label: '😊' series: 'foo{😊="smile!"}' (err-mimir-label-invalid)`,
+		},
 	}
 
 	for testName, tc := range tests {
@@ -7998,4 +8003,102 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	// We expect the push request to be rejected with an unavailable error.
 	require.NotNil(t, err)
 	require.ErrorContains(t, err, "rpc error: code = Internal desc = distributor is unavailable (current state: New)")
+}
+
+func Test_outerMaybeDelayMiddleware(t *testing.T) {
+	tests := []struct {
+		name          string
+		userID        string
+		delay         time.Duration
+		pushDuration  time.Duration
+		expectedSleep time.Duration
+	}{
+		{
+			name:          "No delay configured",
+			userID:        "user1",
+			delay:         0,
+			pushDuration:  500 * time.Millisecond,
+			expectedSleep: 0,
+		},
+		{
+			name:          "Delay configured but request took longer than delay",
+			userID:        "user2",
+			delay:         500 * time.Millisecond,
+			pushDuration:  1 * time.Second,
+			expectedSleep: 0,
+		},
+		{
+			name:          "Delay configured and request took less than delay",
+			userID:        "user3",
+			delay:         500 * time.Millisecond,
+			pushDuration:  50 * time.Millisecond,
+			expectedSleep: 450 * time.Millisecond,
+		},
+		{
+			name:          "Failed to extract a tenantID",
+			userID:        "",
+			delay:         500 * time.Millisecond,
+			pushDuration:  50 * time.Millisecond,
+			expectedSleep: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := validation.NewMockTenantLimits(map[string]*validation.Limits{
+				tc.userID: {
+					IngestionArtificialDelay: model.Duration(tc.delay),
+				},
+			})
+			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
+			require.NoError(t, err)
+
+			// Mock to capture sleep and advance time.
+			timeSource := &MockTimeSource{CurrentTime: time.Now()}
+
+			distributor := &Distributor{
+				log:    log.NewNopLogger(),
+				limits: overrides,
+				sleep:  timeSource.Sleep,
+				now:    timeSource.Now,
+			}
+
+			// fake push just adds time to the mocked time to make it seem like time has moved forward.
+			p := func(_ context.Context, _ *Request) error {
+				timeSource.Add(tc.pushDuration)
+				return nil
+			}
+
+			ctx := context.Background()
+			if tc.userID != "" {
+				ctx = user.InjectOrgID(ctx, tc.userID)
+			}
+			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
+			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			require.NoError(t, err)
+
+			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.
+			difference := timeSource.Slept - tc.expectedSleep
+			require.LessOrEqual(t, difference.Abs(), tc.expectedSleep/10)
+		})
+	}
+}
+
+type MockTimeSource struct {
+	CurrentTime time.Time
+	Slept       time.Duration
+}
+
+func (m *MockTimeSource) Now() time.Time {
+	return m.CurrentTime
+}
+
+func (m *MockTimeSource) Sleep(d time.Duration) {
+	if d > 0 {
+		m.Slept += d
+	}
+}
+
+func (m *MockTimeSource) Add(d time.Duration) {
+	m.CurrentTime = m.CurrentTime.Add(d)
 }

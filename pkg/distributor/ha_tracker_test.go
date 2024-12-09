@@ -16,7 +16,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -32,6 +34,19 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
+
+type dnsProviderMock struct {
+	resolved []string
+}
+
+func (p *dnsProviderMock) Resolve(_ context.Context, addrs []string) error {
+	p.resolved = addrs
+	return nil
+}
+
+func (p dnsProviderMock) Addresses() []string {
+	return p.resolved
+}
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTracker, user, cluster, replica string, expected time.Time, elected time.Time) {
 	t.Helper()
@@ -68,6 +83,232 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTra
 
 		return nil
 	})
+}
+
+func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
+	change, err := r1.Merge(r2, false)
+	if err != nil {
+		panic(err)
+	}
+
+	if change == nil {
+		return r1, nil
+	}
+
+	changeRDesc := change.(*ReplicaDesc)
+	return r1, changeRDesc
+}
+func TestReplicaDescMerge(t *testing.T) {
+	now := time.Now().Unix()
+
+	const (
+		replica1 = "r1"
+		replica2 = "r2"
+		replica3 = "r3"
+	)
+
+	firstReplica := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica1,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now,
+			ElectedChanges: 1,
+		}
+	}
+
+	firstReplicaWithHigherReceivedAt := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica1,
+			ReceivedAt:     now + 5,
+			DeletedAt:      0,
+			ElectedAt:      now,
+			ElectedChanges: 1,
+		}
+	}
+
+	secondReplica := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica2,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 5,
+			ElectedChanges: 2,
+		}
+	}
+
+	thirdReplica := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica3,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 10,
+			ElectedChanges: 3,
+		}
+	}
+
+	expectedFirstAndFirstHigherReceivedAtMerge := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica1,
+			ReceivedAt:     now + 5,
+			DeletedAt:      0,
+			ElectedAt:      now,
+			ElectedChanges: 1,
+		}
+	}
+
+	expectedFirstAndSecondMerge := func() *ReplicaDesc {
+		return &ReplicaDesc{
+			Replica:        replica2,
+			ReceivedAt:     now,
+			DeletedAt:      0,
+			ElectedAt:      now + 5,
+			ElectedChanges: 2,
+		}
+	}
+
+	testsMerge := []struct {
+		name           string
+		rDesc1         *ReplicaDesc
+		rDesc2         *ReplicaDesc
+		expectedRDesc  *ReplicaDesc
+		expectedChange *ReplicaDesc
+	}{
+		{
+			name:           "Merge ReplicaDesc: Same replica name, different receivedAt should return ReplicaDesc with most recent receivedAt timestamp",
+			rDesc1:         firstReplica(),
+			rDesc2:         firstReplicaWithHigherReceivedAt(),
+			expectedRDesc:  expectedFirstAndFirstHigherReceivedAtMerge(),
+			expectedChange: expectedFirstAndFirstHigherReceivedAtMerge(),
+		},
+		{
+			name:           "Merge ReplicaDesc: Different replica name, different electedAt should return ReplicaDesc with most recent electedAt timestamp",
+			rDesc1:         firstReplica(),
+			rDesc2:         secondReplica(),
+			expectedRDesc:  expectedFirstAndSecondMerge(),
+			expectedChange: expectedFirstAndSecondMerge(),
+		},
+		{
+			name: "idempotency: no change after applying same ReplicaDesc again.",
+			rDesc1: func() *ReplicaDesc {
+				out, _ := merge(firstReplica(), secondReplica())
+				return out
+			}(),
+			rDesc2:         firstReplica(),
+			expectedRDesc:  expectedFirstAndSecondMerge(),
+			expectedChange: nil,
+		},
+		{
+			name:   "commutativity: Merge(first, second) == Merge(second, first)",
+			rDesc1: firstReplica(),
+			rDesc2: secondReplica(),
+			expectedRDesc: func() *ReplicaDesc {
+				expected, _ := merge(secondReplica(), firstReplica())
+				return expected
+			}(),
+			expectedChange: expectedFirstAndSecondMerge(),
+		},
+		{
+			name: "associativity: Merge(Merge(first, second), third) == Merge(first, Merge(second, third))",
+			rDesc1: func() *ReplicaDesc {
+				ours1, _ := merge(firstReplica(), secondReplica())
+				ours1, _ = merge(ours1, thirdReplica())
+				return ours1
+			}(),
+			rDesc2: nil,
+			expectedRDesc: func() *ReplicaDesc {
+				ours2, _ := merge(secondReplica(), thirdReplica())
+				ours2, _ = merge(firstReplica(), ours2)
+				return ours2
+			}(),
+			expectedChange: nil,
+		},
+	}
+
+	for _, tt := range testsMerge {
+		t.Run(tt.name, func(t *testing.T) {
+			rDesc, ch := merge(tt.rDesc1, tt.rDesc2)
+			assert.Equal(t, tt.expectedRDesc, rDesc)
+			assert.Equal(t, tt.expectedChange, ch)
+		})
+	}
+}
+
+func TestHaTrackerWithMemberList(t *testing.T) {
+	var config memberlist.KVConfig
+
+	const (
+		cluster                  = "cluster"
+		replica1                 = "r1"
+		replica2                 = "r2"
+		updateTimeout            = time.Millisecond * 100
+		failoverTimeout          = 2 * time.Millisecond
+		failoverTimeoutPlus100ms = failoverTimeout + 100*time.Millisecond
+	)
+
+	flagext.DefaultValues(&config)
+	ctx := context.Background()
+
+	config.Codecs = []codec.Codec{
+		GetReplicaDescCodec(),
+	}
+
+	memberListSvc := memberlist.NewKVInitService(
+		&config,
+		log.NewNopLogger(),
+		&dnsProviderMock{},
+		prometheus.NewPedanticRegistry(),
+	)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
+	})
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
+			MemberlistKV: memberListSvc.GetMemberlistKV,
+		}},
+		UpdateTimeout:          updateTimeout,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        failoverTimeout,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
+
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, tracker))
+	})
+
+	now := time.Now()
+
+	// Write the first time.
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
+	assert.NoError(t, err)
+
+	// Throw away a sample from replica2.
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	assert.Error(t, err)
+
+	// Wait more than the overwrite timeout.
+	now = now.Add(failoverTimeoutPlus100ms)
+
+	// Another sample from replica2 to update its timestamp.
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	assert.Error(t, err)
+
+	// Update KVStore - this should elect replica 2.
+	tracker.updateKVStoreAll(context.Background(), now)
+
+	checkReplicaTimestamp(t, time.Second, tracker, "user", cluster, replica2, now, now)
+
+	// Now we should accept from replica 2.
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	assert.NoError(t, err)
+
+	// We timed out accepting samples from replica 1 and should now reject them.
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
+	assert.Error(t, err)
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {

@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
@@ -82,7 +83,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		newTestPrometheusCodec(),
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
@@ -135,7 +136,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		codec,
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
@@ -185,46 +186,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		}, res)
 	})
 
-	t.Run("specific time param with form being already parsed", func(t *testing.T) {
-		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
-
-		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			assert.NoError(t, r.ParseForm())
-			return tripper.RoundTrip(r)
-		})
-		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
-		require.NoError(t, err)
-		api := v1.NewAPI(queryClient)
-
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
-		require.NoError(t, err)
-		require.IsType(t, model.Vector{}, res)
-		require.NotEmpty(t, res.(model.Vector))
-
-		resultTime := res.(model.Vector)[0].Timestamp.Time()
-		require.Equal(t, ts.Unix(), resultTime.Unix())
-	})
-
 	t.Run("default time param happy case", func(t *testing.T) {
 		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tripper})
-		require.NoError(t, err)
-		api := v1.NewAPI(queryClient)
-
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
-		require.NoError(t, err)
-		require.IsType(t, model.Vector{}, res)
-		require.NotEmpty(t, res.(model.Vector))
-
-		resultTime := res.(model.Vector)[0].Timestamp.Time()
-		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
-	})
-
-	t.Run("default time param with form being already parsed", func(t *testing.T) {
-		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			assert.NoError(t, r.ParseForm())
-			return tripper.RoundTrip(r)
-		})
-		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
@@ -505,7 +468,7 @@ func TestTripperware_Metrics(t *testing.T) {
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
+					Logger:     promslog.NewNopLogger(),
 					Reg:        nil,
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
@@ -770,7 +733,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
+					Logger:     promslog.NewNopLogger(),
 					Reg:        nil,
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
@@ -833,7 +796,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		},
 		"cardinality label values": {
 			makeRequest: func() *http.Request {
-				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix, nil)
+				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix+"?label_names[]=foo", nil)
 			},
 		},
 		"cardinality active series": {
@@ -905,7 +868,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		NewPrometheusCodec(nil, 0, formatJSON, nil),
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,

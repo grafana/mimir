@@ -6,7 +6,7 @@
     multi_zone_availability_zones: availabilityZones,
 
     autoscaling_distributor_enabled: true,
-    autoscaling_distributor_min_replicas: 3,
-    autoscaling_distributor_max_replicas: 30,
+    autoscaling_distributor_min_replicas_per_zone: 3,
+    autoscaling_distributor_max_replicas_per_zone: 30,
   },
 }

@@ -18,8 +18,8 @@
     autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
 
     autoscaling_distributor_enabled: false,
-    autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
-    autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
+    autoscaling_distributor_min_replicas_per_zone: error 'you must set autoscaling_distributor_min_replicas_per_zone in the _config',
+    autoscaling_distributor_max_replicas_per_zone: error 'you must set autoscaling_distributor_max_replicas_per_zone in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
     autoscaling_distributor_memory_target_utilization: 1,
 
@@ -551,8 +551,8 @@
       container_name='distributor',
       cpu_requests=$.distributor_container.resources.requests.cpu,
       memory_requests=$.distributor_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_distributor_min_replicas,
-      max_replicas=$._config.autoscaling_distributor_max_replicas,
+      min_replicas=$._config.autoscaling_distributor_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_distributor_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
       with_cortex_prefix=true,

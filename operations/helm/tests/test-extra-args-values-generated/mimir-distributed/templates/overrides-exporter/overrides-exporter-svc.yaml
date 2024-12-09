@@ -1,0 +1,29 @@
+---
+# Source: mimir-distributed/templates/overrides-exporter/overrides-exporter-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-extra-args-values-mimir-overrides-exporter
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/component: overrides-exporter
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/component: overrides-exporter

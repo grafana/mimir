@@ -1,0 +1,179 @@
+# Test for NH existing alongside classic histogram labels
+load 6m
+	series{le="0.1"}  2
+	series{le="1"}    1
+	series{le="10"}   5
+	series{le="100"}  4
+	series{le="1000"} 9
+	series{le="+Inf"} 8
+	series{le="2000"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval instant at 0m histogram_quantile(0.8, series)
+	{} 595
+	{le="2000"} 2.29739670999407
+
+clear
+
+# Check for valid classic histogram
+load 6m
+	series{le="0"}    0
+	series{le="2"}    1
+	series{le="4"}    2
+	series{le="6"}    3
+	series{le="+Inf"} 3
+
+eval instant at 0m histogram_quantile(0.8, series)
+	{} 4.800000000000001
+
+# Check for missing le label warning
+load 6m
+	series            0 10
+
+eval_warn instant at 0m histogram_quantile(0.8, series)
+	{} 4.800000000000001
+
+clear
+
+# Test for different ph values
+load 6m
+	series{le="0"}    0 0 0 0
+	series{le="2"}    1 1 1 1
+	series{le="4"}    2 2 2 2
+	series{le="6"}    3 3 3 3
+	series{le="+Inf"} 3 3 3 3
+	ph                0.1 0.5 0.6 0.9
+
+eval range from 0m to 18m step 6m histogram_quantile(scalar(ph), series)
+	{} 0.6000000000000001 3 3.5999999999999996 5.4
+
+clear
+
+# Test for invalid ph values
+load 6m
+	series{le="0"}    0 0 0 0 0
+	series{le="2"}    1 1 1 1 1
+	series{le="4"}    2 2 2 2 2
+	series{le="6"}    3 3 3 3 3
+	series{le="+Inf"} 3 3 3 3 3
+	ph                -0.5 NaN _ 9 0.9
+
+eval_warn range from 0m to 24m step 6m histogram_quantile(scalar(ph), series)
+	{} -Inf NaN NaN Inf 5.4
+
+clear
+
+# Test for invalid ph value where no points
+load 6m
+	series{le="0"}    0   _   0
+	series{le="2"}    1   _   1
+	series{le="4"}    2   _   2
+	series{le="6"}    3   _   3
+	series{le="+Inf"} 3   _   3
+	ph                0.5 NaN 0.9
+
+# Both engines output a warning even though there is no point where ph is also invalid.
+eval_warn range from 0m to 12m step 6m histogram_quantile(scalar(ph), series)
+	{} 3 _ 5.4
+
+clear
+
+# Test various mixed metric scenarios
+load 6m
+	series{host="a", le="0.1"}  2 _ 1 {{schema:0 sum:5 count:4 buckets:[2 2 2]}}
+	series{host="a", le="1"}    1 _ 2 {{schema:0 sum:5 count:4 buckets:[1 5 1]}}
+	series{host="a", le="10"}   5 _ 3 _ {{schema:0 sum:5 count:4 buckets:[5 2 5]}}
+	series{host="a", le="100"}  4 _ 9 _ {{schema:0 sum:1 count:3 buckets:[6 6 2]}}
+	series{host="a", le="1000"} 9 _ 5
+	series{host="a", le="+Inf"} 8 _ 6
+	series{host="a"}     {{schema:0 sum:5 count:4 buckets:[9 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} _ _ _
+	series{host="b"}     1 {{schema:0 sum:5 count:4 buckets:[0 3 1]}} {{schema:0 sum:5 count:4 buckets:[3 3 1]}} _
+
+eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series)
+	{host="a"}      _ 2.29739670999407 73
+	{host="a", le="0.1"} _ _ _ 3.0314331330207964
+	{host="a", le="1"} _ _ _ 2.29739670999407
+	{host="a", le="10"} _ _ _ _ 3.1166583186419996
+	{host="a", le="100"} _ _ _ _ 3.2490095854249423
+	{host="b"} _ 2.29739670999407 2.29739670999407
+
+eval_warn range from 0m to 12m step 6m histogram_quantile(0.8, series{host="a"})
+	{host="a"} _ 2.29739670999407 73
+
+eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series{host="b"})
+	{host="b"} _ 2.29739670999407 2.29739670999407
+
+clear
+
+# Check edge cases on bucket values
+load 6m
+	series{le="0"}    0 0
+	series{le="2"}    1 Inf
+	series{le="4"}    2 2
+	series{le="6"}    3 3
+	series{le="+Inf"} 3 3
+	noInfinity{le="1"} 2 2
+	noInfinity{le="2"} 4 4
+	notEnoughBuckets{le="1"} 2 2
+	notEnoughBuckets{le="+Inf"} _ 4
+	notEnoughObservations{le="1"} 0 1
+	notEnoughObservations{le="+Inf"} 0 2
+
+eval range from 0m to 6m step 6m histogram_quantile(0.8, series)
+	{} 4.800000000000001 NaN
+
+eval range from 0m to 6m step 6m histogram_quantile(0.8, noInfinity)
+	{} NaN NaN
+
+eval range from 0m to 6m step 6m histogram_quantile(0.8, notEnoughBuckets)
+	{} NaN 1
+
+eval range from 0m to 6m step 6m histogram_quantile(0.8, notEnoughObservations)
+	{} NaN 1
+
+clear
+
+# Check for empty le label
+# This is treated the same as having `series{} 9` which will emit InvalidQuantileWarning
+load 6m
+	series{le="0"}    0
+	series{le="2"}    1
+	series{le="4"}    2
+	series{le="6"}    3
+	series{le=""}     9
+	series{le="+Inf"} 3
+	series{le="3"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval_warn instant at 0m histogram_quantile(0.8, series)
+	{} 4.800000000000001
+	{le="3"} 2.29739670999407
+
+clear
+
+# Check for empty le label with NH
+# This is treated the same as having `series{} NH` which will emit MixedClassicNativeHistogramsWarning
+load 6m
+	series{le="0"}    0
+	series{le="2"}    1
+	series{le="4"}    2
+	series{le="6"}    3
+	series{le=""}     {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	series{le="+Inf"} 3
+	series{le="3"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval_warn instant at 0m histogram_quantile(0.8, series)
+	{le="3"} 2.29739670999407
+
+clear
+
+# Test changing buckets
+
+load 6m
+  metric{env="test", le="1"}    1 2 _
+  metric{env="test", le="2"}    5 _ 1
+  metric{env="test", le="3"}    _ 9 _
+  metric{env="test", le="5"}    8 _ 5
+  metric{env="test", le="7"}    _ 20 _
+  metric{env="test", le="+Inf"} _ 20 20
+
+eval range from 0 to 12m step 6m histogram_quantile(0.5, metric)
+  {env="test"} NaN 3.3636363636363638 5

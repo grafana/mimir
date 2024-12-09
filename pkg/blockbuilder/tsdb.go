@@ -4,7 +4,6 @@ package blockbuilder
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,10 +15,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -34,10 +35,11 @@ import (
 type TSDBBuilder struct {
 	dataDir string
 
-	logger           log.Logger
-	limits           *validation.Overrides
-	blocksStorageCfg mimir_tsdb.BlocksStorageConfig
-	metrics          tsdbBuilderMetrics
+	logger                           log.Logger
+	limits                           *validation.Overrides
+	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
+	metrics                          tsdbBuilderMetrics
+	applyMaxGlobalSeriesPerUserBelow int // inclusive
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -58,14 +60,15 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
 	return &TSDBBuilder{
-		dataDir:          dataDir,
-		logger:           logger,
-		limits:           limits,
-		blocksStorageCfg: blocksStorageCfg,
-		metrics:          metrics,
-		tsdbs:            make(map[tsdbTenant]*userTSDB),
+		dataDir:                          dataDir,
+		logger:                           logger,
+		limits:                           limits,
+		blocksStorageCfg:                 blocksStorageCfg,
+		metrics:                          metrics,
+		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
+		tsdbs:                            make(map[tsdbTenant]*userTSDB),
 	}
 }
 
@@ -119,6 +122,8 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 		allSamplesProcessed = true
 		discardedSamples    = 0
+
+		nativeHistogramsIngestionEnabled = b.limits.NativeHistogramsIngestionEnabled(userID)
 	)
 	for _, ts := range req.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&labelsBuilder, ts.Labels, &nonCopiedLabels)
@@ -153,11 +158,15 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 			if err != nil {
 				// Only abort the processing on a terminal error.
-				if !softErrProcessor.ProcessErr(err, 0, nil) {
+				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
 					return false, err
 				}
 				discardedSamples++
 			}
+		}
+
+		if !nativeHistogramsIngestionEnabled {
+			continue
 		}
 
 		for _, h := range ts.Histograms {
@@ -197,7 +206,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 			if err != nil {
 				// Only abort the processing on a terminal error.
-				if !softErrProcessor.ProcessErr(err, 0, nil) {
+				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
 					return false, err
 				}
 				discardedSamples++
@@ -256,7 +265,21 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	userID := tenant.tenantID
 	userLogger := util_log.WithUserID(userID, b.logger)
 
-	db, err := tsdb.Open(udir, userLogger, nil, &tsdb.Options{
+	udb := &userTSDB{
+		userID: userID,
+	}
+
+	// Until we have a better way to enforce the same limits between ingesters and block builders,
+	// as a stop gap, we apply limits when they are under a given value. Reason is that when a tenant
+	// has higher limits, the higher usage and increase is expected and capacity is planned accordingly
+	// and the tenant is generally more careful. It is the smaller tenants that can create problem
+	// if they suddenly send millions of series when they are supposed to be limited to a few thousand.
+	userLimit := b.limits.MaxGlobalSeriesPerUser(userID)
+	if userLimit <= b.applyMaxGlobalSeriesPerUserBelow {
+		udb.maxGlobalSeries = userLimit
+	}
+
+	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), nil, &tsdb.Options{
 		RetentionDuration:           0,
 		MinBlockDuration:            2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:            2 * time.Hour.Milliseconds(),
@@ -272,6 +295,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		OutOfOrderCapMax:            int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
 		EnableNativeHistograms:      b.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:       nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
+		SeriesLifecycleCallback:     udb,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -279,10 +303,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 	db.DisableCompactions()
 
-	udb := &userTSDB{
-		DB:     db,
-		userID: userID,
-	}
+	udb.DB = db
 
 	return udb, nil
 }
@@ -406,8 +427,26 @@ type extendedAppender interface {
 
 type userTSDB struct {
 	*tsdb.DB
-	userID string
+	userID          string
+	maxGlobalSeries int
 }
+
+var (
+	errMaxInMemorySeriesReached = errors.New("max series for user reached")
+)
+
+func (u *userTSDB) PreCreation(labels.Labels) error {
+	// Global series limit.
+	if u.maxGlobalSeries > 0 && u.Head().NumSeries() >= uint64(u.maxGlobalSeries) {
+		return errors.Wrapf(errMaxInMemorySeriesReached, "limit of %d reached for user %s", u.maxGlobalSeries, u.userID)
+	}
+
+	return nil
+}
+
+func (u *userTSDB) PostCreation(labels.Labels) {}
+
+func (u *userTSDB) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 func (u *userTSDB) compactEverything(ctx context.Context) error {
 	blockRange := 2 * time.Hour.Milliseconds()

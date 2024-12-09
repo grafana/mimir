@@ -46,7 +46,7 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) mimirpb.MetricMet
 	return mimirpb.UNKNOWN
 }
 
-func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes bool) []*mimirpb.MetricMetadata {
+func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes, allowUTF8 bool) []*mimirpb.MetricMetadata {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -68,7 +68,7 @@ func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes bool) []*mimirp
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addMetricSuffixes),
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addMetricSuffixes, allowUTF8),
 					Help:             metric.Description(),
 				}
 				metadata = append(metadata, &entry)

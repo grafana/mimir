@@ -170,12 +170,10 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		var promoteResourceAttributes []string
-		if resourceAttributePromotionConfig != nil {
-			promoteResourceAttributes = resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
-		} else {
-			promoteResourceAttributes = limits.PromoteOTelResourceAttributes(tenantID)
+		if resourceAttributePromotionConfig == nil {
+			resourceAttributePromotionConfig = limits
 		}
+		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
@@ -396,8 +394,9 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
-					Type:             otelMetricTypeToMimirMetricType(metric),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes),
+					Type: otelMetricTypeToMimirMetricType(metric),
+					// TODO(krajorama): when UTF-8 is configurable from user limits, replace "false" appropriately.
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes, false),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -415,7 +414,7 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 		PromoteResourceAttributes:           promoteResourceAttributes,
-	}, logger)
+	}, utillog.SlogFromGoKit(logger))
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))

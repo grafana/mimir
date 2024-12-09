@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -692,7 +692,7 @@ func listBlocksInDir(t *testing.T, dir string) (ids []ulid.ULID) {
 }
 
 func readMetricSamplesFromBlockDir(t *testing.T, blockDir string, metricName string) (results model.Matrix) {
-	block, err := tsdb.OpenBlock(log.NewNopLogger(), blockDir, nil)
+	block, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, block.Close())

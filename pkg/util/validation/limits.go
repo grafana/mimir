@@ -39,6 +39,7 @@ const (
 	MaxEstimatedChunksPerQueryMultiplierFlag  = "querier.max-estimated-fetched-chunks-per-query-multiplier"
 	MaxEstimatedMemoryConsumptionPerQueryFlag = "querier.max-estimated-memory-consumption-per-query"
 	MaxLabelNamesPerSeriesFlag                = "validation.max-label-names-per-series"
+	MaxLabelNamesPerInfoSeriesFlag            = "validation.max-label-names-per-info-series"
 	MaxLabelNameLengthFlag                    = "validation.max-length-label-name"
 	MaxLabelValueLengthFlag                   = "validation.max-length-label-value"
 	MaxMetadataLengthFlag                     = "validation.max-metadata-length"
@@ -113,6 +114,7 @@ type Limits struct {
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
 	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxLabelNamesPerInfoSeries                  int                 `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
 	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
 	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
 	MaxExemplarsPerSeriesPerRequest             int                 `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
@@ -124,6 +126,7 @@ type Limits struct {
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
+	IngestionArtificialDelay                    model.Duration      `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -264,6 +267,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
 	f.IntVar(&l.MaxLabelValueLength, MaxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
+	f.IntVar(&l.MaxLabelNamesPerInfoSeries, MaxLabelNamesPerInfoSeriesFlag, 80, "Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-"+MaxLabelNamesPerSeriesFlag+")")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
 	f.IntVar(&l.MaxExemplarsPerSeriesPerRequest, "distributor.max-exemplars-per-series-per-request", 0, "Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.")
@@ -277,6 +281,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
+	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-latency", "Target ingestion delay. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -596,6 +601,11 @@ func (o *Overrides) MaxLabelNamesPerSeries(userID string) int {
 	return o.getOverridesForUser(userID).MaxLabelNamesPerSeries
 }
 
+// MaxLabelNamesPerInfoSeries returns maximum number of label/value pairs for info timeseries.
+func (o *Overrides) MaxLabelNamesPerInfoSeries(userID string) int {
+	return o.getOverridesForUser(userID).MaxLabelNamesPerInfoSeries
+}
+
 // MaxMetadataLength returns maximum length metadata can be. Metadata refers
 // to the Metric Name, HELP and UNIT.
 func (o *Overrides) MaxMetadataLength(userID string) int {
@@ -890,7 +900,7 @@ func (o *Overrides) RulerTenantShardSize(userID string) int {
 func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
 	u := o.getOverridesForUser(userID)
 
-	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.data[namespace]; ok {
+	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.Read()[namespace]; ok {
 		return namespaceLimit
 	}
 
@@ -906,7 +916,7 @@ func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
 func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID, namespace string) int {
 	u := o.getOverridesForUser(userID)
 
-	if namespaceLimit, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.data[namespace]; ok {
+	if namespaceLimit, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.Read()[namespace]; ok {
 		return namespaceLimit
 	}
 
@@ -982,7 +992,7 @@ func (o *Overrides) AlertmanagerReceiversBlockPrivateAddresses(user string) bool
 // 4. default limits
 func (o *Overrides) getNotificationLimitForUser(user, integration string) float64 {
 	u := o.getOverridesForUser(user)
-	if n, ok := u.NotificationRateLimitPerIntegration.data[integration]; ok {
+	if n, ok := u.NotificationRateLimitPerIntegration.Read()[integration]; ok {
 		return n
 	}
 
@@ -1101,6 +1111,11 @@ func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bo
 
 func (o *Overrides) PromoteOTelResourceAttributes(tenantID string) []string {
 	return o.getOverridesForUser(tenantID).PromoteOTelResourceAttributes
+}
+
+// DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given use.
+func (o *Overrides) DistributorIngestionArtificialDelay(tenantID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(tenantID).IngestionArtificialDelay)
 }
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {

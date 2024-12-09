@@ -481,6 +481,39 @@ func createAggrChunk(minTime, maxTime int64, samples ...promql.FPoint) storepb.A
 	}
 }
 
+func createAggrChunkWithFloatHistogramSamples(samples ...promql.HPoint) storepb.AggrChunk {
+	return createAggrFloatHistogramChunk(samples[0].T, samples[len(samples)-1].T, samples...)
+}
+
+func createAggrFloatHistogramChunk(minTime, maxTime int64, samples ...promql.HPoint) storepb.AggrChunk {
+	// Ensure samples are sorted by timestamp.
+	sort.Slice(samples, func(i, j int) bool {
+		return samples[i].T < samples[j].T
+	})
+
+	chunk := chunkenc.NewFloatHistogramChunk()
+	appender, err := chunk.Appender()
+	if err != nil {
+		panic(err)
+	}
+
+	for _, s := range samples {
+		_, _, appender, err = appender.AppendFloatHistogram(nil, s.T, s.H, true)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	return storepb.AggrChunk{
+		MinTime: minTime,
+		MaxTime: maxTime,
+		Raw: storepb.Chunk{
+			Type: storepb.Chunk_FloatHistogram,
+			Data: chunk.Bytes(),
+		},
+	}
+}
+
 func mkZLabels(s ...string) []mimirpb.LabelAdapter {
 	var result []mimirpb.LabelAdapter
 

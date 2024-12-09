@@ -1935,4 +1935,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
         defaults+: { unit: 's' },
       },
     },
+
+  withExemplars(queryPanel)::
+    queryPanel {
+      targets: [
+        target { exemplar: true }
+        for target in queryPanel.targets
+      ],
+    },
 }

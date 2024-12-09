@@ -3,6 +3,7 @@
 package testutils
 
 import (
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -17,14 +18,16 @@ import (
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) {
+func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool) {
 	require.Equal(t, expected.Err, actual.Err)
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
-	expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
-	actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
-	require.ElementsMatch(t, expectedWarnings, actualWarnings)
-	require.ElementsMatch(t, expectedInfos, actualInfos)
+	if !skipAnnotationComparison {
+		expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
+		actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
+		require.ElementsMatch(t, expectedWarnings, actualWarnings)
+		require.ElementsMatch(t, expectedInfos, actualInfos)
+	}
 
 	switch expected.Value.Type() {
 	case parser.ValueTypeVector:
@@ -45,7 +48,7 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 			require.Equal(t, expectedSample.Metric, actualSample.Metric)
 			require.Equal(t, expectedSample.T, actualSample.T)
 			require.Equal(t, expectedSample.H, actualSample.H)
-			requireInEpsilonIfNotZero(t, expectedSample.F, actualSample.F)
+			requireInEpsilonIfNotZeroOrInf(t, expectedSample.F, actualSample.F)
 		}
 	case parser.ValueTypeMatrix:
 		expectedMatrix, err := expected.Matrix()
@@ -59,12 +62,14 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 			actualSeries := actualMatrix[i]
 
 			require.Equal(t, expectedSeries.Metric, actualSeries.Metric)
+			require.Lenf(t, actualSeries.Floats, len(expectedSeries.Floats), "expected result %v for series %v", expectedSeries.Floats, expectedSeries.Metric)
+			require.Lenf(t, actualSeries.Histograms, len(expectedSeries.Histograms), "expected result %v for series %v", expectedSeries.Histograms, expectedSeries.Metric)
 
 			for j, expectedPoint := range expectedSeries.Floats {
 				actualPoint := actualSeries.Floats[j]
 
 				require.Equal(t, expectedPoint.T, actualPoint.T)
-				requireInEpsilonIfNotZero(t, expectedPoint.F, actualPoint.F, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
+				requireInEpsilonIfNotZeroOrInf(t, expectedPoint.F, actualPoint.F, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
 			}
 
 			for j, expectedPoint := range actualSeries.Histograms {
@@ -78,15 +83,15 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 					h2 := actualPoint.H
 
 					require.Equal(t, h1.Schema, h2.Schema, "histogram schemas match")
-					requireInEpsilonIfNotZero(t, h1.Count, h2.Count, "histogram counts match")
-					requireInEpsilonIfNotZero(t, h1.Sum, h2.Sum, "histogram sums match")
+					requireInEpsilonIfNotZeroOrInf(t, h1.Count, h2.Count, "histogram counts match")
+					requireInEpsilonIfNotZeroOrInf(t, h1.Sum, h2.Sum, "histogram sums match")
 
 					if h1.UsesCustomBuckets() {
 						requireFloatBucketsMatch(t, h1.CustomValues, h2.CustomValues)
 					}
 
-					requireInEpsilonIfNotZero(t, h1.ZeroThreshold, h2.ZeroThreshold, "histogram thresholds match")
-					requireInEpsilonIfNotZero(t, h1.ZeroCount, h2.ZeroCount, "histogram zero counts match")
+					requireInEpsilonIfNotZeroOrInf(t, h1.ZeroThreshold, h2.ZeroThreshold, "histogram thresholds match")
+					requireInEpsilonIfNotZeroOrInf(t, h1.ZeroCount, h2.ZeroCount, "histogram zero counts match")
 
 					requireSpansMatch(t, h1.NegativeSpans, h2.NegativeSpans)
 					requireFloatBucketsMatch(t, h1.NegativeBuckets, h2.NegativeBuckets)
@@ -103,8 +108,8 @@ func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Res
 	}
 }
 
-func requireInEpsilonIfNotZero(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
-	if expected == 0 {
+func requireInEpsilonIfNotZeroOrInf(t testing.TB, expected, actual float64, msgAndArgs ...interface{}) {
+	if expected == 0 || math.IsInf(expected, +1) || math.IsInf(expected, -1) {
 		require.Equal(t, expected, actual, msgAndArgs...)
 	} else {
 		require.InEpsilon(t, expected, actual, 1e-10, msgAndArgs...)
@@ -114,7 +119,7 @@ func requireInEpsilonIfNotZero(t testing.TB, expected, actual float64, msgAndArg
 func requireFloatBucketsMatch(t testing.TB, b1, b2 []float64) {
 	require.Equal(t, len(b1), len(b2), "bucket lengths match")
 	for i, b := range b1 {
-		if b == 0 {
+		if b == 0 || math.IsInf(b, +1) || math.IsInf(b, -1) {
 			require.Equal(t, b, b2[i], "bucket values match")
 		} else {
 			require.InEpsilon(t, b, b2[i], 1e-10, "bucket values match")

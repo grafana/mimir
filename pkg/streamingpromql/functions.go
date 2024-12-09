@@ -39,7 +39,7 @@ type ScalarFunctionOperatorFactory func(
 //   - name: The name of the function
 //   - f: The function implementation
 func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionOverInstantVectorDefinition) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -51,7 +51,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		var o types.InstantVectorOperator = functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
+		var o types.InstantVectorOperator = functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
 
 		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
@@ -141,7 +141,7 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 }
 
 func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 5 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 5 argument for label_replace, got %v", len(args))
@@ -185,14 +185,14 @@ func LabelReplaceFunctionOperatorFactory() InstantVectorFunctionOperatorFactory 
 			},
 		}
 
-		o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
+		o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
 
 		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 	}
 }
 
 func ClampFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 3 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 3 argument for clamp, got %v", len(args))
@@ -221,12 +221,12 @@ func ClampFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 			SeriesMetadataFunction: functions.DropSeriesName,
 		}
 
-		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, memoryConsumptionTracker, f, expressionPosition), nil
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 	}
 }
 
 func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 2 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 2 argument for %s, got %v", functionName, len(args))
@@ -249,7 +249,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Instant
 			SeriesMetadataFunction: functions.DropSeriesName,
 		}
 
-		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, memoryConsumptionTracker, f, expressionPosition), nil
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 	}
 }
 
@@ -282,57 +282,117 @@ func RoundFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
 			SeriesMetadataFunction: functions.DropSeriesName,
 		}
 
-		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, memoryConsumptionTracker, f, expressionPosition), nil
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
+	}
+}
+
+func HistogramQuantileFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 2 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 2 argument for histogram_quantile, got %v", len(args))
+		}
+
+		ph, ok := args[0].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 1st argument for histogram_quantile, got %T", args[0])
+		}
+
+		inner, ok := args[1].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 2nd argument for histogram_quantile, got %T", args[1])
+		}
+
+		o := functions.NewHistogramQuantileFunction(ph, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
+		return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+	}
+}
+
+func HistogramFractionFunctionOperatorFactory() InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 3 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 3 argument for histogram_fraction, got %v", len(args))
+		}
+
+		lower, ok := args[0].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 1st argument for histogram_fraction, got %T", args[0])
+		}
+
+		upper, ok := args[1].(types.ScalarOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a scalar for 2nd argument for histogram_fraction, got %T", args[1])
+		}
+
+		inner, ok := args[2].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 3rd argument for histogram_fraction, got %T", args[2])
+		}
+
+		f := functions.FunctionOverInstantVectorDefinition{
+			SeriesDataFunc:         functions.HistogramFraction,
+			SeriesMetadataFunction: functions.DropSeriesName,
+		}
+
+		return functions.NewFunctionOverInstantVector(inner, []types.ScalarOperator{lower, upper}, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 	}
 }
 
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
-
-	"abs":               InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
-	"acos":              InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
-	"acosh":             InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
-	"asin":              InstantVectorTransformationFunctionOperatorFactory("asin", functions.Asin),
-	"asinh":             InstantVectorTransformationFunctionOperatorFactory("asinh", functions.Asinh),
-	"atan":              InstantVectorTransformationFunctionOperatorFactory("atan", functions.Atan),
-	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
-	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
-	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
-	"changes":           FunctionOverRangeVectorOperatorFactory("changes", functions.Changes),
-	"clamp":             ClampFunctionOperatorFactory(),
-	"clamp_max":         ClampMinMaxFunctionOperatorFactory("clamp_max", false),
-	"clamp_min":         ClampMinMaxFunctionOperatorFactory("clamp_min", true),
-	"cos":               InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
-	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
-	"count_over_time":   FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
-	"deg":               InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
-	"deriv":             FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
-	"exp":               InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
-	"floor":             InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
-	"histogram_count":   InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
-	"histogram_sum":     InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
-	"increase":          FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
-	"label_replace":     LabelReplaceFunctionOperatorFactory(),
-	"last_over_time":    FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
-	"ln":                InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
-	"log10":             InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
-	"log2":              InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
-	"max_over_time":     FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
-	"min_over_time":     FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
-	"present_over_time": FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
-	"rad":               InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
-	"rate":              FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
-	"resets":            FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
-	"round":             RoundFunctionOperatorFactory(),
-	"sgn":               InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
-	"sin":               InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
-	"sinh":              InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
-	"sqrt":              InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
-	"sum_over_time":     FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
-	"tan":               InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
-	"tanh":              InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
-	"vector":            scalarToInstantVectorOperatorFactory,
+	"abs":                InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
+	"acos":               InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
+	"acosh":              InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
+	"asin":               InstantVectorTransformationFunctionOperatorFactory("asin", functions.Asin),
+	"asinh":              InstantVectorTransformationFunctionOperatorFactory("asinh", functions.Asinh),
+	"atan":               InstantVectorTransformationFunctionOperatorFactory("atan", functions.Atan),
+	"atanh":              InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
+	"avg_over_time":      FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
+	"ceil":               InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"changes":            FunctionOverRangeVectorOperatorFactory("changes", functions.Changes),
+	"clamp":              ClampFunctionOperatorFactory(),
+	"clamp_max":          ClampMinMaxFunctionOperatorFactory("clamp_max", false),
+	"clamp_min":          ClampMinMaxFunctionOperatorFactory("clamp_min", true),
+	"cos":                InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
+	"cosh":               InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
+	"count_over_time":    FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
+	"deg":                InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
+	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
+	"exp":                InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
+	"floor":              InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
+	"histogram_avg":      InstantVectorTransformationFunctionOperatorFactory("histogram_avg", functions.HistogramAvg),
+	"histogram_count":    InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
+	"histogram_fraction": HistogramFractionFunctionOperatorFactory(),
+	"histogram_quantile": HistogramQuantileFunctionOperatorFactory(),
+	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
+	"label_replace":      LabelReplaceFunctionOperatorFactory(),
+	"last_over_time":     FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
+	"ln":                 InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
+	"log10":              InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
+	"log2":               InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
+	"max_over_time":      FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
+	"min_over_time":      FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
+	"present_over_time":  FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
+	"rad":                InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
+	"rate":               FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
+	"resets":             FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
+	"round":              RoundFunctionOperatorFactory(),
+	"sgn":                InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
+	"sin":                InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
+	"sinh":               InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
+	"sqrt":               InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
+	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
+	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
+	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
+	"vector":             scalarToInstantVectorOperatorFactory,
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
@@ -384,12 +444,12 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 	return scalars.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) types.InstantVectorOperator {
+func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.InstantVectorOperator {
 	f := functions.FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         functions.UnaryNegation,
 		SeriesMetadataFunction: functions.DropSeriesName,
 	}
 
-	o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition)
+	o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
