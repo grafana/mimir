@@ -128,29 +128,30 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 	// Inject the user ID in the context, required by the usage-tracker server.
 	ctx = user.InjectOrgID(ctx, cfg.TenantID)
 
+	// Pre-generate all series hashes. We use a random generator. We don't care about collisions between workers.
+	// We expect collisions to be a very low %.
+	seed := (int64(cfg.ReplicaID) << 32) | int64(uint32(workerID))
+	random := rand.New(rand.NewSource(seed))
+	seriesHashes := make([]uint64, 0, numSeriesPerWorker)
+	for i := 0; i < numSeriesPerWorker; i++ {
+		seriesHashes = append(seriesHashes, random.Uint64())
+	}
+
 	for {
 		// Start a new simulated scrape interval cycle.
 		startTime := time.Now()
 		numRequests := 0
-		numSeriesTracked := 0
 		numSeriesRejected := 0
 
-		// Re-initialise the random generator, so that the series hashes generated each cycle are always the same.
-		// We don't care about collisions between workers. We expect them to be a very low %.
-		seed := (int64(cfg.ReplicaID) << 32) | int64(uint32(workerID))
-		random := rand.New(rand.NewSource(seed))
-
 		// Sequentially iterate over all the series that needs be tracked by this worker.
-		for numSeriesTracked < numSeriesPerWorker {
-			seriesHashes := make([]uint64, 0, numSeriesPerRequest)
-
-			// Generate the series to track in this request.
-			for len(seriesHashes) < numSeriesPerRequest && numSeriesTracked < numSeriesPerWorker {
-				seriesHashes = append(seriesHashes, random.Uint64())
-				numSeriesTracked++
+		for startIdx := 0; startIdx < len(seriesHashes); startIdx += numSeriesPerRequest {
+			endIdx := startIdx + numSeriesPerRequest
+			if endIdx > len(seriesHashes) {
+				endIdx = len(seriesHashes)
 			}
+			reqSeriesHashes := seriesHashes[startIdx:endIdx]
 
-			rejectedHashes, err := client.TrackSeries(ctx, cfg.TenantID, seriesHashes)
+			rejectedHashes, err := client.TrackSeries(ctx, cfg.TenantID, reqSeriesHashes)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
 			}
@@ -165,7 +166,7 @@ func runWorker(ctx context.Context, workerID, numWorkers int, cfg Config, client
 			}
 		}
 
-		fmt.Println("Worker", workerID, "has tracked", numSeriesTracked, "series (", numSeriesRejected, "rejected) in", time.Since(startTime), "(", numRequests, "requests,", targetTimePerRequest, "target time per request)")
+		fmt.Println("Worker", workerID, "has tracked", numSeriesPerWorker, "series (", numSeriesRejected, "rejected) in", time.Since(startTime), "(", numRequests, "requests,", targetTimePerRequest, "target time per request)")
 
 		// Final throttle before the next cycle.
 		elapsedTime := time.Since(startTime)
