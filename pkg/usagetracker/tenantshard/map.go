@@ -6,7 +6,6 @@
 package tenantshard
 
 import (
-	"fmt"
 	"math"
 	"slices"
 
@@ -17,10 +16,13 @@ import (
 
 const (
 	valueBits        = 7
-	valueMask        = Shards - 1
+	valueMask        = MaxShards - 1
 	keyMask   uint64 = uint64(math.MaxUint64) &^ valueMask
 
-	Shards = 1 << valueBits
+	// MaxShards is the max amount of shards to be used when using this map.
+	// If more shards are used, last bits of stored keys are always the same, which will skew the distribution of keys in the map.
+	// See probeStart & splitHash for more details.
+	MaxShards = 1 << valueBits
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -41,8 +43,6 @@ const (
 //
 // One of the advantages of this approach is that we're able to perform the cleanup by iterating only data.
 type Map struct {
-	shard uint8
-
 	index []index
 	data  []data
 
@@ -60,7 +60,11 @@ type index [groupSize]prefix
 
 // data is a group of groupSize data/value entries.
 // Each entry is the keyMasked key and valueMasked value.
-type data [groupSize]uint64
+type data [groupSize]struct {
+	key uint64
+	// val is stored negated, so that 0 is the absence of a value.
+	val clock.Minutes
+}
 
 const (
 	prefixOffset        = 2
@@ -72,14 +76,9 @@ type prefix uint8
 type suffix uint64
 
 // New constructs a Map.
-func New(sz uint32, shard uint8, totalShards uint8) (m *Map) {
-	if totalShards != Shards {
-		panic(fmt.Errorf("this implementation doesn't support less than %d total shards: not enough meaningful bits, it's also not prepared for more than %d shards, as that would result in skewed group selection (see probeStart)", Shards, Shards))
-	}
+func New(sz uint32) (m *Map) {
 	groups := numGroups(sz)
 	m = &Map{
-		shard: shard,
-
 		index: make([]index, groups),
 		data:  make([]data, groups),
 
@@ -98,23 +97,21 @@ func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 	if m.resident >= m.limit {
 		m.rehash(m.nextSize())
 	}
-	if value >= clock.Minutes(valueMask) {
-		// we can't store more than valueMask because we don't have enough bits.
-		// we also can't store valueMask: if we negate that, we get 0, which we use to represent an empty value.
+	if value == 0xff {
+		// we 0xff is stored as 0, which is the zero-value in the data.
 		panic("value is too large")
 	}
 
-	masked := key & keyMask
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	for { // inlined find loop
 		matches := metaMatchH2(&m.index[i], pfx)
 		for matches != 0 {
 			j := nextMatch(&matches)
-			if masked == m.data[i][j]&keyMask { // found
+			if key == m.data[i][j].key { // found
 				// Always update the value if we're tracking series, but only increment it when processing Load events.
-				if track || value.GreaterThan(clock.Minutes(m.data[i][j]&valueMask^valueMask)) {
-					m.data[i][j] = masked | uint64(value&valueMask^valueMask)
+				if track || value.GreaterThan(^m.data[i][j].val) {
+					m.data[i][j].val = ^value
 				}
 				return false, false
 			}
@@ -133,7 +130,8 @@ func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 			}
 			s := nextMatch(&matches)
 			m.index[i][s] = pfx
-			m.data[i][s] = masked | uint64(value&valueMask^valueMask)
+			m.data[i][s].key = key
+			m.data[i][s].val = ^value
 			m.resident++
 			return true, false
 		}
@@ -151,16 +149,14 @@ func (m *Map) count() int {
 
 func (m *Map) cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 	for i := range m.data {
-		for j, v := range m.data[i] {
-			raw := v & valueMask
-			if raw == 0 {
+		for j, e := range m.data[i] {
+			if e.val == 0 {
 				// There's nothing here.
 				continue
 			}
-			val := clock.Minutes(raw ^ valueMask)
-			if watermark.GreaterOrEqualThan(val) {
+			if watermark.GreaterOrEqualThan(^e.val) {
 				m.index[i][j] = tombstone
-				m.data[i][j] = 0
+				m.data[i][j].val = 0 // we don't care about overwriting key, this already signals that the entry is dead.
 				m.dead++
 				series.Dec()
 			}
@@ -189,7 +185,7 @@ func (m *Map) rehash(n uint32) {
 				continue
 			}
 			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
+			m.put(datas[g][s].key, ^datas[g][s].val, nil, 0, false)
 		}
 	}
 }
@@ -226,7 +222,6 @@ type LengthCallback func(int)
 type IteratorCallback func(k uint64, v clock.Minutes)
 
 func (m *Map) cloner() func(LengthCallback, IteratorCallback) {
-	shard := m.shard
 	clone := slices.Clone(m.data)
 	count := m.count()
 
@@ -234,16 +229,12 @@ func (m *Map) cloner() func(LengthCallback, IteratorCallback) {
 		length(count)
 
 		for _, g := range clone {
-			for _, v := range g {
-				raw := v & valueMask
-				if raw == 0 {
-					// TODO: document somewhwere that we can't store 127 as a value.
+			for _, e := range g {
+				if e.val == 0 {
 					// There's nothing here.
 					continue
 				}
-				key := (v &^ valueMask) | uint64(shard)
-				val := clock.Minutes(raw ^ valueMask)
-				iterSeries(key, val)
+				iterSeries(e.key, ^e.val)
 			}
 		}
 	}

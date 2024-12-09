@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
-const shards = tenantshard.Shards
+const shards = 32
 const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
@@ -188,7 +188,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *tracked
 		capacity = math.MaxUint32
 	}
 	for i := range tenant.shards {
-		tenant.shards[i] = tenantshard.New(uint32(capacity), uint8(i), shards)
+		tenant.shards[i] = tenantshard.New(uint32(capacity))
 	}
 	t.tenants[tenantID] = tenant
 	tenant.RLock()
