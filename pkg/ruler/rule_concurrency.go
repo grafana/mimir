@@ -197,7 +197,7 @@ func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	}
 
 	// Sum up the total duration of all rules in the group to determine if the group is at risk if rules were all run sequentially.
-	var ruleTotalDuration float64 = 0
+	var ruleTotalDuration float64
 	for _, rule := range group.Rules() {
 		ruleTotalDuration += rule.GetEvaluationDuration().Seconds()
 	}
