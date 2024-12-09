@@ -6,6 +6,7 @@
 package tenantshard
 
 import (
+	"fmt"
 	"math"
 	"slices"
 
@@ -27,7 +28,7 @@ const (
 // This map is expected to hold series refs for a single `shard`, i.e., series refs that have same value modulo 128 (1<<valueBits).
 // See https://www.dolthub.com/blog/2023-03-28-swiss-map/ to understand the design of github.com/dolthub/swiss, which is the base for this implementation.
 //
-// The map is not thread-safe so the interaction should should happen through the channel returned by Events().
+// The map is not thread-safe so the interaction should happen through the channel returned by Events().
 //
 // The data is stored in the data field, which are groups of up to groupSize data entries.
 // The main modification of this implementation is that each data[i] entry stores both key and value.
@@ -71,11 +72,10 @@ type prefix uint8
 type suffix uint64
 
 // New constructs a Map.
-func New(sz uint32, shard uint8) (m *Map) {
-	if shard >= Shards {
-		panic("shard out of bounds")
+func New(sz uint32, shard uint8, totalShards uint8) (m *Map) {
+	if totalShards != Shards {
+		panic(fmt.Errorf("this implementation doesn't support less than %d total shards: not enough meaningful bits, it's also not prepared for more than %d shards, as that would result in skewed group selection (see probeStart)", Shards, Shards))
 	}
-
 	groups := numGroups(sz)
 	m = &Map{
 		shard: shard,
@@ -97,6 +97,11 @@ func New(sz uint32, shard uint8) (m *Map) {
 func (m *Map) put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool) {
 	if m.resident >= m.limit {
 		m.rehash(m.nextSize())
+	}
+	if value >= clock.Minutes(valueMask) {
+		// we can't store more than valueMask because we don't have enough bits.
+		// we also can't store valueMask: if we negate that, we get 0, which we use to represent an empty value.
+		panic("value is too large")
 	}
 
 	masked := key & keyMask
@@ -206,7 +211,7 @@ func splitHash(h uint64) (prefix, suffix) {
 }
 
 func probeStart(s suffix, groups int) uint32 {
-	// ignore the first |valueBits| bits for probing.
+	// ignore the lower |valueBits| bits for probing as they're always the same in this shard.
 	// We're going to convert it to uint32 anyway, so we don't really care.
 	return fastModN(uint32(s>>valueBits), uint32(groups))
 }
