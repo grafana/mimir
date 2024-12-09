@@ -44,22 +44,13 @@ type Map struct {
 
 	shard uint8
 
-	index []index
-	data  []data
+	index []prefix
+	data  []uint64
 
 	resident uint32
 	dead     uint32
 	limit    uint32
 }
-
-// index is the prefix index array for data.
-// find operations first probe the index bytes
-// to filter candidates before matching data entries.
-type index [groupSize]prefix
-
-// data is a group of groupSize data/value entries.
-// Each entry is the keyMasked key and valueMasked value.
-type data [groupSize]uint64
 
 const (
 	prefixOffset        = 2
@@ -75,14 +66,14 @@ func New(sz uint32, shard uint8, totalShards uint8) (m *Map) {
 	if totalShards != Shards {
 		panic(fmt.Errorf("this implementation doesn't support less than %d total shards: not enough meaningful bits, it's also not prepared for more than %d shards, as that would result in skewed group selection (see probeStart)", Shards, Shards))
 	}
-	groups := numGroups(sz)
+	entries := numEntries(sz)
 	return &Map{
 		shard: shard,
 
-		index: make([]index, groups),
-		data:  make([]data, groups),
+		index: make([]prefix, entries),
+		data:  make([]uint64, entries),
 
-		limit: groups * maxAvgGroupLoad,
+		limit: entries / groupSize * maxAvgGroupLoad,
 	}
 }
 
@@ -103,21 +94,31 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.index[i], pfx)
+		// If at the end of the slice, step back until we have 8 bytes.
+		if i+8 > uint32(len(m.index)) {
+			i -= i + 8 - uint32(len(m.index))
+		}
+		matches := metaMatchH2(m.index[i:], pfx)
 		for matches != 0 {
 			j := nextMatch(&matches)
-			if masked == m.data[i][j]&keyMask { // found
+			if masked == m.data[i+j]&keyMask { // found
 				// Always update the value if we're tracking series, but only increment it when processing Load events.
-				if track || value.GreaterThan(clock.Minutes(m.data[i][j]&valueMask^valueMask)) {
-					m.data[i][j] = masked | uint64(value&valueMask^valueMask)
+				if track || value.GreaterThan(clock.Minutes(m.data[i+j]&valueMask^valueMask)) {
+					m.data[i+j] = masked | uint64(value&valueMask^valueMask)
 				}
 				return false, false
 			}
 		}
 		// |key| is not in group |i|,
 		// stop probing if we see an empty slot
-		matches = metaMatchEmpty(&m.index[i])
+		matches = metaMatchEmpty(m.index[i:])
 		if matches != 0 { // insert
+			j := nextMatch(&matches)
+			if i+j >= uint32(len(m.index)) {
+				// We didn't find an empty slot, we found a fake 0 because we're at the end of the slice.
+				i = 0
+				continue
+			}
 			// Only check limit if we're tracking series.
 			// We don't check limit for Load events.
 			if series != nil {
@@ -126,13 +127,12 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 				}
 				series.Inc()
 			}
-			s := nextMatch(&matches)
-			m.index[i][s] = pfx
-			m.data[i][s] = masked | uint64(value&valueMask^valueMask)
+			m.index[i+j] = pfx
+			m.data[i+j] = masked | uint64(value&valueMask^valueMask)
 			m.resident++
 			return true, false
 		}
-		i++ // linear probing
+		i += 8 // linear probing
 		if i >= uint32(len(m.index)) {
 			i = 0
 		}
@@ -145,20 +145,18 @@ func (m *Map) count() int {
 }
 
 func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
-	for i := range m.data {
-		for j, v := range m.data[i] {
-			raw := v & valueMask
-			if raw == 0 {
-				// There's nothing here.
-				continue
-			}
-			val := clock.Minutes(raw ^ valueMask)
-			if watermark.GreaterOrEqualThan(val) {
-				m.index[i][j] = tombstone
-				m.data[i][j] = 0
-				m.dead++
-				series.Dec()
-			}
+	for i, v := range m.data {
+		raw := v & valueMask
+		if raw == 0 {
+			// There's nothing here.
+			continue
+		}
+		val := clock.Minutes(raw ^ valueMask)
+		if watermark.GreaterOrEqualThan(val) {
+			m.index[i] = tombstone
+			m.data[i] = 0
+			m.dead++
+			series.Dec()
 		}
 	}
 	if m.dead > m.limit/2 {
@@ -176,30 +174,27 @@ func (m *Map) nextSize() (n uint32) {
 
 func (m *Map) rehash(n uint32) {
 	// TODO if we're just removing dead elements, we can reuse same m.index.
-	datas, indices := m.data, m.index
-	m.data = make([]data, n)
-	m.index = make([]index, n)
-	m.limit = n * maxAvgGroupLoad
+	datas := m.data
+	m.data = make([]uint64, n)
+	m.index = make([]prefix, n)
+	m.limit = n / groupSize * maxAvgGroupLoad
 	m.resident, m.dead = 0, 0
-	for g := range indices {
-		for s := range indices[g] {
-			c := indices[g][s]
-			if c == empty || c == tombstone {
-				continue
-			}
-			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.Put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
+	for _, v := range datas {
+		if v&valueMask == 0 {
+			continue // empty or tombstone
 		}
+		// We don't need to mask the key here, data suffix of the key is always masked out.
+		m.Put(v, clock.Minutes(v&valueMask^valueMask), nil, 0, false)
 	}
 }
 
-// numGroups returns the minimum number of groups needed to store |n| elems.
-func numGroups(n uint32) (groups uint32) {
+// numEntries returns the minimum number of groups needed to store |n| elems.
+func numEntries(n uint32) (groups uint32) {
 	groups = (n + maxAvgGroupLoad - 1) / maxAvgGroupLoad
 	if groups == 0 {
 		groups = 1
 	}
-	return
+	return groups * groupSize
 }
 
 // splitHash extracts the prefix and suffix components from a 64 bit hash.
@@ -232,18 +227,16 @@ func (m *Map) Iterator() func(LengthCallback, IteratorCallback) {
 	return func(length LengthCallback, iterSeries IteratorCallback) {
 		length(count)
 
-		for _, g := range clone {
-			for _, v := range g {
-				raw := v & valueMask
-				if raw == 0 {
-					// TODO: document somewhwere that we can't store 127 as a value.
-					// There's nothing here.
-					continue
-				}
-				key := (v &^ valueMask) | uint64(shard)
-				val := clock.Minutes(raw ^ valueMask)
-				iterSeries(key, val)
+		for _, v := range clone {
+			masked := v & valueMask
+			if masked == 0 {
+				// TODO: document somewhwere that we can't store 127 as a value.
+				// There's nothing here.
+				continue
 			}
+			key := (v &^ valueMask) | uint64(shard)
+			val := clock.Minutes(masked ^ valueMask)
+			iterSeries(key, val)
 		}
 	}
 }
