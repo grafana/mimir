@@ -25,7 +25,7 @@ func TestMap(t *testing.T) {
 	for i := 1; i <= events; i++ {
 		refs := make([]uint64, seriesPerEvent)
 		for j := range refs {
-			refs[j] = uint64((i*100 + j) << valueBits)
+			refs[j] = uint64((i*100 + j) << prefixLen)
 			storedValues[refs[j]] = clock.Minutes(i)
 		}
 
@@ -49,7 +49,7 @@ func TestMap(t *testing.T) {
 	{
 		// No more series will fit.
 		resp := make(chan TrackResponse)
-		ref := uint64(65535) << valueBits
+		ref := uint64(65535) << prefixLen
 		m.Events() <- Track(
 			[]uint64{ref},
 			clock.Minutes(0),
@@ -103,8 +103,8 @@ func TestMapValues(t *testing.T) {
 	m := New(100)
 	total := atomic.NewUint64(0)
 	for i := 0; i < count; i++ {
-		key := rand.Uint64() &^ valueMask // we can only store values of this shard.
-		val := clock.Minutes(i) % valueMask
+		key := rand.Uint64()
+		val := clock.Minutes(i) % 128 // make sure we don't try to store 0xff
 		stored[key] = val
 		m.put(key, val, total, 0, false)
 	}

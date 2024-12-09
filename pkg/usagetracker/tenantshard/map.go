@@ -6,7 +6,6 @@
 package tenantshard
 
 import (
-	"math"
 	"slices"
 
 	"go.uber.org/atomic"
@@ -15,19 +14,19 @@ import (
 )
 
 const (
-	valueBits        = 7
-	valueMask        = MaxShards - 1
-	keyMask   uint64 = uint64(math.MaxUint64) &^ valueMask
+	prefixLen = 7
+	shardBits = 7
 
 	// MaxShards is the max amount of shards to be used when using this map.
 	// If more shards are used, last bits of stored keys are always the same, which will skew the distribution of keys in the map.
+	// If more shards are needed, the shardBits constant should be increased.
 	// See probeStart & splitHash for more details.
-	MaxShards = 1 << valueBits
+	MaxShards = 1 << shardBits
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
-// This holds uint64 keys and clock.Minutes values that should always be smaller than 127 (1<<valueBits - 1).
-// This map is expected to hold series refs for a single `shard`, i.e., series refs that have same value modulo 128 (1<<valueBits).
+// This holds uint64 keys and clock.Minutes values that should always be smaller than 127 (1<<prefixLen - 1).
+// This map is expected to hold series refs for a single `shard`, i.e., series refs that have same value modulo 128 (1<<prefixLen).
 // See https://www.dolthub.com/blog/2023-03-28-swiss-map/ to understand the design of github.com/dolthub/swiss, which is the base for this implementation.
 //
 // The map is not thread-safe so the interaction should happen through the channel returned by Events().
@@ -35,8 +34,8 @@ const (
 // The data is stored in the data field, which are groups of up to groupSize data entries.
 // The main modification of this implementation is that each data[i] entry stores both key and value.
 // Each data value is a combination of:
-// - The upper 64-valueBits are the key
-// - The lower valueBits are the negated value.
+// - The upper 64-prefixLen are the key
+// - The lower prefixLen are the negated value.
 //
 // The value is negated to be able to distinguish the value 0 from an absent value:
 // When a data value is not inialized, or it's deleted, the value is 0, which is the same as the value 127, which is not a valid value to store.
@@ -203,13 +202,13 @@ func numGroups(n uint32) (groups uint32) {
 // prefix is the upper 7 bits plus two, suffix is the lower 57 bits.
 // By adding 2 to the prefix, it ensures that prefix is never uint8(0) or uint8(1).
 func splitHash(h uint64) (prefix, suffix) {
-	return prefix(h>>(64-valueBits)) + prefixOffset, suffix(h << valueBits >> valueBits)
+	return prefix(h>>(64-prefixLen)) + prefixOffset, suffix(h << prefixLen >> 7)
 }
 
 func probeStart(s suffix, groups int) uint32 {
-	// ignore the lower |valueBits| bits for probing as they're always the same in this shard.
+	// ignore the lower |shardBits| bits for probing as they're always the same in this shard.
 	// We're going to convert it to uint32 anyway, so we don't really care.
-	return fastModN(uint32(s>>valueBits), uint32(groups))
+	return fastModN(uint32(s>>shardBits), uint32(groups))
 }
 
 // lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
