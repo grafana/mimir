@@ -74,7 +74,7 @@ func (t *trackerStore) seriesCounts() map[string]uint64 {
 
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
-func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejected []uint64, err error) {
+func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
 	limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
 	tenant := t.getOrCreateTenant(tenantID, limit)
 	defer tenant.RUnlock()
@@ -87,38 +87,34 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	})
 
 	now := clock.ToMinutes(timeNow)
+
+	// TODO: Pool this slice.
+	var createdRefs []uint64
 	i0 := 0
-	resp := make(chan tenantshard.TrackResponse, shards)
-	sent := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
 		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
-			tenant.shards[shard].Events() <- tenantshard.Track(
-				series[i0:i],
-				now,
-				tenant.series,
-				limit,
-				resp,
-			)
+			m := tenant.shards[shard]
+			m.Lock()
+			for _, ref := range series[i0:i] {
+				if created, rejected := m.Put(ref, now, tenant.series, limit, true); created {
+					createdRefs = append(createdRefs, ref)
+				} else if rejected {
+					rejectedRefs = append(rejectedRefs, ref)
+				}
+			}
+			m.Unlock()
 			i0 = i
-			sent++
 		}
 	}
-	created := make([]uint64, 0, len(series)/4) // TODO: This should probably be pooled.
-	rejected = make([]uint64, 0, len(series)/4) // TODO: This should probably be pooled.
-	for i := 0; i < sent; i++ {
-		response := <-resp
-		created = append(created, response.Created...)
-		rejected = append(rejected, response.Rejected...)
-	}
 
-	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(created), "rejected_len", len(rejected), "now", timeNow.Unix(), "now_minutes", now)
-	if err := t.events.publishCreatedSeries(ctx, tenantID, created, timeNow); err != nil {
-		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(created), "now", timeNow.Unix(), "now_minutes", now)
+	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
+	if err := t.events.publishCreatedSeries(ctx, tenantID, createdRefs, timeNow); err != nil {
+		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
 		return nil, err
 	}
 
-	return rejected, nil
+	return rejectedRefs, nil
 }
 
 func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint64, eventTimestamp, timeNow time.Time) {
@@ -143,19 +139,17 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 
 	timestamp := clock.ToMinutes(eventTimestamp)
 	i0 := 0
-	done := make(chan struct{}, shards)
-	sent := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
 		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
-			tenant.shards[shard].Events() <- tenantshard.Create(series[i0:i], timestamp, tenant.series, done)
-			sent++
+			m := tenant.shards[shard]
+			m.Lock()
+			for _, ref := range series[i0:i] {
+				_, _ = m.Put(ref, timestamp, tenant.series, limit, false)
+			}
+			m.Unlock()
 			i0 = i
 		}
-	}
-	// TODO: this is just for the tests, we dont really need to wait here.
-	for i := 0; i < sent; i++ {
-		<-done
 	}
 }
 
@@ -205,19 +199,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 	t.mtx.RUnlock()
 
 	var deletionCandidates []string
-	done := make(chan struct{}, shards)
 	for tenantID, tenant := range tenantsClone {
 		for _, shard := range tenant.shards {
-			shard.Events() <- tenantshard.Cleanup(
-				watermark,
-				tenant.series,
-				done,
-			)
-		}
-
-		// TODO: do we need this done? so far it's only added for testing purposes.
-		for i := 0; i < shards; i++ {
-			<-done
+			shard.Lock()
+			shard.Cleanup(watermark, tenant.series)
+			shard.Unlock()
 		}
 
 		if tenant.series.Load() == 0 {
@@ -229,7 +215,6 @@ func (t *trackerStore) cleanup(now time.Time) {
 		return
 	}
 
-	var toShutdown []*trackedTenant
 	t.mtx.Lock()
 	for _, tenantID := range deletionCandidates {
 		tenant, ok := t.tenants[tenantID]
@@ -240,28 +225,17 @@ func (t *trackerStore) cleanup(now time.Time) {
 		// Since we have the t.mtx, we know that nobody can also get this tenant.
 		tenant.Lock()
 		if tenant.series.Load() == 0 {
-			toShutdown = append(toShutdown, tenant)
 			delete(t.tenants, tenantID)
 		}
 		tenant.Unlock()
 	}
 	t.mtx.Unlock()
-
-	for _, tenant := range toShutdown {
-		tenant.shutdown()
-	}
 }
 
 type trackedTenant struct {
 	sync.RWMutex
 	series *atomic.Uint64
 	shards [shards]*tenantshard.Map
-}
-
-func (tenant *trackedTenant) shutdown() {
-	for i := range tenant.shards {
-		tenant.shards[i].Events() <- tenantshard.Shutdown()
-	}
 }
 
 func zeroAsNoLimit(v uint64) uint64 {

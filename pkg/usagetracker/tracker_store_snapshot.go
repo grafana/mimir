@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
-	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
 const snapshotEncodingVersion = 1
@@ -30,13 +29,14 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 		snapshot.PutUvarintStr(tenantID)
 
 		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
-		clonser := make(chan func(tenantshard.LengthCallback, tenantshard.IteratorCallback))
-		tenant.shards[shard].Events() <- tenantshard.Clone(clonser)
-		clone := <-clonser
-		// Once we have the clone we don't need to hold the mutex anymore as it works on a clone.
+		m := tenant.shards[shard]
+		m.Lock()
+		iter := m.Iterator()
+		m.Unlock()
+		// Once we have the iter we don't need to hold the mutex anymore as it works on a iter.
 		tenant.RUnlock()
 
-		clone(
+		iter(
 			func(length int) {
 				snapshot.PutUvarint64(uint64(length))
 			},
@@ -83,8 +83,6 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	// Don't load them.
 	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
-	done := make(chan struct{}, tenantsLen)
-	sent := 0
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
 		tenantID := snapshot.UvarintStr()
@@ -97,8 +95,13 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			return fmt.Errorf("failed to read series len: %w", err)
 		}
 
+		type refTimestamp struct {
+			Ref       uint64
+			Timestamp clock.Minutes
+		}
+
 		// TODO: it's probably less-blocking to work on a cloned iterator here.
-		refs := make([]tenantshard.RefTimestamp, 0, seriesLen)
+		refs := make([]refTimestamp, 0, seriesLen)
 		for i := 0; i < seriesLen; i++ {
 			s := snapshot.Be64()
 			if err := snapshot.Err(); err != nil {
@@ -113,20 +116,17 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 				// We're not interested in this series, it was about to be evicted.
 				continue
 			}
-			refs = append(refs, tenantshard.RefTimestamp{Ref: s, Timestamp: snapshotTs})
+			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs})
 		}
 
 		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
-		tenant.shards[shard].Events() <- tenantshard.Load(
-			refs,
-			tenant.series,
-			done,
-		)
-		sent++
+		m := tenant.shards[shard]
+		m.Lock()
+		for _, ref := range refs {
+			_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, 0, false)
+		}
+		m.Unlock()
 		tenant.RUnlock()
-	}
-	for i := 0; i < sent; i++ {
-		<-done
 	}
 	return nil
 }

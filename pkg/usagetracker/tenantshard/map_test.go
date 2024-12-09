@@ -27,20 +27,10 @@ func TestMap(t *testing.T) {
 		for j := range refs {
 			refs[j] = uint64((i*100 + j) << valueBits)
 			storedValues[refs[j]] = clock.Minutes(i)
+			created, rejected := m.Put(refs[j], clock.Minutes(i), series, limit, false)
+			require.True(t, created)
+			require.False(t, rejected)
 		}
-
-		resp := make(chan TrackResponse)
-		m.Events() <- Track(
-			refs,
-			clock.Minutes(i),
-			series,
-			limit,
-			resp,
-		)
-		response := <-resp
-
-		require.Len(t, response.Created, seriesPerEvent, "iteration %d", i)
-		require.Empty(t, response.Rejected, "iteration %d", i)
 	}
 
 	require.Equal(t, events*seriesPerEvent, m.count())
@@ -48,48 +38,24 @@ func TestMap(t *testing.T) {
 
 	{
 		// No more series will fit.
-		resp := make(chan TrackResponse)
-		ref := uint64(65535) << valueBits
-		m.Events() <- Track(
-			[]uint64{ref},
-			clock.Minutes(0),
-			series,
-			limit,
-			resp,
-		)
-		response := <-resp
-		require.Empty(t, response.Created)
-		require.Equal(t, []uint64{ref}, response.Rejected)
+		created, rejected := m.Put(uint64(65535)<<valueBits, 1, series, limit, true)
+		require.False(t, created)
+		require.True(t, rejected)
 	}
 
 	{
 		gotValues := map[uint64]clock.Minutes{}
-		cloner := make(chan func(LengthCallback, IteratorCallback))
-		m.Events() <- Clone(cloner)
-		iterator := <-cloner
-		count := 0
+		iterator := m.Iterator()
 		iterator(
-			func(c int) {
-				count = c
-			},
-			func(key uint64, value clock.Minutes) {
-				gotValues[key] = value
-			},
+			func(c int) { require.Equal(t, len(storedValues), c) },
+			func(key uint64, value clock.Minutes) { gotValues[key] = value },
 		)
-		require.Equal(t, len(storedValues), count)
 		require.Equal(t, storedValues, gotValues)
 	}
 
 	{
 		// Cleanup first wave of series
-		resp := make(chan struct{})
-		m.Events() <- Cleanup(
-			clock.Minutes(1),
-			series,
-			resp,
-		)
-		<-resp
-
+		m.Cleanup(clock.Minutes(1), series)
 		expectedSeries := (events - 1) * seriesPerEvent
 
 		// It's unsafe to check m.count() after Cleanup event.
@@ -106,13 +72,13 @@ func TestMapValues(t *testing.T) {
 		key := rand.Uint64() &^ valueMask // we can only store values of this shard.
 		val := clock.Minutes(i) % valueMask
 		stored[key] = val
-		m.put(key, val, total, 0, false)
+		m.Put(key, val, total, 0, false)
 	}
 	require.Equal(t, len(stored), m.count())
 	require.Equal(t, len(stored), int(total.Load()))
 
 	got := map[uint64]clock.Minutes{}
-	m.cloner()(
+	m.Iterator()(
 		func(c int) { require.Equal(t, len(stored), c) },
 		func(key uint64, value clock.Minutes) { got[key] = value },
 	)

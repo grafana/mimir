@@ -29,7 +29,6 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, noopEvents{})
-	t.Cleanup(tracker.shutdownAllTenants)
 
 	{
 		// Push 2 series, both are accepted.
@@ -82,10 +81,8 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 
 	tracker1Events := eventsPipe{}
 	tracker1 := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, &tracker1Events)
-	t.Cleanup(tracker1.shutdownAllTenants)
 	tracker2Events := eventsPipe{}
 	tracker2 := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, &tracker2Events)
-	t.Cleanup(tracker2.shutdownAllTenants)
 	tracker1Events.listeners = []*trackerStore{tracker2}
 	tracker2Events.listeners = []*trackerStore{tracker1}
 
@@ -161,7 +158,6 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker1 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
-	t.Cleanup(tracker1.shutdownAllTenants)
 
 	for i := 0; i < 60; i++ {
 		rejected, err := tracker1.trackSeries(context.Background(), testUser1, []uint64{uint64(i)}, now)
@@ -184,7 +180,6 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 	}, tracker1.seriesCounts())
 
 	tracker2 := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
-	t.Cleanup(tracker2.shutdownAllTenants)
 
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
@@ -222,7 +217,6 @@ func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
 
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 	tracker := newTrackerStore(time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
-	t.Cleanup(tracker.shutdownAllTenants)
 
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1}, now)
 	require.Empty(t, rejected)
@@ -249,7 +243,6 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limits, noopEvents{})
-	t.Cleanup(tracker.shutdownAllTenants)
 
 	// Push 2 series to testUser1, both are accepted.
 	rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2}, now)
@@ -304,7 +297,6 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 
 	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
 	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, createdSeries)
-	t.Cleanup(tracker.shutdownAllTenants)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -363,7 +355,6 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	tracker := newTrackerStore(defaultIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
-	t.Cleanup(tracker.shutdownAllTenants)
 
 	reg := prometheus.NewRegistry()
 	require.NoError(t, reg.Register(tracker))
@@ -489,12 +480,4 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 		res[tenantID] = shard
 	}
 	return res
-}
-
-func (t *trackerStore) shutdownAllTenants() {
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
-	for _, tenant := range t.tenants {
-		tenant.shutdown()
-	}
 }
