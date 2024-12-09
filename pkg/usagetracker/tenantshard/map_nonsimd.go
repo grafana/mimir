@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	groupSize       = 8
-	maxAvgGroupLoad = 7
+	groupSize = 8
+	// maxAvgGroupLoad was 7 in dolthub/swiss, but we trade in some memory for less CPU by having to check less entries.
+	maxAvgGroupLoad = 4
 
 	loBits uint64 = 0x0101010101010101
 	hiBits uint64 = 0x8080808080808080
