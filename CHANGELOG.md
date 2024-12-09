@@ -12,6 +12,8 @@
 
 ### Mimirtool
 
+* [CHANGE] Unify mimirtool authentication options and add extra-headers support for commands that depend on MimirClient. #10178
+
 ### Mimir Continuous Test
 
 ### Query-tee
