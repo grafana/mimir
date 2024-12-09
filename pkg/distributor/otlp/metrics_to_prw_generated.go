@@ -61,6 +61,7 @@ type MimirConverter struct {
 	unique    map[uint64]*mimirpb.TimeSeries
 	conflicts map[uint64][]*mimirpb.TimeSeries
 	everyN    everyNTimes
+	metadata  []mimirpb.MetricMetadata
 }
 
 func NewMimirConverter() *MimirConverter {
@@ -74,6 +75,16 @@ func NewMimirConverter() *MimirConverter {
 func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
+
+	numMetrics := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
+		}
+	}
+	c.metadata = make([]mimirpb.MetricMetadata, 0, numMetrics)
+
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
@@ -100,6 +111,12 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 				}
 
 				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
+				c.metadata = append(c.metadata, mimirpb.MetricMetadata{
+					Type:             otelMetricTypeToPromMetricType(metric),
+					MetricFamilyName: promName,
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				})
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
