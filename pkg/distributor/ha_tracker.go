@@ -82,27 +82,32 @@ func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.
 		return nil, nil
 	}
 
+	changed := false
 	if other.Replica == r.Replica {
 		// Keeping the one with the most recent receivedAt timestamp
 		if other.ReceivedAt > r.ReceivedAt {
 			*r = *other
+			changed = true
 		} else if r.ReceivedAt == other.ReceivedAt && r.DeletedAt == 0 && other.DeletedAt != 0 {
 			*r = *other
+			changed = true
 		}
 	} else {
 		// keep the most recent ElectedAt to reach consistency
 		if other.ElectedAt > r.ElectedAt {
 			*r = *other
+			changed = true
 		} else if other.ElectedAt == r.ElectedAt {
 			// if the timestamps are equal we compare ReceivedAt
 			if other.ReceivedAt > r.ReceivedAt {
 				*r = *other
+				changed = true
 			}
 		}
 	}
 
 	// No changes
-	if *r != *other {
+	if !changed {
 		return nil, nil
 	}
 
