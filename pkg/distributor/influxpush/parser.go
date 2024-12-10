@@ -22,8 +22,8 @@ import (
 
 const internalLabel = "__mimir_source__"
 
-// parseInfluxLineReader parses a Influx Line Protocol request from an io.Reader.
-func parseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([]mimirpb.TimeSeries, error, int) {
+// ParseInfluxLineReader parses a Influx Line Protocol request from an io.Reader.
+func ParseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([]mimirpb.TimeSeries, error, int) {
 	qp := r.URL.Query()
 	precision := qp.Get("precision")
 	if precision == "" {
@@ -53,7 +53,7 @@ func parseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([
 
 	points, err := models.ParsePointsWithPrecision(data, time.Now().UTC(), precision)
 	if err != nil {
-		return nil, fmt.Errorf("can't parse points: %s", err)
+		return nil, fmt.Errorf("can't parse points: %s", err), dataLen
 	}
 	a, b := writeRequestFromInfluxPoints(points)
 	return a, b, dataLen
