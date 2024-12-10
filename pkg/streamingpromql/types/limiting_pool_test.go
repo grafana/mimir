@@ -25,7 +25,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 	tracker := limiting.NewMemoryConsumptionTracker(0, metric)
 
 	p := NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, 1000, 2, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		pool.NewBucketedPool(1000, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		FPointSize,
 		false,
 		nil,
@@ -78,7 +78,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 	tracker := limiting.NewMemoryConsumptionTracker(limit, metric)
 
 	p := NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, 1000, 2, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		pool.NewBucketedPool(1000, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		FPointSize,
 		false,
 		nil,
@@ -203,7 +203,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	tracker := limiting.NewMemoryConsumptionTracker(0, metric)
 
 	p := NewLimitingBucketedPool(
-		pool.NewBucketedPool(1, 1000, 2, func(size int) []int { return make([]int, 0, size) }),
+		pool.NewBucketedPool(1000, func(size int) []int { return make([]int, 0, size) }),
 		1,
 		false,
 		func(_ int) int { return 123 },
