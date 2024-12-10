@@ -149,12 +149,6 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
-  # trigger an ingester shutdown. This is a potentially dangerous operation and
-  # should only be enabled consciously.
-  # CLI flag: -api.get-request-for-ingester-shutdown-enabled
-  [get_request_for_ingester_shutdown_enabled: <boolean> | default = false]
-
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix

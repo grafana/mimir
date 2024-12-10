@@ -77,7 +77,7 @@ var bucketGroupPool = zeropool.New(func() *bucketGroup {
 })
 
 var pointBucketPool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(1, types.MaxExpectedPointsPerSeries, types.PointsPerSeriesBucketFactor, func(size int) []buckets {
+	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []buckets {
 		return make([]buckets, 0, size)
 	}),
 	uint64(unsafe.Sizeof(buckets{})),
@@ -98,7 +98,7 @@ func mangleBuckets(b buckets) buckets {
 const maxExpectedBucketsPerHistogram = 64 // There isn't much science to this
 
 var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(1, maxExpectedBucketsPerHistogram, 2, func(size int) []bucket {
+	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) []bucket {
 		return make([]bucket, 0, size)
 	}),
 	uint64(unsafe.Sizeof(bucket{})),

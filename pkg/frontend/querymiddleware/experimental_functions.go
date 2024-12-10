@@ -100,10 +100,7 @@ func containedExperimentalFunctions(expr parser.Expr) map[string]struct{} {
 		}
 		agg, ok := node.(*parser.AggregateExpr)
 		if ok {
-			// Note that unlike most PromQL functions, the experimental nature of the aggregation functions are manually
-			// defined and enforced, so they have to be hardcoded here and updated along with changes in Prometheus.
-			switch agg.Op {
-			case parser.LIMITK, parser.LIMIT_RATIO:
+			if agg.Op.IsExperimentalAggregator() {
 				expFuncNames[agg.Op.String()] = struct{}{}
 			}
 		}
