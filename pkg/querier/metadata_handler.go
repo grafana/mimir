@@ -74,8 +74,8 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 
 		metric := r.FormValue("metric")
 		req := &client.MetricsMetadataRequest{
-			Limit:          int32(limit),
-			LimitPerMetric: int32(limitPerMetric),
+			Limit:          limit,
+			LimitPerMetric: limitPerMetric,
 			Metric:         metric,
 		}
 
