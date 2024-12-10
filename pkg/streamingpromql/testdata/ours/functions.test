@@ -511,8 +511,8 @@ eval range from 0 to 20m step 1m resets(metric[3m1s])
   {case="all NaN, no resets"} 0 0 0 0 0 0 0 0 0 0 0
   {case="all Inf, no resets"} 0 0 0 0 0 0 0 0 0 0 0
   {case="all same histogram, no resets"} 0 0 0 0 0
-  {case="floats and nh, some resets"} 0 1 1 1 0 0 0 1 1 1 0
-  {case="floats, nh and nhcb, some resets"} 0 0 0 0 1 2 3 2 1 1 2 3 3 2 2 1 1 0
+  {case="floats and nh, some resets"} 0 1 1 1 0 0 1 1 1 1 0
+  {case="floats, nh and nhcb, some resets"} 0 0 0 0 1 2 3 2 2 2 2 3 3 2 2 1 1 0
   {case="mixed float, NaN and Inf, some resets"} 0 1 1 1 0 0 0 0 0 1 2 3 2 2 1 1 0
   {case="nh, bucket decreased, some resets"} 0 1 2 2 1 0
   {case="nh, count decreased, some resets"} 0 1 1 1 0
