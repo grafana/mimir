@@ -170,6 +170,7 @@
 
 ### Documentation
 
+* [CHANGE] Add production tips related to cache size, heavy multi-tenancy and latency spikes. #9978
 * [BUGFIX] Send native histograms: update the migration guide with the corrected dashboard query for switching between classic and native histograms queries. #10052
 
 ### Tools
