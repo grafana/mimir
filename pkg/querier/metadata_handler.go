@@ -50,24 +50,26 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int32(-1)
 		if s := r.FormValue("limit"); s != "" {
-			if parsed, err := strconv.ParseInt(s, 10, 32); err != nil {
+			parsed, err := strconv.ParseInt(s, 10, 32)
+			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit must be a number"})
 				return
-			} else {
-				limit = int32(parsed)
 			}
+
+			limit = int32(parsed)
 		}
 
 		limitPerMetric := int32(-1)
 		if s := r.FormValue("limit_per_metric"); s != "" {
-			if parsed, err := strconv.ParseInt(s, 10, 32); err != nil {
+			parsed, err := strconv.ParseInt(s, 10, 32)
+			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit_per_metric must be a number"})
 				return
-			} else {
-				limitPerMetric = int32(parsed)
 			}
+
+			limitPerMetric = int32(parsed)
 		}
 
 		metric := r.FormValue("metric")
