@@ -182,6 +182,10 @@ func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
 	p.clearUnmarshalData()
 }
 
+func (p *PreallocTimeseries) SamplesUpdated() {
+	p.clearUnmarshalData()
+}
+
 func (p *PreallocTimeseries) HistogramsUpdated() {
 	p.clearUnmarshalData()
 }
