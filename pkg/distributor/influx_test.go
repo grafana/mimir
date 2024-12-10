@@ -46,8 +46,10 @@ func TestHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, req *mimirpb.WriteRequest) error {
-					assert.Equal(t, defaultExpectedWriteRequest, req)
+				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				//	assert.Equal(t, defaultExpectedWriteRequest, req)
+				return func(ctx context.Context, pushReq *Request) error {
+					assert.Equal(t, defaultExpectedWriteRequest, pushReq)
 					return nil
 				}
 			},
@@ -59,8 +61,10 @@ func TestHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, req *mimirpb.WriteRequest) error {
-					assert.Equal(t, defaultExpectedWriteRequest, req)
+				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				//	assert.Equal(t, defaultExpectedWriteRequest, req)
+				return func(ctx context.Context, pushReq *Request) error {
+					assert.Equal(t, defaultExpectedWriteRequest, pushReq)
 					return nil
 				}
 			},
@@ -72,7 +76,8 @@ func TestHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1= 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				return func(ctx context.Context, pushReq *Request) error {
 					t.Error("Push should not be called on bad request")
 					return nil
 				}
@@ -85,7 +90,8 @@ func TestHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				return func(ctx context.Context, pushReq *Request) error {
 					t.Error("Push should not be called on bad request")
 					return nil
 				}
@@ -98,7 +104,8 @@ func TestHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusInternalServerError,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				return func(ctx context.Context, pushReq *Request) error {
 					return context.DeadlineExceeded
 				}
 			},
@@ -110,7 +117,8 @@ func TestHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 0123456789",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
+				return func(ctx context.Context, pushReq *Request) error {
 					t.Error("Push should not be called on bad request")
 					return nil
 				}
@@ -121,7 +129,7 @@ func TestHandleSeriesPush(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := InfluxHandler(tt.maxRequestSizeBytes, nil, RetryConfig{}, tt.push(t), nil, nil, nil)
+			handler := InfluxHandler(tt.maxRequestSizeBytes, nil, nil, RetryConfig{}, tt.push(t), nil, nil, nil)
 			req := httptest.NewRequest("POST", tt.url, bytes.NewReader([]byte(tt.data)))
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)

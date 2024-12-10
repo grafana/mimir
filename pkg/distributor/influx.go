@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+        "github.com/grafana/dskit/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 
         "google.golang.org/grpc/codes"
@@ -20,9 +21,33 @@ import (
         utillog "github.com/grafana/mimir/pkg/util/log"
 )
 
+func parser(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	ts, err, _ := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
+	if err != nil {
+		level.Error(logger).Log("err", err.Error())
+		// http.Error(w, err.Error(), http.StatusBadRequest)
+		return err
+	}
+
+	// Sigh, a write API optimisation needs me to jump through hoops.
+	pts := make([]mimirpb.PreallocTimeseries, 0, len(ts))
+	for i := range ts {
+		pts = append(pts, mimirpb.PreallocTimeseries{
+			TimeSeries: &ts[i],
+		})
+	}
+
+	// TODO - logging?
+
+	req.Timeseries = pts
+	// TODO(alexg): metadata?
+	return nil
+}
+
 // InfluxHandler is a http.Handler which accepts Influx Line protocol and converts it to WriteRequests.
 func InfluxHandler(
 	maxRecvMsgSize int,
+        requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
         retryCfg RetryConfig,
         push PushFunc,
@@ -39,24 +64,6 @@ func InfluxHandler(
                                 logger = utillog.WithSourceIPs(source, logger)
                         }
                 }
-
-		ts, err, _ := influxpush.ParseInfluxLineReader(r.Context(), r, maxRecvMsgSize)
-		if err != nil {
-			level.Error(logger).Log("err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Sigh, a write API optimisation needs me to jump through hoops.
-		pts := make([]mimirpb.PreallocTimeseries, 0, len(ts))
-		for i := range ts {
-			pts = append(pts, mimirpb.PreallocTimeseries{
-				TimeSeries: &ts[i],
-			})
-		}
-		rwReq := &mimirpb.WriteRequest{
-			Timeseries: pts,
-		}
 
 		// TODO(alexg): supplier type code from otel.go?
                 supplier := func() (*mimirpb.WriteRequest, func(), error) {
@@ -80,7 +87,7 @@ func InfluxHandler(
                         return &req.WriteRequest, cleanup, nil
                 }
                 req := newRequest(supplier)
-		if err := push(ctx, rwReq); err != nil {
+		if err := push(ctx, req); err != nil {
                         if errors.Is(err, context.Canceled) {
                                 level.Warn(logger).Log("msg", "push request canceled", "err", err)
                                 writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
