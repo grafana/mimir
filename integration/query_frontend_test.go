@@ -786,8 +786,7 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// Set the maximum entity size to 100 bytes.
-					// The query result payload is 107 bytes, so it will be too large for the configured limit.
+					// The query result payload is 202 bytes, so it will be too large for the configured limit.
 					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 
