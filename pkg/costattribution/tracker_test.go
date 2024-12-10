@@ -29,7 +29,7 @@ func Test_CreateCleanupTracker(t *testing.T) {
 	cat := tManager.TrackerForUser("user4")
 
 	reg := prometheus.NewRegistry()
-	err := reg.Register(cat)
+	err := reg.Register(tManager)
 	require.NoError(t, err)
 
 	cat.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), time.Unix(1, 0))
@@ -39,8 +39,6 @@ func Test_CreateCleanupTracker(t *testing.T) {
 	cat.IncrementDiscardedSamples(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), 2, "sample-out-of-order", time.Unix(4, 0))
 
 	cat.IncrementActiveSeries(labels.FromStrings("platform", "bar", "tenant", "user4", "team", "2"), time.Unix(6, 0))
-
-	cat.updateMetrics()
 
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -70,26 +68,9 @@ func Test_CreateCleanupTracker(t *testing.T) {
 	cortex_ingester_attributed_active_series{platform="bar",tenant="user4",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-	cat.cleanupTracker()
+	tManager.deleteUserTracer("user4")
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), metricNames...))
 }
-
-// func Test_GetKeyValues(t *testing.T) {
-// 	cat := newTestManager().TrackerForUser("user3")
-
-// 	// Test initial key values and overflow states
-// 	keyVal1 := cat.updateOverflow(labels.FromStrings("department", "foo", "service", "bar"), 1)
-// 	assert.Equal(t, []string{"foo", "bar", "user3"}, keyVal1, "First call, expecting values as-is")
-
-// 	keyVal2 := cat.getKeyValues(labels.FromStrings("department", "foo"), 3)
-// 	assert.Equal(t, []string{"foo", "__missing__", "user3"}, keyVal2, "Service missing, should return '__missing__'")
-
-// 	keyVal3 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "baz", "team", "a"), 4)
-// 	assert.Equal(t, []string{"__overflow__", "__overflow__", "user3"}, keyVal3, "Overflow state expected")
-
-// 	keyVal4 := cat.getKeyValues(labels.FromStrings("department", "foo", "service", "bar"), 5)
-// 	assert.Equal(t, []string{"__overflow__", "__overflow__", "user3"}, keyVal4, "Overflow state expected")
-// }
 
 func Test_UpdateCounters(t *testing.T) {
 	cat := newTestManager().TrackerForUser("user3")

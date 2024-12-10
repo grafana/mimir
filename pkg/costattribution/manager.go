@@ -27,25 +27,23 @@ type Manager struct {
 	limits          *validation.Overrides
 
 	// mu protects the trackersByUserID map
-	mtx                   sync.RWMutex
-	trackersByUserID      map[string]*Tracker
-	reg                   *prometheus.Registry
-	cleanupInterval       time.Duration
-	metricsExportInterval time.Duration
+	mtx              sync.RWMutex
+	trackersByUserID map[string]*Tracker
+	reg              *prometheus.Registry
+	cleanupInterval  time.Duration
 }
 
 // NewManager creates a new cost attribution manager. which is responsible for managing the cost attribution of series.
 // It will clean up inactive series and update the cost attribution of series every 3 minutes.
-func NewManager(cleanupInterval, exportInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
+func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
 	m := &Manager{
-		trackersByUserID:      make(map[string]*Tracker),
-		limits:                limits,
-		mtx:                   sync.RWMutex{},
-		inactiveTimeout:       inactiveTimeout,
-		logger:                logger,
-		reg:                   reg,
-		cleanupInterval:       cleanupInterval,
-		metricsExportInterval: exportInterval,
+		trackersByUserID: make(map[string]*Tracker),
+		limits:           limits,
+		mtx:              sync.RWMutex{},
+		inactiveTimeout:  inactiveTimeout,
+		logger:           logger,
+		reg:              reg,
+		cleanupInterval:  cleanupInterval,
 	}
 
 	m.Service = services.NewBasicService(nil, m.running, nil).WithName("cost attribution manager")
@@ -62,9 +60,6 @@ func (m *Manager) running(ctx context.Context) error {
 	t := time.NewTicker(m.cleanupInterval)
 	defer t.Stop()
 
-	tMupdate := time.NewTicker(m.metricsExportInterval)
-	defer tMupdate.Stop()
-
 	for {
 		select {
 		case <-t.C:
@@ -72,8 +67,6 @@ func (m *Manager) running(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-		case <-tMupdate.C:
-			m.updateMetrics()
 		case <-ctx.Done():
 			return nil
 		}
@@ -219,16 +212,4 @@ func (m *Manager) getInactiveObservationsForUser(userID string, deadline int64) 
 	}
 
 	return cat.GetInactiveObservations(deadline)
-}
-
-func (m *Manager) updateMetrics() {
-	if m == nil {
-		return
-	}
-
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	for _, tracker := range m.trackersByUserID {
-		tracker.updateMetrics()
-	}
 }
