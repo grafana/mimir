@@ -77,10 +77,10 @@ type manySide struct {
 	outputSeriesCount int
 }
 
-// latestSeries returns the index of the last series from this side.
+// latestSeriesIndex returns the index of the last series from this side.
 //
 // It assumes that seriesIndices is sorted in ascending order.
-func (s manySide) latestSeries() int {
+func (s manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
@@ -95,10 +95,10 @@ type oneSide struct {
 	matchGroup *matchGroup // nil if this is the only "one" side in this group.
 }
 
-// latestSeries returns the index of the last series from this side.
+// latestSeriesIndex returns the index of the last series from this side.
 //
 // It assumes that seriesIndices is sorted in ascending order.
-func (s oneSide) latestSeries() int {
+func (s oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
 }
 
@@ -502,13 +502,13 @@ func (s favourManySideSorter) Len() int {
 }
 
 func (s favourManySideSorter) Less(i, j int) bool {
-	iMany := s.series[i].manySide.latestSeries()
-	jMany := s.series[j].manySide.latestSeries()
+	iMany := s.series[i].manySide.latestSeriesIndex()
+	jMany := s.series[j].manySide.latestSeriesIndex()
 	if iMany != jMany {
 		return iMany < jMany
 	}
 
-	return s.series[i].oneSide.latestSeries() < s.series[j].oneSide.latestSeries()
+	return s.series[i].oneSide.latestSeriesIndex() < s.series[j].oneSide.latestSeriesIndex()
 }
 
 func (s favourManySideSorter) Swap(i, j int) {
