@@ -2711,30 +2711,44 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		for _, op := range []string{"+", "-", "*", "/", "and", "unless", "or"} {
-			binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+			expr := fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for _, label := range labels[1:] {
-				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
+				expr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
 			}
-			expressions = append(expressions, binaryExpr)
+			expressions = append(expressions, expr)
 
 			// Same thing again, this time with grouping.
-			binaryExpr = fmt.Sprintf(`series{label="%s"}`, labels[0])
+			expr = fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for i, label := range labels[1:] {
-				binaryExpr += fmt.Sprintf(` %s ignoring (label, group) `, op)
+				expr += fmt.Sprintf(` %s ignoring (label, group) `, op)
 
 				if i == 0 && len(labels) > 2 {
-					binaryExpr += "("
+					expr += "("
 				}
 
-				binaryExpr += fmt.Sprintf(`{label="%s"}`, label)
+				expr += fmt.Sprintf(`{label="%s"}`, label)
 			}
-
 			if len(labels) > 2 {
-				binaryExpr += ")"
+				expr += ")"
+			}
+			expressions = append(expressions, expr)
+		}
+
+		// Similar thing again, this time with group_left
+		expr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+		for i, label := range labels[1:] {
+			expr += ` * on(group) group_left(label) `
+
+			if i == 0 && len(labels) > 2 {
+				expr += "("
 			}
 
-			expressions = append(expressions, binaryExpr)
+			expr += fmt.Sprintf(`{label="%s"}`, label)
 		}
+		if len(labels) > 2 {
+			expr += ")"
+		}
+		expressions = append(expressions, expr)
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
