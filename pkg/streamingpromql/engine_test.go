@@ -50,12 +50,10 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
-		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"topk(5, metric{})":                            "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
-		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
-		"quantile(0.95, metric{})":                     "'quantile' aggregation with parameter",
+		"topk(5, metric{})":                     "'topk' aggregation with parameter",
+		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
+		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
+		"quantile(0.95, metric{})":              "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -157,11 +155,19 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
 	})
 
-	t.Run("classic histograms", func(t *testing.T) {
+	t.Run("histogram_quantile function", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableHistogramQuantileFunction = false
 
 		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "'histogram_quantile' function")
+	})
+
+	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableOneToManyAndManyToOneBinaryOperations = false
+
+		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
+		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
 	})
 }
 
@@ -2435,6 +2441,12 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		testCases[name] = testCase
 	}
 
+	cardinalities := map[string]string{
+		"one-to-one":  "",
+		"many-to-one": "group_left",
+		"one-to-many": "group_right",
+	}
+
 	for op, binop := range binaryOperations {
 		expressions := []string{op}
 
@@ -2443,14 +2455,18 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		}
 
 		for _, expr := range expressions {
-			addBinopTestCase(op, fmt.Sprintf("binary %v between two floats", expr), fmt.Sprintf(`metric{type="float"} %v ignoring(type) metric{type="float"}`, expr), "float", "float", true)
-			addBinopTestCase(op, fmt.Sprintf("binary %v between a float on the left side and a histogram on the right", expr), fmt.Sprintf(`metric{type="float"} %v ignoring(type) metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
 			addBinopTestCase(op, fmt.Sprintf("binary %v between a scalar on the left side and a histogram on the right", expr), fmt.Sprintf(`2 %v metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
-			addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a float on the right", expr), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) metric{type="float"}`, expr), "histogram", "float", binop.histogramFloatSupported)
 			addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a scalar on the right", expr), fmt.Sprintf(`metric{type="histogram"} %v 2`, expr), "histogram", "float", binop.histogramFloatSupported)
-			addBinopTestCase(op, fmt.Sprintf("binary %v between two histograms", expr), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) metric{type="histogram"}`, expr), "histogram", "histogram", binop.histogramHistogramSupported)
+
+			for cardinalityName, cardinalityModifier := range cardinalities {
+				addBinopTestCase(op, fmt.Sprintf("binary %v between two floats with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "float", "float", true)
+				addBinopTestCase(op, fmt.Sprintf("binary %v between a float on the left side and a histogram on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "float", "histogram", binop.floatHistogramSupported)
+				addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a float on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "histogram", "float", binop.histogramFloatSupported)
+				addBinopTestCase(op, fmt.Sprintf("binary %v between two histograms with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "histogram", "histogram", binop.histogramHistogramSupported)
+			}
 		}
 	}
+
 	runAnnotationTests(t, testCases)
 }
 
