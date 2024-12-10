@@ -278,49 +278,72 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	// Get first sample from left and right
 	lT, lF, lH, lOk := e.leftIterator.Next()
 	rT, rF, rH, rOk := e.rightIterator.Next()
+
+	appendHistogram := func(t int64, h *histogram.FloatHistogram) error {
+		if hPoints == nil {
+			if err := prepareHSlice(); err != nil {
+				return err
+			}
+		}
+
+		hPoints = append(hPoints, promql.HPoint{
+			H: h,
+			T: t,
+		})
+
+		return nil
+	}
+
+	appendFloat := func(t int64, f float64) error {
+		if fPoints == nil {
+			if err := prepareFSlice(); err != nil {
+				return err
+			}
+		}
+
+		fPoints = append(fPoints, promql.FPoint{
+			F: f,
+			T: t,
+		})
+
+		return nil
+	}
+
+	appendNextSample := func() error {
+		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH)
+
+		if err != nil {
+			err = functions.NativeHistogramErrorToAnnotation(err, e.emitAnnotation)
+			if err != nil {
+				return err
+			}
+
+			// Else: error was converted to an annotation, continue without emitting a sample here.
+			keep = false
+		}
+
+		if !valid {
+			emitIncompatibleTypesAnnotation(e.annotations, e.op, lH, rH, e.expressionPosition)
+		}
+
+		if !keep {
+			return nil
+		}
+
+		if resultHist != nil {
+			return appendHistogram(lT, resultHist)
+		}
+
+		return appendFloat(lT, resultFloat)
+	}
+
 	// Continue iterating until we exhaust either the LHS or RHS
 	// denoted by lOk or rOk being false.
 	for lOk && rOk {
 		if lT == rT {
 			// We have samples on both sides at this timestep.
-			resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH)
-
-			if err != nil {
-				err = functions.NativeHistogramErrorToAnnotation(err, e.emitAnnotation)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-
-				// Else: error was converted to an annotation, continue without emitting a sample here.
-				keep = false
-			}
-
-			if !valid {
-				emitIncompatibleTypesAnnotation(e.annotations, e.op, lH, rH, e.expressionPosition)
-			}
-
-			if keep {
-				if resultHist != nil {
-					if hPoints == nil {
-						if err = prepareHSlice(); err != nil {
-							return types.InstantVectorSeriesData{}, err
-						}
-					}
-					hPoints = append(hPoints, promql.HPoint{
-						H: resultHist,
-						T: lT,
-					})
-				} else {
-					if fPoints == nil {
-						if err = prepareFSlice(); err != nil {
-							return types.InstantVectorSeriesData{}, err
-						}
-					}
-					fPoints = append(fPoints, promql.FPoint{
-						F: resultFloat,
-						T: lT,
-					})
-				}
+			if err := appendNextSample(); err != nil {
+				return types.InstantVectorSeriesData{}, err
 			}
 		}
 
