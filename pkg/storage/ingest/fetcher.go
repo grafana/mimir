@@ -53,9 +53,6 @@ type fetcher interface {
 	// record and use the returned context when doing something that is common to all records.
 	PollFetches(context.Context) (kgo.Fetches, context.Context)
 
-	// Update updates the fetcher with the given concurrency.
-	Update(ctx context.Context, concurrency int)
-
 	// Stop stops the fetcher.
 	Stop()
 
@@ -398,15 +395,6 @@ func (r *concurrentFetchers) Stop() {
 	r.bufferedFetchedBytes.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_offset", r.lastReturnedOffset)
-}
-
-// Update implements fetcher
-func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
-	r.Stop()
-	r.done = make(chan struct{})
-
-	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedOffset+1, concurrency)
 }
 
 // PollFetches implements fetcher
