@@ -110,6 +110,10 @@ type matchGroup struct {
 	oneSideCount int
 }
 
+// updatePresence records the presence of a sample from the series with index seriesIdx at the timestamp with index timestampIdx.
+//
+// If there is already a sample present from another series at the same timestamp, updatePresence returns that series' index, or
+// -1 if there was no sample present at the same timestamp from another series.
 func (g *matchGroup) updatePresence(timestampIdx int64, seriesIdx int) int {
 	if existing := g.presence[timestampIdx]; existing != -1 {
 		return existing
