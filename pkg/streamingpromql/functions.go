@@ -371,6 +371,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"histogram_count":    InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_fraction": HistogramFractionFunctionOperatorFactory(),
 	"histogram_quantile": HistogramQuantileFunctionOperatorFactory(),
+	"histogram_stddev":   InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", functions.HistogramStdDev),
 	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
 	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
 	"label_replace":      LabelReplaceFunctionOperatorFactory(),
