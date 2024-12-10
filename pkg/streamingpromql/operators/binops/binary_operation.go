@@ -202,7 +202,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	canReturnLeftFPointSlice, canReturnLeftHPointSlice, canReturnRightFPointSlice, canReturnRightHPointSlice := takeOwnershipOfLeft, takeOwnershipOfLeft, takeOwnershipOfRight, takeOwnershipOfRight
 	leftPoints := len(left.Floats) + len(left.Histograms)
 	rightPoints := len(right.Floats) + len(right.Histograms)
-	maxPoints := max(leftPoints, rightPoints)
+	minPoints := min(leftPoints, rightPoints)
 
 	// We cannot re-use any slices when the series contain a mix of floats and histograms.
 	// Consider the following, where f is a float at a particular step, and h is a histogram.
@@ -219,13 +219,13 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	mixedPoints := (len(left.Floats) > 0 && len(left.Histograms) > 0) || (len(right.Floats) > 0 && len(right.Histograms) > 0)
 
 	prepareFSlice := func() error {
-		if !mixedPoints && maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) && takeOwnershipOfLeft {
+		if !mixedPoints && minPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) && takeOwnershipOfLeft {
 			// Can fit output in left side, the left side is smaller than the right, and we're allowed to modify it
 			canReturnLeftFPointSlice = false
 			fPoints = left.Floats[:0]
 			return nil
 		}
-		if !mixedPoints && maxPoints <= cap(right.Floats) && takeOwnershipOfRight {
+		if !mixedPoints && minPoints <= cap(right.Floats) && takeOwnershipOfRight {
 			// Can otherwise fit in the right side and we're allowed to modify it
 			canReturnRightFPointSlice = false
 			fPoints = right.Floats[:0]
@@ -233,20 +233,20 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		}
 		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
 		var err error
-		if fPoints, err = types.FPointSlicePool.Get(maxPoints, e.memoryConsumptionTracker); err != nil {
+		if fPoints, err = types.FPointSlicePool.Get(minPoints, e.memoryConsumptionTracker); err != nil {
 			return err
 		}
 		return nil
 	}
 
 	prepareHSlice := func() error {
-		if !mixedPoints && maxPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) && takeOwnershipOfLeft {
+		if !mixedPoints && minPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) && takeOwnershipOfLeft {
 			// Can fit output in left side, the left side is smaller than the right, and we're allowed to modify it
 			canReturnLeftHPointSlice = false
 			hPoints = left.Histograms[:0]
 			return nil
 		}
-		if !mixedPoints && maxPoints <= cap(right.Histograms) && takeOwnershipOfRight {
+		if !mixedPoints && minPoints <= cap(right.Histograms) && takeOwnershipOfRight {
 			// Can otherwise fit in the right side and we're allowed to modify it
 			canReturnRightHPointSlice = false
 			hPoints = right.Histograms[:0]
@@ -254,7 +254,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		}
 		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
 		var err error
-		if hPoints, err = types.HPointSlicePool.Get(maxPoints, e.memoryConsumptionTracker); err != nil {
+		if hPoints, err = types.HPointSlicePool.Get(minPoints, e.memoryConsumptionTracker); err != nil {
 			return err
 		}
 		return nil
