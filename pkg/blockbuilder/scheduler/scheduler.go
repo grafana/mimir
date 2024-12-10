@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/blockbuilder"
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -32,7 +33,9 @@ type BlockBuilderScheduler struct {
 	register    prometheus.Registerer
 	metrics     schedulerMetrics
 
-	mu                  sync.Mutex
+	mu sync.Mutex
+	// committed is our local notion of the committed offsets.
+	// It is learned from Kafka at startup, but only updated by the completion of jobs.
 	committed           kadm.Offsets
 	observations        obsMap
 	observationComplete bool
@@ -114,7 +117,10 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-updateTick.C:
+			// These tasks are not prerequisites to updating the schedule, but
+			// we do them here rather than creating a ton of update tickers.
 			s.jobs.clearExpiredLeases()
+
 			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
@@ -224,6 +230,31 @@ func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 	return offsets
 }
 
+// AssignJob returns an assigned job for the given workerID.
+func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
+	key, spec, err := s.assignJob(req.WorkerId)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: eliminate jobSpec duplication.
+	return &schedulerpb.AssignJobResponse{
+		Key: &schedulerpb.JobKey{
+			Id:    key.id,
+			Epoch: key.epoch,
+		},
+		Spec: &schedulerpb.JobSpec{
+			Topic:          spec.topic,
+			Partition:      spec.partition,
+			StartOffset:    spec.startOffset,
+			EndOffset:      spec.endOffset,
+			CommitRecTs:    spec.commitRecTs,
+			LastSeenOffset: spec.lastSeenOffset,
+			LastBlockEndTs: spec.lastBlockEndTs,
+		},
+	}, err
+}
+
 // assignJob returns an assigned job for the given workerID.
 // (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, error) {
@@ -238,25 +269,49 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, err
 	return s.jobs.assign(workerID)
 }
 
-// updateJob takes a job update from the client and records it, if necessary.
-// (This is a temporary method for unit tests until we have RPCs.)
+// UpdateJob takes a job update from the client and records it, if necessary.
+func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+	if err := s.updateJob(keyFromProtoKey(req.Key), req.WorkerId, req.Complete, jobSpec{
+		topic:          req.Spec.Topic,
+		partition:      req.Spec.Partition,
+		startOffset:    req.Spec.StartOffset,
+		endOffset:      req.Spec.EndOffset,
+		commitRecTs:    req.Spec.CommitRecTs,
+		lastSeenOffset: req.Spec.LastSeenOffset,
+		lastBlockEndTs: req.Spec.LastBlockEndTs,
+	}); err != nil {
+		return nil, err
+	}
+	return &schedulerpb.UpdateJobResponse{}, nil
+}
+
+func keyFromProtoKey(k *schedulerpb.JobKey) jobKey {
+	return jobKey{
+		id:    k.Id,
+		epoch: k.Epoch,
+	}
+}
+
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j jobSpec) error {
+	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch, "worker", workerID)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if !s.observationComplete {
+		// We're still in observation mode. Record the observation.
 		if err := s.updateObservation(key, workerID, complete, j); err != nil {
 			return fmt.Errorf("observe update: %w", err)
 		}
 
-		s.logger.Log("msg", "recovered job", "key", key, "worker", workerID)
+		logger.Log("msg", "recovered job")
 		return nil
 	}
 
 	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
 		if j.startOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
-			s.logger.Log("msg", "ignored historical job", "key", key, "worker", workerID)
+			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
 		}
 	}
@@ -271,13 +326,13 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 		// TODO: Push forward the local notion of the committed offset.
 
-		s.logger.Log("msg", "completed job", "key", key, "worker", workerID)
+		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
-		s.logger.Log("msg", "renewed lease", "key", key, "worker", workerID)
+		logger.Log("msg", "renewed lease")
 	}
 	return nil
 }
@@ -332,7 +387,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			// An in-progress job.
 			// These don't affect offsets (yet), they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to import job", "key", rj.key, "worker", rj.workerID, "err", err)
+				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
 			}
 		}
 	}
@@ -346,3 +401,5 @@ type observation struct {
 	workerID string
 	complete bool
 }
+
+var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
